@@ -1,8 +1,8 @@
-from flask import Blueprint, render_template, url_for, flash, abort, redirect
+from flask import Blueprint, render_template, url_for, flash, abort, redirect, request
 from flask_login import login_required, logout_user, current_user, login_user
-from hashview.users.forms import LoginForm, UsersForm
+from hashview.users.forms import LoginForm, UsersForm, ProfileForm
 from hashview.models import Users
-from flask_bcrypt import bcrypt
+from hashview import db, bcrypt
 
 users = Blueprint('users', __name__)
 
@@ -13,7 +13,7 @@ def login():
         user = Users.query.filter_by(email_address=form.email.data).first()
         if user and bcrypt.check_password_hash(user.password, form.password.data):
             login_user(user, remember=form.remember.data)
-            return redirect(url_for('home'))
+            return redirect(url_for('main.home'))
         else:
             flash('Login Unsuccessful. Please check email and password', 'danger')
     return render_template('login.html', title='Login', form=form)  
@@ -21,11 +21,11 @@ def login():
 @users.route("/logout")
 def logout(): 
     logout_user()
-    return redirect(url_for('home'))
+    return redirect(url_for('main.home'))
 
 @users.route("/users", methods=['GET', 'POST'])
 @login_required
-def users():
+def users_list():
     users = Users.query.all()
     return render_template('users.html', title='Users', users=users)
 
@@ -43,7 +43,7 @@ def users_add():
             db.session.add(user)
             db.session.commit()
             flash(f'Account created for {form.email.data}!', 'success')
-            return redirect(url_for('users'))
+            return redirect(url_for('users.users_list'))
         return render_template('users_add.html', title='User Add', form=form)   
     else:
         abort(403)
@@ -58,7 +58,7 @@ def users_delete(user_id):
         db.session.delete(user)
         db.session.commit()
         flash('User has been deleted!', 'success')
-        return redirect(url_for('users'))
+        return redirect(url_for('users.users_list'))
     else:
         abort(403)
 
@@ -75,7 +75,7 @@ def profile():
             current_user.pushover_key = form.pushover_key.data 
         db.session.commit()
         flash('Profile Updated!', 'success')
-        return redirect(url_for('profile'))
+        return redirect(url_for('user.profile'))
     elif request.method == 'GET':
         form.first_name.data = current_user.first_name
         form.last_name.data = current_user.last_name

@@ -10,7 +10,7 @@
         <header class="site-header">
             <nav class="navbar navbar-expand-md navbar-dark bg-dark fixed-top">
                 <div class="container">
-                <a class="navbar-brand mr-4" href="{{ url_for('home') }}">Hashview</a>
+                <a class="navbar-brand mr-4" href="{{ url_for('main.home') }}">Hashview</a>
                 <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarToggle" aria-controls="navbarToggle" aria-expanded="false" aria-label="Toggle navigation">
                     <span class="navbar-toggler-icon"></span>
                 </button>
@@ -18,27 +18,27 @@
                     <!-- Navbar Right Side -->
                     <div class="navbar-nav ml-auto">
                         {% if current_user.is_authenticated %}
-                            <a class="nav-item nav-link" href="{{ url_for('jobs') }}">Jobs</a>
-                            <a class="nav-item nav-link" href="{{ url_for('tasks') }}">Tasks</a> 
+                            <a class="nav-item nav-link" href="{{ url_for('jobs.jobs_list') }}">Jobs</a>
+                            <a class="nav-item nav-link" href="{{ url_for('tasks.tasks_list') }}">Tasks</a> 
                             <li class="nav-item dropdown">
                                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                                   Manage
                                 </a>
                                 <div class="dropdown-menu" aria-labelledby="navbarDropdown">
                                     {% if current_user.admin %}
-                                        <a class="dropdown-item" href="{{ url_for('customers') }}">Customers</a>
-                                        <a class="dropdown-item" href="{{ url_for('wordlists') }}">Wordlists</a>
-                                        <a class="dropdown-item" href="{{ url_for('rules') }}">Rules</a>
-                                        <a class="dropdown-item" href="{{ url_for('hashfiles')}}">Hashfiles</a>
+                                        <a class="dropdown-item" href="{{ url_for('customers.customers_list') }}">Customers</a>
+                                        <a class="dropdown-item" href="{{ url_for('wordlists.wordlists_list') }}">Wordlists</a>
+                                        <a class="dropdown-item" href="{{ url_for('rules.rules_list') }}">Rules</a>
+                                        <a class="dropdown-item" href="{{ url_for('hashfiles.hashfiles_list')}}">Hashfiles</a>
                                         <a class="dropdown-item" href="#">Agents</a>
-                                        <a class="dropdown-item" href="{{ url_for('settings') }}">Settings</a>
-                                        <a class="dropdown-item" href="{{ url_for('users') }}">User Accounts</a>
+                                        <a class="dropdown-item" href="{{ url_for('settings.settings_list') }}">Settings</a>
+                                        <a class="dropdown-item" href="{{ url_for('users.users_list') }}">User Accounts</a>
                                         <div class="dropdown-divider"></div>
                                     {% endif %}
                                     <a class="dropdown-item" href="#">Analytics</a>
                                     <a class="dropdown-item" href="#">Search</a>
-                                    <a class="dropdown-item" href="{{ url_for('profile') }}">Profile</a>
-                                    <a class="dropdown-item" href="{{ url_for('logout') }}">Logout</a>
+                                    <a class="dropdown-item" href="{{ url_for('users.profile') }}">Profile</a>
+                                    <a class="dropdown-item" href="{{ url_for('users.logout') }}">Logout</a>
                                 </div>
                               </li>
                         {% endif %}

@@ -3,7 +3,7 @@
 <br>
 <h1>Wordlists</h1>
 <br>
-<a class="btn btn-success btn-sm mt-1 mb-1" href="{{ url_for('wordlists_add') }}">Add</a>
+<a class="btn btn-success btn-sm mt-1 mb-1" href="{{ url_for('wordlists.wordlists_add') }}">Add</a>
 <br>
 <br>
 <br>
@@ -96,7 +96,7 @@
                 </div>
                 <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
-                <form action="{{ url_for('wordlists_delete', wordlist_id=wordlist.id) }}" method="POST">
+                <form action="{{ url_for('wordlists.wordlists_delete', wordlist_id=wordlist.id) }}" method="POST">
                     <input class="btn btn-danger" type="submit" value="Delete">
                   </form>
                 </div>

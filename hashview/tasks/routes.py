@@ -10,6 +10,6 @@ tasks = Blueprint('tasks', __name__)
 
 @tasks.route("/tasks", methods=['GET', 'POST'])
 @login_required
-def tasks():
+def tasks_list():
     tasks = Tasks.query.all()
     return render_template('tasks.html', title='tasks', tasks=tasks) 

@@ -4,7 +4,7 @@
 <h1>Tasks</h1>
 <br>
 Task are predefined hashcat commands. Any number of tasks can be assigned to a Job.
-<a class="btn btn-success btn-sm mt-1 mb-1" href="{{ url_for('tasks_add') }}">Add</a>
+<a class="btn btn-success btn-sm mt-1 mb-1" href="{{ url_for('tasks.tasks_add') }}">Add</a>
 <br>
 <br>
 <br>
@@ -96,7 +96,7 @@ Task are predefined hashcat commands. Any number of tasks can be assigned to a J
                 </div>
                 <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
-                <form action="{{ url_for('users_delete', user_id=user.id) }}" method="POST">
+                <form action="{{ url_for('user.users_delete', user_id=user.id) }}" method="POST">
                     <input class="btn btn-danger" type="submit" value="Delete">
                   </form>
                 </div>

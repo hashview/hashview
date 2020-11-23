@@ -9,7 +9,7 @@
 
 1. Hashcat installed and working (https://hashcat.net/hashcat/)  
 2. Hashcat installed and working (just double checking)  
-3. A working RVM environment (https://rvm.io/rvm/install)    
+3. Python 3.6+   
 
 ## Installation
 

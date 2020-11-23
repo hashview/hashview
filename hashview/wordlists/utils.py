@@ -1,6 +1,8 @@
 import os
 import secrets
 import hashlib
+from hashview import app
+
 
 def save_file(path, form_file):
     random_hex = secrets.token_hex(8)

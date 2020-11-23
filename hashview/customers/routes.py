@@ -12,7 +12,7 @@ customers = Blueprint('customers', __name__)
 
 @customers.route("/customers", methods=['GET'])
 @login_required
-def customers():
+def customers_list():
     customers = Customers.query.all()
     return render_template('customers.html', title='Cusomters', customers=customers)
 
@@ -25,7 +25,7 @@ def customers_add():
         db.session.add(customer)
         db.session.commit()
         flash(f'Customer created!', 'success')
-        return redirect(url_for('customers'))  # will need to do a conditional return if this was reated during a job creation
+        return redirect(url_for('customers.customers_list'))  # will need to do a conditional return if this was reated during a job creation
     return render_template('cusomers_add.html', title='Customer Add', form=form)   
 
 @customers.route("/customers/delete/<int:customer_id>", methods=['POST'])
@@ -37,4 +37,4 @@ def customers_delete(customer_id):
     db.session.delete(customer)
     db.session.commit()
     flash('Customer has been deleted!', 'success')
-    return redirect(url_for('customers'))
+    return redirect(url_for('customers.customers_list'))

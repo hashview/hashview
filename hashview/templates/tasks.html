@@ -1,0 +1,107 @@
+{% extends "layout.html"%}
+{% block header %}
+<br>
+<h1>Tasks</h1>
+<br>
+Task are predefined hashcat commands. Any number of tasks can be assigned to a Job.
+<a class="btn btn-success btn-sm mt-1 mb-1" href="{{ url_for('tasks_add') }}">Add</a>
+<br>
+<br>
+<br>
+{% endblock header %}
+{% block content %}
+    <article class="media content-section">
+        <div class="media-body">
+            <table class="table">
+                <thead>
+                  <tr>
+                    <th scope="col">Task Name</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Control</th>
+                  </tr>
+                </thead>
+                <tbody>
+                    {% for task in tasks %}
+                        <tr>
+                            <td>{{ task.name }}</td>
+                            <td>{{ task.type }}</td>
+                            <td>
+                                <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{taskid}}">Info</button>
+                                <button type="button" class="btn btn-warning btn-sm" data-toggle="modal" data-target="#editModal{{task.id}}">Edit</button>
+                                <button type="button" class="btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal{{task.id}}">Delete</button>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+              </table>
+        </div>
+    </article>
+    {% for task in tasks %}
+    <!-- Info Modal -->
+        <div class="modal fade" id="infoModal{{user.id}}" tabindex="-1" aria-labelledby="infoModal{{task.id}}Label" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                <h5 class="modal-title" id="infoModal{{user.id}}Label">Info: {{task.name}}</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+                </div>
+                <div class="modal-body">
+                ...
+                </div>
+                <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary">Understood</button>
+                </div>
+            </div>
+            </div>
+        </div>
+    {% endfor %}
+    {% for user in users %}
+    <!-- Reset Modal -->
+        <div class="modal fade" id="resetModal{{user.id}}" tabindex="-1" aria-labelledby="editModal{{task.id}}Label" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                <h5 class="modal-title" id="resetModal{{user.id}}Label">Edit Task: {{task.name}}</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+                </div>
+                <div class="modal-body">
+                ...
+                </div>
+                <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary">Understood</button>
+                </div>
+            </div>
+            </div>
+        </div>
+    {% endfor %}
+    {% for task in tasks %}
+        <!-- DeleteModal -->
+        <div class="modal fade" id="deleteModal{{user.id}}" tabindex="-1" aria-labelledby="deleteModal{{task.id}}Label" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                <h5 class="modal-title" id="deleteModal{{user.id}}Label">Delete: {{task.name}} ?</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+                </div>
+                <div class="modal-body">
+                This will permanantly delete the task. Are you sure you want to continue?
+                </div>
+                <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
+                <form action="{{ url_for('users_delete', user_id=user.id) }}" method="POST">
+                    <input class="btn btn-danger" type="submit" value="Delete">
+                  </form>
+                </div>
+            </div>
+            </div>
+        </div>
+    {% endfor %}
+{% endblock content %}

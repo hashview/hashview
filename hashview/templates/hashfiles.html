@@ -1,0 +1,39 @@
+{% extends "layout.html"%}
+{% block header %}
+<br>
+<h1>Hash Files</h1>
+<br>
+The following are a list of Hash Files currently configured in Hashview. All Hash Files are assigned to a single customer. Deleting a Hash File will remove it from the customer, but all cracked hashes will remain in the database.
+<br>
+<br>
+<br>
+{% endblock header %}
+{% block content %}
+    <article class="media content-section">
+        <div class="media-body">
+            <table class="table">
+                <thead>
+                  <tr>
+                    <th scope="col">Customer</th>
+                    <th scope="col">Hash File</th>
+                    <th scope="col">Hash Type</th>
+                    <th scope="col">Crack Rate</th>
+                    <th scope="col">Control</th>
+                  </tr>
+                </thead>
+                <tbody>
+                    <!--
+                    {% for user in users %}
+                        <tr>
+                            <td>{{ user.first_name }}</td>
+                            <td>{{ user.last_name }}</td>
+                            <td>{{ user.email_address }}</td>
+                            <td>INFO/EDIT/DELETE/RSTPASSWD</td>
+                        </tr>
+                    {% endfor %}
+                    -->
+                </tbody>
+              </table>
+        </div>
+    </article>
+{% endblock content %}

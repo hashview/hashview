@@ -1,0 +1,32 @@
+{% extends "layout.html"%}
+{% block header %}
+<br>
+<h1>Customers</h1>
+<br>
+The following are a list of customers currently configured in Hashview. All Jobs, passwords and hashes will be assigned to a single customer. Deleting a customer will remove ALL data from the system.
+<br>
+<br>
+<br>
+{% endblock header %}
+{% block content %}
+    <article class="media content-section">
+        <div class="media-body">
+            <table class="table">
+                <thead>
+                  <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Control</th>
+                  </tr>
+                </thead>
+                <tbody>
+                    {% for customer in customers %}
+                        <tr>
+                            <td>{{ customer.name }}</td>
+                            <td>ANALYTICS/INFO/EDIT/DELETE</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+              </table>
+        </div>
+    </article>
+{% endblock content %}

@@ -5,13 +5,10 @@ from hashview import db
 
 hashfiles = Blueprint('hashfiles', __name__)
 
-#############################################
-# Hashfiles
-#############################################
 
 @hashfiles.route("/hashfiles", methods=['GET', 'POST'])
 @login_required
-def hashfiles():
+def hashfiles_list():
     hashfiles = Hashfiles.query.all()
     return render_template('hashfiles.html', title='Hashfiles', hashfiles=hashfiles)
 
@@ -20,11 +17,11 @@ def hashfiles():
 def hashfiles_delete(hashfile_id):
     # TODO
     # Remove dynamic wordlists
-    hashfile = hashfiles.query.get_or_404(hashfile_id)
+    hashfile = Hashfiles.query.get_or_404(hashfile_id)
     # TODO
     #if post.author != current_user:  #confirm if admin
     #    abort(403)
     db.session.delete(hashfile) # Probably need to do more, comfirm with old hashview code
     db.session.commit()
     flash('Hashfile has been deleted!', 'success')
-    return redirect(url_for('hashfiles'))
+    return redirect(url_for('hashfiles.hashfiles_list'))

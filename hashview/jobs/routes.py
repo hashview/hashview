@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template
 from flask_login import login_required
-from flaskblog.models import Jobs
+from hashview.models import Jobs
 
 jobs = Blueprint('jobs', __name__)
 
@@ -10,6 +10,6 @@ jobs = Blueprint('jobs', __name__)
 
 @jobs.route("/jobs", methods=['GET', 'POST'])
 @login_required
-def jobs():
+def jobs_list():
     jobs = Jobs.query.all()
     return render_template('jobs.html', title='jobs', jobs=jobs)

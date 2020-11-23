@@ -4,7 +4,7 @@
 <h1>Rules</h1>
 <br>
 Rules are a set of instructions to be combined with Wordlists. Hashview comes preloaded with common rules, but you can upload more by clicking the 'Add' button to the left.
-<a class="btn btn-success btn-sm mt-1 mb-1" href="{{ url_for('rules_add') }}">Add</a>
+<a class="btn btn-success btn-sm mt-1 mb-1" href="{{ url_for('rules.rules_add') }}">Add</a>
 <br>
 <br>
 <br>
@@ -73,7 +73,7 @@ Rules are a set of instructions to be combined with Wordlists. Hashview comes pr
                 </div>
                 <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
-                <form action="{{ url_for('rules_delete', rule_id=rule.id) }}" method="POST">
+                <form action="{{ url_for('rules.rules_delete', rule_id=rule.id) }}" method="POST">
                     <input class="btn btn-danger" type="submit" value="Delete">
                   </form>
                 </div>

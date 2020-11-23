@@ -3,6 +3,8 @@ from flask import Blueprint, render_template, redirect, url_for, flash
 from flask_login import login_required
 from hashview.wordlists.forms import WordlistsForm
 from hashview.models import Wordlists
+from hashview import db
+from hashview.wordlists.utils import save_file, get_linecount, get_filehash # move to dedicated utils folder
 
 wordlists = Blueprint('wordlists', __name__)
 
@@ -12,7 +14,7 @@ wordlists = Blueprint('wordlists', __name__)
 
 @wordlists.route("/wordlists", methods=['GET'])
 @login_required
-def wordlists():
+def wordlists_list():
     static_wordlists = Wordlists.query.filter_by(type='static').all()
     dynamic_wordlists = Wordlists.query.filter_by(type='dynamic').all()
     return render_template('wordlists.html', title='Wordlists', static_wordlists=static_wordlists, dynamic_wordlists=dynamic_wordlists) 
@@ -33,7 +35,7 @@ def wordlists_add():
             db.session.add(wordlist)
             db.session.commit()
             flash(f'Wordlist created!', 'success')
-            return redirect(url_for('wordlists'))  
+            return redirect(url_for('wordlists.wordlists_lists'))  
     return render_template('wordlists_add.html', title='Wordlist Add', form=form)   
 
 @wordlists.route("/wordlist/delete/<int:wordlist_id>", methods=['POST'])
@@ -48,4 +50,4 @@ def wordlists_delete(wordlist_id):
     db.session.delete(wordlist)
     db.session.commit()
     flash('Wordlist has been deleted!', 'success')
-    return redirect(url_for('wordlists'))
+    return redirect(url_for('wordlists.wordlists_list'))

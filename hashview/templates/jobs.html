@@ -1,0 +1,40 @@
+{% extends "layout.html"%}
+{% block header %}
+<br>
+<h1>Jobs</h1>
+<br>
+Jobs contain a series of tasks (hashcat commands). Jobs also have an associated list of hashes to crack.
+<br>
+<br>
+<br>
+{% endblock header %}
+{% block content %}
+    <article class="media content-section">
+        <div class="media-body">
+            <table class="table">
+                <thead>
+                  <tr>
+                    <th scope="col">Customer</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">Hash File</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Owner</th>
+                    <th scope="col">Control</th>                   
+                  </tr>
+                </thead>
+                <tbody>
+                    {% for job in jobs %}
+                        <tr>
+                            <td>Customer</td>
+                            <td>{{ job.name }}</td>
+                            <td>hashfile</td>
+                            <td>{{ job.status }}</td>
+                            <td>{{ job.status }}</td>
+                            <td>INFO/EDIT/DELETE/RSTPASSWD</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+              </table>
+        </div>
+    </article>
+{% endblock content %}

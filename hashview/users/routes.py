@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, url_for, flash, abort, redirect, request
 from flask_login import login_required, logout_user, current_user, login_user
-from hashview.users.forms import LoginForm, UsersForm, ProfileForm
+from hashview.users.forms import LoginForm, UsersForm, ProfileForm, RequestResetForm, ResetPasswordForm
 from hashview.models import Users
 from hashview import db, bcrypt
 
@@ -82,3 +82,27 @@ def profile():
         form.pushover_id.data = current_user.pushover_id
         form.pushover_key.data = current_user.pushover_key
     return render_template('profile.html', title='Profile', form=form)
+
+def send_reset_email(user):
+    pass
+
+@users.route("/reset_password", methods=['GET', 'POST'])
+def reset_reqest():
+    # TODO
+    # Conditional returns based on if a user submitted via admin or via unauthed
+    form = RequestResetForm()
+    if form.validate_on_submit():
+        user = Users.query.filter_by(email=form.email.data).first()
+        send_reset_email(user)
+        flash(f'An email has been sent to %s', user.email_address)
+        return redirect(url_for('main.home')) 
+    return render_template('reset_request.html', title='Reset Password', form=form)
+
+@users.route("/reset_password/<token>", methods=['GET', 'POST'])
+def reset_token(token):
+    user = Users.verify_reset_token(token)
+    if user is None:
+        flash('Invalid or Expired Token!', 'warning')
+        return redirect(url_for('main.home'))
+    form = ResetPasswordForm()
+    return render_template('reset_token.html', title='Reset Password', form=form)

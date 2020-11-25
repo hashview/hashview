@@ -1,13 +1,12 @@
 
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-import secrets
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
+from hashview.config import Config
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = secrets.token_hex(16)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+mysqlconnector://root:JY+tjL8k!ICq@localhost/hashview_dev'
+app.config.from_object(Config)
 db = SQLAlchemy(app)
 #db = SQLAlchemy
 #db.init_app(app)

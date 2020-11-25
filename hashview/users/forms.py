@@ -36,3 +36,12 @@ class ProfileForm(FlaskForm):
     pushover_id = StringField('Pushover Id (optional)')
     pushover_key = PasswordField('Pushover Key (optional)')
     submit = SubmitField('Update')
+
+class RequestResetForm(FlaskForm):
+    email = StringField('Email', validators=[DataRequired(), Email()])
+    submit = SubmitField('Request Password Reset')
+
+class ResetPasswordForm(FlaskForm):
+    password = PasswordField('Password', validators=[DataRequired(), Length(min=14)])
+    confirm_password = PasswordField('Confirm Password', validators=[DataRequired(), EqualTo('password')])
+    submit = SubmitField('Request Password')

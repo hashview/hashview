@@ -1,7 +1,9 @@
 import os
 import secrets
 import hashlib
-from hashview import app
+from hashview import mail
+from hashview.models import Settings
+from flask_mail import Message
 
 
 def save_file(path, form_file):
@@ -21,3 +23,10 @@ def get_filehash(filepath):
         for byte_block in iter(lambda: f.read(4096),b""):
             sha256_hash.update(byte_block)
     return sha256_hash.hexdigest()
+
+def send_email(user, subject, message):
+    sender = Settings.smtp_sender
+    msg = Message(subject, sender=sender, recipients=[user.email_address])
+    msg.body = message
+    mail.send_message(msg)
+    

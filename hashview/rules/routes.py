@@ -3,7 +3,7 @@ from flask import Blueprint, render_template, flash, url_for, redirect, current_
 from flask_login import login_required
 from hashview.models import Rules
 from hashview.rules.forms import RulesForm
-from hashview.rules.utils import save_file, get_linecount, get_filehash
+from hashview.utils.utils import save_file, get_linecount, get_filehash
 from hashview import db
 
 

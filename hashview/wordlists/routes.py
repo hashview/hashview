@@ -4,7 +4,8 @@ from flask_login import login_required
 from hashview.wordlists.forms import WordlistsForm
 from hashview.models import Wordlists
 from hashview import db
-from hashview.wordlists.utils import save_file, get_linecount, get_filehash # move to dedicated utils folder
+#from hashview.wordlists.utils import save_file, get_linecount, get_filehash # move to dedicated utils folder
+from hashview.utils.utils import save_file, get_linecount, get_filehash
 
 wordlists = Blueprint('wordlists', __name__)
 
@@ -35,7 +36,7 @@ def wordlists_add():
             db.session.add(wordlist)
             db.session.commit()
             flash(f'Wordlist created!', 'success')
-            return redirect(url_for('wordlists.wordlists_lists'))  
+            return redirect(url_for('wordlists.wordlists_list'))  
     return render_template('wordlists_add.html', title='Wordlist Add', form=form)   
 
 @wordlists.route("/wordlist/delete/<int:wordlist_id>", methods=['POST'])

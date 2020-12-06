@@ -1,7 +1,8 @@
 from datetime import datetime
-from hashview import db, login_manager, app
+from hashview import db, login_manager
 from flask_login import UserMixin
 from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
+from hashview.config import Config
 
 # To Do 
 # Add indexes
@@ -21,13 +22,14 @@ class Users(db.Model, UserMixin):
     pushover_key = db.Column(db.String(20), nullable=True)
     jobs = db.relationship('Jobs', backref='tbd', lazy=True)
 
-    @staticmethod
+
     def get_reset_token(self, expires_sec=1800):
-        s = Serializer(app.config['SECRET_KEY', expires_sec])
+        s = Serializer(Config.SECRET_KEY, expires_sec)
         return s.dumps({'user_id': self.id}).decode('utf-8')
 
+    @staticmethod
     def verify_reset_token(token):
-        s = Serializer(app.config['SECRET_KEY'])
+        s = Serializer(Config.SECRET_KEY)
         try:
             user_id = s.loads(token)['user_id']
         except:
@@ -36,13 +38,8 @@ class Users(db.Model, UserMixin):
 
 class Settings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    smtp_server = db.Column(db.String(50))
-    smtp_sender = db.Column(db.String(50))
-    smtp_user = db.Column(db.String(50))
-    smtp_password = db.Column(db.String(50))
-    smtp_use_tls = db.Column(db.Boolean)
-    smtp_auth_type = db.Column(db.String(50)) # plain, login, cram_md5, none
     retention_period = db.Column(db.Integer)
+    hashcat_path = db.Column(db.String(255))
     db_version = db.Column(db.String(5), nullable=False)
 
 class Jobs(db.Model):

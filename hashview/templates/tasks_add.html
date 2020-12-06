@@ -1,0 +1,49 @@
+{% extends "layout.html" %}
+{% block header %}
+<br>
+<h1>Add Tasks</h1>
+<br>
+Select from the following options to create a new task to be run.
+<br>
+<br>
+<br>
+{% endblock header %}
+{% block content %}
+<div class="content-section">
+    <form method="POST" action="" enctype="multipart/form-data">
+        {{ form.hidden_tag() }}
+        <fieldset class="form-group">
+           <div class="form-group">
+            {{ form.name.label(class="form-control-label") }}
+
+            {% if form.name.errors %}
+                {{ form.name(class="form-control form-control-lg is-invalid") }}
+                <div class="invalid-feedback">
+                    {% for error in form.name.errors %}
+                        <span>{{ error }}</span>
+                    {% endfor %}
+                </div>
+            {% else %}
+                {{ form.name(class="form-control form-control-lg") }}
+            {% endif %}
+           </div> 
+           <div class="form-group">
+            {{ form.hc_attackmode.label(class="form-control-label") }}
+            {% if form.hc_attackmode.errors %}
+                {{ form.hc_attackmode(class="form-control form-control-lg is-invalid") }}
+                <div class="invalid-feedback">
+                    {% for error in form.hc_attackmode.errors %}
+                        <span>{{ error }}</span>
+                    {% endfor %}
+                </div>
+            {% else %}
+                {{ form.hc_attackmode(class="form-control form-control-lg") }}
+            {% endif %}
+        </div>
+        </fieldset>
+        <div class="form-group">
+            {{ form.submit(class="btn btn-outline-info")}}
+        </div>
+    </form>
+</div>
+{% endblock content %}

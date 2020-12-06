@@ -5,3 +5,4 @@ flask-sqlalchemy
 mysql-connector
 flask-bcrypt
 flask-login
+flask-mail

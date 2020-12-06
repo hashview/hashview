@@ -1,7 +1,58 @@
-Move utils.py into dedicated folder
+
+Confirm Email
+
 finish password reset
-Tasks -> get keyspace
+
+
+Tasks 
+    - Create Task
+        - get keyspace
+    - Task info
+        - List Associated Jobs
+        - List Associated Wordlists
+        - List Associated TaskGroups
+        - List Key Space
+    - Delete Task
+
 taskgroups
+
 Jobs
+
+Analytics
+
 API
+
 Installtion files
+    - Set up settings table
+    - create new Tasks
+    - create dummy wordlist
+
+Add SSL
+- Options in config
+
+Support for retention
+
+Wordlists
+    - info
+        - List Associated Tasks
+        - List Word Count
+    - Delete
+        - check for if in existsing tasks
+
+Rules
+    - info 
+        - List Associated tasks
+        - list Associated Jobs?
+    - Delete
+
+Customers
+    - info
+        - List Associated Hashfiles
+        - Creation Date
+
+Hashfiles
+    - if > retention date Delete
+        - delete Associated Jobs
+        - if no other hashfiles exists for customer, delete customer
+
+Change 'user/wordlist/task/customer add's into popup'

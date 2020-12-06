@@ -2,3 +2,10 @@
 host = localhost
 username = username
 password = password
+
+[SMTP]
+server = smtp.example.com
+port = 25
+use_tls = False
+username = 
+password = 

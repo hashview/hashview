@@ -133,3 +133,8 @@ dmypy.json
 
 # config
 config.conf
+
+# control
+rules/*
+wordlists/*
+tmp/*

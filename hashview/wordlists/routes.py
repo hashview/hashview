@@ -1,5 +1,5 @@
 import os
-from flask import Blueprint, render_template, redirect, url_for, flash
+from flask import Blueprint, render_template, redirect, url_for, flash, current_app
 from flask_login import login_required
 from hashview.wordlists.forms import WordlistsForm
 from hashview.models import Wordlists
@@ -26,7 +26,7 @@ def wordlists_add():
     form = WordlistsForm()
     if form.validate_on_submit():
         if form.wordlist.data:
-            wordlist_path = os.path.join(app.root_path, save_file('control/wordlists', form.wordlist.data))
+            wordlist_path = os.path.join(current_app.root_path, save_file('control/wordlists', form.wordlist.data))
             
             wordlist = Wordlists(name=form.name.data, 
                                 type='static', 

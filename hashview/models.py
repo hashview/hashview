@@ -4,8 +4,6 @@ from flask_login import UserMixin
 from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
 from hashview.config import Config
 
-# To Do 
-# Add indexes
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -34,7 +32,7 @@ class Users(db.Model, UserMixin):
             user_id = s.loads(token)['user_id']
         except:
             return None     
-        return Users.Query.get(user_id)
+        return Users.query.get(user_id)
 
 class Settings(db.Model):
     id = db.Column(db.Integer, primary_key=True)

@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect, url_for
+from flask import Blueprint, render_template, redirect, url_for, flash
 from flask_login import login_required
 from hashview.tasks.forms import TasksForm
 from hashview.models import Tasks, Wordlists, Rules
@@ -18,20 +18,19 @@ def tasks_list():
 @tasks.route("/tasks/add", methods=['GET', 'POST'])
 @login_required
 def tasks_add():
-    form = TasksForm()
-    wordlists = Wordlists.query.all()
-    rules = Rules.query.all()
-    if form.validate_on_submit():
-        # Check if name exists
-        #if form.rules.data:
-        #   rules_path = os.path.join(current_app.root_path, save_file('control/rules', form.rules.data))
-        #    
-        #    rule = Rules(name=form.name.data, 
-        #                        path=rules_path,
-        #                        size=get_linecount(rules_path),
-        #                        checksum=get_filehash(rules_path))
-        #    db.session.add(rule)
-        #    db.session.commit()
-        #    flash(f'Rules File created!', 'success')
-            return redirect(url_for('tasks.tasks_list'))  
-    return render_template('tasks_add.html', title='Tasks Add', form=form)   
+    tasksForm = TasksForm()
+    if tasksForm.validate_on_submit():
+        if tasksForm.hc_attackmode.data == 'dictionary':
+            task = Tasks(name=tasksForm.name.data, wl_id=tasksForm.wl_id.data, rule_id=tasksForm.rule_id.data)
+            db.session.add(task)
+            db.session.commit()
+            flash(f'Task {tasksForm.name.data} created!', 'success')
+        elif tasksForm.hc_attackmode.data == 'maskmode':
+            task = Tasks(fname=tasksForm.name.data, hc_mask=tasksForm.mask.data)
+            db.session.add(task)
+            db.session.commit() 
+            flash(f'Task {tasksForm.name.data} created!', 'success')           
+        else:
+            flash('Attack Mode not supported... yet...', 'danger')
+        return redirect(url_for('tasks.tasks_list'))  
+    return render_template('tasks_add.html', title='Tasks Add', tasksForm=tasksForm)   

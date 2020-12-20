@@ -9,40 +9,97 @@ Select from the following options to create a new task to be run.
 <br>
 {% endblock header %}
 {% block content %}
+<script>
+    function showDiv(){
+        var Index = document.getElementById('hc_attackmode'); 
+        //alert(Index.value);
+        if(Index.value == 'dictionary')
+        {
+            document.getElementById('dictionary_div').style.display = 'inline';
+            document.getElementById('rules_div').style.display = 'inline';
+            document.getElementById('maskmode_div').style.display = 'none';
+        }
+        else if (Index.value == 'maskmode')
+        {
+            document.getElementById('dictionary_div').style.display = 'none';
+            document.getElementById('rules_div').style.display = 'none';
+            document.getElementById('maskmode_div').style.display = 'inline';
+        }
+    }
+</script>
 <div class="content-section">
     <form method="POST" action="" enctype="multipart/form-data">
-        {{ form.hidden_tag() }}
+        {{ tasksForm.hidden_tag() }}
         <fieldset class="form-group">
            <div class="form-group">
-            {{ form.name.label(class="form-control-label") }}
+                {{ tasksForm.name.label(class="form-control-label") }}
 
-            {% if form.name.errors %}
-                {{ form.name(class="form-control form-control-lg is-invalid") }}
-                <div class="invalid-feedback">
-                    {% for error in form.name.errors %}
-                        <span>{{ error }}</span>
-                    {% endfor %}
-                </div>
-            {% else %}
-                {{ form.name(class="form-control form-control-lg") }}
-            {% endif %}
+                {% if tasksForm.name.errors %}
+                    {{ tasksForm.name(class="form-control form-control-lg is-invalid") }}
+                    <div class="invalid-feedback">
+                        {% for error in tasksForm.name.errors %}
+                            <span>{{ error }}</span>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    {{ tasksForm.name(class="form-control form-control-lg") }}
+                {% endif %}
            </div> 
            <div class="form-group">
-            {{ form.hc_attackmode.label(class="form-control-label") }}
-            {% if form.hc_attackmode.errors %}
-                {{ form.hc_attackmode(class="form-control form-control-lg is-invalid") }}
-                <div class="invalid-feedback">
-                    {% for error in form.hc_attackmode.errors %}
-                        <span>{{ error }}</span>
-                    {% endfor %}
-                </div>
-            {% else %}
-                {{ form.hc_attackmode(class="form-control form-control-lg") }}
-            {% endif %}
-        </div>
+                {{ tasksForm.hc_attackmode.label(class="form-control-label") }}
+                {% if tasksForm.hc_attackmode.errors %}
+                    {{ tasksForm.hc_attackmode(class="form-control form-control-lg is-invalid") }}
+                    <div class="invalid-feedback">
+                        {% for error in tasksForm.hc_attackmode.errors %}
+                            <span>{{ error }}</span>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    {{ tasksForm.hc_attackmode(class="form-control form-control-lg", onchange="showDiv()") }}
+                {% endif %}
+            </div>
+            <div class="form-group" style=display:none id="dictionary_div">
+                {{ tasksForm.wl_id.label(class="form-control-label") }}
+                {% if tasksForm.wl_id.errors %}
+                    {{ tasksForm.wl_id(class="form-control form-control-lg is-invalid") }}
+                    <div class="invalid-feedback">
+                        {% for error in tasksForm.wl_id.errors %}
+                            <span>{{ error }}</span>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    {{ tasksForm.wl_id(class="form-control form-control-lg") }}
+                {% endif %}
+            </div>
+            <div class="form-group" style=display:none id="rules_div">
+                {{ tasksForm.rule_id.label(class="form-control-label") }}
+                {% if tasksForm.rule_id.errors %}
+                    {{ tasksForm.rule_id(class="form-control form-control-lg is-invalid") }}
+                    <div class="invalid-feedback">
+                        {% for error in tasksForm.rule_id.errors %}
+                            <span>{{ error }}</span>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    {{ tasksForm.rule_id(class="form-control form-control-lg") }}
+                {% endif %}
+            </div>
+            <div class="form-group" style=display:none id="maskmode_div">
+                {{ tasksForm.mask.label(class="form-control-label") }}
+                {% if tasksForm.mask.errors %}
+                    {{ tasksForm.mask(class="form-control form-control-lg is-invalid") }}
+                    <div class="invalid-feedback">
+                        {% for error in tasksForm.mask.errors %}
+                            <span>{{ error }}</span>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    {{ tasksForm.mask(class="form-control form-control-lg") }}
+                {% endif %}
+            </div>
         </fieldset>
         <div class="form-group">
-            {{ form.submit(class="btn btn-outline-info")}}
+            {{ tasksForm.submit(class="btn btn-outline-info")}}
         </div>
     </form>
 </div>

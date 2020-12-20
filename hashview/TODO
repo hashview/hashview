@@ -1,8 +1,4 @@
 
-Confirm Email
-
-finish password reset
-
 Tasks 
     - Create Task
         - get keyspace
@@ -12,8 +8,15 @@ Tasks
         - List Associated TaskGroups
         - List Key Space
     - Delete Task
+    - Support Bruteforce task
+    - Support combinator task
 
 taskgroups
+    - Create TaskGroups
+    - TaskInfo
+        - List associated tasks
+        - List associated Jobs
+    - Delete TasksGroup
 
 Jobs
 
@@ -57,3 +60,11 @@ Hashfiles
 Change 'user/wordlist/task/customer add's into popup'
 
 Installation Instructions
+
+Wiki Instruction
+
+DB
+- Add DB indexes
+- Add foreign keys
+
+Add favicon

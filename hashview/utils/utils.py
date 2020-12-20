@@ -4,12 +4,13 @@ import hashlib
 from hashview import mail
 from hashview.models import Settings
 from flask_mail import Message
+from flask import current_app
 
 
 def save_file(path, form_file):
     random_hex = secrets.token_hex(8)
     file_name = random_hex + os.path.split(form_file.filename)[0] + '.txt'
-    file_path = os.path.join(app.root_path, path, file_name)
+    file_path = os.path.join(current_app.root_path, path, file_name)
     form_file.save(file_path)
     return file_path
 
@@ -25,8 +26,10 @@ def get_filehash(filepath):
     return sha256_hash.hexdigest()
 
 def send_email(user, subject, message):
-    sender = Settings.smtp_sender
-    msg = Message(subject, sender=sender, recipients=[user.email_address])
+    #sender = Settings.smtp_sender
+    #sender = 'hashview@trustedsec.com'
+    #msg = Message(subject, sender=sender, recipients=[user.email_address])
+    msg = Message(subject, recipients=[user.email_address])
     msg.body = message
-    mail.send_message(msg)
+    mail.send(msg)
     

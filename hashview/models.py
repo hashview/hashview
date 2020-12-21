@@ -18,7 +18,11 @@ class Users(db.Model, UserMixin):
     admin = db.Column(db.Boolean, nullable=False, default=False)
     pushover_id = db.Column(db.String(20), nullable=True)
     pushover_key = db.Column(db.String(20), nullable=True)
-    jobs = db.relationship('Jobs', backref='tbd', lazy=True)
+    wordlists = db.relationship('Wordlists', backref='tbd', lazy=True)
+    rules = db.relationship('Rules', backref='owner', lazy=True)
+    jobs = db.relationship('Jobs', backref='owner', lazy=True)
+    tasks = db.relationship('Tasks', backref='owner', lazy=True)
+    taskgroups = db.relationship('TaskGroups', backref='owner', lazy=True)
 
 
     def get_reset_token(self, expires_sec=1800):
@@ -102,6 +106,7 @@ class Rules(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
     last_updated = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     path = db.Column(db.String(256), nullable=False)
     size = db.Column(db.Integer, nullable=False, default=0)
     checksum = db.Column(db.String(64), nullable=False)
@@ -110,6 +115,7 @@ class Wordlists(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(256), nullable=False)
     last_updated = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     type = db.Column(db.String(7))                          # Dynamic or Static
     #scope = db.Column(db.String(10), nullable=False)
     path = db.Column(db.String(245), nullable=False)
@@ -119,7 +125,8 @@ class Wordlists(db.Model):
 class Tasks(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
-    hc_attackmode = db.Column(db.String(25), nullable=False)
+    hc_attackmode = db.Column(db.String(25), nullable=False) # dictionary, mask, bruteforce, combinator
+    owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     wl_id = db.Column(db.Integer)
     rule_id = db.Column(db.Integer)
     hc_mask = db.Column(db.String(50))
@@ -128,6 +135,7 @@ class Tasks(db.Model):
 class TaskGroups(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
+    owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     tasks = db.Column(db.String(1024), nullable=False)
 
 class TaskQueues(db.Model):

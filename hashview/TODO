@@ -1,5 +1,8 @@
 
 Tasks 
+    - Allow dictionary ONLY task (no rules)
+    - Assign Task creator?
+    - only allow creators of tasks and admins rights to delete / modify task
     - Create Task
         - get keyspace
     - Task info
@@ -24,11 +27,6 @@ Analytics
 
 API
 
-Installtion files
-    - Set up settings table
-    - create new Tasks
-    - create dummy wordlist
-
 Add SSL
 - Options in config
 
@@ -40,6 +38,8 @@ Wordlists
         - List Word Count
     - Delete
         - check for if in existsing tasks
+
+Dynamic Wordlists
 
 Rules
     - info 
@@ -59,7 +59,35 @@ Hashfiles
 
 Change 'user/wordlist/task/customer add's into popup'
 
-Installation Instructions
+Installation Instructions:
+Installtion files
+
+    - install.sh
+        - check for python3
+        - check for mysql?
+        - pip install
+        - create config for db (ask for creds)
+            - db username
+            - db password
+            - db host
+            - hashview admin email address
+            - hashview admin password     
+        - create db hashview
+            - Set up settings table
+            - create new Tasks
+            - create dummy wordlist
+            - create dumy rules
+            - create administrator account
+        
+        - export FLASK_APP=hashview.py 
+            - flask db init
+            - flask db migrate
+            - flask db upgrade
+
+    - upgrade.sh
+        - export FLASK_APP=hashview.py 
+            - flask db migrate
+            - flask db upgrade 
 
 Wiki Instruction
 
@@ -68,3 +96,14 @@ DB
 - Add foreign keys
 
 Add favicon
+
+Force settings population if unset
+
+If owner or admin
+    - delete Wordlists
+    - delete rules
+    - delete tasks
+    - delete taskgroups
+    - stop Jobs
+    - delete Jobs
+    hashfiles/customers/hashes?

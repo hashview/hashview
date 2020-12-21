@@ -12,7 +12,7 @@ Select from the following options to create a new task to be run.
 <script>
     function showDiv(){
         var Index = document.getElementById('hc_attackmode'); 
-        //alert(Index.value);
+        // support all other attack types
         if(Index.value == 'dictionary')
         {
             document.getElementById('dictionary_div').style.display = 'inline';
@@ -24,6 +24,12 @@ Select from the following options to create a new task to be run.
             document.getElementById('dictionary_div').style.display = 'none';
             document.getElementById('rules_div').style.display = 'none';
             document.getElementById('maskmode_div').style.display = 'inline';
+        }
+        else
+        {
+            document.getElementById('dictionary_div').style.display = 'none';
+            document.getElementById('rules_div').style.display = 'none';
+            document.getElementById('maskmode_div').style.display = 'none';
         }
     }
 </script>

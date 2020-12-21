@@ -5,7 +5,7 @@ from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
 from hashview.config import Config
 from flask_mail import Mail
-
+from flask_migrate import Migrate
 
 db = SQLAlchemy()
 #db.create_all() # Forces schema updates (does not work)
@@ -16,6 +16,8 @@ login_manager.login_message_category = 'info'
 
 mail = Mail()
 
+migrate = Migrate()
+
 def create_app(config_class=Config):
 
     app = Flask(__name__)
@@ -25,6 +27,7 @@ def create_app(config_class=Config):
     bcrypt.init_app(app)
     login_manager.init_app(app)
     mail.init_app(app)
+    migrate.init_app(app, db)
 
     from hashview.agents.routes import agents
     from hashview.api.routes import api

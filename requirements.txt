@@ -6,3 +6,6 @@ mysql-connector
 flask-bcrypt
 flask-login
 flask-mail
+flask-migrate
+flask-script
+subprocess

@@ -23,15 +23,19 @@ def tasks_add():
     tasksForm = TasksForm()
     if tasksForm.validate_on_submit():
         wordlist_id = tasksForm.wl_id.data.id
-        rule_id = tasksForm.rule_id.data.id
+        if tasksForm.rule_id.data == None:
+            rule_id = None
+        else:
+            rule_id = tasksForm.rule_id.data.id
  
         if tasksForm.hc_attackmode.data == 'dictionary':
             task = Tasks(   name=tasksForm.name.data, 
+                            owner_id=current_user.id,
                             wl_id=wordlist_id,
                             rule_id=rule_id, 
                             hc_attackmode=tasksForm.hc_attackmode.data,
                             keyspace=get_keyspace(  method=tasksForm.hc_attackmode.data, 
-                                                    wordlist_id = rule_id, 
+                                                    wordlist_id = wordlist_id, 
                                                     rule_id=rule_id,
                                                     mask=None
                             )
@@ -41,6 +45,7 @@ def tasks_add():
             flash(f'Task {tasksForm.name.data} created!', 'success')
         elif tasksForm.hc_attackmode.data == 'maskmode':
             task = Tasks(   name=tasksForm.name.data, 
+                            owner_id=current_user.id,
                             wl_id=None,
                             rule_id=None, 
                             hc_attackmode=tasksForm.hc_attackmode.data,
@@ -61,9 +66,8 @@ def tasks_add():
 @tasks.route("/tasks/delete/<int:task_id>", methods=['POST'])
 @login_required
 def tasks_delete(task_id):
-    if current_user.admin:
-        # Confirm not already in active task group or job
-        task = Tasks.query.get_or_404(task_id)
+    task = Tasks.query.filter_by(id=task_id)
+    if current_user.admin or task.owner_id == current_user.id:
         db.session.delete(task)
         db.session.commit()
         flash('Task has been deleted!', 'success')

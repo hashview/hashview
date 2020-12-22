@@ -1,6 +1,6 @@
 import os
 from flask import Blueprint, render_template, redirect, url_for, flash, current_app
-from flask_login import login_required
+from flask_login import login_required, current_user
 from hashview.wordlists.forms import WordlistsForm
 from hashview.models import Wordlists
 from hashview import db
@@ -28,7 +28,8 @@ def wordlists_add():
         if form.wordlist.data:
             wordlist_path = os.path.join(current_app.root_path, save_file('control/wordlists', form.wordlist.data))
             
-            wordlist = Wordlists(name=form.name.data, 
+            wordlist = Wordlists(name=form.name.data,
+                                owner_id=current_user.id, 
                                 type='static', 
                                 path=wordlist_path,
                                 checksum=get_filehash(wordlist_path),
@@ -42,13 +43,13 @@ def wordlists_add():
 @wordlists.route("/wordlist/delete/<int:wordlist_id>", methods=['POST'])
 @login_required
 def wordlists_delete(wordlist_id):
-    wordlist = Wordlists.query.get_or_404(wordlist_id)
-    # TODO
-    #if post.author != current_user:  #confirm if admin
-    #    abort(403)
-    #if wordlist.type == 'dynamic': # prevent deltion of dynamic list
-    #   abort(403)
-    db.session.delete(wordlist)
-    db.session.commit()
-    flash('Wordlist has been deleted!', 'success')
+    wordlist = Wordlists.query.filter_by(id=wordlist_id)
+    if current_user.admin or wordlist.owner_id == current_user.id:
+        if wordlist.type == 'dynamic': # prevent deltion of dynamic list
+            abort(403)
+        db.session.delete(wordlist)
+        db.session.commit()
+        flash('Wordlist has been deleted!', 'success')
+    else:
+        flash('Unauthorized Action!', 'danger')
     return redirect(url_for('wordlists.wordlists_list'))

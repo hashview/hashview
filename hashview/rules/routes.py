@@ -1,6 +1,6 @@
 import os
 from flask import Blueprint, render_template, flash, url_for, redirect, current_app
-from flask_login import login_required
+from flask_login import login_required, current_user
 from hashview.models import Rules
 from hashview.rules.forms import RulesForm
 from hashview.utils.utils import save_file, get_linecount, get_filehash
@@ -27,10 +27,11 @@ def rules_add():
         if form.rules.data:
             rules_path = os.path.join(current_app.root_path, save_file('control/rules', form.rules.data))
             
-            rule = Rules(name=form.name.data, 
-                                path=rules_path,
-                                size=get_linecount(rules_path),
-                                checksum=get_filehash(rules_path))
+            rule = Rules(   name=form.name.data, 
+                            owner_id=current_user.id, 
+                            path=rules_path,
+                            size=get_linecount(rules_path),
+                            checksum=get_filehash(rules_path))
             db.session.add(rule)
             db.session.commit()
             flash(f'Rules File created!', 'success')
@@ -40,13 +41,11 @@ def rules_add():
 @rules.route("/rules/delete/<int:rule_id>", methods=['GET', 'POST'])
 @login_required
 def rules_delete(rule_id):
-    rule = Rules.query.get_or_404(rule_id)
-    # TODO
-    #if post.author != current_user:  #confirm if admin
-    #    abort(403)
-    #if wordlist.type == 'dynamic': # prevent deltion of dynamic list
-    #   abort(403)
-    db.session.delete(rule)
-    db.session.commit()
-    flash('Rule file has been deleted!', 'success')
+    rule = Rules.query.filter_by(id=rule_id)
+    if current_user.admin or rule.owner_id == current_user.id:
+        db.session.delete(rule)
+        db.session.commit()
+        flash('Rule file has been deleted!', 'success')
+    else:
+        flash('Unauthorized action!', 'danger')
     return redirect(url_for('rules.rules_list'))

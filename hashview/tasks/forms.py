@@ -2,7 +2,6 @@ from flask_wtf import FlaskForm
 from wtforms import StringField, SubmitField, SelectField
 from wtforms.validators import DataRequired
 from hashview.models import Wordlists, Rules, Tasks
-#from wtforms.ext.sqlalchemy.fields import QuerySelectField
 from wtforms_sqlalchemy.fields import QuerySelectField
 
 def get_wordlists():
@@ -15,7 +14,7 @@ class TasksForm(FlaskForm):
     name = StringField('Name', validators=([DataRequired()]))
     hc_attackmode = SelectField('Attack Mode', choices=[('', '--SELECT--'), ('dictionary', 'dictionary'), ('maskmode', 'maskmode'), ('bruteforce', 'bruteforce'), ('combinator', 'combinator')], validators=[DataRequired()])  # dictionary, maskmode, bruteforce, combinator
     wl_id = QuerySelectField('Wordlist',query_factory=get_wordlists, get_label='name')
-    rule_id = QuerySelectField('Rules', query_factory=get_rules, get_label='name')
+    rule_id = QuerySelectField('Rules', query_factory=get_rules, get_label='name', allow_blank=True)
     mask = StringField('Hashcat Mask')
     submit = SubmitField('Create')  
 

@@ -1,7 +1,6 @@
 
 Tasks 
     - Allow dictionary ONLY task (no rules)
-    - Assign Task creator?
     - only allow creators of tasks and admins rights to delete / modify task
     - Create Task
         - get keyspace
@@ -22,6 +21,9 @@ taskgroups
     - Delete TasksGroup
 
 Jobs
+    - create Jobs
+    - Job info
+    - Delete job
 
 Analytics
 
@@ -31,6 +33,8 @@ Add SSL
 - Options in config
 
 Support for retention
+
+Move wordlists / rules out of admin only view
 
 Wordlists
     - info
@@ -70,8 +74,16 @@ Installtion files
             - db username
             - db password
             - db host
+            - SMTP settings
+                - sender address
+                - server
+                - username
+                - password
+                - TLS
             - hashview admin email address
             - hashview admin password     
+            - hashview hashcat path
+            - set default retention period 365
         - create db hashview
             - Set up settings table
             - create new Tasks

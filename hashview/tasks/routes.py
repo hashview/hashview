@@ -7,10 +7,6 @@ from hashview.utils.utils import get_keyspace
 
 tasks = Blueprint('tasks', __name__)
 
-#############################################
-# Tasks
-#############################################
-
 @tasks.route("/tasks", methods=['GET', 'POST'])
 @login_required
 def tasks_list():
@@ -66,7 +62,7 @@ def tasks_add():
 @tasks.route("/tasks/delete/<int:task_id>", methods=['POST'])
 @login_required
 def tasks_delete(task_id):
-    task = Tasks.query.filter_by(id=task_id)
+    task = Tasks.query.get(task_id)
     if current_user.admin or task.owner_id == current_user.id:
         db.session.delete(task)
         db.session.commit()

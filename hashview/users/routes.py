@@ -54,8 +54,6 @@ def users_add():
 def users_delete(user_id):
     if current_user.admin:
         user = Users.query.get_or_404(user_id)
-        #if post.author != current_user:  #confirm if admin
-        #    abort(403)
         db.session.delete(user)
         db.session.commit()
         flash('User has been deleted!', 'success')

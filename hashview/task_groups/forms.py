@@ -10,12 +10,8 @@ def get_wordlists():
 def get_rules():
     return Rules.query
 
-class TasksForm(FlaskForm):
+class TaskGroupsForm(FlaskForm):
     name = StringField('Name', validators=([DataRequired()]))
-    hc_attackmode = SelectField('Attack Mode', choices=[('', '--SELECT--'), ('dictionary', 'dictionary'), ('maskmode', 'maskmode'), ('bruteforce', 'bruteforce'), ('combinator', 'combinator')], validators=[DataRequired()])  # dictionary, maskmode, bruteforce, combinator
-    wl_id = QuerySelectField('Wordlist',query_factory=get_wordlists, get_label='name')
-    rule_id = QuerySelectField('Rules', query_factory=get_rules, get_label='name', allow_blank=True)
-    mask = StringField('Hashcat Mask')
     submit = SubmitField('Create')  
 
     def validate_task(self, name):

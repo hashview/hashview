@@ -1,24 +1,38 @@
 
 Tasks 
-    - Allow dictionary ONLY task (no rules)
-    - only allow creators of tasks and admins rights to delete / modify task
+    - List 
+        - Owner ID -> name
     - Create Task
-        - get keyspace
+        - Support Bruteforce task
+        - Support combinator task
     - Task info
         - List Associated Jobs
         - List Associated Wordlists
         - List Associated TaskGroups
-        - List Key Space
     - Delete Task
-    - Support Bruteforce task
-    - Support combinator task
+        - List Associated Jobs
+        - List Associated Wordlists
+        - List Associated TaskGroups
 
 taskgroups
+    - List
+        - name 
+        - Owner ID -> name
+        - Number of Tasks
+        - Control
     - Create TaskGroups
     - TaskInfo
         - List associated tasks
+            - Task name 
+            - Task Type
         - List associated Jobs
     - Delete TasksGroup
+    - Assign Tasks 
+        - only assign tasks if not assigned
+        - Re order tasks
+        - Allow for task creation at task assignment (why did i even allow this in the first place)
+        - Does it make sense to put these in a form?
+        - Dont allow for duplicate tasks to be assigned
 
 Jobs
     - create Jobs
@@ -49,6 +63,8 @@ Rules
     - info 
         - List Associated tasks
         - list Associated Jobs?
+    - Edit 
+        - Rules in browser
     - Delete
 
 Customers
@@ -119,3 +135,16 @@ If owner or admin
     - stop Jobs
     - delete Jobs
     hashfiles/customers/hashes?
+
+Change buttons (info, edit, delete) to Icons
+    - Task
+    - Customers
+    - Wordlists
+    - Task Lists
+    - Task Groups
+    - Rules
+    - Jobs
+
+taskgroups / hashfiles should probably be renamed to task_groups and hash_files, word_lists?
+
+Change dropdown alignment of jobs, tasks, manage (in templates/layout.html)

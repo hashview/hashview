@@ -43,7 +43,7 @@ def wordlists_add():
 @wordlists.route("/wordlist/delete/<int:wordlist_id>", methods=['POST'])
 @login_required
 def wordlists_delete(wordlist_id):
-    wordlist = Wordlists.query.filter_by(id=wordlist_id)
+    wordlist = Wordlists.query.get(wordlist_id)
     if current_user.admin or wordlist.owner_id == current_user.id:
         if wordlist.type == 'dynamic': # prevent deltion of dynamic list
             abort(403)

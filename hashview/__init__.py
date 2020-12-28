@@ -38,7 +38,7 @@ def create_app(config_class=Config):
     from hashview.rules.routes import rules
     from hashview.settings.routes import settings
     from hashview.tasks.routes import tasks
-    from hashview.taskgroups.routes import taskgroups
+    from hashview.task_groups.routes import task_groups
     from hashview.users.routes import users
     from hashview.wordlists.routes import wordlists
 
@@ -51,7 +51,7 @@ def create_app(config_class=Config):
     app.register_blueprint(rules)
     app.register_blueprint(settings)
     app.register_blueprint(tasks)
-    app.register_blueprint(taskgroups)
+    app.register_blueprint(task_groups)
     app.register_blueprint(users)
     app.register_blueprint(wordlists)
 

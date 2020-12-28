@@ -41,7 +41,7 @@ def rules_add():
 @rules.route("/rules/delete/<int:rule_id>", methods=['GET', 'POST'])
 @login_required
 def rules_delete(rule_id):
-    rule = Rules.query.filter_by(id=rule_id)
+    rule = Rules.query.get(rule_id)
     if current_user.admin or rule.owner_id == current_user.id:
         db.session.delete(rule)
         db.session.commit()

@@ -1,0 +1,36 @@
+{% extends "layout.html" %}
+{% block header %}
+<br>
+<h1>Create a new Task Group</h1>
+<br>
+Enter the name of the task group.
+<br>
+<br>
+<br>
+{% endblock header %}
+{% block content %}
+<div class="content-section">
+    <form method="POST" action="" enctype="multipart/form-data">
+        {{ taskGroupsForm.hidden_tag() }}
+        <fieldset class="form-group">
+           <div class="form-group">
+                {{ taskGroupsForm.name.label(class="form-control-label") }}
+
+                {% if taskGroupsForm.name.errors %}
+                    {{ taskGroupsForm.name(class="form-control form-control-lg is-invalid") }}
+                    <div class="invalid-feedback">
+                        {% for error in taskGroupsForm.name.errors %}
+                            <span>{{ error }}</span>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    {{ taskGroupsForm.name(class="form-control form-control-lg") }}
+                {% endif %}
+           </div> 
+        </fieldset>
+        <div class="form-group">
+            {{ taskGroupsForm.submit(class="btn btn-outline-info")}}
+        </div>
+    </form>
+</div>
+{% endblock content %}

@@ -46,7 +46,6 @@ def get_keyspace(method, wordlist_id, rule_id, mask):
         cmd.append('-a 3')
         cmd.append(mask)
     cmd.append('--keyspace')
-    print ("KEYSPACE CMD: ", str(cmd))
 
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
 

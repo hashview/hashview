@@ -1,0 +1,54 @@
+{% extends "layout.html"%}
+{% block header %}
+<br>
+<h1>Assign Task to Group: {{task_group.name}}</h1>
+<br>
+Each task will be ran once in order selected You can create new tasks by selecting 'tasks' in the above menu.
+<br>
+<br>
+<br>
+{% endblock header %}
+{% block content %}
+    <article class="media content-section">
+        <div class="media-body">
+            <table class="table">
+                <thead>
+                  <tr>
+                    <th scope="col">Task Name</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Control</th>
+                  </tr>
+                </thead>
+                <tbody>
+                    {% for task_group_task in task_group_tasks %}
+                        {% for task in tasks %}
+                            {% if task_group_task == task.id %}
+                                <tr>
+                                    <td>{{ task.name }}</td>
+                                    <td>{{ task.hc_attackmode}}</td>
+                                    <td>
+                                        <a class="btn btn-success btn-sm" href="/task_groups/assigned_tasks/{{task_group.id}}/promote_task/{{task.id}}" role="button">Up</a>
+                                        <a class="btn btn-success btn-sm" href="/task_groups/assigned_tasks/{{task_group.id}}/demote_task/{{task.id}}" role="button">Down</a>
+                                        <a class="btn btn-info btn-sm" href="#" role="button">Edit</a>
+                                        <a class="btn btn-danger btn-sm" href="/task_groups/assigned_tasks/{{task_group.id}}/remove_task/{{task.id}}" role="button">Delete</a>
+                                    </td>
+                                </tr>
+                            {% endif %}
+                        {% endfor %}
+                    {% endfor %}
+                </tbody>
+                </table>
+                <div class="dropdown">
+                        <button class="btn btn-outline-primary dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                        Add Task
+                        </button>
+                        <div class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                            {% for task in tasks %}
+                                <a class="dropdown-item" href="/task_groups/assigned_tasks/{{task_group.id}}/add_task/{{task.id}}">{{task.name}}</a>
+                            {% endfor %}
+                        </div>
+                </div>
+              <a class="btn btn-primary" href="{{url_for('task_groups.task_groups_list')}}" role="button">Done</a>
+        </div>
+    </article>
+{% endblock content %}

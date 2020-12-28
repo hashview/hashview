@@ -1,10 +1,10 @@
 {% extends "layout.html"%}
 {% block header %}
 <br>
-<h1>Tasks</h1>
+<h1>Task Groups</h1>
 <br>
-Task are predefined hashcat commands. Any number of tasks can be assigned to a Job.
-<a class="btn btn-success btn-sm mt-1 mb-1" href="{{ url_for('tasks.tasks_add') }}">Add</a>
+Task Groups are a set of tasks that can be assigned to job.
+<a class="btn btn-success btn-sm mt-1 mb-1" href="{{ url_for('task_groups.task_groups_add') }}">Add</a>
 <br>
 <br>
 <br>
@@ -15,22 +15,20 @@ Task are predefined hashcat commands. Any number of tasks can be assigned to a J
             <table class="table">
                 <thead>
                   <tr>
-                    <th scope="col">Task Name</th>
-                    <th scope="col">Type</th>
-                    <th scope="col">Keyspace</th>
+                    <th scope="col">Task Group Name</th>
+                    <th scope="col">Number of Tasks</th>
                     <th scope="col">Control</th>
                   </tr>
                 </thead>
                 <tbody>
-                    {% for task in tasks %}
+                    {% for task_group in task_groups %}
                         <tr>
-                            <td>{{ task.name }}</td>
-                            <td>{{ task.hc_attackmode}}</td>
-                            <td>{{ task.keyspace }}</td>
+                            <td>{{ task_group.name }}</td>
+                            <td>TBD</td>
                             <td>
-                                <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{task.id}}">Info</button>
-                                <button type="button" class="btn btn-warning btn-sm" data-toggle="modal" data-target="#editModal{{task.id}}">Edit</button>
-                                <button type="button" class="btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal{{task.id}}">Delete</button>
+                                <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{task_group.id}}">Info</button>
+                                <a class="btn btn-warning btn-sm" href="/task_groups/assigned_tasks/{{task_group.id}}" role="button">Edit</a>
+                                <button type="button" class="btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal{{task_group.id}}">Delete</button>
                             </td>
                         </tr>
                     {% endfor %}
@@ -38,13 +36,13 @@ Task are predefined hashcat commands. Any number of tasks can be assigned to a J
               </table>
         </div>
     </article>
-    {% for task in tasks %}
+    {% for task_group in task_groups %}
     <!-- Info Modal -->
-        <div class="modal fade" id="infoModal{{task.id}}" tabindex="-1" aria-labelledby="infoModal{{task.id}}Label" aria-hidden="true">
+        <div class="modal fade" id="infoModal{{task_group.id}}" tabindex="-1" aria-labelledby="infoModal{{task_group.id}}Label" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                <h5 class="modal-title" id="infoModal{{task.id}}Label">Info: {{task.name}}</h5>
+                <h5 class="modal-title" id="infoModal{{task_group.id}}Label">Info: {{task_group.name}}</h5>
                 <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                     <span aria-hidden="true">&times;</span>
                 </button>
@@ -60,13 +58,13 @@ Task are predefined hashcat commands. Any number of tasks can be assigned to a J
             </div>
         </div>
     {% endfor %}
-    {% for task in tasks %}
+    {% for task_group in task_groups %}
     <!-- Edit Modal -->
-        <div class="modal fade" id="resetModal{{task.id}}" tabindex="-1" aria-labelledby="editModal{{task.id}}Label" aria-hidden="true">
+        <div class="modal fade" id="resetModal{{task_group.id}}" tabindex="-1" aria-labelledby="editModal{{task_group.id}}Label" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                <h5 class="modal-title" id="resetModal{{task.id}}Label">Edit Task: {{task.name}}</h5>
+                <h5 class="modal-title" id="resetModal{{task_group.id}}Label">Edit task_group: {{task_group.name}}</h5>
                 <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                     <span aria-hidden="true">&times;</span>
                 </button>
@@ -82,23 +80,26 @@ Task are predefined hashcat commands. Any number of tasks can be assigned to a J
             </div>
         </div>
     {% endfor %}
-    {% for task in tasks %}
+    {% for task_group in task_groups %}
         <!-- DeleteModal -->
-        <div class="modal fade" id="deleteModal{{task.id}}" tabindex="-1" aria-labelledby="deleteModal{{task.id}}Label" aria-hidden="true">
+        <div class="modal fade" id="deleteModal{{task_group.id}}" tabindex="-1" aria-labelledby="deleteModal{{task_group.id}}Label" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                <h5 class="modal-title" id="deleteModal{{task.id}}Label">Delete: {{task.name}} ?</h5>
+                <h5 class="modal-title" id="deleteModal{{task_group.id}}Label">Delete: {{task_group.name}} ?</h5>
                 <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                     <span aria-hidden="true">&times;</span>
                 </button>
                 </div>
                 <div class="modal-body">
-                This will permanantly delete the task. Are you sure you want to continue?
+                This will permanantly delete the task_group. Note, the associtated tasks will not be removed, only the group. Are you sure you want to continue?
                 </div>
                 <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
-                <form action="{{ url_for('tasks.tasks_delete', task_id=task.id) }}" method="POST">
+                <!-- Replace with url_for()
+                <form action="#" method="POST">
+                -->
+                <form action="/task_groups/delete/{{task_group.id}}" method="POST">
                     <input class="btn btn-danger" type="submit" value="Delete">
                 </form>
                 </div>

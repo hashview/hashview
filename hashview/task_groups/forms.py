@@ -4,11 +4,6 @@ from wtforms.validators import DataRequired, ValidationError
 from hashview.models import Wordlists, Rules, Tasks
 from wtforms_sqlalchemy.fields import QuerySelectField
 
-def get_wordlists():
-    return Wordlists.query
-
-def get_rules():
-    return Rules.query
 
 class TaskGroupsForm(FlaskForm):
     name = StringField('Name', validators=([DataRequired()]))

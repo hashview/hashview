@@ -2,8 +2,9 @@ import os
 import secrets
 import hashlib
 import subprocess
-from hashview import mail
-from hashview.models import Settings, Rules, Wordlists
+import hashlib
+from hashview import mail, db
+from hashview.models import Settings, Rules, Wordlists, Hashfiles, HashfileHashes, Hashes
 from flask_mail import Message
 from flask import current_app
 
@@ -54,3 +55,45 @@ def get_keyspace(method, wordlist_id, rule_id, mask):
         return_value = line
 
     return return_value
+
+def get_md5_hash(string):
+    m = hashlib.md5()
+    m.update(string.encode('utf-8'))
+    return m.hexdigest()
+
+def import_hash_only(line, hash_type):
+    hash = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(line), ciphertext=line).first()
+    if hash:
+        return hash.id
+    else:
+        new_hash = Hashes(hash_type=hash_type, sub_ciphertext=get_md5_hash(line), ciphertext=line, cracked=0)
+        db.session.add(new_hash)
+        db.session.commit()
+        return new_hash.id
+
+def import_pwdump(line):
+    return True
+
+def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
+    # Open file
+    file = open(hashfile_path, 'r')
+    lines = file.readlines()
+
+    # for line in file, 
+    for line in lines:
+        if file_type == 'hash_only':
+            hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
+            hashfilehashes = HashfileHashes(hash_id=hash_id, hashfile_id=hashfile_id)
+            db.session.add(hashfilehashes)
+            db.session.commit()
+        else:
+            print(str(file_type))
+            return False
+
+    # - parse each line based on hash type
+    #   - Insert into hashes table with hash type, sub_ciphertext (md5?)
+    #   - Get hash id
+    #   - insert into hashfile hashes, hash.id, username, and hashfile.id
+    
+
+    return True

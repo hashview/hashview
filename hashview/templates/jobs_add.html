@@ -1,0 +1,64 @@
+{% extends "layout.html" %}
+{% block header %}
+<br>
+<h1>Create a new Job</h1>
+<br>
+Provide the Name of the Job and the Customer it is for.
+<br>
+<br>
+<br>
+{% endblock header %}
+{% block content %}
+<script>
+    function showDiv(){
+        var Index = document.getElementById('customer_id'); 
+        // support all other attack types
+        if(Index.value == 'add_new')
+        {
+          document.getElementById('new_customer_div').style.display = 'inline';
+        }
+        else
+        {
+          document.getElementById('new_customer_div').style.display = 'none';
+        }
+    }
+</script>
+<div class="content-section">
+    <form method="POST" action="" enctype="multipart/form-data">
+        {{ jobsForm.hidden_tag() }}
+        <fieldset class="form-group">
+            <div class="form-group">
+                {{ jobsForm.name.label(class="form-control-label") }}
+
+                {% if jobsForm.name.errors %}
+                    {{ jobsForm.name(class="form-control form-control-lg is-invalid") }}
+                    <div class="invalid-feedback">
+                        {% for error in jobsForm.name.errors %}
+                            <span>{{ error }}</span>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    {{ jobsForm.name(class="form-control form-control-lg") }}
+                {% endif %}
+            </div> 
+            <div class="form-group">
+                <label class="form-control-label" for="customer">Customer</label>
+                <select class="form-control form-control-lg" id="customer_id" name="customer_id" onchange="showDiv()" required>
+                    <option value>--SELECT--</option>
+                    {% for customer in customers %}
+                        <option value='{{customer.id}}'>{{customer.name}}</option>
+                    {% endfor %}
+                    <option value='add_new'>New Customer</option>
+                </select>
+            </div>
+            <div class="form-group" style=display:none id="new_customer_div">
+                <label class="control-label col-xs-2" for="">Customer Name</label>
+                <input class="form-control" id="name" name="customer_name" type="textbox">
+            </div>
+        </fieldset>
+        <div class="form-group">
+            {{ jobsForm.submit(class="btn btn-outline-info")}}
+        </div>
+    </form>
+</div>
+{% endblock content %}

@@ -24,7 +24,6 @@ class Users(db.Model, UserMixin):
     tasks = db.relationship('Tasks', backref='owner', lazy=True)
     taskgroups = db.relationship('TaskGroups', backref='owner', lazy=True)
 
-
     def get_reset_token(self, expires_sec=1800):
         s = Serializer(Config.SECRET_KEY, expires_sec)
         return s.dumps({'user_id': self.id}).decode('utf-8')
@@ -49,11 +48,12 @@ class Jobs(db.Model):
     name = db.Column(db.String(50), nullable=False)
     created = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    status = db.Column(db.String(20), nullable=False)       # Running, Paused, Completed, Queued, Canceled, Ready
-    started_at = db.Column(db.DateTime, default=datetime.utcnow)
-    ended_at = db.Column(db.DateTime, default=datetime.utcnow)
-    #hashfile_id = db.Column(db.Integer, db.ForeignKey('hashfile.id'), nullable=False)
-    #customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
+    status = db.Column(db.String(20), nullable=False)               # Running, Paused, Completed, Queued, Canceled, Ready, Incomplete
+    started_at = db.Column(db.DateTime, nullable=True)    # These defaults should be changed
+    ended_at = db.Column(db.DateTime, nullable=True)      # These defaults should be changed
+    #hashfile_id = db.Column(db.Integer, db.ForeignKey('hashfiles.id'), nullable=False) # has to not be a foreign key since during job creation, hashfile_id doesnt exist, unless we want to create a dummy one?
+    hashfile_id = db.Column(db.Integer, nullable=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     notify_completed = db.Column(db.Boolean, nullable=False, default=False)
     jobtasks = db.relationship('JobTasks', backref='tbd', lazy=True)
@@ -78,7 +78,6 @@ class Hashfiles(db.Model):
     # Uploading files: https://www.youtube.com/watch?v=803Ei2Sq-Zs
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(256), nullable=False)        # can probably be reduced
-    hash_str = db.Column(db.String(256), nullable=False)    # can probably be reduced
     uploaded_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     #wl_id = db.Column(db.Integer, db.ForeignKey('wordlists.id'), nullable=False) # for dynamic wordlist. Keep?
     runtime = db.Column(db.Integer, default=0)
@@ -87,7 +86,7 @@ class Hashfiles(db.Model):
 class HashfileHashes(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     hash_id = db.Column(db.Integer, db.ForeignKey('hashes.id'), nullable=False)
-    username = db.Column(db.String(256))
+    username = db.Column(db.String(256), nullable=True, default=None)
     hashfile_id = db.Column(db.Integer, db.ForeignKey('hashfiles.id'), nullable=False)
 
 class Agents(db.Model):
@@ -152,6 +151,6 @@ class Hashes(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sub_ciphertext = db.Column(db.String(32), nullable=False)
     ciphertext = db.Column(db.String(4096), nullable=False)
-    hashtype = db.Column(db.Integer, nullable=False)
+    hash_type = db.Column(db.Integer, nullable=False)
     cracked = db.Column(db.Boolean, nullable=False)
     plaintext = db.Column(db.String(256))

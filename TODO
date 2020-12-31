@@ -1,4 +1,3 @@
-
 Tasks 
     - List 
         - Owner ID -> name
@@ -16,32 +15,48 @@ Tasks
 
 taskgroups
     - List
-        - name 
         - Owner ID -> name
         - Number of Tasks
         - Control
-    - Create TaskGroups
-    - TaskInfo
-        - List associated tasks
-            - Task name 
-            - Task Type
-        - List associated Jobs
-    - Delete TasksGroup
+            - Info
+                - List associated tasks
+                    - Task name 
+                    - Task Type
+                - List associated Jobs
     - Assign Tasks 
-        - only assign tasks if not assigned
-        - Re order tasks
         - Allow for task creation at task assignment (why did i even allow this in the first place)
         - Does it make sense to put these in a form?
         - Dont allow for duplicate tasks to be assigned
 
 Jobs
     - create Jobs
+        - Update Assigned hashfiles to include cracked count of existing hashfiles
+        - Assign Hashfiles
+            - Exising Hashfile
+                - Include Crack count of exsiting hashfiles
+                - Grey out tab if no pre-existing hashfile exists
+            - New hashfiles
+                - Select file format
+                    - Give example (?) on mouse over
+                - Select hash Type
+                    - on other allow user to type in hashtype
+        - Show Cracked hashes
+        - Assign Tasks
+        - Send Notification if complete
+            - Alert on specific hashes being cracked
     - Job info
-    - Delete job
+        - Tasks assigned
+        - creation date
+        - started date
+        - completed date
 
 Analytics
 
+Agents
+    - List Agents
+
 API
+    - Register agent
 
 Add SSL
 - Options in config
@@ -73,6 +88,13 @@ Customers
         - Creation Date
 
 Hashfiles
+    - List customers
+        - List hashfiles
+            - name  
+            - Cracked vs un cracked
+            - Controle
+                - Analytics
+                - Delete
     - if > retention date Delete
         - delete Associated Jobs
         - if no other hashfiles exists for customer, delete customer
@@ -85,6 +107,7 @@ Installtion files
     - install.sh
         - check for python3
         - check for mysql?
+        - Cert Gen
         - pip install
         - create config for db (ask for creds)
             - db username
@@ -119,6 +142,11 @@ Installtion files
 
 Wiki Instruction
 
+Settings
+    - OPTIMIZE TABLE hashes;
+    - OPTIMIZE TABLE hashfile_hashes;
+
+
 DB
 - Add DB indexes
 - Add foreign keys
@@ -148,3 +176,13 @@ Change buttons (info, edit, delete) to Icons
 taskgroups / hashfiles should probably be renamed to task_groups and hash_files, word_lists?
 
 Change dropdown alignment of jobs, tasks, manage (in templates/layout.html)
+
+Form layout
+    - Adjust label\nfield to lable field\n
+        - Task
+        - Customers
+        - Wordlists
+        - Task Lists
+        - Task Groups
+        - Rules
+        - Jobs

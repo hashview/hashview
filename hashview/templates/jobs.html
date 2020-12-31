@@ -4,6 +4,7 @@
 <h1>Jobs</h1>
 <br>
 Jobs contain a series of tasks (hashcat commands). Jobs also have an associated list of hashes to crack.
+<a class="btn btn-success btn-sm mt-1 mb-1" href="{{ url_for('jobs.jobs_add') }}">Create a New Job</a>
 <br>
 <br>
 <br>
@@ -25,16 +26,58 @@ Jobs contain a series of tasks (hashcat commands). Jobs also have an associated 
                 <tbody>
                     {% for job in jobs %}
                         <tr>
-                            <td>Customer</td>
+                            <td>
+                                {% for customer in customers %}
+                                    {% if customer.id == job.customer_id %}
+                                        {{ customer.name }}
+                                    {% endif %}
+                                {% endfor %}
+                            </td>
                             <td>{{ job.name }}</td>
-                            <td>hashfile</td>
+                            <td>TBD</td>
                             <td>{{ job.status }}</td>
-                            <td>{{ job.status }}</td>
-                            <td>INFO/EDIT/DELETE/RSTPASSWD</td>
+                            <td>
+                                {% for user in users %}
+                                    {% if user.id == job.owner_id %}
+                                        {{ user.first_name }} {{ user.last_name }}
+                                    {% endif %}
+                                {% endfor %}
+                            </td>
+                            <td>
+                                <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{job.id}}">start/stop</button>
+                                <button type="button" class="btn btn-warning btn-sm" data-toggle="modal" data-target="#editModal{{job.id}}">Analytics</button>
+                                <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{job.id}}">Info</button>
+                                <button type="button" class="btn btn-warning btn-sm" data-toggle="modal" data-target="#editModal{{job.id}}">Edit</button>
+                                <button type="button" class="btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal{{job.id}}">Delete</button>
+                            </td>
                         </tr>
                     {% endfor %}
                 </tbody>
               </table>
         </div>
     </article>
+    {% for job in jobs %}
+    <!-- DeleteModal -->
+    <div class="modal fade" id="deleteModal{{job.id}}" tabindex="-1" aria-labelledby="deleteModal{{job.id}}Label" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+            <h5 class="modal-title" id="deleteModal{{job.id}}Label">Delete: {{job.name}} ?</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+            </button>
+            </div>
+            <div class="modal-body">
+            This will permanantly delete the job. Are you sure you want to continue?
+            </div>
+            <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
+            <form action="{{ url_for('jobs.jobs_delete', job_id=job.id) }}" method="POST">
+                <input class="btn btn-danger" type="submit" value="Delete">
+            </form>
+            </div>
+        </div>
+        </div>
+    </div>
+{% endfor %}
 {% endblock content %}

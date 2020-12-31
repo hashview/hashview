@@ -1,0 +1,150 @@
+{% extends "layout.html" %}
+{% block header %}
+<br>
+<h1>Assign Hashes for: {{job.name}}</h1>
+<br>
+Apply hashes to be cracked. You can either copy/paste the desired hashes below, upload a new hashfile, or select from an existing file.
+<br>
+<br>
+<br>
+{% endblock header %}
+{% block content %}
+<script>
+    function showHashTypeSelect(){
+        document.getElementById('hash_type_div').style.display = 'inline';
+    }
+    function showHashFileSubmit(){
+        document.getElementById('hashfile_div').style.display = 'inline';
+    }
+</script>
+<nav>
+    <div class="nav nav-tabs" id="nav-tab" role="tablist">
+        <a class="nav-link active" id="nav-new-hashfile-tab" data-toggle="tab" href="#nav-new-hashfile" role="tab" aria-controls="nav-new-hashfile" aria-selected="true">New Hashfile</a>
+        <a class="nav-link" id="nav-existing-hashfile-tab" data-toggle="tab" href="#nav-existing-hashfile" role="tab" aria-controls="nav-existing-hashfile" aria-selected="false">Existing Hashfile</a>
+    </div>
+</nav>
+<div class="tab-content" id="nav-tabContent">
+    <div class="tab-pane fade show active" id="nav-new-hashfile" role="tabpanel" aria-labelledby="nav-new-hashfile-tab">
+        <br>
+        <div class="content-section">
+            <form action='' id='hf_form' method='post' name='hf_form' enctype='multipart/form-data'>
+                {{ jobsNewHashFileForm.hidden_tag() }}
+                <fieldset class="form-group">
+                    <!-- Hash File Format-->
+                    <div class="form-group">
+                        {{ jobsNewHashFileForm.file_type.label(class="form-control-label") }}
+                        {% if jobsNewHashFileForm.file_type.errors %}
+                            {{ jobsNewHashFileForm.file_type(class="form-control form-control-lg is-invalid") }}
+                            <div class="invalid-feedback">
+                                {% for error in jobsNewHashFileForm.file_type.errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ jobsNewHashFileForm.file_type(class="form-control form-control-lg", onchange="showHashTypeSelect()") }}
+                        {% endif %}
+                    </div> 
+                    <!-- Hash Type-->
+                    <div class="form-group" style=display:none id="hash_type_div">
+                        {{ jobsNewHashFileForm.hash_type.label(class="form-control-label") }}
+
+                        {% if jobsNewHashFileForm.hash_type.errors %}
+                            {{ jobsNewHashFileForm.hash_type(class="form-control form-control-lg is-invalid") }}
+                            <div class="invalid-feedback">
+                                {% for error in jobsNewHashFileForm.hash_type.errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ jobsNewHashFileForm.hash_type(class="form-control form-control-lg", onchange="showHashFileSubmit()") }}
+                        {% endif %}
+                    </div>
+                    <!-- Hashfile Content -->
+                    <div class="form-group" style=display:none id="hashfile_div">
+                        <br>
+                        <br>
+                        <label class="form-control-label" for="hash_type">Hash File Content</label>
+                        <ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
+                            <li class="nav-item" role="presentation">
+                            <a class="nav-link active" id="pills-home-tab" data-toggle="pill" href="#pills-home" role="tab" aria-controls="pills-home" aria-selected="true">Individual Hashes</a>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                            <a class="nav-link" id="pills-profile-tab" data-toggle="pill" href="#pills-profile" role="tab" aria-controls="pills-profile" aria-selected="false">File Upload</a>
+                            </li>
+                        </ul>
+                        <!-- Copy / Paste -->
+                        <div class="tab-content" id="pills-tabContent">
+                            <div class="tab-pane fade show active" id="pills-home" role="tabpanel" aria-labelledby="pills-home-tab">
+                                <div class="form-group">
+                                    {{ jobsNewHashFileForm.name.label(class="form-control-label") }}
+
+                                    {% if jobsNewHashFileForm.name.errors %}
+                                        {{ jobsNewHashFileForm.name(class="form-control form-control-lg is-invalid") }}
+                                        <div class="invalid-feedback">
+                                            {% for error in jobsNewHashFileForm.name.errors %}
+                                                <span>{{ error }}</span>
+                                            {% endfor %}
+                                        </div>
+                                    {% else %}
+                                        {{ jobsNewHashFileForm.name(class="form-control form-control-lg", onchange="showHashFileSubmit()") }}
+                                    {% endif %}
+                                </div>
+                                <div class="form-group">
+                                    {{ jobsNewHashFileForm.hashfilehashes.label(class="form-control-label") }}
+
+                                    {% if jobsNewHashFileForm.hashfilehashes.errors %}
+                                        {{ jobsNewHashFileForm.hashfilehashes(class="form-control form-control-lg is-invalid") }}
+                                        <div class="invalid-feedback">
+                                            {% for error in jobsNewHashFileForm.hashfilehashes.errors %}
+                                                <span>{{ error }}</span>
+                                            {% endfor %}
+                                        </div>
+                                    {% else %}
+                                        {{ jobsNewHashFileForm.hashfilehashes(class="form-control form-control-lg", onchange="showHashFileSubmit()") }}
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <!-- File Upload -->
+                            <div class="tab-pane fade" id="pills-profile" role="tabpanel" aria-labelledby="pills-profile-tab">
+                                <div class="form-group">
+                                    {{ jobsNewHashFileForm.hashfile.label() }}
+                                    {{ jobsNewHashFileForm.hashfile(class="form-control-file") }}
+                                    {% if jobsNewHashFileForm.hashfile.errors %}
+                                        {% for error in jobsNewHashFileForm.hashfile.errors %}
+                                            <span class="text-danger">{{ error }}</span></br>
+                                        {% endfor %}
+                                    {% endif %}  
+                                </div> 
+                            </div>
+                        </div>
+                    </div>
+                </fieldset>
+                <br>
+                <div class="form-group">
+                    <button class='btn btn-primary' type='submit'>Next</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="tab-pane fade" id="nav-existing-hashfile" role="tabpanel" aria-labelledby="nav-existing-hashfile-tab">
+        <br>
+        <div class="content-section">
+            <form action='/jobs/assign_hashfile' class='form-horizontal' id='hf_form' method='post' name='hf_form'>
+                <fieldset class="form-group">
+                    <div class="form-group">
+                        <label class="form-control-label" for="hashfile">Hashfile</label>
+                        <select class="form-control form-control-lg" id="hashfile_id" name="hashfile_id">
+                            {% for hashfile in hashfiles %}
+                                <option value='{{hashfile.id}}'>{{hashfile.name}}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </fieldset>
+                <div class="form-group">
+                    <button class='btn btn-primary' type='submit'>Next</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock content %}

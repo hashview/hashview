@@ -34,7 +34,13 @@ Jobs contain a series of tasks (hashcat commands). Jobs also have an associated 
                                 {% endfor %}
                             </td>
                             <td>{{ job.name }}</td>
-                            <td>TBD</td>
+                            <td>
+                                {% for hashfile in hashfiles %}
+                                    {% if hashfile.id == job.hashfile_id %}
+                                        {{ hashfile.name }}
+                                    {% endif %}
+                                {% endfor %}
+                            </td>
                             <td>{{ job.status }}</td>
                             <td>
                                 {% for user in users %}

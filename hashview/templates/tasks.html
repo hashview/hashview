@@ -16,6 +16,7 @@ Task are predefined hashcat commands. Any number of tasks can be assigned to a J
                 <thead>
                   <tr>
                     <th scope="col">Task Name</th>
+                    <th scope="col">Owner</th>
                     <th scope="col">Type</th>
                     <th scope="col">Keyspace</th>
                     <th scope="col">Control</th>
@@ -25,6 +26,13 @@ Task are predefined hashcat commands. Any number of tasks can be assigned to a J
                     {% for task in tasks %}
                         <tr>
                             <td>{{ task.name }}</td>
+                            <td>
+                                {% for user in users %}
+                                    {% if user.id == task.owner_id %}
+                                        {{ user.first_name }} {{ user.last_name }}
+                                    {% endif %}
+                                {% endfor %}
+                            </td>
                             <td>{{ task.hc_attackmode}}</td>
                             <td>{{ task.keyspace }}</td>
                             <td>
@@ -50,7 +58,33 @@ Task are predefined hashcat commands. Any number of tasks can be assigned to a J
                 </button>
                 </div>
                 <div class="modal-body">
-                ...
+                    <table class="table">
+                        <thead>
+                          <tbody>
+                              <tr>
+                                <th scope="row">Associated Jobs</th>
+                                <td>
+                                    {% for job_task in job_tasks %}
+                                        {% if job_task.task_id == task.id %}
+                                            {% for job in jobs %}
+                                                {% if job.id = job_task.id%}
+                                                    {{ job.name }} <br>
+                                                {% endif %}
+                                            {% endfor %}
+                                        {% endif %}
+                                    {% endfor %}
+                                </td>
+                              </tr>
+                              <tr>
+                                <th scope="row">Associated Wordlists</th>
+                                <td>foo</td>
+                              </tr>
+                              <tr>                              
+                                <th scope="row">Associated TaskGroups</th>
+                                <td>foo</td>
+                              </tr>
+                          </tbody>
+                      </table>
                 </div>
                 <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>

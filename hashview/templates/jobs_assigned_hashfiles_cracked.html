@@ -1,0 +1,35 @@
+{% extends "layout.html"%}
+{% block header %}
+<br>
+<h1>Local Check</h1>
+<br>
+The following hashes are already cracked in Hashview's Local database!
+<br>
+<br>
+<br>
+{% endblock header %}
+{% block content %}
+    <article class="media content-section">
+        <div class="media-body">
+            <table class="table">
+                <thead>
+                  <tr>
+                    <th scope="col">Username</th>
+                    <th scope="col">Cipher Text</th>
+                    <th scope="col">Plaintext</th>          
+                  </tr>
+                </thead>
+                <tbody>
+                    {% for entry in cracked_hashfiles_hashes %}
+                        <tr>
+                            <td>{{entry[1].username}}</td>
+                            <td>{{entry[0].ciphertext}}</td>
+                            <td>{{entry[0].plaintext}}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+              </table>
+        </div>
+    </article>
+    <a class="btn btn-primary" href="/jobs/{{job.id}}/tasks" role="button">Next</a>
+{% endblock content %}

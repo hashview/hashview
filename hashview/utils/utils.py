@@ -83,12 +83,17 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
     for line in lines:
         if file_type == 'hash_only':
             hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
-            hashfilehashes = HashfileHashes(hash_id=hash_id, hashfile_id=hashfile_id)
-            db.session.add(hashfilehashes)
-            db.session.commit()
+            username = None
+        elif file_type == 'pwdump':
+            # do we let user select LM so that we crack those instead of NTLM?
+            hash_id = import_hash_only(line=line.split(':')[3], hash_type='1000')
+            username = line.split(':')[0]
         else:
             print(str(file_type))
             return False
+        hashfilehashes = HashfileHashes(hash_id=hash_id, username=username, hashfile_id=hashfile_id)
+        db.session.add(hashfilehashes)
+        db.session.commit()
 
     # - parse each line based on hash type
     #   - Insert into hashes table with hash type, sub_ciphertext (md5?)

@@ -1,6 +1,4 @@
 Tasks 
-    - List 
-        - Owner ID -> name
     - Create Task
         - Support Bruteforce task
         - Support combinator task
@@ -40,8 +38,11 @@ Jobs
                     - Give example (?) on mouse over
                 - Select hash Type
                     - on other allow user to type in hashtype
+                - Support pwdump format
         - Show Cracked hashes
         - Assign Tasks
+            - Should probably be a form :/
+            - Remove task from assignable tasks that are already assigned to the job
         - Send Notification if complete
             - Alert on specific hashes being cracked
     - Job info
@@ -51,6 +52,23 @@ Jobs
         - completed date
 
 Analytics
+    - Set color scheme to look good
+    - download pngs
+    - graphlets
+    - Total Hashes Cracked vs uncracked
+    - Total unique cracked vs uncracked
+    - Char composisition
+    - Stats
+        - Total hashes
+        - total unique hashes
+        - total runtime
+        - Download cracked
+        - download all
+    - Top 10 masks
+    - Top 10 passwords
+    - top 10 passwords by length
+    - Top 20 users per single hash/password
+    - All duplicates?
 
 Agents
     - List Agents
@@ -64,6 +82,11 @@ Add SSL
 Support for retention
 
 Move wordlists / rules out of admin only view
+
+Search
+    - Export Results
+    - Search by hash
+    - search by user
 
 Wordlists
     - info
@@ -98,6 +121,7 @@ Hashfiles
     - if > retention date Delete
         - delete Associated Jobs
         - if no other hashfiles exists for customer, delete customer
+    - let non-admins delete hashfiles?
 
 Change 'user/wordlist/task/customer add's into popup'
 
@@ -186,3 +210,10 @@ Form layout
         - Task Groups
         - Rules
         - Jobs
+
+Users
+    - Delete   
+        - Remove all 
+            - wordlists
+            - jobs
+            - tasks

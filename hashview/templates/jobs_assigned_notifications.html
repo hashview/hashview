@@ -1,0 +1,65 @@
+{% extends "layout.html"%}
+{% block header %}
+<br>
+<h1>Notifications</h1>
+<br>
+Would you like to be notified when the job completes AND/OR when specific hashes are cracked. Note, cracked hash notifications will persist after job has been completed or removed.
+<br>
+<br>
+<br>
+{% endblock header %}
+{% block content %}
+<div class="content-section">
+    <form method="POST" action="">
+        {{ form.hidden_tag() }}
+        <fieldset class="form-group">
+           <div class="form-group">
+            {{ form.job_completion.label(class="form-control-label") }}
+
+            {% if form.job_completion.errors %}
+                {{ form.job_completion(class="form-control form-control-lg is-invalid") }}
+                <div class="invalid-feedback">
+                    {% for error in form.job_completion.errors %}
+                        <span>{{ error }}</span>
+                    {% endfor %}
+                </div>
+            {% else %}
+                {{ form.job_completion(class="form-control form-control-lg") }}
+            {% endif %}
+           </div> 
+           <div class="form-group">
+            {{ form.cracked_hash.label(class="form-control-label") }}
+
+            {% if form.cracked_hash.errors %}
+                {{ form.cracked_hash(class="form-control form-control-lg is-invalid") }}
+                <div class="invalid-feedback">
+                    {% for error in form.cracked_hash.errors %}
+                        <span>{{ error }}</span>
+                    {% endfor %}
+                </div>
+            {% else %}
+                {{ form.cracked_hash(class="form-control form-control-lg") }}
+            {% endif %}            
+
+           </div> 
+           <div class="form-group">
+            {{ form.hashes.label(class="form-control-label") }}
+
+            {% if form.hashes.errors %}
+                {{ form.hashes(class="form-control form-control-lg is-invalid") }}
+                <div class="invalid-feedback">
+                    {% for error in form.hashes.errors %}
+                        <span>{{ error }}</span>
+                    {% endfor %}
+                </div>
+            {% else %}
+                {{ form.hashes(class="form-control form-control-lg") }}
+            {% endif %}    
+           </div> 
+        </fieldset>
+        <div class="form-group">
+            {{ form.submit(class="btn btn-outline-info")}}
+        </div>
+    </form>
+</div>
+{% endblock content %}

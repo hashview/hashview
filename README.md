@@ -9,11 +9,15 @@
 
 1. Hashcat installed and working (https://hashcat.net/hashcat/)  
 2. Hashcat installed and working (just double checking)  
-3. Python 3.6+   
+3. Python 3.7+
+4. Mysql DB installed with known username/password   
 
 ## Installation
 
-Involves installing mysql, resque, and a ruby app (see wiki)  
+git clone https://github.com/hashview/hashview/
+cd hashview
+sh install.sh
+
 [Installation Instructions](https://github.com/hashview/hashview/wiki/01_Installing-Hashview)
 
 ### Developing and Contributing

@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, SubmitField, IntegerField, SelectField, TextAreaField, FileField
+from wtforms import StringField, SubmitField, IntegerField, SelectField, TextAreaField, FileField, SelectMultipleField, widgets
 from wtforms.validators import DataRequired, ValidationError, Optional
 from hashview.models import Jobs, Hashfiles
 
@@ -41,12 +41,20 @@ class JobsNewHashFileForm(FlaskForm):
     hashfile = FileField('Upload Hashfile')
     submit = SubmitField('Next')
 
+class JobsNotifyHashes(SelectMultipleField):
+    widget = widgets.ListWidget(prefix_label=False)
+    option_widget = widgets.CheckboxInput()
+
 class JobsNotificationsForm(FlaskForm):
     job_completion = SelectField('Notify when Job completes', choices=[('', 'No'),
                                                                         ('email', 'Send Email'),
                                                                         ('push', 'Send Push Notification')], validators=[DataRequired()])
-    cracked_hash = SelectField('Notify when specific hashes crack', choices=[('', 'No'),
+    hash_completion = SelectField('Notify when specific hashes crack', choices=[('', 'No'),
                                                                         ('email', 'Send Email'),
                                                                         ('push', 'Send Push Notification')], validators=[DataRequired()])
-    hashes = StringField('Select Specific Hashes')
+    hashes = JobsNotifyHashes('Select Hashes', coerce=int)
     submit = SubmitField('Next')
+
+class JobSummaryForm(FlaskForm):
+    cancel = SubmitField('Cancel')
+    submit = SubmitField('Complete')

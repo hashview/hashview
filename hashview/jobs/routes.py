@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, redirect, abort, flash, url_for, current_app
 from flask_login import login_required, current_user
-from hashview.jobs.forms import JobsForm, JobsNewHashFileForm, JobsNotificationsForm
+from hashview.jobs.forms import JobsForm, JobsNewHashFileForm, JobsNotificationsForm, JobSummaryForm
 from hashview.models import Jobs, Customers, Hashfiles, Users, HashfileHashes, Hashes, JobTasks, Tasks
 from hashview.utils.utils import save_file, get_filehash, import_hashfilehashes
 from hashview import db
@@ -14,7 +14,8 @@ def jobs_list():
     jobs = Jobs.query.all()
     customers = Customers.query.all()
     users = Users.query.all()
-    return render_template('jobs.html', title='Jobs', jobs=jobs, customers=customers, users=users)
+    hashfiles = Hashfiles.query.all()
+    return render_template('jobs.html', title='Jobs', jobs=jobs, customers=customers, users=users, hashfiles=hashfiles)
 
 @jobs.route("/jobs/add", methods=['GET', 'POST'])
 @login_required
@@ -232,9 +233,27 @@ def jobs_remove_task(job_id, task_id):
 def jobs_assign_notifications(job_id):
     form = JobsNotificationsForm()
     job = Jobs.query.get(job_id)
-    uncracked_hashfile_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()
+
+    # populate the forms dynamically with the choices in the database
+    form.hashes.choices = [(str(c[0].id), c[0].ciphertext) for c in db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()]
     
-    return render_template('jobs_assigned_notifications.html', title='Jobs Assigned Notifications', job=job, uncracked_hashfile_hashes=uncracked_hashfile_hashes, form=form)
+    if form.validate_on_submit():
+        if form.job_completion.data:
+            if form.job_completion.data == 'email':
+                # Do something
+                print('user wants an email')
+            if form.job_completion.data == 'push':
+                # Do another thing
+                print('user wants a push')
+        if form.hash_completion.data:
+            if form.hash_completion.data == 'email':
+                print( 'user wants an email')
+            if form.hash_completion.data == 'push':
+                print('user wants a push')
+        
+        return redirect("/jobs/"+str(job_id)+"/summary")
+    else:
+        return render_template('jobs_assigned_notifications.html', title='Jobs Assigned Notifications', job=job, form=form)
 
 
 @jobs.route("/jobs/delete/<int:job_id>", methods=['GET', 'POST'])
@@ -242,9 +261,27 @@ def jobs_assign_notifications(job_id):
 def jobs_delete(job_id):
     job = Jobs.query.get(job_id)
     if current_user.admin or job.owner_id == current_user.id:
+        JobTasks.query.filter_by(job_id=job_id).delete()
+        # Do we need to commit this twice?
+        db.session.commit()
+
         db.session.delete(job)
         db.session.commit()
         flash('Job has been deleted!', 'success')
         return redirect(url_for('jobs.jobs_list'))
     else:
-        abort(403)
+        flash('You do not have rights to delete this job!', 'danger')
+        return redirect(url_for('jobs.jobs_list'))
+
+
+@jobs.route("/jobs/<int:job_id>/summary", methods=['GET', 'POST'])
+@login_required
+def jobs_summary(job_id):
+    job = Jobs.query.get(job_id)
+    form = JobSummaryForm()
+
+    if form.validate_on_submit():
+        print('process response')
+        #set jobstatus to ready
+    else:
+        return render_template('jobs_summary.html', title='Job Summary', job=job, form=form)

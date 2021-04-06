@@ -38,13 +38,10 @@ Jobs
                     - Give example (?) on mouse over
                 - Select hash Type
                     - on other allow user to type in hashtype
-                - Support pwdump format
         - Show Cracked hashes
         - Assign Tasks
             - Should probably be a form :/
             - Remove task from assignable tasks that are already assigned to the job
-        - Send Notification if complete
-            - Alert on specific hashes being cracked
     - Job info
         - Tasks assigned
         - creation date
@@ -217,3 +214,10 @@ Users
             - wordlists
             - jobs
             - tasks
+
+Notifications
+    - One or two tables?
+    - Code to run upon job completion
+    - Code to run upon hash Cracked
+    - how to handle deletion of job
+    - how to handle deletion of user

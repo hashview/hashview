@@ -9,6 +9,20 @@ Would you like to be notified when the job completes AND/OR when specific hashes
 <br>
 {% endblock header %}
 {% block content %}
+<script>
+    function showHashes(){
+        var Index = document.getElementById('hash_completion'); 
+        // support all other attack types
+        if(Index.value == 'email' || Index.value == 'push')
+        {
+          document.getElementById('hashes').style.display = 'inline';
+        }
+        else
+        {
+          document.getElementById('hashes').style.display = 'none';
+        }
+    }
+</script>
 <div class="content-section">
     <form method="POST" action="">
         {{ form.hidden_tag() }}
@@ -28,21 +42,21 @@ Would you like to be notified when the job completes AND/OR when specific hashes
             {% endif %}
            </div> 
            <div class="form-group">
-            {{ form.cracked_hash.label(class="form-control-label") }}
+            {{ form.hash_completion.label(class="form-control-label") }}
 
-            {% if form.cracked_hash.errors %}
-                {{ form.cracked_hash(class="form-control form-control-lg is-invalid") }}
+            {% if form.hash_completion.errors %}
+                {{ form.hash_completion(class="form-control form-control-lg is-invalid") }}
                 <div class="invalid-feedback">
-                    {% for error in form.cracked_hash.errors %}
+                    {% for error in form.hash_completion.errors %}
                         <span>{{ error }}</span>
                     {% endfor %}
                 </div>
             {% else %}
-                {{ form.cracked_hash(class="form-control form-control-lg") }}
+                {{ form.hash_completion(class="form-control form-control-lg", onchange="showHashes()") }}
             {% endif %}            
 
            </div> 
-           <div class="form-group">
+           <div class="form-group" style=display:none id="hashes">
             {{ form.hashes.label(class="form-control-label") }}
 
             {% if form.hashes.errors %}
@@ -50,15 +64,20 @@ Would you like to be notified when the job completes AND/OR when specific hashes
                 <div class="invalid-feedback">
                     {% for error in form.hashes.errors %}
                         <span>{{ error }}</span>
-                    {% endfor %}
+                    {% endfor %}s
                 </div>
             {% else %}
-                {{ form.hashes(class="form-control form-control-lg") }}
+                {% for hash in form.hashes %}
+                <div class="form-check">
+                    {{ hash(class="form-check-input") }}
+                    {{ hash.label(class="form-check-label") }}
+                </div>
+                {% endfor %}
             {% endif %}    
            </div> 
         </fieldset>
         <div class="form-group">
-            {{ form.submit(class="btn btn-outline-info")}}
+            {{ form.submit(class="btn btn-primary")}}
         </div>
     </form>
 </div>

@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, redirect, abort, flash, url_for, current_app
 from flask_login import login_required, current_user
-from hashview.jobs.forms import JobsForm, JobsNewHashFileForm
-from hashview.models import Jobs, Customers, Hashfiles, Users
+from hashview.jobs.forms import JobsForm, JobsNewHashFileForm, JobsNotificationsForm
+from hashview.models import Jobs, Customers, Hashfiles, Users, HashfileHashes, Hashes, JobTasks, Tasks
 from hashview.utils.utils import save_file, get_filehash, import_hashfilehashes
 from hashview import db
 import os
@@ -41,7 +41,7 @@ def jobs_add():
 
 @jobs.route("/jobs/<int:job_id>/assigned_hashfile/", methods=['GET', 'POST'])
 @login_required
-def jobs_assigned_hashfiles(job_id):
+def jobs_assigned_hashfile(job_id):
     job = Jobs.query.get(job_id)
     hashfiles = Hashfiles.query.filter_by(customer_id=job.customer_id)
     jobsNewHashFileForm = JobsNewHashFileForm()
@@ -65,11 +65,13 @@ def jobs_assigned_hashfiles(job_id):
                                             ):
                 return ('Something went wrong')
 
-            # Delete hashfile
+            # Delete hashfile file on disk
             # TODO
+            job.hashfile_id = hashfile.id
+            db.session.commit()
 
             return redirect(str(hashfile.id))
-            #return redirect(url_for('wordlists.wordlists_list'))  
+  
         elif jobsNewHashFileForm.hashfilehashes:
             # User submitted copied/pasted hashes
 
@@ -80,7 +82,7 @@ def jobs_assigned_hashfiles(job_id):
             db.session.commit()
             
 
-                        # Delete hashfile
+            # Delete hashfile
             # TODO
     else:
         for error in jobsNewHashFileForm.name.errors:
@@ -102,13 +104,138 @@ def jobs_assigned_hashfiles(job_id):
 
 @jobs.route("/jobs/<int:job_id>/assigned_hashfile/<int:hashfile_id>", methods=['GET'])
 @login_required
-def jobs_assigned_hashfiles_cracked(job_id, hashfile_id):
+def jobs_assigned_hashfile_cracked(job_id, hashfile_id):
     job = Jobs.query.get(job_id)
     hashfile = Hashfiles.query.get(hashfile_id)
+    # Can be optimized to only return the hash and plaintext
+    cracked_hashfiles_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).all()
     # Oppertunity for either a stored procedure or for some fancy queries.
-
  
-    return render_template('jobs_assigned_hashfiles_cracked.html', title='Jobs Assigned Hashfiles Cracked', hashfile=hashfile, job=job)
+    return render_template('jobs_assigned_hashfiles_cracked.html', title='Jobs Assigned Hashfiles Cracked', hashfile=hashfile, job=job, cracked_hashfiles_hashes=cracked_hashfiles_hashes)
+
+@jobs.route("/jobs/<int:job_id>/tasks", methods=['GET'])
+@login_required
+def jobs_list_tasks(job_id):
+    job = Jobs.query.get(job_id)
+    tasks = Tasks.query.all()
+    job_tasks = JobTasks.query.filter_by(job_id=job_id)
+    # Right now wer're doing nested loops in the template, this could probably be solved with a left/join select
+
+    return render_template('jobs_assigned_tasks.html', title='Jobs Assigned Tasks', job=job, tasks=tasks, job_tasks=job_tasks)
+
+@jobs.route("/jobs/<int:job_id>/assign_task/<int:task_id>", methods=['GET'])
+@login_required
+def jobs_assigned_task(job_id, task_id):
+    task = Tasks.query.get(task_id)
+    #exists = JobTasks.query.filter_by(job_id=job_id, task_id=task_id)
+    #if exists:
+    #    flash('Task already assigned to the job.', 'warning')
+    #else:
+    job_task = JobTasks(job_id=job_id, task_id=task_id, status='Not Started', keyspace_pos=0, keyspace=task.keyspace)
+    db.session.add(job_task)
+    db.session.commit()
+
+    return redirect("/jobs/"+str(job_id)+"/tasks")
+
+@jobs.route("/jobs/<int:job_id>/move_task_up/<int:task_id>", methods=['GET'])
+@login_required
+def jobs_move_task_up(job_id, task_id):
+    job = Jobs.query.get(job_id)
+    job_tasks = JobTasks.query.filter_by(job_id=job_id).all()
+    tasks = Tasks.query.all()
+    
+    # We create an array of all related jobtasks, remove existing jobtasks, re-arrange, and create new jobtasks (this way we dont have to worry about non-contigous jobtasks ids)
+    temp_jobtasks = []
+    new_jobtasks = []
+
+    for entry in job_tasks:
+        temp_jobtasks.append(str(entry.task_id))
+
+    if temp_jobtasks[0] == str(task_id):
+        flash('Task is already at the top', 'warning')
+        return redirect("/jobs/"+str(job_id)+"/tasks")
+    else:
+        setLength = len(temp_jobtasks) - 1
+        elementIndex = temp_jobtasks.index(str(task_id))
+        temp_value = temp_jobtasks[elementIndex - 1]
+        temp_jobtasks[elementIndex - 1] = str(task_id)
+        temp_jobtasks[elementIndex] = str(temp_value)
+            
+    new_jobtasks = temp_jobtasks
+
+    JobTasks.query.filter_by(job_id=job_id).delete()
+    db.session.commit()
+
+    for entry in new_jobtasks:
+        keyspace = 0
+        for task in tasks:
+            if task.id == entry:
+                keyspace = task.keyspace
+        job_task = JobTasks(job_id=job_id, task_id=entry, status='Not Started', keyspace_pos=0, keyspace=keyspace)
+        db.session.add(job_task)
+        db.session.commit()
+
+    return redirect("/jobs/"+str(job_id)+"/tasks")
+
+@jobs.route("/jobs/<int:job_id>/move_task_down/<int:task_id>", methods=['GET'])
+@login_required
+def jobs_move_task_down(job_id, task_id):
+    job = Jobs.query.get(job_id)
+    job_tasks = JobTasks.query.filter_by(job_id=job_id).all()
+    tasks = Tasks.query.all()
+    
+    # We create an array of all related jobtasks, remove existing jobtasks, re-arrange, and create new jobtasks (this way we dont have to worry about non-contigous jobtasks ids)
+    temp_jobtasks = []
+    new_jobtasks = []
+
+    for entry in job_tasks:
+        temp_jobtasks.append(str(entry.task_id))
+
+    if temp_jobtasks[-1] == str(task_id):
+        flash('Task is already at the bottom', 'warning')
+        return redirect("/jobs/"+str(job_id)+"/tasks")
+    else:
+        for index in range(len(temp_jobtasks)):
+            if int(index+1) <= len(temp_jobtasks):
+                if  temp_jobtasks[int(index)] == str(task_id):
+                    new_jobtasks.append(temp_jobtasks[int(index+1)])
+                    new_jobtasks.append(str(task_id))
+                    del temp_jobtasks[int(index+1)]
+                else:
+                    new_jobtasks.append(temp_jobtasks[int(index)])
+    
+    JobTasks.query.filter_by(job_id=job_id).delete()
+    db.session.commit()
+
+    for entry in new_jobtasks:
+        keyspace = 0
+        for task in tasks:
+            if task.id == entry:
+                keyspace = task.keyspace
+        job_task = JobTasks(job_id=job_id, task_id=entry, status='Not Started', keyspace_pos=0, keyspace=keyspace)
+        db.session.add(job_task)
+        db.session.commit()
+
+    return redirect("/jobs/"+str(job_id)+"/tasks")
+
+@jobs.route("/jobs/<int:job_id>/remove_task/<int:task_id>", methods=['GET'])
+@login_required
+def jobs_remove_task(job_id, task_id):
+    job_task = JobTasks.query.filter_by(job_id=job_id, task_id=task_id).first()
+    db.session.delete(job_task)
+    db.session.commit()
+
+    return redirect("/jobs/"+str(job_id)+"/tasks")
+
+@jobs.route("/jobs/<int:job_id>/notifications", methods=['GET', 'POST'])
+@login_required
+def jobs_assign_notifications(job_id):
+    form = JobsNotificationsForm()
+    job = Jobs.query.get(job_id)
+    uncracked_hashfile_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()
+    
+    return render_template('jobs_assigned_notifications.html', title='Jobs Assigned Notifications', job=job, uncracked_hashfile_hashes=uncracked_hashfile_hashes, form=form)
+
 
 @jobs.route("/jobs/delete/<int:job_id>", methods=['GET', 'POST'])
 @login_required

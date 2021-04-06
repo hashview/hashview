@@ -1,0 +1,94 @@
+{% extends "layout.html"%}
+{% block header %}
+<br>
+<h1>Agents</h1>
+<br>
+Agents are remote workers that process distributed hashcat jobs.
+<br>
+<br>
+<br>
+{% endblock header %}
+{% block content %}
+    <article class="media content-section">
+        <div class="media-body">
+            <table class="table">
+                <thead>
+                  <tr>
+                    <th scope="col">Agent Name</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">IP</th>
+                    <th scope="col">Speed</th>
+                    <th scope="col">Last Heartbeat</th>
+                    <th scope="col">Control</th>                   
+                  </tr>
+                </thead>
+                <tbody>
+                    {% for agent in agents %}
+                        <tr>
+                            <td>{{ agent.name }}</td>
+                            <td>{{ agent.status }}</td>
+                            <td>{{ agent.src_ip }}</td>
+                            <td>{{ agent.benchmark }}</td>
+                            <td>{{ agent.last_checkin}}</td>
+                            <td>
+                                {% if agent.status == 'Pending' %}
+                                    <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{agent.id}}">Authorize</button>
+                                {% else %}
+                                    <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{agent.id}}">Deauthorize</button>
+                                {% endfor %}
+                                <button type="button" class="btn btn-warning btn-sm" data-toggle="modal" data-target="#editModal{{agent.id}}">Edit</button>
+                                <button type="button" class="btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal{{agent.id}}">Delete</button>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+              </table>
+        </div>
+    </article>
+    {% for agent in agents %}
+    <!-- EditModal -->
+    <div class="modal fade" id="editModal{{agent.id}}" tabindex="-1" aria-labelledby="editModal{{agent.id}}Label" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+            <h5 class="modal-title" id="editModal{{agent.id}}Label">Edit: {{edit.name}} ?</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+            </button>
+            </div>
+            <div class="modal-body">
+            This will permanantly delete the job. Are you sure you want to continue?
+            </div>
+            <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
+            <form action="{{ url_for('agents.agent_edit', agent_id=agent.id) }}" method="POST">
+                <input class="btn btn-danger" type="submit" value="Update">
+            </form>
+            </div>
+        </div>
+        </div>
+    </div>
+    <!-- DeleteModal -->
+    <div class="modal fade" id="deleteModal{{agent.id}}" tabindex="-1" aria-labelledby="deleteModal{{agent.id}}Label" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+            <h5 class="modal-title" id="deleteModal{{agent.id}}Label">Delete: {{agent.name}} ?</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+            </button>
+            </div>
+            <div class="modal-body">
+            This will permanantly delete the job. Are you sure you want to continue?
+            </div>
+            <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
+            <form action="{{ url_for('agents.agent_delete', agent_id=agent.id) }}" method="POST">
+                <input class="btn btn-danger" type="submit" value="Delete">
+            </form>
+            </div>
+        </div>
+        </div>
+    </div>
+{% endfor %}
+{% endblock content %}

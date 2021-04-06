@@ -40,3 +40,13 @@ class JobsNewHashFileForm(FlaskForm):
     hashfilehashes = TextAreaField('Hashes')
     hashfile = FileField('Upload Hashfile')
     submit = SubmitField('Next')
+
+class JobsNotificationsForm(FlaskForm):
+    job_completion = SelectField('Notify when Job completes', choices=[('', 'No'),
+                                                                        ('email', 'Send Email'),
+                                                                        ('push', 'Send Push Notification')], validators=[DataRequired()])
+    cracked_hash = SelectField('Notify when specific hashes crack', choices=[('', 'No'),
+                                                                        ('email', 'Send Email'),
+                                                                        ('push', 'Send Push Notification')], validators=[DataRequired()])
+    hashes = StringField('Select Specific Hashes')
+    submit = SubmitField('Next')

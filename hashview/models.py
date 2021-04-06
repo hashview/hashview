@@ -66,7 +66,7 @@ class JobTasks(db.Model):
     status = db.Column(db.String(50), nullable=False)       # Running, Paused, Not Started, Completed, Queued, Canceled, Importing
     # run_time = db.Column(db.Integer, nullable=False, Default=0)   # This should probably be removed and instead update hashfiles runtime
     keyspace_pos = db.Column(db.BigInteger, nullable=False)
-    Keyspace = db.Column(db.BigInteger, nullable=False)
+    keyspace = db.Column(db.BigInteger, nullable=False)
 
 class Customers(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -96,7 +96,7 @@ class Agents(db.Model):
     uuid = db.Column(db.String(60), nullable=False)          # can probably be reduced
     status = db.Column(db.String(20), nullable=False)        # can probably be reduced
     hc_status = db.Column(db.String(6000))
-    last_checkn = db.Column(db.DateTime)
+    last_checkin = db.Column(db.DateTime)
     benchmark = db.Column(db.String(20))
     cpu_count = db.Column(db.Integer)
     gpu_count = db.Column(db.Integer)

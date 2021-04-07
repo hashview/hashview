@@ -94,7 +94,7 @@ class Agents(db.Model):
     name = db.Column(db.String(100), nullable=False)         # can probably be reduced
     src_ip = db.Column(db.String(15), nullable=False)
     uuid = db.Column(db.String(60), nullable=False)          # can probably be reduced
-    status = db.Column(db.String(20), nullable=False)        # can probably be reduced
+    status = db.Column(db.String(20), nullable=False)        # Pending, Syncing, Working, 
     hc_status = db.Column(db.String(6000))
     last_checkin = db.Column(db.DateTime)
     benchmark = db.Column(db.String(20))
@@ -139,9 +139,9 @@ class TaskGroups(db.Model):
 
 class TaskQueues(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    # jobtask_id = db.Column(db.Integer, db.ForeignKey('jobtasks.id'), nullable=False)
-    # job_id = db.Column(db.Integer, db.ForeignKey('jobs.id'), nullable=False)
-    # agent_id = db.Column(db.Integer, db.ForeignKey('agents.id'))
+    jobtask_id = db.Column(db.Integer, db.ForeignKey('jobtasks.id'), nullable=False)
+    job_id = db.Column(db.Integer, db.ForeignKey('jobs.id'), nullable=False)
+    agent_id = db.Column(db.Integer, db.ForeignKey('agents.id'))
     last_updated = db.Column(db.DateTime, nullable=False)
     # queued_at # is this neccessary?
     status = db.Column(db.String(20), nullable=False)   # Running, Completed, Queued, Canceled, Paused

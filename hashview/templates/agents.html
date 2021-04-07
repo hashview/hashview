@@ -32,10 +32,10 @@ Agents are remote workers that process distributed hashcat jobs.
                             <td>{{ agent.last_checkin}}</td>
                             <td>
                                 {% if agent.status == 'Pending' %}
-                                    <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{agent.id}}">Authorize</button>
+                                    <a class="btn btn-primary" href="/agents/{{agent.id}}/authorize" role="button">Authorize</a>
                                 {% else %}
-                                    <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{agent.id}}">Deauthorize</button>
-                                {% endfor %}
+                                    <a class="btn btn-primary" href="/agents/{{agent.id}}/deauthorize" role="button">Deauthorize</a>
+                                {% endif %}
                                 <button type="button" class="btn btn-warning btn-sm" data-toggle="modal" data-target="#editModal{{agent.id}}">Edit</button>
                                 <button type="button" class="btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal{{agent.id}}">Delete</button>
                             </td>
@@ -51,19 +51,35 @@ Agents are remote workers that process distributed hashcat jobs.
         <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-            <h5 class="modal-title" id="editModal{{agent.id}}Label">Edit: {{edit.name}} ?</h5>
+            <h5 class="modal-title" id="editModal{{agent.id}}Label">Edit: {{agent.name}} ?</h5>
             <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                 <span aria-hidden="true">&times;</span>
             </button>
             </div>
-            <div class="modal-body">
-            This will permanantly delete the job. Are you sure you want to continue?
-            </div>
-            <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
-            <form action="{{ url_for('agents.agent_edit', agent_id=agent.id) }}" method="POST">
-                <input class="btn btn-danger" type="submit" value="Update">
-            </form>
+            <div class="content-section">
+                <form method="POST" action="" enctype="multipart/form-data">
+                    {{ agentsForm.hidden_tag() }}
+                    <fieldset class="form-group">
+                        <div class="form-group">
+                            {{ agentsForm.name.label(class="form-control-label") }}
+            
+                            {% if agentsForm.name.errors %}
+                                {{ agentsForm.name(class="form-control form-control-lg is-invalid") }}
+                                <div class="invalid-feedback">
+                                    {% for error in agentsForm.name.errors %}
+                                        <span>{{ error }}</span>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                {{ agentsForm.name(class="form-control form-control-lg") }}
+                            {% endif %}
+                        </div> 
+                    </fieldset>
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
+                    <div class="form-group">
+                        {{ agentsForm.submit(class="btn btn-outline-info")}}
+                    </div>
+                </form>
             </div>
         </div>
         </div>
@@ -83,7 +99,7 @@ Agents are remote workers that process distributed hashcat jobs.
             </div>
             <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
-            <form action="{{ url_for('agents.agent_delete', agent_id=agent.id) }}" method="POST">
+            <form action="{{ url_for('agents.agents_delete', agent_id=agent.id) }}" method="POST">
                 <input class="btn btn-danger" type="submit" value="Delete">
             </form>
             </div>

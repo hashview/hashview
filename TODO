@@ -68,10 +68,17 @@ Analytics
     - All duplicates?
 
 Agents
-    - List Agents
+    - Rename Agents
+    - Agent Authorize
+    - Agent deauthorize
 
 API
+    - Turn into legit resful api using flask_restful / api
+    - Check for UUID authentication cookie
     - Register agent
+    - Sync wordlists
+    - Sync rules
+    - Sync hashfile
 
 Add SSL
 - Options in config
@@ -221,3 +228,9 @@ Notifications
     - Code to run upon hash Cracked
     - how to handle deletion of job
     - how to handle deletion of user
+
+All
+    - change uri scheme to be consistent
+        - jobs/id/status
+        - jobs/delete/id
+        - agents/delete/id

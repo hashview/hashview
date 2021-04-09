@@ -3,67 +3,19 @@
 <br>
 <h1>Job Summary</h1>
 <br>
-If everything looks good, click submit below.
+If everything looks good, click complete below.
 <br>
 <br>
 <br>
 {% endblock header %}
 {% block content %}
     <article class="media content-section">
-        <div class="media-body">
-            <table class="table">
-                <thead>
-                  <tr>
-                    <th scope="col">Task Name</th>
-                    <th scope="col">Type</th>
-                    <th scope="col">Control</th>          
-                  </tr>
-                </thead>
-                <tbody>
-                    {% for job_task in job_tasks %}
-                        <tr>
-                            <td>
-                                {% for task in tasks %}
-                                    {% if task.id == job_task.task_id %}
-                                        {{task.name}}
-                                    {% endif %}
-                                {% endfor %}
-                            </td>
-                            <td>
-                                {% for task in tasks %}
-                                    {% if task.id == job_task.task_id %}
-                                        {{task.hc_attackmode}}
-                                    {% endif %}
-                                {% endfor %}                                
-                            </td>
-                            <td>
-                                <a class="btn btn-primary" href="/jobs/{{job.id}}/move_task_up/{{job_task.task_id}}" role="button">Up</a>
-                                <a class="btn btn-primary" href="/jobs/{{job.id}}/move_task_down/{{job_task.task_id}}" role="button">Down</a>
-                                <a class="btn btn-primary" href="/jobs/{{job.id}}/remove_task/{{job_task.task_id}}" role="button">Delete</a>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                    <tr>
-                        <td></td>
-                        <td></td>
-                        <td>
-                            <div class="dropdown show">
-                                <a class="btn btn-primary dropdown-toggle" href="#" role="button" id="dropdownMenuLink" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                                Add Task
-                                </a>
-                            
-                                <div class="dropdown-menu" aria-labelledby="dropdownMenuLink">
-                                    {% for task in tasks %}
-                                        <!-- TODO: filter out tasks already assigned to the job -->
-                                        <a class="dropdown-item" href="/jobs/{{job.id}}/assign_task/{{task.id}}">{{task.name}}</a>
-                                    {% endfor %}
-                                </div>
-                            </div>
-                        </td>
-                    </tr>
-                </tbody>
-              </table>
-        </div>
+        <form method="POST" action="">
+            {{ form.hidden_tag() }}
+            TODO
+            <div class="form-group">
+                {{ form.submit(class="btn btn-primary")}}
+            </div>
+        </form>
     </article>
-    <a class="btn btn-primary" href="/jobs/{{job.id}}/notifications" role="button">Next</a>
 {% endblock content %}

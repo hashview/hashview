@@ -67,7 +67,7 @@ Task are predefined hashcat commands. Any number of tasks can be assigned to a J
                                     {% for job_task in job_tasks %}
                                         {% if job_task.task_id == task.id %}
                                             {% for job in jobs %}
-                                                {% if job.id = job_task.id%}
+                                                {% if job.id == job_task.id%}
                                                     {{ job.name }} <br>
                                                 {% endif %}
                                             {% endfor %}

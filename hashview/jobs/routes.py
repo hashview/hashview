@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, redirect, abort, flash, url_for, c
 from flask_login import login_required, current_user
 from hashview.jobs.forms import JobsForm, JobsNewHashFileForm, JobsNotificationsForm, JobSummaryForm
 from hashview.models import Jobs, Customers, Hashfiles, Users, HashfileHashes, Hashes, JobTasks, Tasks
-from hashview.utils.utils import save_file, get_filehash, import_hashfilehashes
+from hashview.utils.utils import save_file, get_filehash, import_hashfilehashes, build_hashcat_command
 from hashview import db
 import os
 
@@ -263,7 +263,7 @@ def jobs_delete(job_id):
     if current_user.admin or job.owner_id == current_user.id:
         JobTasks.query.filter_by(job_id=job_id).delete()
         # Do we need to commit this twice?
-        db.session.commit()
+        # db.session.commit()
 
         db.session.delete(job)
         db.session.commit()
@@ -279,9 +279,60 @@ def jobs_delete(job_id):
 def jobs_summary(job_id):
     job = Jobs.query.get(job_id)
     form = JobSummaryForm()
+    job_tasks = JobTasks.query.filter_by(job_id=job_id).all()
 
     if form.validate_on_submit():
-        print('process response')
-        #set jobstatus to ready
+        for job_task in job_tasks:
+            job_task.status = 'Ready'
+        
+        job.status = 'Ready'
+        db.session.commit()
+
+        flash('Job successfully created', 'sucess')
+
+        return redirect(url_for('jobs.jobs_list'))
     else:
         return render_template('jobs_summary.html', title='Job Summary', job=job, form=form)
+
+@jobs.route("/jobs/start/<int:job_id>", methods=['GET'])
+@login_required
+def jobs_start(job_id):
+    job = Jobs.query.get(job_id)
+    job_tasks = JobTasks.query.filter_by(job_id = job_id).all()
+
+    if job and job_tasks:
+        if current_user.admin or job.owner_id == current_user.id:
+            job.status = 'Queued'
+            for job_task in job_tasks:
+                job_task.status = 'Queued'
+                job_task.command = build_hashcat_command(job.id, job_task.task_id)
+                job_task.key_pos = 0
+
+            db.session.commit()
+            flash('Job has been Started!', 'success')
+            return redirect(url_for('jobs.jobs_list'))
+        else:
+            flash('You do not have rights to start this job!', 'danger')
+            return redirect(url_for('jobs.jobs_list'))
+    else:
+        flash('Error in starting job', 'danger')
+        return redirect(url_for('jobs.jobs_list'))
+
+@jobs.route("/jobs/stop/<int:job_id>", methods=['GET'])
+@login_required
+def jobs_stop(job_id):
+    job = Jobs.query.get(job_id)
+    job_tasks = JobTasks.query.filter_by(job_id = job_id).all()
+
+
+    if job:
+        if current_user.admin or job.owner_id == current_user.id:
+
+            flash('Job has been stopped!', 'success')
+            return redirect(url_for('jobs.jobs_list'))
+        else:
+            flash('You do not have rights to stop this job!', 'danger')
+            return redirect(url_for('jobs.jobs_list'))
+    else:
+        flash('Error in stopping job', 'danger')
+        return redirect(url_for('jobs.jobs_list'))

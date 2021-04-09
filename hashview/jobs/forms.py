@@ -46,15 +46,15 @@ class JobsNotifyHashes(SelectMultipleField):
     option_widget = widgets.CheckboxInput()
 
 class JobsNotificationsForm(FlaskForm):
-    job_completion = SelectField('Notify when Job completes', choices=[('', 'No'),
+    job_completion = SelectField('Notify when Job completes', choices=[('none', 'No'),
                                                                         ('email', 'Send Email'),
                                                                         ('push', 'Send Push Notification')], validators=[DataRequired()])
-    hash_completion = SelectField('Notify when specific hashes crack', choices=[('', 'No'),
+    hash_completion = SelectField('Notify when specific hashes crack', choices=[('none', 'No'),
                                                                         ('email', 'Send Email'),
                                                                         ('push', 'Send Push Notification')], validators=[DataRequired()])
     hashes = JobsNotifyHashes('Select Hashes', coerce=int)
     submit = SubmitField('Next')
 
 class JobSummaryForm(FlaskForm):
-    cancel = SubmitField('Cancel')
+
     submit = SubmitField('Complete')

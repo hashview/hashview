@@ -62,11 +62,12 @@ class JobTasks(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     job_id = db.Column(db.Integer, db.ForeignKey('jobs.id'), nullable=False)
     task_id = db.Column(db.Integer, db.ForeignKey('tasks.id'), nullable=False)
-    # command = db.Column(db.String(5000))                  # I dont think this is used
+    command = db.Column(db.String(1024))                  
     status = db.Column(db.String(50), nullable=False)       # Running, Paused, Not Started, Completed, Queued, Canceled, Importing
+    agent_id = db.Column(db.Integer, db.ForeignKey('agents.id'))
     # run_time = db.Column(db.Integer, nullable=False, Default=0)   # This should probably be removed and instead update hashfiles runtime
-    keyspace_pos = db.Column(db.BigInteger, nullable=False)
-    keyspace = db.Column(db.BigInteger, nullable=False)
+    # keyspace_pos = db.Column(db.BigInteger, nullable=False)
+    # keyspace = db.Column(db.BigInteger, nullable=False)
 
 class Customers(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -137,6 +138,7 @@ class TaskGroups(db.Model):
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     tasks = db.Column(db.String(256), nullable=False)
 
+# I dont think we use this table
 class TaskQueues(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     jobtask_id = db.Column(db.Integer, db.ForeignKey('jobtasks.id'), nullable=False)
@@ -145,7 +147,7 @@ class TaskQueues(db.Model):
     last_updated = db.Column(db.DateTime, nullable=False)
     # queued_at # is this neccessary?
     status = db.Column(db.String(20), nullable=False)   # Running, Completed, Queued, Canceled, Paused
-    command = db.Column(db.String(256), nullable=False)
+    command = db.Column(db.String(256), nullable=False) # is command necessary?
 
 class Hashes(db.Model):
     id = db.Column(db.Integer, primary_key=True)

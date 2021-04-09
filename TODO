@@ -38,10 +38,16 @@ Jobs
                     - Give example (?) on mouse over
                 - Select hash Type
                     - on other allow user to type in hashtype
-        - Show Cracked hashes
+                - set hashfile name based on file name on upload
         - Assign Tasks
             - Should probably be a form :/
             - Remove task from assignable tasks that are already assigned to the job
+            - redirect back to assign tasks if no tasks are assigned
+        - Offer cancel button along the entire process
+            - deletes jobtasks
+            - delete job
+            - redirects to joblist
+
     - Job info
         - Tasks assigned
         - creation date
@@ -85,12 +91,13 @@ Add SSL
 
 Support for retention
 
-Move wordlists / rules out of admin only view
+Move wordlists, rules, hashfiles out of admin only view
 
 Search
     - Export Results
     - Search by hash
     - search by user
+    - Filter by company
 
 Wordlists
     - info

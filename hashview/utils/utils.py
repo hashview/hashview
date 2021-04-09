@@ -4,7 +4,7 @@ import hashlib
 import subprocess
 import hashlib
 from hashview import mail, db
-from hashview.models import Settings, Rules, Wordlists, Hashfiles, HashfileHashes, Hashes
+from hashview.models import Settings, Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs
 from flask_mail import Message
 from flask import current_app
 
@@ -102,3 +102,41 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
     
 
     return True
+
+def build_hashcat_command(job_id, task_id):
+    # this function builds the main hashcat cmd we use to crack.
+    hc_binpath = '@HASHCATBINPATH@'
+    task = Tasks.query.get(task_id)
+    job = Jobs.query.get(job_id)
+    rules_file = Rules.query.get(task.rule_id)
+    hashfilehashes_single_entry = HashfileHashes.query.filter_by(hashfile_id = job.hashfile_id).first()
+    hashes_single_entry = Hashes.query.get(hashfilehashes_single_entry.hash_id)
+    hash_type = hashes_single_entry.hash_type
+    attackmode = task.hc_attackmode
+    mask = task.hc_mask
+
+    if attackmode == 'combinator':
+        print('unsupported combinator')
+    else:
+        wordlist = Wordlists.query.get(task.wl_id)
+
+    target_file = 'control/hashes/hashfile_' + str(job.id) + '_' + str(task.id) + '.txt'
+    crack_file = 'control/outfiles/hc_cracked_' + str(job.id) + '_' + str(task.id) + '.txt'
+
+    session = '12317' # need to randomize session
+
+    if attackmode == 'bruteforce':
+        cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + ' -a 3 ' + target_file
+    elif attackmode == 'maskmode':
+        cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + ' -a 3 ' + target_file + ' ' + mask
+    elif attackmode == 'dictionary':
+        if task.rule_id:
+            cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + target_file + ' ' + wordlist.path
+        else:
+            cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + ' -r ' + rules_file.path + ' ' + target_file + ' ' + wordlist.path
+    elif attackmode == 'combinator':
+      cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + ' -a 1 ' + target_file + ' ' + wordlist_one.path + ' ' + ' ' + wordlist_two.path + ' ' + rule_file.path
+
+    print("cmd: " + cmd)
+
+    return cmd

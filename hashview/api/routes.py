@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, redirect, request, send_from_directory
-from hashview.models import TaskQueues, Agents, JobTasks, Tasks, Wordlists, Rules
+from hashview.models import TaskQueues, Agents, JobTasks, Tasks, Wordlists, Rules, Jobs, Hashes, HashfileHashes
 from hashview import db
 import time
 import os
@@ -11,7 +11,11 @@ api = Blueprint('api', __name__)
 # This code should be considered tempoary as we work over the port.
 # Ideally this will get replaced (along with the agent code) some time later
 #
-
+def agentAuthorized(uuid):
+    agent = Agents.query.filter_by(uuid=uuid).first()
+    if agent.status == 'Online':
+        return True
+    return False
 
 def update_heartbeat(uuid):
     agent = Agents.query.filter_by(uuid=uuid).first()
@@ -30,8 +34,10 @@ def api_unauthorized():
     return jsonify(message)
 
 @api.route('/v1/queue', methods=['GET'])
-def api_queue():
-    # TO DO CHECK IF AUTHORIZED
+def api_get_queue():
+    if not agentAuthorized(request.cookies.get('agent_uuid')):
+        return redirect("/v1/agents/"+uuid+"/authorize") 
+
     queue = TaskQueues.query.filter_by(status = 'Queued').first()
     if queue:
         message = {
@@ -47,8 +53,134 @@ def api_queue():
         }
     return jsonify(message)
 
+# force or restart a queue item
+# used when agent goes offline and comes back online
+# without a running hashcat cmd while task still assigned to them
+@api.route('/v1/queue/<int:id>', methods=['GET'])
+def api_get_queue_assignment(id):
+    if not agentAuthorized(request.cookies.get('agent_uuid')):
+        return redirect("/v1/agents/"+uuid+"/authorize") 
+
+    update_heartbeat(request.cookies.get('agent_uuid'))
+
+    # Get agent id from UUID
+    agent = Agents.query.filter_by(uuid=request.cookies.get('agent_uuid')).first()
+    if agent:
+        # we really dont need to filter by both id and agent_id :/
+        assigned_task = JobTasks.query.filter_by(id=id, agent_id=agent.id).first()
+        # yeah why keep our response consistant like we did with wordlists and rules :smh:
+        return json.dumps(assigned_task, cls=AlchemyEncoder)
+    else:
+        message = {
+            'status': 200,
+            'type': 'message',
+            'msg': 'Missing UUID'
+        }
+        return jsonify(message)
+
+# Provide task info 
+@api.route('/v1/task/<int:id>', methods=['GET'])
+def api_get_task(id):
+    if not agentAuthorized(request.cookies.get('agent_uuid')):
+        return redirect("/v1/agents/"+uuid+"/authorize")
+
+    update_heartbeat(request.cookies.get('agent_uuid'))
+    task = Tasks.query.get(id)
+    # yeah why keep our response consistant like we did with wordlists and rules :smh:
+    return json.dumps(task, cls=AlchemyEncoder)
+
+
+# Provide jobtask info 
+@api.route('/v1/jobtask/<int:id>', methods=['GET'])
+def api_get_jobtask(id):
+    if not agentAuthorized(request.cookies.get('agent_uuid')):
+        return redirect("/v1/agents/"+uuid+"/authorize")
+
+    update_heartbeat(request.cookies.get('agent_uuid'))
+    jobtask = JobTasks.query.filter_by(task_id=id).first()
+    # yeah why keep our response consistant like we did with wordlists and rules :smh:
+    return json.dumps(jobtask, cls=AlchemyEncoder)
+
+
+# update status of jobtask
+# TODO
+# We dont really need the id here since we're pulling the jobtask.id from the json being posted
+# might make sense to move this to something like /v1/queue/jobtask/status
+@api.route('/v1/jobtask/<int:id>/status', methods=['POST'])
+def api_set_queue_jobtask_status(id):
+    if not agentAuthorized(request.cookies.get('agent_uuid')):
+        return redirect("/v1/agents/"+uuid+"/authorize") 
+
+    update_heartbeat(request.cookies.get('agent_uuid'))
+
+    # TODO
+    # Do we really care at this point that an agent exists for this?
+    # Get agent id from UUID
+    agent = Agents.query.filter_by(uuid=request.cookies.get('agent_uuid')).first()
+    if agent:
+        status_json = request.get_json()
+
+        # TODO
+        # Change the key from taskqueue_id to jobtask_id
+        jobtasks = JobTasks.query.get(status_json['jobtask_id'])
+        jobtasks.status = status_json['status']
+        db.session.commit()
+
+        # Update Jobs
+        # TODO
+        # Change the key from taskqueue_id to jobtask_id
+        # Shouldn't we be changing the job stats to match the jobtask status?
+        # Add started at time
+        job = Jobs.query.get(jobtasks.job_id)
+        if job.status == 'Queued':
+            job.status = 'Running'
+            job.started_at = time.strftime('%Y-%m-%d %H:%M:%S')
+            db.session.commit()
+
+        # TODO
+        # This is such a janky way of doing this. Instead of having the agent tell us its done, we're just assuming
+        # That if no other tasks are active we must be done
+        done = True
+        jobtasks = JobTasks.query.all()
+        for jobtask in jobtasks:
+            if jobtask.status == 'Queued' or jobtask.status == 'Running' or jobtask.status == 'Importing':
+                done = False
+        
+        # Send email if completed
+        # TODO
+        if job.notify_completed == True and done == True:
+            print('send completed email notification')
+        
+        # TODO
+        # Add ended_at time
+        if done:
+            job.status = 'Completed'
+            db.session.commit()
+
+            # TODO
+            # Calculate time difference in hashfile and update it
+            diff = time.strftime('%Y-%m-%d %H:%M:%S') - job.started_at
+            print('diff in time: ' + str(diff))
+
+            #TODO
+            # mark all jobtasks as completed
+   
+        message = {
+            'status': 200,
+            'type': 'message',
+            'msg': 'OK'
+        }
+        return jsonify(message)
+    else:
+        message = {
+            'status': 200,
+            'type': 'message',
+            'msg': 'Missing UUID'
+        }
+        return jsonify(message)
+
 @api.route('/v1/agents/<uuid>/heartbeat', methods=['POST'])
-def api_heartbeat(uuid):
+def api_set_agent_heartbeat(uuid):
     # Get agent from db
     agent = Agents.query.filter_by(uuid=uuid).first()
     if not agent:
@@ -96,14 +228,11 @@ def api_heartbeat(uuid):
             if agent_data['agent_status'] == 'Idle':
                 already_assigned_task = JobTasks.query.filter_by(agent_id = agent.id).first()
                 if already_assigned_task != None:
-                    print(str(already_assigned_task.agent_id))
-                    print(str(already_assigned_task.id))
-                    print(str(already_assigned_task))
                     message = {
                         'status': 200,
                         'type': 'message',
                         'msg': 'START',
-                        'task_id': already_assigned_task.task_id
+                        'task_id': already_assigned_task.id
                     }
                     return jsonify(message)
                 else:
@@ -181,9 +310,11 @@ class AlchemyEncoder(json.JSONEncoder):
 
 # Provide wordlist info (really should be plural)
 @api.route('/v1/wordlist', methods=['GET'])
-def api_wordlist():
-    # TODO
-    # Redirect if not authorized
+def api_get_wordlist():
+    if not agentAuthorized(request.cookies.get('agent_uuid')):
+        return redirect("/v1/agents/"+uuid+"/authorize")
+
+    update_heartbeat(request.cookies.get('agent_uuid'))
     wordlists = Wordlists.query.all()
     message = {
         'wordlists': json.dumps(wordlists, cls=AlchemyEncoder)
@@ -192,9 +323,11 @@ def api_wordlist():
 
 # serve a wordlist
 @api.route('/v1/wordlist/<int:id>', methods=['GET'])
-def api_wordlist_download(id):
-    # Redirect if not authorized
-    # TODO
+def api_get_wordlist_download(id):
+    if not agentAuthorized(request.cookies.get('agent_uuid')):
+        return redirect("/v1/agents/"+uuid+"/authorize") 
+
+    update_heartbeat(request.cookies.get('agent_uuid'))
     wordlist = Wordlists.query.get(id)
     wordlist_name = wordlist.path.split('/')[-1]
     cmd = "gzip -9 -k -c hashview/control/wordlists/" + wordlist_name + " > hashview/control/tmp/" + wordlist_name + ".gz"
@@ -206,9 +339,11 @@ def api_wordlist_download(id):
 
 # Provide rules info (really should be plural)
 @api.route('/v1/rules', methods=['GET'])
-def api_rules():
-    # TODO
-    # Redirect if not authorized
+def api_get_rules():
+    if not agentAuthorized(request.cookies.get('agent_uuid')):
+        return redirect("/v1/agents/"+uuid+"/authorize") 
+
+    update_heartbeat(request.cookies.get('agent_uuid'))
     rules = Rules.query.all()
     message = {
         'rules': json.dumps(rules, cls=AlchemyEncoder)
@@ -217,9 +352,11 @@ def api_rules():
 
 # serve a rules file
 @api.route('/v1/rules/<int:id>', methods=['GET'])
-def api_rules_download(id):
-    # Redirect if not authorized
-    # TODO
+def api_get_rules_download(id):
+    if not agentAuthorized(request.cookies.get('agent_uuid')):
+        return redirect("/v1/agents/"+uuid+"/authorize") 
+
+    update_heartbeat(request.cookies.get('agent_uuid'))
     rules = Rules.query.get(id)
     rules_name = rules.path.split('/')[-1]
     cmd = "gzip -9 -k -c hashview/control/rules/" + rules_name + " > hashview/control/tmp/" + rules_name + ".gz"
@@ -228,3 +365,41 @@ def api_rules_download(id):
     # TODO
     os.system(cmd)
     return send_from_directory('control/tmp', rules_name + '.gz', mimetype = 'application/octet-stream')
+
+# Provide job info 
+@api.route('/v1/job/<int:id>', methods=['GET'])
+def api_get_job(id):
+    if not agentAuthorized(request.cookies.get('agent_uuid')):
+        return redirect("/v1/agents/"+uuid+"/authorize")
+
+    update_heartbeat(request.cookies.get('agent_uuid'))
+    job = Jobs.query.get(id)
+    # yeah why keep our response consistant like we did with wordlists and rules :smh:
+    return json.dumps(job, cls=AlchemyEncoder)
+
+# generate and serve hashfile
+# TODO 
+# Instead of this being a subset under a jobtask, just make this '/v1/hashfile/<int:id>
+@api.route('/v1/jobtask/<int:jobtask_id>/hashfile/<int:hashfile_id>', methods=['GET'])
+def api_get_hashfile(jobtask_id, hashfile_id):
+    if not agentAuthorized(request.cookies.get('agent_uuid')):
+        return redirect("/v1/agents/"+uuid+"/authorize")
+
+    update_heartbeat(request.cookies.get('agent_uuid'))
+    
+    # we need the jobtask info to make the hashfile path
+    jobtask = JobTasks.query.get(jobtask_id)
+
+    hash_file = 'control/hashes/hashfile_' + str(jobtask.job_id) + '_' + str(jobtask.task_id) + '.txt'
+    file_object = open('hashview/' + hash_file, 'w')
+
+    # do a left join select to get our ciphertext hashes 
+    dbresults = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==hashfile_id).all()
+    for result in dbresults:
+        file_object.write(result[0].ciphertext + '\n')
+        #print(result[0].ciphertext)
+    file_object.close()
+
+    return send_from_directory('control/hashes/', hash_file.split('/')[-1])
+
+    

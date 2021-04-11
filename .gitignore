@@ -138,3 +138,4 @@ config.conf
 hashview/control/rules/*
 hashview/control/wordlists/*
 hashview/control/tmp/*
+hashview/control/hashes/*

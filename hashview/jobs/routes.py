@@ -128,11 +128,12 @@ def jobs_list_tasks(job_id):
 @login_required
 def jobs_assigned_task(job_id, task_id):
     task = Tasks.query.get(task_id)
+    # TODO
     #exists = JobTasks.query.filter_by(job_id=job_id, task_id=task_id)
     #if exists:
     #    flash('Task already assigned to the job.', 'warning')
     #else:
-    job_task = JobTasks(job_id=job_id, task_id=task_id, status='Not Started', keyspace_pos=0, keyspace=task.keyspace)
+    job_task = JobTasks(job_id=job_id, task_id=task_id, status='Not Started')
     db.session.add(job_task)
     db.session.commit()
 
@@ -172,7 +173,7 @@ def jobs_move_task_up(job_id, task_id):
         for task in tasks:
             if task.id == entry:
                 keyspace = task.keyspace
-        job_task = JobTasks(job_id=job_id, task_id=entry, status='Not Started', keyspace_pos=0, keyspace=keyspace)
+        job_task = JobTasks(job_id=job_id, task_id=entry, status='Not Started')
         db.session.add(job_task)
         db.session.commit()
 

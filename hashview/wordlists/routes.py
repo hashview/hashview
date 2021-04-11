@@ -9,10 +9,6 @@ from hashview.utils.utils import save_file, get_linecount, get_filehash
 
 wordlists = Blueprint('wordlists', __name__)
 
-#############################################
-# Wordlists
-#############################################
-
 @wordlists.route("/wordlists", methods=['GET'])
 @login_required
 def wordlists_list():
@@ -26,8 +22,9 @@ def wordlists_add():
     form = WordlistsForm()
     if form.validate_on_submit():
         if form.wordlist.data:
-            wordlist_path = os.path.join(current_app.root_path, save_file('control/wordlists', form.wordlist.data))
-            
+            #wordlist_path = os.path.join(current_app.root_path, save_file('control/wordlists', form.wordlist.data))
+            wordlist_path = save_file('control/wordlists', form.wordlist.data)
+
             wordlist = Wordlists(name=form.name.data,
                                 owner_id=current_user.id, 
                                 type='static', 
@@ -40,7 +37,7 @@ def wordlists_add():
             return redirect(url_for('wordlists.wordlists_list'))  
     return render_template('wordlists_add.html', title='Wordlist Add', form=form)   
 
-@wordlists.route("/wordlist/delete/<int:wordlist_id>", methods=['POST'])
+@wordlists.route("/wordlists/delete/<int:wordlist_id>", methods=['POST'])
 @login_required
 def wordlists_delete(wordlist_id):
     wordlist = Wordlists.query.get(wordlist_id)

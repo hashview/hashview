@@ -122,20 +122,25 @@ def build_hashcat_command(job_id, task_id):
 
     target_file = 'control/hashes/hashfile_' + str(job.id) + '_' + str(task.id) + '.txt'
     crack_file = 'control/outfiles/hc_cracked_' + str(job.id) + '_' + str(task.id) + '.txt'
+    relative_wordlist_path = 'control/wordlists/' + wordlist.path.split('/')[-1]
+    if rules_file:
+        relative_rules_path = 'control/rules/' + rules_file.path.split('/')[-1]
+    else:
+        relative_rules_path = ''
 
-    session = '12317' # need to randomize session
+    session = secrets.token_hex(4)
 
     if attackmode == 'bruteforce':
         cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + ' -a 3 ' + target_file
     elif attackmode == 'maskmode':
         cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + ' -a 3 ' + target_file + ' ' + mask
     elif attackmode == 'dictionary':
-        if task.rule_id:
-            cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + target_file + ' ' + wordlist.path
+        if isinstance(task.rule_id, int):
+            cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + ' -r ' + relative_rules_path + ' ' + target_file + ' ' + relative_wordlist_path
         else:
-            cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + ' -r ' + rules_file.path + ' ' + target_file + ' ' + wordlist.path
+            cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + target_file + ' ' + relative_wordlist_path
     elif attackmode == 'combinator':
-      cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + ' -a 1 ' + target_file + ' ' + wordlist_one.path + ' ' + ' ' + wordlist_two.path + ' ' + rule_file.path
+      cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + ' -a 1 ' + target_file + ' ' + wordlist_one.path + ' ' + ' ' + wordlist_two.path + ' ' + relative_rules_path
 
     print("cmd: " + cmd)
 

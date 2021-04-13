@@ -80,16 +80,9 @@ Agents
 
 API
     - Turn into legit resful api using flask_restful / api
-    - Check for UUID authentication cookie
-    - Register agent
-    - Sync wordlists
-    - Sync rules
-    - Sync hashfile
 
 Add SSL
 - Options in config
-
-Support for retention
 
 Move wordlists, rules, hashfiles out of admin only view
 
@@ -180,7 +173,10 @@ Wiki Instruction
 Settings
     - OPTIMIZE TABLE hashes;
     - OPTIMIZE TABLE hashfile_hashes;
-
+    - retention
+        - set
+        - validate
+        - how to run on periodic basis?
 
 DB
 - Add DB indexes

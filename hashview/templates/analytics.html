@@ -1,0 +1,143 @@
+{% extends "layout.html"%}
+{% block header %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.1.0/dist/chart.min.js"></script>
+<!-- Doing menu buttons vs select forms because i dont know better.  Maybe the latter is the 'correct' way to do things?-->
+<div class="content-section">
+    <div class="dropdown">
+        <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+            Customers
+          </button>
+        <div class="dropdown-menu">
+            {% for customer in customers %}
+                <a class="dropdown-item" href="/analytics?customer_id={{customer.id}}"> {{customer.name}} </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% if customer_id is not none %}
+<div class="content-section">
+    <div class="dropdown">
+        <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+            Hashfiles
+          </button>
+        <div class="dropdown-menu">
+                {% for hashfile in hashfiles %}
+                    <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}&hashfile_id={{hashfile.id}}"> {{hashfile.name}} </a>
+                {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock header %}
+{% block content %}
+<!-- this layout is so jank, someone please help me-->
+<div class="container">
+    <div class="row">
+        <!-- spacer -->
+    </div>
+    <div class="row">
+      <div class="col"  align="center">
+          <canvas id="TotalCrackedHashes" width="300" height="300">
+                <script>
+                    var vis1 = document.getElementById("TotalCrackedHashes").getContext("2d");
+                    var doughNut = new Chart(vis1, {
+                        type: 'doughnut',
+                        data: {
+                            labels: {{ fig1_labels | safe }},
+                            datasets: [{
+                                label: "my label",
+                                data: {{ fig1_values | safe }},
+                                backgroundColor: ['#C00000', '#008000']
+                            }]
+                        },
+                        options: {
+                            responsive: false,
+                            plugins:{
+                                legend: {
+                                    position: 'bottom',
+                                },
+                            }
+                        }
+                    });
+                </script>
+          </canvas>
+      </div>
+      <div class="col" align="center">
+        <canvas id="Complexity" width="300" height="300">
+            <script>
+                var ctx = document.getElementById("Complexity").getContext("2d");
+                var doughNut = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: {{ fig2_labels | safe }},
+                        datasets: [{
+                            label: "my label",
+                            data: {{ fig2_values | safe }},
+                            backgroundColor: ['#C00000', '#E36C0A', '#008000']
+                        }]
+                    },
+                    options: {
+                        responsive: false,
+                        plugins:{
+                            legend: {
+                                position: 'bottom',
+                            },
+                        }
+                    }
+                });
+            </script>
+        </canvas>
+      </div>
+    </div>
+    <div class="row">
+        <div class="col" align="center">
+          <br>
+          <br>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col" align="center">
+          <br>
+          <br>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col" align="center">
+            Placeholder for general stats
+            buton to download all cracked results
+            button to download remaining uncracked hashes
+        </div>
+        <div class="col" align="center">
+            <canvas id="doughNut" width="300" height="300">
+                <script>
+                    var ctx = document.getElementById("doughNut").getContext("2d");
+                    var doughNut = new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: {{ fig2_labels | safe }},
+                            datasets: [{
+                                label: "my label",
+                                data: {{ fig2_values | safe }},
+                                backgroundColor: ['#C00000', '#E36C0A', '#008000']
+                            }]
+                        },
+                        options: {
+                            responsive: false,
+                            plugins:{
+                                legend: {
+                                    position: 'bottom',
+                                },
+                            }
+                        }
+                    });
+                </script>
+            </canvas>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col" align="center">
+          1 of 1
+        </div>
+    </div>
+{% endblock content %}

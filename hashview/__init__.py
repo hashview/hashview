@@ -41,6 +41,7 @@ def create_app(config_class=Config):
     from hashview.task_groups.routes import task_groups
     from hashview.users.routes import users
     from hashview.wordlists.routes import wordlists
+    from hashview.analytics.routes import analytics
 
     app.register_blueprint(agents)
     app.register_blueprint(api)
@@ -54,5 +55,6 @@ def create_app(config_class=Config):
     app.register_blueprint(task_groups)
     app.register_blueprint(users)
     app.register_blueprint(wordlists)
+    app.register_blueprint(analytics)
 
     return app

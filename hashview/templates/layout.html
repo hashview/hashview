@@ -38,12 +38,12 @@
                                         <a class="dropdown-item" href="{{ url_for('wordlists.wordlists_list') }}">Wordlists</a>
                                         <a class="dropdown-item" href="{{ url_for('rules.rules_list') }}">Rules</a>
                                         <a class="dropdown-item" href="{{ url_for('hashfiles.hashfiles_list' )}}">Hashfiles</a>
-                                        <a class="dropdown-item" href="{{ url_for('agents.agents_list' )}}">Agents</a>
+                                        <a class="dropdown-item" href="{{ url_for('agents.agents_list') }}">Agents</a>
                                         <a class="dropdown-item" href="{{ url_for('settings.settings_list') }}">Settings</a>
                                         <a class="dropdown-item" href="{{ url_for('users.users_list') }}">User Accounts</a>
                                         <div class="dropdown-divider"></div>
                                     {% endif %}
-                                    <a class="dropdown-item" href="#">Analytics</a>
+                                    <a class="dropdown-item" href="{{ url_for('analytics.get_analytics') }}">Analytics</a>
                                     <a class="dropdown-item" href="#">Search</a>
                                     <a class="dropdown-item" href="{{ url_for('users.profile') }}">Profile</a>
                                     <a class="dropdown-item" href="{{ url_for('users.logout') }}">Logout</a>

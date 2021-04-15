@@ -48,7 +48,7 @@
                             datasets: [{
                                 label: "my label",
                                 data: {{ fig1_values | safe }},
-                                backgroundColor: ['#C00000', '#008000']
+                                backgroundColor: ['rgba(192, 0, 0, 0.5)', 'rgba(0, 128, 0, 0.5)']
                             }]
                         },
                         options: {
@@ -74,7 +74,7 @@
                         datasets: [{
                             label: "my label",
                             data: {{ fig2_values | safe }},
-                            backgroundColor: ['#C00000', '#E36C0A', '#008000']
+                            backgroundColor: ['rgba(192, 0, 0, 0.5)', 'rgba(227, 108, 10, 0.5)', 'rgba(0, 128, 0, 0.5)']
                         }]
                     },
                     options: {
@@ -103,23 +103,26 @@
         </div>
     </div>
     <div class="row">
-        <div class="col" align="center">
-            Placeholder for general stats
-            buton to download all cracked results
-            button to download remaining uncracked hashes
+        <div class="col" align="left">
+            Placeholder for general stats <br>
+            buton to download all cracked results <br>
+            button to download remaining uncracked hashes <br>
         </div>
         <div class="col" align="center">
-            <canvas id="doughNut" width="300" height="300">
+            <canvas id="CharSet" width="300" height="300">
                 <script>
-                    var ctx = document.getElementById("doughNut").getContext("2d");
+                    var ctx = document.getElementById("CharSet").getContext("2d");
                     var doughNut = new Chart(ctx, {
                         type: 'doughnut',
                         data: {
-                            labels: {{ fig2_labels | safe }},
+                            labels: {{ fig3_labels | safe }},
                             datasets: [{
                                 label: "my label",
-                                data: {{ fig2_values | safe }},
-                                backgroundColor: ['#C00000', '#E36C0A', '#008000']
+                                data: {{ fig3_values | safe }},
+                                backgroundColor: [  'rgba(192, 0, 0, 0.5)', 
+                                                    'rgba(227, 108, 10, 0.5)', 
+                                                    'rgba(224, 202, 33, 0.5)', 
+                                                    'rgba(0, 128, 0, 0.5)',]
                             }]
                         },
                         options: {
@@ -137,7 +140,82 @@
     </div>
     <div class="row">
         <div class="col" align="center">
-          1 of 1
+          <br>
+          <br>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col" align="center">
+          <br>
+          <br>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col" align="center">
+            <canvas id="PasswordsCountByLength" width="600" height="300">
+                <script>
+                    var ctx = document.getElementById("PasswordsCountByLength").getContext("2d");
+                    var doughNut = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: {{ fig4_labels | safe }},
+                            datasets: [{
+                                label: "Password Counts by Lengths",
+                                data: {{ fig4_values | safe }},
+                                backgroundColor: ['rgba(0, 128, 0, 0.5)']
+                            }]
+                        },
+                        options: {
+                            responsive: false,
+                            plugins:{
+                                legend: {
+                                    position: 'bottom',
+                                },
+                            }
+                        }
+                    });
+                </script>
+            </canvas>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col" align="center">
+          <br>
+          <br>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col" align="center">
+          <br>
+          <br>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col" align="center">
+            <canvas id="Top10Passwords" width="600" height="300">
+                <script>
+                    var ctx = document.getElementById("Top10Passwords").getContext("2d");
+                    var doughNut = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: {{ fig5_labels | safe }},
+                            datasets: [{
+                                label: "Top 10 Passwords",
+                                data: {{ fig5_values | safe }},
+                                backgroundColor: ['rgba(0, 128, 0, 0.5)']
+                            }]
+                        },
+                        options: {
+                            responsive: false,
+                            plugins:{
+                                legend: {
+                                    position: 'bottom',
+                                },
+                            }
+                        }
+                    });
+                </script>
+            </canvas>
         </div>
     </div>
 {% endblock content %}

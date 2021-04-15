@@ -6,6 +6,7 @@ import re
 
 # TODO
 # This whole things is a mess
+# Each graph should be its own route
 
 
 analytics = Blueprint('analytics', __name__)
@@ -26,7 +27,6 @@ def get_analytics():
 
     customers = Customers.query.all()
     hashfiles = Hashfiles.query.all()
-
 
     # Figure 1 (Cracked vs uncracked)
     if customer_id:
@@ -84,7 +84,6 @@ def get_analytics():
             fig2_fails_complexity_cnt = fig2_fails_complexity_cnt + 1
         else:
             fig2_meets_complexity_cnt = fig2_meets_complexity_cnt + 1
-        print(entry.plaintext)
     
     fig2_data = [
         ("Fails Complexity: " + str(fig2_fails_complexity_cnt), fig2_fails_complexity_cnt),
@@ -96,12 +95,185 @@ def get_analytics():
     fig2_values = [row[1] for row in fig2_data]
 
 
+    # Figure 3 (Charset Breakdown)
+    # Reusing fig2_cracked_hashes data
+
+    numeric = 0
+    loweralpha = 0
+    upperalpha = 0
+    special = 0
+
+    mixedalpha = 0
+    loweralphanum = 0
+    upperalphanum = 0
+    loweralphaspecial = 0
+    upperalphaspecial = 0
+    specialnum = 0
+
+    mixedalphaspecial = 0
+    upperalphaspecialnum = 0
+    loweralphaspecialnum = 0
+    mixedalphaspecialnum = 0
+
+    other = 0
+
+    for entry in fig2_cracked_hashes:
+        tmp_plaintext = entry.plaintext
+        tmp_plaintext = re.sub(r"[A-Z]", 'U', tmp_plaintext)
+        tmp_plaintext = re.sub(r"[a-z]", 'L', tmp_plaintext)
+        tmp_plaintext = re.sub(r"[0-9]", 'D', tmp_plaintext)
+        tmp_plaintext = re.sub(r"[^0-9A-Za-z]", 'S', tmp_plaintext)
+
+        if not re.search("U", tmp_plaintext) and not re.search("L", tmp_plaintext) and re.search("D", tmp_plaintext) and not re.search("S", tmp_plaintext):
+            numeric += 1
+        elif not re.search("U", tmp_plaintext) and re.search("L", tmp_plaintext) and not re.search("D", tmp_plaintext) and not re.search("S", tmp_plaintext):
+            loweralpha += 1
+        elif re.search("U", tmp_plaintext) and not re.search("L", tmp_plaintext) and not re.search("D", tmp_plaintext) and not re.search("S", tmp_plaintext):
+            upperalpha += 1
+        elif not re.search("U", tmp_plaintext) and not re.search("L", tmp_plaintext) and not re.search("D", tmp_plaintext) and re.search("S", tmp_plaintext):
+            special += 1 
+        elif re.search("U", tmp_plaintext) and re.search("L", tmp_plaintext) and not re.search("D", tmp_plaintext) and not re.search("S", tmp_plaintext):
+            mixedalpha += 1
+        elif not re.search("U", tmp_plaintext) and re.search("L", tmp_plaintext) and re.search("D", tmp_plaintext) and not re.search("S", tmp_plaintext):
+            loweralphanum += 1
+        elif re.search("U", tmp_plaintext) and not re.search("L", tmp_plaintext) and re.search("D", tmp_plaintext) and not re.search("S", tmp_plaintext):
+            upperalphanum += 1
+        elif not re.search("U", tmp_plaintext) and re.search("L", tmp_plaintext) and not re.search("D", tmp_plaintext) and re.search("S", tmp_plaintext):
+            loweralphaspecial += 1
+        elif re.search("U", tmp_plaintext) and not re.search("L", tmp_plaintext) and not re.search("D", tmp_plaintext) and re.search("S", tmp_plaintext):
+            upperalphaspecial += 1
+        elif not re.search("U", tmp_plaintext) and not re.search("L", tmp_plaintext) and re.search("D", tmp_plaintext) and re.search("S", tmp_plaintext):
+            specialnum += 1
+        elif re.search("U", tmp_plaintext) and re.search("L", tmp_plaintext) and not re.search("D", tmp_plaintext) and re.search("S", tmp_plaintext):
+            mixedalphaspecial += 1
+        elif re.search("U", tmp_plaintext) and not re.search("L", tmp_plaintext) and re.search("D", tmp_plaintext) and re.search("S", tmp_plaintext):
+            upperalphaspecialnum += 1
+        elif not re.search("U", tmp_plaintext) and re.search("L", tmp_plaintext) and re.search("D", tmp_plaintext) and re.search("S", tmp_plaintext):
+            loweralphaspecialnum += 1
+        elif re.search("U", tmp_plaintext) and re.search("L", tmp_plaintext) and re.search("D", tmp_plaintext) and re.search("S", tmp_plaintext):
+            mixedalphaspecialnum += 1
+        else:
+            other += 1
+
+    fig3_labels = []
+    fig3_values = []
+
+    # Dynamically populating our arrays
+    if numeric > 0:
+        fig3_labels.append('numeric')
+        fig3_values.append(numeric)
+    if loweralpha > 0:
+        fig3_labels.append('loweralpha')
+        fig3_values.append(loweralpha)
+    if upperalpha > 0:
+        fig3_labels.append('upperalpha')
+        fig3_values.append(upperalpha)
+    if special > 0:
+        fig3_labels.append('special')
+        fig3_values.append(special)
+    if mixedalpha > 0:
+        fig3_labels.append('mixedalpha')
+        fig3_values.append(mixedalpha)
+    if loweralphanum > 0:
+        fig3_labels.append('loweralphanum')
+        fig3_values.append(loweralphanum)
+    if upperalphanum > 0:
+        fig3_labels.append('upperalphanum')
+        fig3_values.append(upperalphanum)
+    if loweralphaspecial> 0:
+        fig3_labels.append('loweralphaspecial')
+        fig3_values.append(loweralphaspecial)
+    if upperalphaspecial > 0:
+        fig3_labels.append('upperalphaspecial')
+        fig3_values.append(upperalphaspecial)
+    if specialnum > 0:
+        fig3_labels.append('specialnum')
+        fig3_values.append(specialnum)
+    if mixedalphaspecial > 0:
+        fig3_labels.append('mixedalphaspecial')
+        fig3_values.append(mixedalphaspecial)
+    if upperalphaspecialnum> 0:
+        fig3_labels.append('upperalphaspecialnum')
+        fig3_values.append(upperalphaspecialnum)
+    if loweralphaspecialnum > 0:
+        fig3_labels.append('loweralphaspecialnum')
+        fig3_values.append(loweralphaspecialnum)
+    if mixedalphaspecialnum> 0:
+        fig3_labels.append('mixedalphaspecialnum')
+        fig3_values.append(mixedalphaspecialnum)
+
+    # Figure 4 (Passwords by Length)
+    if customer_id:
+        # we have a customer
+        if hashfile_id:
+            fig4_cracked_hashes = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).all()
+        else:
+            # just a customer, no specific hashfile
+            fig4_cracked_hashes = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').all()
+    else:
+        fig4_cracked_hashes = db.session.query(Hashes).filter(Hashes.cracked=='1').all()
+
+    fig4_data = {}
+
+    for entry in fig4_cracked_hashes:
+        if len(entry.plaintext) > 0:
+            if len(entry.plaintext) in fig4_data:
+                fig4_data[len(entry.plaintext)] += 1
+            else:
+                fig4_data[len(entry.plaintext)] = 1
+
+    fig4_labels =[]
+    fig4_values = []
+
+    # limit to top 10 or 20
+
+    for entry in sorted(fig4_data):
+        fig4_labels.append(entry)
+        fig4_values.append(fig4_data[entry])
+
+
+    # Figure 5 (Top 10 Passwords)
+    if customer_id:
+        # we have a customer
+        if hashfile_id:
+            fig5_cracked_hashes = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).all()
+        else:
+            # just a customer, no specific hashfile
+            fig5_cracked_hashes = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').all()
+    else:
+        fig5_cracked_hashes = db.session.query(Hashes).filter(Hashes.cracked=='1').all()
+
+    fig5_data = {}
+
+    for entry in fig5_cracked_hashes:
+        if len(entry.plaintext) > 0:
+            if entry.plaintext in fig5_data:
+                fig5_data[entry.plaintext] += 1
+            else:
+                fig5_data[entry.plaintext] = 1
+
+    fig5_labels =[]
+    fig5_values = []
+
+    # limit to top 10 or 20
+
+    for entry in sorted(fig5_data, key=fig5_data.__getitem__, reverse=True):
+        fig5_labels.append(entry)
+        fig5_values.append(fig5_data[entry])
+
+
     return render_template('analytics.html', 
                             title='analytics', 
                             fig1_labels=fig1_labels, 
                             fig1_values=fig1_values,
                             fig2_labels=fig2_labels,
                             fig2_values=fig2_values, 
+                            fig3_labels=fig3_labels,
+                            fig3_values=fig3_values,
+                            fig4_labels=fig4_labels,
+                            fig4_values=fig4_values,
+                            fig5_labels=fig5_labels,
+                            fig5_values=fig5_values,
                             customers=customers, hashfiles=hashfiles, hashfile_id=hashfile_id, customer_id=customer_id)
 
 

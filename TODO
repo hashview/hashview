@@ -60,7 +60,6 @@ Analytics
     - graphlets
     - Total Hashes Cracked vs uncracked
     - Total unique cracked vs uncracked
-    - Char composisition
     - Stats
         - Total hashes
         - total unique hashes
@@ -68,8 +67,6 @@ Analytics
         - Download cracked
         - download all
     - Top 10 masks
-    - Top 10 passwords
-    - top 10 passwords by length
     - Top 20 users per single hash/password
     - All duplicates?
 

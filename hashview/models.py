@@ -73,22 +73,20 @@ class Customers(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(40), nullable=False)
     #wl_id = db.Column(db.Integer, db.ForeignKey('wordlists.id'), nullable=False) # for dynamic wordlist. Keep?
-    hashfiles = db.relationship('Hashfiles', backref='tbd', lazy=True)
 
 class Hashfiles(db.Model):
-    # Uploading files: https://www.youtube.com/watch?v=803Ei2Sq-Zs
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(256), nullable=False)        # can probably be reduced
     uploaded_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     #wl_id = db.Column(db.Integer, db.ForeignKey('wordlists.id'), nullable=False) # for dynamic wordlist. Keep?
     runtime = db.Column(db.Integer, default=0)
-    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
+    customer_id = db.Column(db.Integer, nullable=False)
 
 class HashfileHashes(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    hash_id = db.Column(db.Integer, db.ForeignKey('hashes.id'), nullable=False)
+    hash_id = db.Column(db.Integer, nullable=False)
     username = db.Column(db.String(256), nullable=True, default=None)
-    hashfile_id = db.Column(db.Integer, db.ForeignKey('hashfiles.id'), nullable=False)
+    hashfile_id = db.Column(db.Integer, nullable=False)
 
 class Agents(db.Model):
     id = db.Column(db.Integer, primary_key=True)

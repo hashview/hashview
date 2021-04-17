@@ -104,9 +104,26 @@
     </div>
     <div class="row">
         <div class="col" align="left">
-            Placeholder for general stats <br>
-            buton to download all cracked results <br>
-            button to download remaining uncracked hashes <br>
+            Placeholder for general stats <br><br>
+            {% if customer_id %}
+                {% if hashfile_id %}
+                    <a class="btn btn-primary btn-sm" href="/analytics/download?type=found&customer_id={{customer_id}}&hashfile_id={{hashfile_id}}" role="button">Cracked</a> <br>
+                {% else %}
+                    <a class="btn btn-primary btn-sm" href="/analytics/download?type=found&customer_id={{customer_id}}" role="button">Cracked</a> <br>
+                {% endif %}
+            {% else %}
+                <a class="btn btn-primary btn-sm" href="/analytics/download?type=found" role="button">Cracked</a> <br>
+            {% endif %}
+            <br>
+            {% if customer_id %}
+                {% if hashfile_id %}
+                    <a class="btn btn-primary btn-sm" href="/analytics/download?type=left&customer_id={{customer_id}}&hashfile_id={{hashfile_id}}" role="button">Uncracked</a> <br>
+                {% else %}
+                    <a class="btn btn-primary btn-sm" href="/analytics/download?type=left&customer_id={{customer_id}}" role="button">Uncracked</a> <br>
+                {% endif %}
+            {% else %}
+                <a class="btn btn-primary btn-sm" href="/analytics/download?type=left" role="button">Uncracked</a> <br>
+            {% endif %}
         </div>
         <div class="col" align="center">
             <canvas id="CharSet" width="300" height="300">

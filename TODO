@@ -57,18 +57,16 @@ Jobs
 Analytics
     - Set color scheme to look good
     - download pngs
-    - graphlets
     - Total Hashes Cracked vs uncracked
     - Total unique cracked vs uncracked
     - Stats
         - Total hashes
         - total unique hashes
         - total runtime
-        - Download cracked
-        - download all
     - Top 10 masks
     - Top 20 users per single hash/password
     - All duplicates?
+    - When jumping to a customer_id/hashfile_id url, customer/hashfile select buttons dont dynamically update
 
 Agents
     - Rename Agents
@@ -116,7 +114,7 @@ Hashfiles
         - List hashfiles
             - name  
             - Cracked vs un cracked
-            - Controle
+            - Control
                 - Analytics
                 - Delete
     - if > retention date Delete

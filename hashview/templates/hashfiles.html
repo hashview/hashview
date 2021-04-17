@@ -22,16 +22,29 @@ The following are a list of Hash Files currently configured in Hashview. All Has
                   </tr>
                 </thead>
                 <tbody>
-                    <!--
-                    {% for user in users %}
+                    {% for customer in customers %}
                         <tr>
-                            <td>{{ user.first_name }}</td>
-                            <td>{{ user.last_name }}</td>
-                            <td>{{ user.email_address }}</td>
-                            <td>INFO/EDIT/DELETE/RSTPASSWD</td>
+                            <td>{{ customer.name }}</td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
                         </tr>
+                        {% for hashfile in hashfiles %}
+                            <tr>
+                                <td></td>
+                                <td>{{ hashfile.name }}</td>
+                                <td>TBD</td>
+                                <td>TBD</td>
+                                <td>
+                                    <a class="btn btn-primary btn-sm" href="/analytics/download?type=found&customer_id={{customer.id}}&hashfile_id={{hashfile.id}}" role="button">Download Cracked</a> 
+                                    <a class="btn btn-primary btn-sm" href="/analytics?customer_id={{customer.id}}&hashfile_id={{hashfile.id}}" role="button">Analytics</a> 
+                                    <a class="btn btn-primary btn-sm" href="/hashfiles/delete/{{hashfile.id}}" role="button">Delete</a> 
+                                </td>
+                            </tr>
+                        {% endfor %}
+
                     {% endfor %}
-                    -->
                 </tbody>
               </table>
         </div>

@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, render_template, request, redirect, send_from_directory
 from flask_login import login_required
 from hashview.models import Agents, Customers, HashfileHashes, Hashes, Hashfiles
 from hashview import db
@@ -276,14 +276,58 @@ def get_analytics():
                             fig5_values=fig5_values,
                             customers=customers, hashfiles=hashfiles, hashfile_id=hashfile_id, customer_id=customer_id)
 
-
-@analytics.route('/analytics/graph/TotalHashesCracked', methods=['GET'])
+# serve a list of cracks
+@analytics.route('/analytics/download', methods=['GET'])
 @login_required
-def get_analytics_total_hashes_cracked():
+def analytics_download_hashes():
 
-    message = {
-        'results': [27, 73]
-    }
+    filename = ''
 
+    if request.args.get('type') == 'found':
+        filename += 'found'
+    elif request.args.get('type') == 'left':
+        filename += 'left'
+    else:
+        redirect('/analytics')
 
-    return jsonify(message)
+    if request.args.get("customer_id"):
+        customer_id = request.args["customer_id"]
+        filename += '_' + customer_id
+    else:
+        customer_id = None
+    if request.args.get("hashfile_id"):
+        hashfile_id = request.args["hashfile_id"]
+        filename += '_' + customer_id
+    else:
+        hashfile_id = None
+        filename += '_all'
+    
+    filename += '.txt'
+
+    if customer_id:
+        # we have a customer
+        if hashfile_id:
+            cracked_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).all()
+            uncracked_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==hashfile_id).all()
+        else:
+            # just a customer, no specific hashfile
+            cracked_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').all()
+            uncracked_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '0').all()
+    else:
+        cracked_hashes = db.session.query(Hashes, HashfileHashes).filter(Hashes.cracked=='1').all()
+        uncracked_hashes = db.session.query(Hashes, HashfileHashes).filter(Hashes.cracked=='1').all()
+
+    outfile = open('hashview/control/tmp/' + filename, 'w')
+
+    if request.args.get('type') == 'found':
+        for entry in cracked_hashes:
+            print(str(entry[1].username) + ":" + str(entry[0].ciphertext) + ':' + str(entry[0].plaintext))
+            outfile.write(str(entry[1].username) + ":" + str(entry[0].ciphertext) + ':' + str(entry[0].plaintext) + "\n")
+
+    if request.args.get('type') == 'left':
+        for entry in uncracked_hashes:
+            print(str(entry[1].username) + ":" + str(entry[0].ciphertext))
+            outfile.write(str(entry[1].username) + ":" + str(entry[0].ciphertext) + "\n")
+    
+    outfile.close()
+    return send_from_directory('control/tmp', filename, as_attachment=True)

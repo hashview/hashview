@@ -47,7 +47,27 @@ Rules are a set of instructions to be combined with Wordlists. Hashview comes pr
                 </button>
                 </div>
                 <div class="modal-body">
-                ...
+                    <table class="table">
+                        <thead>
+                          <tbody>
+                              <tr>
+                                <th scope="row">Associated Tasks</th>
+                                <td>
+                                    {% for task in tasks %}
+                                        {% if task.rule_id == rule.id %}
+                                            {{ task.name }} <br>
+                                        {% endif %}
+                                    {% endfor %}
+                                </td>
+                              </tr>
+                              <tr>
+                                <th scope="row">Associated Jobs</th>
+                                <td>
+                                    TBD<br>
+                                </td>
+                              </tr>
+                          </tbody>
+                      </table>
                 </div>
                 <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>

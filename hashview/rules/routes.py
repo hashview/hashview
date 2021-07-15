@@ -1,7 +1,7 @@
 import os
 from flask import Blueprint, render_template, flash, url_for, redirect, current_app
 from flask_login import login_required, current_user
-from hashview.models import Rules
+from hashview.models import Rules, Tasks, Jobs, JobTasks
 from hashview.rules.forms import RulesForm
 from hashview.utils.utils import save_file, get_linecount, get_filehash
 from hashview import db
@@ -17,7 +17,10 @@ rules = Blueprint('rules', __name__)
 @login_required
 def rules_list():
     rules = Rules.query.all()
-    return render_template('rules.html', title='Rules', rules=rules) 
+    tasks = Tasks.query.all()
+    jobs = Jobs.query.all()
+    jobtasks = JobTasks.query.all()
+    return render_template('rules.html', title='Rules', rules=rules, tasks=tasks, jobs=jobs, jobtasks=jobtasks) 
 
 @rules.route("/rules/add", methods=['GET', 'POST'])
 @login_required

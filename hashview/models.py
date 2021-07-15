@@ -149,7 +149,7 @@ class TaskQueues(db.Model):
 
 class Hashes(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    sub_ciphertext = db.Column(db.String(32), nullable=False)
+    sub_ciphertext = db.Column(db.String(32), nullable=False, index=True)
     ciphertext = db.Column(db.String(4096), nullable=False)
     hash_type = db.Column(db.Integer, nullable=False)
     cracked = db.Column(db.Boolean, nullable=False)

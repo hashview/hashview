@@ -62,7 +62,7 @@ def get_md5_hash(string):
     return m.hexdigest()
 
 def import_hash_only(line, hash_type):
-    hash = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(line), ciphertext=line).first()
+    hash = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(line)).first()
     if hash:
         return hash.id
     else:

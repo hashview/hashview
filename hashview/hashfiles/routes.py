@@ -26,7 +26,7 @@ def hashfiles_delete(hashfile_id):
     # Remove dynamic wordlists from options for being deleted
     hashfile = Hashfiles.query.get_or_404(hashfile_id)
     jobs = Jobs.query.filter_by(hashfile_id = hashfile_id).first()
-    hashfile_hashes = HashfileHashes.query.filter_by(hashfile_id = hashfile_id).first()
+    hashfile_hashes = HashfileHashes.query.filter_by(hashfile_id = hashfile_id).all()
 
     if hashfile:
         if current_user.admin:
@@ -34,14 +34,9 @@ def hashfiles_delete(hashfile_id):
                 flash('Error: Hashfile currently associated with a job.', 'danger')
                 return redirect(url_for('hashfiles.hashfiles_list'))
             else:
-                if hashfile_hashes:
-                    db.session.delete(hashfile_hashes)
-                    db.session.commit()
+                hashfile_hashes = HashfileHashes.query.filter_by(hashfile_id = hashfile_id).delete()
                 db.session.delete(hashfile)
                 db.session.commit()
-                #if hashfile_hashes:
-                #    db.session.delete(hashfile_hashes)
-                #    db.session.commit()
                 flash('Hashfile has been deleted!', 'success')
                 return redirect(url_for('hashfiles.hashfiles_list'))
         else:

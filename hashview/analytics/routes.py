@@ -225,41 +225,46 @@ def get_analytics():
     fig4_labels =[]
     fig4_values = []
 
-    # limit to top 10 or 20
 
+    # Sort by length and limit to 20
     for entry in sorted(fig4_data):
-        fig4_labels.append(entry)
-        fig4_values.append(fig4_data[entry])
+        if len(fig4_labels) < 20:
+            fig4_labels.append(entry)
+            fig4_values.append(fig4_data[entry])
+        else:
+            break
 
 
     # Figure 5 (Top 10 Passwords)
     if customer_id:
         # we have a customer
         if hashfile_id:
-            fig5_cracked_hashes = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).all()
+            fig5_cracked_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).all()
         else:
             # just a customer, no specific hashfile
-            fig5_cracked_hashes = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').all()
+            fig5_cracked_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').all()
     else:
-        fig5_cracked_hashes = db.session.query(Hashes).filter(Hashes.cracked=='1').all()
+        fig5_cracked_hashes = db.session.query(Hashes, Hashfiles).filter(Hashes.cracked=='1').all()
 
     fig5_data = {}
 
     for entry in fig5_cracked_hashes:
-        if len(entry.plaintext) > 0:
-            if entry.plaintext in fig5_data:
-                fig5_data[entry.plaintext] += 1
+        if len(entry[0].plaintext) > 0:
+            if entry[0].plaintext in fig5_data:
+                fig5_data[entry[0].plaintext] += 1
             else:
-                fig5_data[entry.plaintext] = 1
+                fig5_data[entry[0].plaintext] = 1
 
     fig5_labels =[]
     fig5_values = []
 
-    # limit to top 10 or 20
-
+    # Sort by Highest and Limit to 10
     for entry in sorted(fig5_data, key=fig5_data.__getitem__, reverse=True):
-        fig5_labels.append(entry)
-        fig5_values.append(fig5_data[entry])
+        if len (fig5_labels) < 10:
+            fig5_labels.append(entry)
+            fig5_values.append(fig5_data[entry])
+        else:
+            break
 
 
     return render_template('analytics.html', 
@@ -321,12 +326,10 @@ def analytics_download_hashes():
 
     if request.args.get('type') == 'found':
         for entry in cracked_hashes:
-            print(str(entry[1].username) + ":" + str(entry[0].ciphertext) + ':' + str(entry[0].plaintext))
             outfile.write(str(entry[1].username) + ":" + str(entry[0].ciphertext) + ':' + str(entry[0].plaintext) + "\n")
 
     if request.args.get('type') == 'left':
         for entry in uncracked_hashes:
-            print(str(entry[1].username) + ":" + str(entry[0].ciphertext))
             outfile.write(str(entry[1].username) + ":" + str(entry[0].ciphertext) + "\n")
     
     outfile.close()

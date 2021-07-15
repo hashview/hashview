@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, redirect, request, send_from_directory, current_app
 from hashview.models import TaskQueues, Agents, JobTasks, Tasks, Wordlists, Rules, Jobs, Hashes, HashfileHashes
-from hashview.utils.utils import save_file
+from hashview.utils.utils import save_file, get_md5_hash
 from hashview import db
 from sqlalchemy.ext.declarative import DeclarativeMeta
 import time
@@ -451,9 +451,8 @@ def api_put_jobtask_crackfile_upload(jobtask_id):
             encoded_plaintext = entry.split(':')[1]
             plaintext = bytes.fromhex(encoded_plaintext.rstrip())
 
-        # TODO
-        # do search by sub_ciphertext instead of ciphertext
-        record = Hashes.query.filter_by(ciphertext = ciphertext).first()
+        # Does doing an import with multiple 'where' clauses make sense here, maybe we just stick with sub_ciphertext only since that _should_ be unique
+        record = Hashes.query.filter_by(hash_type=hashtype, sub_ciphertext=get_md5_hash(ciphertext), cracked='0').first()
         if record:
             record.plaintext = plaintext.decode('UTF-8')
             record.cracked = 1

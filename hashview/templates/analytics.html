@@ -5,9 +5,22 @@
 <div class="content-section">
     <div class="dropdown">
         <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-            Customers
-          </button>
+            {% if customer_id %}
+                {% for customer in customers %}
+                    {% if customer.id|string() == customer_id|string() %}
+                        {{ customer.name }}
+                    {% endif %}
+                {% endfor %}
+            {% else %}
+                All Customers
+            {% endif %}
+        </button>
         <div class="dropdown-menu">
+            {% if customer_id %}
+                <a class="dropdown-item" href="/analytics"> All Customers </a>
+                <div class="dropdown-divider"></div>
+            {% endif %}
+
             {% for customer in customers %}
                 <a class="dropdown-item" href="/analytics?customer_id={{customer.id}}"> {{customer.name}} </a>
             {% endfor %}
@@ -18,9 +31,21 @@
 <div class="content-section">
     <div class="dropdown">
         <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-            Hashfiles
-          </button>
+            {% if hashfile_id %}
+                {% for hashfile in hashfiles %}
+                    {% if hashfile.id|string() == hashfile_id|string() %}
+                        {{ hashfile.name }}
+                    {% endif %}
+                {% endfor %}
+            {% else %}
+                All Hashfiles
+            {% endif %}
+        </button>
         <div class="dropdown-menu">
+                {% if hashfile_id %}
+                    <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}"> All Hashfiles </a>
+                    <div class="dropdown-divider"></div>
+                {% endif %}
                 {% for hashfile in hashfiles %}
                     <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}&hashfile_id={{hashfile.id}}"> {{hashfile.name}} </a>
                 {% endfor %}

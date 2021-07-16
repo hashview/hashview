@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, abort
 from flask_login import login_required, current_user
 from hashview.tasks.forms import TasksForm
-from hashview.models import Tasks, Wordlists, Rules, Users, Jobs, JobTasks
+from hashview.models import TaskGroups, Tasks, Wordlists, Rules, Users, Jobs, JobTasks
 from hashview import db
 from hashview.utils.utils import get_keyspace
 
@@ -14,7 +14,9 @@ def tasks_list():
     users = Users.query.all()
     jobs = Jobs.query.all()
     job_tasks = JobTasks.query.all()
-    return render_template('tasks.html', title='tasks', tasks=tasks, users=users, jobs=jobs, job_tasks=job_tasks) 
+    wordlists = Wordlists.query.all()
+    task_groups = TaskGroups.query.all()
+    return render_template('tasks.html', title='tasks', tasks=tasks, users=users, jobs=jobs, job_tasks=job_tasks, wordlists=wordlists, task_groups=task_groups) 
 
 @tasks.route("/tasks/add", methods=['GET', 'POST'])
 @login_required

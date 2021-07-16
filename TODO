@@ -2,16 +2,16 @@ Tasks
     - Create Task
         - Support Bruteforce task
         - Support combinator task
+        - Support Bandril approach
     - Task info
-        - List Associated Jobs
-        - List Associated Wordlists
         - List Associated TaskGroups
+            - Going to require parsing tasks entry in task_groups
     - Delete Task
         - List Associated Jobs
         - List Associated Wordlists
         - List Associated TaskGroups
 
-taskgroups
+Taskgroups
     - List
         - Owner ID -> name
         - Number of Tasks
@@ -66,10 +66,10 @@ Analytics
     - Top 10 masks
     - Top 20 users per single hash/password
     - All duplicates?
-    - When jumping to a customer_id/hashfile_id url, customer/hashfile select buttons dont dynamically update
     - Limit charset figure to only display to X and rest = 'other'
-    - Show 'ALL' option for hashfiles
     - Both Bar graphs should render widths dynamically
+    - Show users based on matching hashes
+    - show users based on matching cracked passwords
 
 Agents
     - Rename Agents

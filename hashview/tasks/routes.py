@@ -50,6 +50,7 @@ def tasks_add():
                             wl_id=None,
                             rule_id=None, 
                             hc_attackmode=tasksForm.hc_attackmode.data,
+                            hc_mask=tasksForm.mask.data,
                             keyspace=get_keyspace(  method=tasksForm.hc_attackmode.data, 
                                                     wordlist_id = None, 
                                                     rule_id=None,

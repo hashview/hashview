@@ -2,7 +2,7 @@ import os
 from flask import Blueprint, render_template, redirect, url_for, flash, current_app, abort
 from flask_login import login_required, current_user
 from hashview.wordlists.forms import WordlistsForm
-from hashview.models import Wordlists
+from hashview.models import Tasks, Wordlists, Users
 from hashview import db
 #from hashview.wordlists.utils import save_file, get_linecount, get_filehash # move to dedicated utils folder
 from hashview.utils.utils import save_file, get_linecount, get_filehash
@@ -14,7 +14,10 @@ wordlists = Blueprint('wordlists', __name__)
 def wordlists_list():
     static_wordlists = Wordlists.query.filter_by(type='static').all()
     dynamic_wordlists = Wordlists.query.filter_by(type='dynamic').all()
-    return render_template('wordlists.html', title='Wordlists', static_wordlists=static_wordlists, dynamic_wordlists=dynamic_wordlists) 
+    wordlists = Wordlists.query.all()
+    tasks = Tasks.query.all()
+    users = Users.query.all()
+    return render_template('wordlists.html', title='Wordlists', static_wordlists=static_wordlists, dynamic_wordlists=dynamic_wordlists, wordlists=wordlists, tasks=tasks, users=users) 
 
 @wordlists.route("/wordlists/add", methods=['GET', 'POST'])
 @login_required
@@ -42,8 +45,19 @@ def wordlists_add():
 def wordlists_delete(wordlist_id):
     wordlist = Wordlists.query.get(wordlist_id)
     if current_user.admin or wordlist.owner_id == current_user.id:
-        if wordlist.type == 'dynamic': # prevent deltion of dynamic list
-            abort(403)
+
+        # prevent deltion of dynamic list
+        if wordlist.type == 'dynamic': 
+            flash('Dynamic Wordlists can not be deleted.', 'danger')
+            redirect(url_for('wordlists.wordlists_list'))
+
+        # Check if associated with a Task 
+        tasks = Tasks.query.all()
+        for task in tasks:
+            if task.wl_id == wordlist_id:
+                flash('Failed. Wordlist is associated to one or more tasks', 'danger')
+                return(url_for('wordlists.wordlists_list'))
+
         db.session.delete(wordlist)
         db.session.commit()
         flash('Wordlist has been deleted!', 'success')

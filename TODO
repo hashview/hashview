@@ -11,6 +11,7 @@ Tasks
         - List Associated Jobs
         - List Associated Wordlists
         - List Associated TaskGroups
+            - Going to require parsing tasks entry in task_groups
 
 Taskgroups
     - List
@@ -22,10 +23,15 @@ Taskgroups
                     - Task name 
                     - Task Type
                 - List associated Jobs
+    - Info
+        - List tasknames
+        - List associated jobs
     - Assign Tasks 
         - Allow for task creation at task assignment (why did i even allow this in the first place)
         - Does it make sense to put these in a form?
         - Dont allow for duplicate tasks to be assigned
+    - Delete task_groups
+        - Prevent Deletion if assigned to a Job
 
 Jobs
     - create Jobs

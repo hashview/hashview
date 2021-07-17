@@ -69,6 +69,17 @@ def tasks_add():
 def tasks_delete(task_id):
     task = Tasks.query.get(task_id)
     if current_user.admin or task.owner_id == current_user.id:
+
+        # Check if associated with JobTask (which implies its associated with a job)
+        jobtasks = JobTasks.query.all()
+        for jobtask in jobtasks:
+            if jobtask.task_id == task_id:
+                flash('Can not delete. Task is associated to one or more jobs', 'danger')
+                return(url_for('tasks.task_list'))
+        
+        # TODO
+        # Check if associated with TaskGroup
+
         db.session.delete(task)
         db.session.commit()
         flash('Task has been deleted!', 'success')

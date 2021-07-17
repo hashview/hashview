@@ -58,7 +58,7 @@ Jobs contain a series of tasks (hashcat commands). Jobs also have an associated 
                                     <a class="btn btn-primary btn-sm" href="#" role="button">completed</a>
                                 {% endif %}
                                 {% if job.status != 'Incomplete' %}
-                                    <button type="button" class="btn btn-warning btn-sm" data-toggle="modal" data-target="#editModal{{job.id}}">Analytics</button>
+                                    <a class="btn btn-warning btn-sm" href="/analytics?customer_id={{job.customer_id}}&hashfile_id={{job.hashfile_id}}" role="button">Analytics</a>
                                     <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{job.id}}">Info</button>
                                     <button type="button" class="btn btn-warning btn-sm" data-toggle="modal" data-target="#editModal{{job.id}}">Edit</button>
                                 {% endif %}

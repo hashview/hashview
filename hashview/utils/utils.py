@@ -44,15 +44,13 @@ def get_keyspace(method, wordlist_id, rule_id, mask):
         cmd.append('-r')
         cmd.append(rule.path)
     elif method == 'maskmode':
-        cmd.append('-a 3')
+        cmd.append('-a3')
         cmd.append(mask)
     cmd.append('--keyspace')
 
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-
-    for line in p.stdout:
-        #janky af, we really should only grab the last line
-        return_value = line
+    p = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, encoding='utf-8')
+    print(p.stdout.split('\n')[0])
+    return_value = p.stdout.split('\n')[0]
 
     return return_value
 

@@ -53,8 +53,10 @@ Jobs
         - creation date
         - started date
         - completed date
+    - Edit
 
 Analytics
+    - Add graph titles
     - Set color scheme to look good
     - download pngs
     - Total Hashes Cracked vs uncracked
@@ -89,6 +91,7 @@ Search
     - Filter by company
 
 Wordlists
+    - Move to user control (only allow admins or creator to delete)
     - info
         - List Associated Tasks
         - List Word Count

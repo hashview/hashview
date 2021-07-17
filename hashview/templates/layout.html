@@ -35,8 +35,7 @@
                                 <div class="dropdown-menu" aria-labelledby="navbarDropdown">
                                     {% if current_user.admin %}
                                         <a class="dropdown-item" href="{{ url_for('customers.customers_list') }}">Customers</a>
-                                        <a class="dropdown-item" href="{{ url_for('wordlists.wordlists_list') }}">Wordlists</a>
-                                        <a class="dropdown-item" href="{{ url_for('rules.rules_list') }}">Rules</a>
+
                                         <a class="dropdown-item" href="{{ url_for('hashfiles.hashfiles_list' )}}">Hashfiles</a>
                                         <a class="dropdown-item" href="{{ url_for('agents.agents_list') }}">Agents</a>
                                         <a class="dropdown-item" href="{{ url_for('settings.settings_list') }}">Settings</a>
@@ -45,6 +44,8 @@
                                     {% endif %}
                                     <a class="dropdown-item" href="{{ url_for('analytics.get_analytics') }}">Analytics</a>
                                     <a class="dropdown-item" href="#">Search</a>
+                                    <a class="dropdown-item" href="{{ url_for('wordlists.wordlists_list') }}">Wordlists</a>
+                                    <a class="dropdown-item" href="{{ url_for('rules.rules_list') }}">Rules</a>
                                     <a class="dropdown-item" href="{{ url_for('users.profile') }}">Profile</a>
                                     <a class="dropdown-item" href="{{ url_for('users.logout') }}">Logout</a>
                                 </div>

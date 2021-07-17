@@ -140,7 +140,10 @@ def build_hashcat_command(job_id, task_id):
 
     target_file = 'control/hashes/hashfile_' + str(job.id) + '_' + str(task.id) + '.txt'
     crack_file = 'control/outfiles/hc_cracked_' + str(job.id) + '_' + str(task.id) + '.txt'
-    relative_wordlist_path = 'control/wordlists/' + wordlist.path.split('/')[-1]
+    if wordlist:
+        relative_wordlist_path = 'control/wordlists/' + wordlist.path.split('/')[-1]
+    else:
+        relative_wordlist_path = ''
     if rules_file:
         relative_rules_path = 'control/rules/' + rules_file.path.split('/')[-1]
     else:

@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, redirect, request, send_from_directory, current_app
 from hashview.models import TaskQueues, Agents, JobTasks, Tasks, Wordlists, Rules, Jobs, Hashes, HashfileHashes
-from hashview.utils.utils import save_file, get_md5_hash
+from hashview.utils.utils import save_file, get_md5_hash, update_dynamic_wordlist
 from hashview import db
 from sqlalchemy.ext.declarative import DeclarativeMeta
 import time
@@ -340,13 +340,13 @@ def api_get_wordlist():
     return jsonify(message)
 
 # serve a wordlist
-@api.route('/v1/wordlist/<int:id>', methods=['GET'])
-def api_get_wordlist_download(id):
+@api.route('/v1/wordlist/<int:wordlist_id>', methods=['GET'])
+def api_get_wordlist_download(wordlist_id):
     if not agentAuthorized(request.cookies.get('agent_uuid')):
         return redirect("/v1/agents/"+uuid+"/authorize") 
 
     updateHeartbeat(request.cookies.get('agent_uuid'))
-    wordlist = Wordlists.query.get(id)
+    wordlist = Wordlists.query.get(wordlist_id)
     wordlist_name = wordlist.path.split('/')[-1]
     cmd = "gzip -9 -k -c hashview/control/wordlists/" + wordlist_name + " > hashview/control/tmp/" + wordlist_name + ".gz"
 
@@ -354,6 +354,17 @@ def api_get_wordlist_download(id):
     # TODO
     os.system(cmd)
     return send_from_directory('control/tmp', wordlist_name + '.gz', mimetype = 'application/octet-stream')
+
+# Update Dynamic Wordlist
+@api.route('/v1/updateWordlist/<int:wordlist_id>', methods=['GET'])
+def api_get_update_wordlist(wordlist_id):
+    update_dynamic_wordlist(wordlist_id)
+    message = {
+        'status': 200,
+        'type': 'message',
+        'msg': 'OK'
+    }
+    return jsonify(message)
 
 # Provide rules info (really should be plural)
 @api.route('/v1/rules', methods=['GET'])

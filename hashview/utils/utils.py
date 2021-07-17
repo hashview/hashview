@@ -101,6 +101,26 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
 
     return True
 
+def update_dynamic_wordlist(wordlist_id):
+    wordlist = Wordlists.query.get(wordlist_id)
+    hashes = Hashes.query.filter_by(cracked=True).distinct('plaintext')
+
+    # Do we delete the original file, or overwrite it?
+    # if we overwrite, what happens if the new content has fewer lines than the previous file.
+    # would this even happen? In most/all cases there will be new stuff to add.
+    # is there a file lock on a wordlist when in use by hashcat? Could we just create a temp file and replace after generation?
+    # Open file
+    file = open(wordlist.path, 'wt')
+    for entry in hashes:
+        file.write(entry.plaintext + '\n')
+    file.close()
+
+    # update line count
+    wordlist.size = get_linecount(wordlist.path)
+    # update file hash
+    wordlist.checksum = get_filehash(wordlist.path)
+    db.session.commit()
+
 def build_hashcat_command(job_id, task_id):
     # this function builds the main hashcat cmd we use to crack.
     hc_binpath = '@HASHCATBINPATH@'

@@ -5,7 +5,7 @@ from hashview.wordlists.forms import WordlistsForm
 from hashview.models import Tasks, Wordlists, Users
 from hashview import db
 #from hashview.wordlists.utils import save_file, get_linecount, get_filehash # move to dedicated utils folder
-from hashview.utils.utils import save_file, get_linecount, get_filehash
+from hashview.utils.utils import save_file, get_linecount, get_filehash, update_dynamic_wordlist
 
 wordlists = Blueprint('wordlists', __name__)
 
@@ -64,3 +64,16 @@ def wordlists_delete(wordlist_id):
     else:
         flash('Unauthorized Action!', 'danger')
     return redirect(url_for('wordlists.wordlists_list'))
+
+
+@wordlists.route("/wordlists/update/<int:wordlist_id>", methods=['GET'])
+@login_required
+def dynamicwordlist_update(wordlist_id):
+    wordlist = Wordlists.query.get(wordlist_id)
+    if wordlist.type == 'dynamic':
+        update_dynamic_wordlist(wordlist_id)
+        flash('Updated Dynamic Wordlist', 'succes')
+    else:
+        flash('Invalid wordlist', 'danger')
+    return redirect(url_for('wordlists.wordlists_list'))
+    

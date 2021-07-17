@@ -98,15 +98,16 @@ Search
     - Filter by company
 
 Wordlists
+    - Change wordlist path attribute in db to be relative to app install path
+        - does this affect the path returned by the API to agents?
     - info
-        - List Associated Tasks
         - List Word Count
-    - Delete
-        - check for if in existsing tasks
     - Dynamic Wordlists
         - Force update
 
 Dynamic Wordlists
+    - Create manually for now
+        - Name: All Recovered Hashes
 
 Rules
     - info 
@@ -119,6 +120,7 @@ Rules
 Customers
     - info
         - List Associated Hashfiles
+        - List associated Jobs
         - Creation Date
 
 Hashfiles
@@ -163,6 +165,7 @@ Installtion files
             - Set up settings table
             - create new Tasks
             - create dummy wordlist
+                - create dummy dynamic wordlist
             - create dumy rules
             - create administrator account
         
@@ -175,6 +178,7 @@ Installtion files
         - export FLASK_APP=hashview.py 
             - flask db migrate
             - flask db upgrade 
+        - What do we do with previous wordlists/rules and dynamic wordlist?
 
 Wiki Instruction
 

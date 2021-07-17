@@ -3,6 +3,7 @@
 <br>
 <h1>Wordlists</h1>
 <br>
+These are plaintext, newline delimited files that you can upload to hashview and then assign to a task. The Dynamic Wordlist is automatically generated for you.
 <a class="btn btn-success btn-sm mt-1 mb-1" href="{{ url_for('wordlists.wordlists_add') }}">Add</a>
 <br>
 <br>
@@ -17,6 +18,7 @@
                 <tr>
                     <th scope="col">Name</th>
                     <th scope="col">Size</th>
+                    <th scope="col">Owner</th>
                     <th scope="col">Control</th>
                 </tr>
                 </thead>
@@ -25,6 +27,13 @@
                         <tr>
                             <td>{{ wordlist.name }}</td>
                             <td>{{ wordlist.size }}</td>
+                            <td>
+                                {% for user in users %}
+                                    {% if user.id == wordlist.owner_id %}
+                                        {{ user.first_name }} {{ user.last_name }}
+                                    {% endif %}
+                                {% endfor %}
+                            </td>
                             <td>
                                 <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{wordlist.id}}">Info</button>
                                 <button type="button" class="btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal{{wordlist.id}}">Delete</button>
@@ -50,7 +59,6 @@
                             <td>
                                 <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{wordlist.id}}">Info</button>
                                 <button type="button" class="btn btn-warning btn-sm" data-toggle="modal" data-target="#updateModal{{wordlist.id}}">Update</button>
-                                <button type="button" class="btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal{{wordlist.id}}">Delete</button>
                             </td>
                         </tr>
                     {% endfor %}
@@ -61,48 +69,53 @@
     </article>
     {% for wordlist in wordlists %}
     <!-- Info Modal -->
-        <div class="modal fade" id="infoModal{{wordlist.id}}" tabindex="-1" aria-labelledby="infoModal{{wordlist.id}}Label" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                <h5 class="modal-title" id="infoModal{{wordlist.id}}Label">Info: {{wordlist.name}}</h5>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-                </div>
-                <div class="modal-body">
-                ...
-                </div>
-                <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary">Understood</button>
-                </div>
+    <div class="modal fade" id="infoModal{{wordlist.id}}" tabindex="-1" aria-labelledby="infoModal{{wordlist.id}}Label" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+            <h5 class="modal-title" id="infoModal{{wordlist.id}}Label">Info: {{wordlist.name}}</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+            </button>
             </div>
+            <div class="modal-body">
+            The following tasks are using this wordlist.<br>
+            <br>
+                {% for task in tasks %}
+                    {% if task.wl_id == wordlist.id %}
+                        {{task.name}} <br>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
             </div>
         </div>
+        </div>
+    </div>
     {% endfor %}
     {% for wordlist in wordlists %}
-        <!-- DeleteModal -->
-        <div class="modal fade" id="deleteModal{{wordlist.id}}" tabindex="-1" aria-labelledby="deleteModal{{wordlist.id}}Label" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                <h5 class="modal-title" id="deleteModal{{wordlist.id}}Label">Delete: {{wordlist.name}} ?</h5>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-                </div>
-                <div class="modal-body">
-                This will permanantly delete the account. Are you sure you want to continue?
-                </div>
-                <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
-                <form action="{{ url_for('wordlists.wordlists_delete', wordlist_id=wordlist.id) }}" method="POST">
-                    <input class="btn btn-danger" type="submit" value="Delete">
-                  </form>
-                </div>
+    <!-- DeleteModal -->
+    <div class="modal fade" id="deleteModal{{wordlist.id}}" tabindex="-1" aria-labelledby="deleteModal{{wordlist.id}}Label" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+            <h5 class="modal-title" id="deleteModal{{wordlist.id}}Label">Delete: {{wordlist.name}} ?</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+            </button>
             </div>
+            <div class="modal-body">
+            This will permanantly delete the account. Are you sure you want to continue?
+            </div>
+            <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
+            <form action="{{ url_for('wordlists.wordlists_delete', wordlist_id=wordlist.id) }}" method="POST">
+                <input class="btn btn-danger" type="submit" value="Delete">
+                </form>
             </div>
         </div>
+        </div>
+    </div>
     {% endfor %}
 {% endblock content %}

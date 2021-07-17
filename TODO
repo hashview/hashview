@@ -89,7 +89,7 @@ API
 Add SSL
 - Options in config
 
-Move wordlists, rules, hashfiles out of admin only view
+Move hashfiles out of admin only view
 
 Search
     - Export Results
@@ -98,12 +98,13 @@ Search
     - Filter by company
 
 Wordlists
-    - Move to user control (only allow admins or creator to delete)
     - info
         - List Associated Tasks
         - List Word Count
     - Delete
         - check for if in existsing tasks
+    - Dynamic Wordlists
+        - Force update
 
 Dynamic Wordlists
 
@@ -244,3 +245,15 @@ All
         - jobs/id/status
         - jobs/delete/id
         - agents/delete/id
+
+Standardize modals
+    - info
+        - jobs
+        - wordlists
+        - rules
+        - users
+    - delete
+        - jobs
+        - wordlists
+        - rules
+        - users

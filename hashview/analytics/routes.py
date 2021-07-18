@@ -31,7 +31,7 @@ def get_analytics():
     # Figure 1 (Cracked vs uncracked)
     if customer_id:
         # we have a customer
-        if hashfile_id:
+        if hashfile_id: # with a hashfile
             fig1_cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).count()
             fig1_uncracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==hashfile_id).count()
         else:

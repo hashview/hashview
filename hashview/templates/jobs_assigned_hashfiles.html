@@ -129,13 +129,19 @@ Apply hashes to be cracked. You can either copy/paste the desired hashes below, 
     <div class="tab-pane fade" id="nav-existing-hashfile" role="tabpanel" aria-labelledby="nav-existing-hashfile-tab">
         <br>
         <div class="content-section">
-            <form action='/jobs/assign_hashfile' class='form-horizontal' id='hf_form' method='post' name='hf_form'>
+            <form action='' class='form-horizontal' id='hf_form' method='post' name='hf_form'>
                 <fieldset class="form-group">
                     <div class="form-group">
                         <label class="form-control-label" for="hashfile">Hashfile</label>
                         <select class="form-control form-control-lg" id="hashfile_id" name="hashfile_id">
                             {% for hashfile in hashfiles %}
-                                <option value='{{hashfile.id}}'>{{hashfile.name}}</option>
+                                <option value='{{hashfile.id}}'>
+                                    {% for key, value in hashfile_cracked_rate.items() %}
+                                        {% if key|string() == hashfile.id|string() %}
+                                            {{ value }} {{hashfile.name}} 
+                                        {% endif%}
+                                    {% endfor %}
+                                </option>
                             {% endfor %}
                         </select>
                     </div>

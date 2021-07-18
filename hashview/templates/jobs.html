@@ -52,10 +52,12 @@ Jobs contain a series of tasks (hashcat commands). Jobs also have an associated 
                             <td>
                                 {% if job.status == 'Ready' %}
                                     <a class="btn btn-primary btn-sm" href="/jobs/start/{{job.id}}" role="button">start</a>
-                                {% elif job.status == 'Queued' %}
-                                    <a class="btn btn-primary btn-sm" href="/jobs/stop/{{job.id}}/" role="button">stop</a>
+                                {% elif job.status == 'Queued' or job.status == 'Running' %}
+                                    <a class="btn btn-primary btn-sm" href="/jobs/stop/{{job.id}}" role="button">stop</a>
                                 {% elif job.status == 'Completed' %}
                                     <a class="btn btn-primary btn-sm" href="#" role="button">completed</a>
+                                {% elif job.status == 'Canceled' %}
+                                    <a class="btn btn-primary btn-sm" href="/jobs/start/{{job.id}}" role="button">canceled</a>
                                 {% endif %}
                                 {% if job.status != 'Incomplete' %}
                                     <a class="btn btn-warning btn-sm" href="/analytics?customer_id={{job.customer_id}}&hashfile_id={{job.hashfile_id}}" role="button">Analytics</a>

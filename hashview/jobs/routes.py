@@ -1,10 +1,12 @@
 from flask import Blueprint, render_template, redirect, abort, flash, url_for, current_app, request
 from flask_login import login_required, current_user
+from sqlalchemy.sql.elements import Null
 from hashview.jobs.forms import JobsForm, JobsNewHashFileForm, JobsNotificationsForm, JobSummaryForm
 from hashview.models import Jobs, Customers, Hashfiles, Users, HashfileHashes, Hashes, JobTasks, Tasks
 from hashview.utils.utils import save_file, get_filehash, import_hashfilehashes, build_hashcat_command
 from hashview import db
 import os
+import time
 
 jobs = Blueprint('jobs', __name__)
 
@@ -338,15 +340,22 @@ def jobs_stop(job_id):
     job = Jobs.query.get(job_id)
     job_tasks = JobTasks.query.filter_by(job_id = job_id).all()
 
-
     if job:
         if current_user.admin or job.owner_id == current_user.id:
+            if job.status == 'Running' or job.status == 'Queued':
+                job.status = 'Canceled'
+                job.ended_at = time.strftime('%Y-%m-%d %H:%M:%S')
 
-            flash('Job has been stopped!', 'success')
-            return redirect(url_for('jobs.jobs_list'))
+                for job_task in job_tasks:
+                    if job_task.status == 'Queued' or job_task.status == 'Running':
+                        job_task.status = 'Canceled'
+                        job_task.agent_id = None
+                db.session.commit()
+                flash('Job has been stopped!', 'success')
+            else:
+                flash('Job not activly running.', 'danger')
         else:
             flash('You do not have rights to stop this job!', 'danger')
-            return redirect(url_for('jobs.jobs_list'))
     else:
         flash('Error in stopping job', 'danger')
-        return redirect(url_for('jobs.jobs_list'))
+    return redirect(url_for('jobs.jobs_list'))

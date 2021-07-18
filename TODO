@@ -34,8 +34,7 @@ Taskgroups
         - Prevent Deletion if assigned to a Job
 
 Jobs
-    - create Jobs
-        - Update Assigned hashfiles to include cracked count of existing hashfiles
+    - Create Jobs
         - Assign existing Hashfiles
             - Exising Hashfile
                 - Grey out tab if no pre-existing hashfile exists
@@ -44,7 +43,7 @@ Jobs
                     - Give example (?) on mouse over
                 - Select hash Type
                     - on other allow user to type in hashtype
-                - set hashfile name based on file name on upload
+                - Allow copy/past of hashes
         - Assign Tasks
             - Should probably be a form :/
             - Remove task from assignable tasks that are already assigned to the job
@@ -53,6 +52,7 @@ Jobs
             - deletes jobtasks
             - delete job
             - redirects to joblist
+    - Job list  
 
     - Job info
         - Tasks assigned
@@ -261,3 +261,10 @@ Standardize modals
         - wordlists
         - rules
         - users
+
+Home page
+    - Show active jobs & tasks
+        - Show owner
+        - Show cracked rate
+        - Show hc_output :(
+    - Give ability to stop jobs / tasks

@@ -254,7 +254,20 @@ def api_set_agent_heartbeat(uuid):
         else:
             agent_data = request.json
             # Check authorization cookies
-            # if agent_status == working parse output
+            if agent_data['agent_status'] == 'Working':
+                # Parse hc_status data
+                jobtask_id = agent_data['agent_task']
+                print("agent_task: " + str(jobtask_id))
+                jobtask= JobTasks.query.get(jobtask_id)
+                print("jobtask: " + str(jobtask.status))
+                if not jobtask or jobtask.status == 'Canceled':
+                    message = {
+                        'status': 200,
+                        'type': 'message',
+                        'msg': 'Canceled',
+                    }
+                    return jsonify(message)
+
             # if agent_status == 'Idle'
             if agent_data['agent_status'] == 'Idle':
                 already_assigned_task = JobTasks.query.filter_by(agent_id = agent.id).first()

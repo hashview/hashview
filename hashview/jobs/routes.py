@@ -80,10 +80,11 @@ def jobs_assigned_hashfile(job_id):
 
             return redirect(str(hashfile.id))
   
-        elif jobsNewHashFileForm.hashfilehashes:
+        elif jobsNewHashFileForm.hashfilehashes.data:
             # User submitted copied/pasted hashes
+            # Going to have to save a file manually instead of using save_file since save_file requires form data to be passed and we're not collecting that object for this tab
 
-            hashfile_path = os.path.join(current_app.root_path, save_file('control/tmp', jobsNewHashFileForm.hashfilehashes.data))
+            hashfile_path = os.path.join(current_app.root_path, save_file('control/tmp', jobsNewHashFileForm.name.data))
 
             hashfile = Hashfiles(name=jobsNewHashFileForm.name, customer_id=job.customer_id)
             db.session.add(hashfile)

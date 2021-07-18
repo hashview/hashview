@@ -38,7 +38,6 @@ Jobs
         - Update Assigned hashfiles to include cracked count of existing hashfiles
         - Assign existing Hashfiles
             - Exising Hashfile
-                - Include Crack count of exsiting hashfiles
                 - Grey out tab if no pre-existing hashfile exists
             - New hashfiles
                 - Select file format
@@ -135,6 +134,8 @@ Hashfiles
         - delete Associated Jobs
         - if no other hashfiles exists for customer, delete customer
     - let non-admins delete hashfiles?
+    - Delete
+        - Remove uncracked hashes
 
 Change 'user/wordlist/task/customer add's into popup'
 

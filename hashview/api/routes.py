@@ -457,10 +457,11 @@ def api_put_jobtask_crackfile_upload(jobtask_id):
     decode_hex = codecs.getdecoder("hex_codec")
 
     for entry in lines:
-        if hashtype == 1000:
+        if hashtype == 1000 or hashtype == 13100 or hashtype == 19200 or hashtype == 19600 or hashtype == 19700 or hashtype == 19800 or hashtype == 19900:
             ciphertext = entry.split(':')[0]
             encoded_plaintext = entry.split(':')[1]
             plaintext = bytes.fromhex(encoded_plaintext.rstrip())
+        #if hashtype == 13100 or hashtype == 19200 or hashtype == 19600 or hashtype == 19700 or hashtype == 19800 or hashtype == 19900:
 
         # Does doing an import with multiple 'where' clauses make sense here, maybe we just stick with sub_ciphertext only since that _should_ be unique
         record = Hashes.query.filter_by(hash_type=hashtype, sub_ciphertext=get_md5_hash(ciphertext), cracked='0').first()

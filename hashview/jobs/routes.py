@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect, abort, flash, url_for, current_app
+from flask import Blueprint, render_template, redirect, abort, flash, url_for, current_app, request
 from flask_login import login_required, current_user
 from hashview.jobs.forms import JobsForm, JobsNewHashFileForm, JobsNotificationsForm, JobSummaryForm
 from hashview.models import Jobs, Customers, Hashfiles, Users, HashfileHashes, Hashes, JobTasks, Tasks
@@ -47,6 +47,13 @@ def jobs_assigned_hashfile(job_id):
     hashfiles = Hashfiles.query.filter_by(customer_id=job.customer_id)
     jobsNewHashFileForm = JobsNewHashFileForm()
 
+    hashfile_cracked_rate = {}
+
+    for hashfile in hashfiles:
+        cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).count()
+        total = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id==hashfile.id).count()
+        hashfile_cracked_rate[hashfile.id] = "(" + str(cracked_cnt) + "/" + str(total) + ")"
+
     if jobsNewHashFileForm.validate_on_submit():
         
         if jobsNewHashFileForm.hashfile.data:
@@ -54,7 +61,7 @@ def jobs_assigned_hashfile(job_id):
             # User submitted a file upload
             hashfile_path = os.path.join(current_app.root_path, save_file('control/tmp', jobsNewHashFileForm.hashfile.data))
 
-            hashfile = Hashfiles(name=jobsNewHashFileForm.hashfile.name, customer_id=job.customer_id)
+            hashfile = Hashfiles(name=jobsNewHashFileForm.hashfile.data.filename, customer_id=job.customer_id)
             db.session.add(hashfile)
             db.session.commit()
             
@@ -82,9 +89,16 @@ def jobs_assigned_hashfile(job_id):
             db.session.add(hashfile)
             db.session.commit()
             
-
             # Delete hashfile
             # TODO
+    # This is janky af, we should really have this be a wtf form
+    # however, since we want to add addition text to the options in the list, im not sure if thats possible
+    # so instead we're just processing this as a regular form post
+    elif request.method == 'POST' and request.form['hashfile_id']:
+        job.hashfile_id = request.form['hashfile_id']
+        db.session.commit()
+        return redirect("/jobs/" + str(job.id)+"/tasks")
+
     else:
         for error in jobsNewHashFileForm.name.errors:
             print(str(error))
@@ -99,9 +113,7 @@ def jobs_assigned_hashfile(job_id):
         for error in jobsNewHashFileForm.submit.errors:        
             print(str(error))
         
-
- 
-    return render_template('jobs_assigned_hashfiles.html', title='Jobs Assigned Hashfiles', hashfiles=hashfiles, job=job, jobsNewHashFileForm=jobsNewHashFileForm)
+    return render_template('jobs_assigned_hashfiles.html', title='Jobs Assigned Hashfiles', hashfiles=hashfiles, job=job, jobsNewHashFileForm=jobsNewHashFileForm, hashfile_cracked_rate=hashfile_cracked_rate)
 
 @jobs.route("/jobs/<int:job_id>/assigned_hashfile/<int:hashfile_id>", methods=['GET'])
 @login_required

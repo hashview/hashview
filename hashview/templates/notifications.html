@@ -1,0 +1,78 @@
+{% extends "layout.html"%}
+{% block header %}
+<br>
+<h1>Notifications</h1>
+<br>
+These are your notifications.
+<br>
+<br>
+<br>
+{% endblock header %}
+{% block content %}
+    <article class="media content-section">
+        <div class="media-body">
+            <legend class="border-bottom mb-4">Job Notifications</legend>
+            <table class="table">
+                <thead>
+                <tr>
+                    <th scope="col">Job Name</th>
+                    <th scope="col">Method</th>
+                    <th scope="col">Control</th>
+                </tr>
+                </thead>
+                <tbody>
+                    {% for job_notification in job_notifications %}
+                        <tr>
+                            <td>
+                                {% for job in jobs %}
+                                    {% if job.id == job_notification.job_id %}
+                                        {{job.name}}
+                                    {% endif %}
+                                {% endfor %}
+                            </td>
+                            <td>{{ job_notification.method }}</td>
+                            <td>
+                                <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal">Change Method</button>
+                                <a class="btn btn-danger btn-sm" href="/notifications/job/{{job_notification_id}}" role="button">Delete</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <legend class="border-bottom mb-4">Hash Notifications</legend>
+            <table class="table">
+                <thead>
+                <tr>
+                    <th scope="col">Hash</th>
+                    <th scope="col">Hashtype</th>
+                    <th scope="col">Method</th>
+                    <th scope="col">Control</th>
+                </tr>
+                </thead>
+                <tbody>
+                    {% for hash_notification in hash_notifications %}
+                        <tr>
+                            <td>
+                                {% for hash in hashes %}
+                                    {% if hash_notification.hash_id == hash.id %}
+                                        {{ hash.ciphertext }} 
+                                        </td>
+                                        <td>
+                                        {{ hash.hash_type }}
+                                    {% endif %}
+                                {% endfor %}
+                            </td>
+                            <td>
+                                {{hash_notification.method}}
+                            </td>
+                            <td>
+                                <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal">Change Method</button>
+                                <a class="btn btn-danger btn-sm" href="/notifications/hash/{{hash_notification_id}}" role="button">Delete</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </article>
+{% endblock content %}

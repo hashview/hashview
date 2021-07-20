@@ -74,7 +74,7 @@ def profile():
             current_user.pushover_key = form.pushover_key.data 
         db.session.commit()
         flash('Profile Updated!', 'success')
-        return redirect(url_for('user.profile'))
+        return redirect(url_for('users.profile'))
     elif request.method == 'GET':
         form.first_name.data = current_user.first_name
         form.last_name.data = current_user.last_name

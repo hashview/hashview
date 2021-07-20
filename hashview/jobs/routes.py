@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, redirect, abort, flash, url_for, c
 from flask_login import login_required, current_user
 from sqlalchemy.sql.elements import Null
 from hashview.jobs.forms import JobsForm, JobsNewHashFileForm, JobsNotificationsForm, JobSummaryForm
-from hashview.models import Jobs, Customers, Hashfiles, Users, HashfileHashes, Hashes, JobTasks, Tasks
+from hashview.models import HashNotifications, JobNotifications, Jobs, Customers, Hashfiles, Users, HashfileHashes, Hashes, JobTasks, Tasks
 from hashview.utils.utils import save_file, get_filehash, import_hashfilehashes, build_hashcat_command
 from hashview import db
 import os
@@ -251,17 +251,28 @@ def jobs_assign_notifications(job_id):
     job = Jobs.query.get(job_id)
 
     # populate the forms dynamically with the choices in the database
-    form.hashes.choices = [(str(c[0].id), c[0].ciphertext) for c in db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()]
+    form.hashes.choices = [(str(c[0].id), c[1].username + ':' + c[0].ciphertext) for c in db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()]
     
     if form.validate_on_submit():
         if form.job_completion.data:
-            if form.job_completion.data == 'email':
-                # Do something
-                print('user wants an email')
-            if form.job_completion.data == 'push':
-                # Do another thing
-                print('user wants a push')
+            job_notification = JobNotifications(
+                owner_id = current_user.id,
+                job_id = job_id,
+                method = form.job_completion.data
+            )
+            db.session.add(job_notification)
+            db.session.commit()
+
         if form.hash_completion.data:
+            if form.hashes.data:
+                for hash_id in form.hashes.data:
+                    hash_notification = HashNotifications(
+                        owner_id = current_user.id,
+                        hash_id = hash_id,
+                        method = form.hash_completion.data
+                    )
+                    db.session.add(hash_notification)
+                    db.session.commit()
             if form.hash_completion.data == 'email':
                 print( 'user wants an email')
             if form.hash_completion.data == 'push':
@@ -278,8 +289,7 @@ def jobs_delete(job_id):
     job = Jobs.query.get(job_id)
     if current_user.admin or job.owner_id == current_user.id:
         JobTasks.query.filter_by(job_id=job_id).delete()
-        # Do we need to commit this twice?
-        # db.session.commit()
+        JobNotifications.query.filter_by(job_id=job_id).delete()
 
         db.session.delete(job)
         db.session.commit()

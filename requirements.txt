@@ -10,3 +10,4 @@ flask-migrate
 flask-script
 subprocess
 json
+python-pushsafer

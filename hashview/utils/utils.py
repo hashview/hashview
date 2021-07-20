@@ -7,7 +7,7 @@ from hashview import mail, db
 from hashview.models import Settings, Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs
 from flask_mail import Message
 from flask import current_app
-
+from pushover import Client
 
 def save_file(path, form_file):
     random_hex = secrets.token_hex(8)
@@ -31,7 +31,11 @@ def send_email(user, subject, message):
     msg = Message(subject, recipients=[user.email_address])
     msg.body = message
     mail.send(msg)
-    
+
+def send_pushover(user, subject, message):
+    client = Client(user.pushover_key, api_token=user.pushover_id)
+    client.send_message(message, title=subject)
+
 def get_keyspace(method, wordlist_id, rule_id, mask):
     settings = Settings.query.first()
     return_value = 0

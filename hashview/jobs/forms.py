@@ -51,7 +51,7 @@ class JobsNotificationsForm(FlaskForm):
     hash_completion = SelectField('Notify when specific hashes crack', choices=[('none', 'No'),
                                                                         ('email', 'Send Email'),
                                                                         ('push', 'Send Push Notification')], validators=[DataRequired()])
-    hashes = JobsNotifyHashes('Select Hashes', coerce=int)
+    hashes = JobsNotifyHashes('Select Hashes', coerce=str)
     submit = SubmitField('Next')
 
 class JobSummaryForm(FlaskForm):

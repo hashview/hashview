@@ -52,6 +52,13 @@ Jobs
             - deletes jobtasks
             - delete job
             - redirects to joblist
+        - Summary page
+            - Job name
+            - Customer
+            - Hashfile (cracked vs uncracked)
+            - # of tasks assigned
+            - notification preferences
+            
     - Job list  
 
     - Job info
@@ -60,8 +67,11 @@ Jobs
         - started date
         - completed date
     - Edit
+    - Deletion
+        - Delete job notification entry
 
 Analytics
+    - I think outerjoins should be .joins
     - Add graph titles
     - Set color scheme to look good
     - download pngs
@@ -136,6 +146,7 @@ Hashfiles
     - let non-admins delete hashfiles?
     - Delete
         - Remove uncracked hashes
+    - Update time spent on cracking hashes in hashfile based on job completion
 
 Change 'user/wordlist/task/customer add's into popup'
 
@@ -238,11 +249,12 @@ Users
             - tasks
 
 Notifications
-    - One or two tables?
+    - Manageable by owner
     - Code to run upon job completion
     - Code to run upon hash Cracked
     - how to handle deletion of job
     - how to handle deletion of user
+    - Optimize hashes object in notifications_list class/route.
 
 All
     - change uri scheme to be consistent

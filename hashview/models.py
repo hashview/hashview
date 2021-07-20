@@ -16,8 +16,8 @@ class Users(db.Model, UserMixin):
     email_address = db.Column(db.String(50), unique=True, nullable=False)
     password = db.Column(db.String(60), nullable=False)
     admin = db.Column(db.Boolean, nullable=False, default=False)
-    pushover_id = db.Column(db.String(20), nullable=True)
-    pushover_key = db.Column(db.String(20), nullable=True)
+    pushover_id = db.Column(db.String(50), nullable=True)
+    pushover_key = db.Column(db.String(50), nullable=True)
     wordlists = db.relationship('Wordlists', backref='tbd', lazy=True)
     rules = db.relationship('Rules', backref='owner', lazy=True)
     jobs = db.relationship('Jobs', backref='owner', lazy=True)
@@ -55,7 +55,7 @@ class Jobs(db.Model):
     hashfile_id = db.Column(db.Integer, nullable=True)
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    notify_completed = db.Column(db.Boolean, nullable=False, default=False)
+    #notify_completed = db.Column(db.Boolean, nullable=False, default=False)
     jobtasks = db.relationship('JobTasks', backref='tbd', lazy=True)
 
 class JobTasks(db.Model):
@@ -154,3 +154,15 @@ class Hashes(db.Model):
     hash_type = db.Column(db.Integer, nullable=False)
     cracked = db.Column(db.Boolean, nullable=False)
     plaintext = db.Column(db.String(256))
+
+class JobNotifications(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, nullable=False)
+    job_id = db.Column(db.Integer, nullable=False)
+    method = db.Column(db.String(6), nullable=False)    # email, push
+
+class HashNotifications(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, nullable=False)
+    hash_id = db.Column(db.Integer, nullable=False)
+    method = db.Column(db.String(6), nullable=False)    # email, push

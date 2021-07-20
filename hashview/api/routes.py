@@ -1,8 +1,10 @@
 from flask import Blueprint, jsonify, redirect, request, send_from_directory, current_app
-from hashview.models import TaskQueues, Agents, JobTasks, Tasks, Wordlists, Rules, Jobs, Hashes, HashfileHashes
-from hashview.utils.utils import save_file, get_md5_hash, update_dynamic_wordlist
+import sqlalchemy
+from hashview.models import TaskQueues, Agents, JobTasks, Tasks, Wordlists, Rules, Jobs, Hashes, HashfileHashes, JobNotifications, Users
+from hashview.utils.utils import save_file, get_md5_hash, send_email, update_dynamic_wordlist, send_pushover
 from hashview import db
 from sqlalchemy.ext.declarative import DeclarativeMeta
+from sqlalchemy.sql.expression import func
 import time
 import os
 import json
@@ -74,15 +76,9 @@ def updateJobTaskStatus(jobtask_id, status):
         if jobtask.status == 'Queued' or jobtask.status == 'Running' or jobtask.status == 'Importing':
             done = False
     
-    # Send email if completed
-    # TODO
-    if job.notify_completed == True and done == True:
-        print('send completed email notification')
-    
-    # TODO
-    # Add ended_at time
     if done:
         job.status = 'Completed'
+        job.ended_at = time.strftime('%Y-%m-%d %H:%M:%S')
         db.session.commit()
 
         # TODO
@@ -92,6 +88,29 @@ def updateJobTaskStatus(jobtask_id, status):
 
         #TODO
         # mark all jobtasks as completed
+        # Send email if completed
+
+        # Send Job Completion Notifications
+        notifications = JobNotifications.query.filter_by(job_id = job.id)
+        
+        for notification in notifications:
+            user = Users.query.get(notification.owner_id)
+            cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==job.hashfile_id).count()
+            uncracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).count()
+            if notification.method == 'email':
+                print('send completed email notification')
+                send_email(user, 'Hashview Job: "' + job.name + '" Has Completed!', 'Your job has completed. It ran for a total of ' + sqlalchemy.func.TIMESTAMPDIFF(sqlalchemy.text('MINUTE'), job.started_at, job.ended_at) + ' minutes and resulted in a total of ' + str(cracked_cnt) + ' out of ' + str(cracked_cnt+uncracked_cnt) + ' hashes being recovered!')
+            elif notification.method == 'push':
+                print("user pushover_key: " + user.pushover_key)
+                print("user id: " + user.pushover_id)
+                if user.pushover_key and user.pushover_id:
+                    print('send completed pushover notification')
+                    send_pushover(user, 'Message from Hashview', 'Hashview Job: "' + job.name + '" Has Completed!',)
+                else:
+                    send_email(user, 'Hashview: Missing Pushover Key', 'Hello, you were due to recieve a pushover notification, but because your account was not provisioned with an pushover ID and Key, one could not be set. Please log into hashview and set these options under Manage->Profile.')
+            db.session.delete(notification)
+            db.session.commit()
+        
 
 @api.route('/v1/not_authorized', methods=['GET', 'POST'])
 def api_unauthorized():
@@ -257,9 +276,7 @@ def api_set_agent_heartbeat(uuid):
             if agent_data['agent_status'] == 'Working':
                 # Parse hc_status data
                 jobtask_id = agent_data['agent_task']
-                print("agent_task: " + str(jobtask_id))
                 jobtask= JobTasks.query.get(jobtask_id)
-                print("jobtask: " + str(jobtask.status))
                 if not jobtask or jobtask.status == 'Canceled':
                     message = {
                         'status': 200,

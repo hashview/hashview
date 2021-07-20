@@ -63,7 +63,7 @@ def jobs_assigned_hashfile(job_id):
             # User submitted a file upload
             hashfile_path = os.path.join(current_app.root_path, save_file('control/tmp', jobsNewHashFileForm.hashfile.data))
 
-            hashfile = Hashfiles(name=jobsNewHashFileForm.hashfile.data.filename, customer_id=job.customer_id)
+            hashfile = Hashfiles(name=jobsNewHashFileForm.hashfile.data.filename, customer_id=job.customer_id, owner_id=current_user.id)
             db.session.add(hashfile)
             db.session.commit()
             
@@ -88,7 +88,7 @@ def jobs_assigned_hashfile(job_id):
 
             hashfile_path = os.path.join(current_app.root_path, save_file('control/tmp', jobsNewHashFileForm.name.data))
 
-            hashfile = Hashfiles(name=jobsNewHashFileForm.name, customer_id=job.customer_id)
+            hashfile = Hashfiles(name=jobsNewHashFileForm.name, customer_id=job.customer_id, owner_id=current_user.id)
             db.session.add(hashfile)
             db.session.commit()
             

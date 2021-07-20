@@ -1,10 +1,9 @@
 from flask import Blueprint, jsonify, redirect, request, send_from_directory, current_app
 import sqlalchemy
-from hashview.models import HashNotifications, TaskQueues, Agents, JobTasks, Tasks, Wordlists, Rules, Jobs, Hashes, HashfileHashes, JobNotifications, Users
+from hashview.models import HashNotifications, TaskQueues, Agents, JobTasks, Tasks, Wordlists, Rules, Jobs, Hashes, HashfileHashes, JobNotifications, Users, Hashfiles
 from hashview.utils.utils import save_file, get_md5_hash, send_email, update_dynamic_wordlist, send_pushover
 from hashview import db
 from sqlalchemy.ext.declarative import DeclarativeMeta
-from sqlalchemy.sql.expression import func, text
 import time
 import os
 import json
@@ -82,16 +81,16 @@ def updateJobTaskStatus(jobtask_id, status):
         job.ended_at = time.strftime('%Y-%m-%d %H:%M:%S')
         db.session.commit()
 
+        start_time = datetime.strptime(str(job.started_at), '%Y-%m-%d %H:%M:%S')
+        end_time = datetime.strptime(str(job.ended_at), '%Y-%m-%d %H:%M:%S')
+        durration = (abs(end_time - start_time).seconds) # So dumb you cant conver this to minutes, only resolution is seconds or days :(
+
+        hashfile = Hashfiles.query.get(job.hashfile_id)
+        hashfile.runtime += durration
+        db.session.commit()
+
         # TODO
-        # Calculate time difference in hashfile and update it
-        #diff = time.strftime('%Y-%m-%d %H:%M:%S') - job.started_at
-        #print('diff in time: ' + str(diff))
-
-        #TODO
         # mark all jobtasks as completed
-        # Send email if completed
-
-        # Send Job Completion Notifications
         job_notifications = JobNotifications.query.filter_by(job_id = job.id)
         
         for job_notification in job_notifications:
@@ -99,10 +98,7 @@ def updateJobTaskStatus(jobtask_id, status):
             cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==job.hashfile_id).count()
             uncracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).count()
             if job_notification.method == 'email':
-                #durration = func.TIMESTAMPDIFF(sqlalchemy.text('MINUTE'), job.started_at, job.ended_at)
-                #durration = func.sum((func.TIMESTAMPDIFF(text('MINUTE', job.started_at, job.ended_at))))
-                durration = '[TODO]'
-                send_email(user, 'Hashview Job: "' + job.name + '" Has Completed!', 'Your job has completed. It ran for a total of ' + durration + ' minutes and resulted in a total of ' + str(cracked_cnt) + ' out of ' + str(cracked_cnt+uncracked_cnt) + ' hashes being recovered!')
+                send_email(user, 'Hashview Job: "' + job.name + '" Has Completed!', 'Your job has completed. It ran for a total of ' + str(durration) + ' seconds and resulted in a total of ' + str(cracked_cnt) + ' out of ' + str(cracked_cnt+uncracked_cnt) + ' hashes being recovered!')
             elif job_notification.method == 'push':
                 if user.pushover_key and user.pushover_id:
                     send_pushover(user, 'Message from Hashview', 'Hashview Job: "' + job.name + '" Has Completed!')
@@ -116,8 +112,8 @@ def updateJobTaskStatus(jobtask_id, status):
         for hash_notification in hash_notifications:
             user = Users.query.get(hash_notification.owner_id)
             message = "Congratulations, the following users's hashes have been recovered: \n\n"
-            # There's probably a way to do this in one query but im lazy
             
+            # There's probably a way to do this in one query but im lazy
             cracked_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()
             for cracked_hash in cracked_hashes:
                 if cracked_hash[0].id == hash_notification.hash_id:

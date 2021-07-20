@@ -81,6 +81,7 @@ class Hashfiles(db.Model):
     #wl_id = db.Column(db.Integer, db.ForeignKey('wordlists.id'), nullable=False) # for dynamic wordlist. Keep?
     runtime = db.Column(db.Integer, default=0)
     customer_id = db.Column(db.Integer, nullable=False)
+    owner_id = db.Column(db.Integer, nullable=False)
 
 class HashfileHashes(db.Model):
     id = db.Column(db.Integer, primary_key=True)

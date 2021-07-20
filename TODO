@@ -145,8 +145,6 @@ Hashfiles
     - Delete
         - confirmation
         - list associated jobs
-        - Remove uncracked hashes
-        - remove any notifications for an uncracked hash
     - Update time spent on cracking hashes in hashfile based on job completion
 
 Change 'user/wordlist/task/customer add's into popup'

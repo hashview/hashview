@@ -8,4 +8,5 @@ flask-login
 flask-mail
 flask-migrate
 flask-script
-python-pushsafer
+python-pushover
+WTForms-SQLAlchemy

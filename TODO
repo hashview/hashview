@@ -58,7 +58,7 @@ Jobs
             - Hashfile (cracked vs uncracked)
             - # of tasks assigned
             - notification preferences
-            
+
     - Job list  
 
     - Job info
@@ -67,8 +67,6 @@ Jobs
         - started date
         - completed date
     - Edit
-    - Deletion
-        - Delete job notification entry
 
 Analytics
     - I think outerjoins should be .joins
@@ -145,7 +143,10 @@ Hashfiles
         - if no other hashfiles exists for customer, delete customer
     - let non-admins delete hashfiles?
     - Delete
+        - confirmation
+        - list associated jobs
         - Remove uncracked hashes
+        - remove any notifications for an uncracked hash
     - Update time spent on cracking hashes in hashfile based on job completion
 
 Change 'user/wordlist/task/customer add's into popup'
@@ -249,10 +250,9 @@ Users
             - tasks
 
 Notifications
+    - Make cracked notifications be username only
+    - confirmation before deletion 
     - Manageable by owner
-    - Code to run upon job completion
-    - Code to run upon hash Cracked
-    - how to handle deletion of job
     - how to handle deletion of user
     - Optimize hashes object in notifications_list class/route.
 

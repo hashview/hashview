@@ -1,0 +1,27 @@
+version: '3.4'
+volumes:
+  mysql:
+  mysql_config:
+
+services:
+  mysqldb:
+    image: mysql
+    ports:
+      - 3306:3306
+    environment:
+      - MYSQL_ROOT_PASSWORD=p@ssw0rd1
+    volumes:
+      - mysql:/var/lib/mysql
+      - mysql_config:/etc/mysql
+
+  hashview:
+    ports:
+      - 80:80
+      - 443:443
+
+    build:
+      context: .
+    depends_on:
+      - mysqldb
+
+

@@ -26,9 +26,9 @@ Task Groups are a set of tasks that can be assigned to job.
                             <td>{{ task_group.name }}</td>
                             <td>TBD</td>
                             <td>
-                                <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{task_group.id}}">Info</button>
-                                <a class="btn btn-warning btn-sm" href="/task_groups/assigned_tasks/{{task_group.id}}" role="button">Edit</a>
-                                <button type="button" class="btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal{{task_group.id}}">Delete</button>
+                                <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{task_group.id}}" title=Info></button>
+                                <a class="fa fa-edit btn btn-warning" href="/task_groups/assigned_tasks/{{task_group.id}}" role="button" title=Edit></a>
+                                <button type="button" class="fa fa-trash btn btn-danger" data-toggle="modal" data-target="#deleteModal{{task_group.id}}" title=Delete></button>
                             </td>
                         </tr>
                     {% endfor %}

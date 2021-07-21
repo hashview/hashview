@@ -35,8 +35,8 @@ These are plaintext, newline delimited files that you can upload to hashview and
                                 {% endfor %}
                             </td>
                             <td>
-                                <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{wordlist.id}}">Info</button>
-                                <button type="button" class="btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal{{wordlist.id}}">Delete</button>
+                                <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{wordlist.id}}" title=Info></button>
+                                <button type="button" class="fa fa-trash btn btn-danger" data-toggle="modal" data-target="#deleteModal{{wordlist.id}}" title=Delete></button>
                             </td>
                         </tr>
                     {% endfor %}
@@ -57,8 +57,8 @@ These are plaintext, newline delimited files that you can upload to hashview and
                             <td>{{ wordlist.name }}</td>
                             <td>{{ wordlist.size }}</td>
                             <td>
-                                <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{wordlist.id}}">Info</button>
-                                <a class="btn btn-warning btn-sm" href="/wordlists/update/{{wordlist.id}}" role="button">Update</a>
+                                <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{wordlist.id}}" title=Info></button>
+                                <a class="fa fa-undo btn btn-warning" href="/wordlists/update/{{wordlist.id}}" role="button" title=Update></a>
                             </td>
                         </tr>
                     {% endfor %}

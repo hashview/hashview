@@ -51,20 +51,20 @@ Jobs contain a series of tasks (hashcat commands). Jobs also have an associated 
                             </td>
                             <td>
                                 {% if job.status == 'Ready' %}
-                                    <a class="btn btn-primary btn-sm" href="/jobs/start/{{job.id}}" role="button">start</a>
+                                    <a class="fa fa-check btn btn-success" href="/jobs/start/{{job.id}}" role="button" title=start></a>
                                 {% elif job.status == 'Queued' or job.status == 'Running' %}
-                                    <a class="btn btn-primary btn-sm" href="/jobs/stop/{{job.id}}" role="button">stop</a>
+                                    <a class="fa fa-close btn btn-secondary" href="/jobs/stop/{{job.id}}" role="button" title=stop></a>
                                 {% elif job.status == 'Completed' %}
-                                    <a class="btn btn-primary btn-sm" href="#" role="button">completed</a>
+                                    <a class="fa fa-check btn btn-primary" href="#" role="button" title=Completed></a>
                                 {% elif job.status == 'Canceled' %}
-                                    <a class="btn btn-primary btn-sm" href="/jobs/start/{{job.id}}" role="button">canceled</a>
+                                    <a class="fa fa-close btn btn-secondary" href="/jobs/start/{{job.id}}" role="button" title=Canceled></a>
                                 {% endif %}
                                 {% if job.status != 'Incomplete' %}
-                                    <a class="btn btn-warning btn-sm" href="/analytics?customer_id={{job.customer_id}}&hashfile_id={{job.hashfile_id}}" role="button">Analytics</a>
-                                    <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{job.id}}">Info</button>
-                                    <button type="button" class="btn btn-warning btn-sm" data-toggle="modal" data-target="#editModal{{job.id}}">Edit</button>
+                                    <a class="fa fa-pie-chart btn btn-warning" href="/analytics?customer_id={{job.customer_id}}&hashfile_id={{job.hashfile_id}}" role="button" title=Analytics></a>
+                                    <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{job.id}}" title=Info></button>
+                                    <button type="button" class="fa fa-edit btn btn-warning" data-toggle="modal" data-target="#editModal{{job.id}}" title=Edit></button>
                                 {% endif %}
-                                <button type="button" class="btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal{{job.id}}">Delete</button>
+                                <button type="button" class="fa fa-trash btn btn-danger" data-toggle="modal" data-target="#deleteModal{{job.id}}" title=Delete></button>
                             </td>
                         </tr>
                     {% endfor %}

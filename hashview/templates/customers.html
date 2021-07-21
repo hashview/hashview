@@ -22,7 +22,11 @@ The following are a list of customers currently configured in Hashview. All Jobs
                     {% for customer in customers %}
                         <tr>
                             <td>{{ customer.name }}</td>
-                            <td>ANALYTICS/INFO/EDIT/DELETE</td>
+                            <td>
+                                <a class="fa fa-info btn btn-info" href="#" role="button" title=Info></a> 
+                                <a class="fa fa-pie-chart btn btn-warning" href="#" role="button" title=Analytics></a> 
+                                <a class="fa fa-trash btn btn-danger" href="#" role="button" title=Delete></a>
+                            </td>
                         </tr>
                     {% endfor %}
                 </tbody>

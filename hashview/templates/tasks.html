@@ -36,9 +36,9 @@ Task are predefined hashcat commands. Any number of tasks can be assigned to a J
                             <td>{{ task.hc_attackmode}}</td>
                             <td>{{ task.keyspace }}</td>
                             <td>
-                                <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{task.id}}">Info</button>
-                                <button type="button" class="btn btn-warning btn-sm" data-toggle="modal" data-target="#editModal{{task.id}}">Edit</button>
-                                <button type="button" class="btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal{{task.id}}">Delete</button>
+                                <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{task.id}}" title=Info></button>
+                                <button type="button" class="fa fa-edit btn btn-warning" data-toggle="modal" data-target="#editModal{{task.id}}" title=Edit></button>
+                                <button type="button" class="fa fa-trash btn btn-danger" data-toggle="modal" data-target="#deleteModal{{task.id}}" title=Delete></button>
                             </td>
                         </tr>
                     {% endfor %}

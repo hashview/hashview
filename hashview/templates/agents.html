@@ -32,12 +32,12 @@ Agents are remote workers that process distributed hashcat jobs.
                             <td>{{ agent.last_checkin}}</td>
                             <td>
                                 {% if agent.status == 'Pending' %}
-                                    <a class="btn btn-primary" href="/agents/{{agent.id}}/authorize" role="button">Authorize</a>
+                                    <a class="fa fa-check btn btn-success" href="/agents/{{agent.id}}/authorize" role="button" title=Authorize></a>
                                 {% else %}
-                                    <a class="btn btn-primary" href="/agents/{{agent.id}}/deauthorize" role="button">Deauthorize</a>
+                                    <a class="fa fa-close btn btn-secondary" href="/agents/{{agent.id}}/deauthorize" role="button" title=Deauthorize></a>
                                 {% endif %}
-                                <button type="button" class="btn btn-warning btn-sm" data-toggle="modal" data-target="#editModal{{agent.id}}">Edit</button>
-                                <button type="button" class="btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal{{agent.id}}">Delete</button>
+                                <button type="button" class="fa fa-edit btn btn-warning" data-toggle="modal" data-target="#editModal{{agent.id}}" title=Edit></button>
+                                <button type="button" class="fa fa-trash fa-1x btn btn-danger" data-toggle="modal" data-target="#deleteModal{{agent.id}}" title=Delete></button>
                             </td>
                         </tr>
                     {% endfor %}

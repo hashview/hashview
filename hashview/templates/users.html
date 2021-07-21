@@ -28,9 +28,9 @@ These are the awesome people that use Hashview.
                             <td>{{ user.last_name }}</td>
                             <td>{{ user.email_address }}</td>
                             <td>
-                                <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal{{user.id}}">Info</button>
-                                <button type="button" class="btn btn-warning btn-sm" data-toggle="modal" data-target="#resetModal{{user.id}}">Reset</button>
-                                <button type="button" class="btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal{{user.id}}">Delete</button>
+                                <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{user.id}}" title=Info></button>
+                                <button type="button" class="fa fa-undo btn btn-warning" data-toggle="modal" data-target="#resetModal{{user.id}}" title='Reset Password'></button>
+                                <button type="button" class="fa fa-trash btn btn-danger" data-toggle="modal" data-target="#deleteModal{{user.id}}" title=Delete></button>
                             </td>
                         </tr>
                     {% endfor %}

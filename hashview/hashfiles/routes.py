@@ -11,7 +11,15 @@ hashfiles = Blueprint('hashfiles', __name__)
 def hashfiles_list():
     hashfiles = Hashfiles.query.all()
     customers = Customers.query.all()
-    return render_template('hashfiles.html', title='Hashfiles', hashfiles=hashfiles, customers=customers)
+
+    cracked_rate = {}
+
+    for hashfile in hashfiles:
+        cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).count()
+        hash_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id==hashfile.id).count()
+        cracked_rate[hashfile.id] = "(" + str(cracked_cnt) + "/" + str(hash_cnt) + ")"
+
+    return render_template('hashfiles.html', title='Hashfiles', hashfiles=hashfiles, customers=customers, cracked_rate=cracked_rate)
 
 @hashfiles.route("/hashfiles/delete/<int:hashfile_id>", methods=['GET'])
 @login_required
@@ -28,8 +36,13 @@ def hashfiles_delete(hashfile_id):
             else:
                 hashfile_hashes = HashfileHashes.query.filter_by(hashfile_id = hashfile_id).all()
                 for hashfile_hash in hashfile_hashes:
-                    HashNotifications.query.filter_by(hash_id=hashfile_hash.hash_id).delete()
-                    Hashes.query.filter_by(id=hashfile_hash.id, cracked=0).delete()
+                    hashes = Hashes.query.filter_by(id=hashfile_hash.id, cracked=0).all()
+                    for hash in hashes:
+                        # Check to see if our hashfile is the ONLY hashfile that has this hash
+                        hashfile_cnt = HashfileHashes.query.filter_by(hash_id=hash.id).distinct('hashfile_id')
+                        if hashfile_cnt < 2:
+                            db.session.delete(hash)
+                            HashNotifications.query.filter_by(hash_id=hashfile_hash.hash_id).delete()
                     db.session.delete(hashfile_hash)
                 db.session.delete(hashfile)
                 db.session.commit()

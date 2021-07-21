@@ -36,7 +36,9 @@ The following are a list of Hash Files currently configured in Hashview. All Has
                                     <td></td>
                                     <td>{{ hashfile.name }}</td>
                                     <td>TBD</td>
-                                    <td>TBD</td>
+                                    <td>
+                                        {{cracked_rate[hashfile.id]}}
+                                    </td>
                                     <td>
                                         <a class="fa fa-download btn btn-primary" href="/analytics/download?type=found&customer_id={{customer.id}}&hashfile_id={{hashfile.id}}" role="button" title=Download></a> 
                                         <a class="fa fa-pie-chart btn btn-warning" href="/analytics?customer_id={{customer.id}}&hashfile_id={{hashfile.id}}" role="button" title=Analytics></a> 

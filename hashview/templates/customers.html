@@ -23,9 +23,9 @@ The following are a list of customers currently configured in Hashview. All Jobs
                         <tr>
                             <td>{{ customer.name }}</td>
                             <td>
-                                <a class="fa fa-info btn btn-info" href="#" role="button" title=Info></a> 
-                                <a class="fa fa-pie-chart btn btn-warning" href="#" role="button" title=Analytics></a> 
-                                <a class="fa fa-trash btn btn-danger" href="#" role="button" title=Delete></a>
+                                <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{customer.id}}" title=Info></button> 
+                                <a class="fa fa-pie-chart btn btn-warning" href="/analytics?customer_id={{customer.id}}" role="button" title=Analytics></a> 
+                                <button type="button" class="fa fa-trash btn btn-danger" data-toggle="modal" data-target="#deleteModal{{customer.id}}" title=Delete></button>
                             </td>
                         </tr>
                     {% endfor %}
@@ -33,4 +33,72 @@ The following are a list of customers currently configured in Hashview. All Jobs
               </table>
         </div>
     </article>
+    {% for customer in customers %}
+    <!-- InfoModal -->
+    <div class="modal fade" id="infoModal{{customer.id}}" tabindex="-1" aria-labelledby="infoModal{{customer.id}}Label" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+            <h5 class="modal-title" id="infoModal{{customer.id}}Label">Info: {{customer.name}} ?</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+            </button>
+            </div>
+            <div class="modal-body">
+                <table class="table">
+                      <tbody>
+                          <tr>
+                            <th scope="row">Associated Jobs</th>
+                            <td>
+                                {% for job in jobs %}
+                                    {% if job.customer_id == customer.id %}
+                                        {{ customer.name }} <br>
+                                    {% endif %}
+                                {% endfor %}
+                            </td>
+                          </tr>
+                          <tr>
+                            <th scope="row">Associated Hashfiles</th>
+                            <td>
+                                {% for hashfile in hashfiles %}
+                                    {% if hashfile.customer_id == customer.id %}
+                                        {{ hashfile.name }} <br>
+                                    {% endif %}
+                                {% endfor %}    
+                            </td>
+                          </tr>
+                      </tbody>
+                  </table>
+            </div>
+            <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
+            </div>
+        </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% for customer in customers %}
+    <!-- DeleteModal -->
+    <div class="modal fade" id="deleteModal{{customer.id}}" tabindex="-1" aria-labelledby="deleteModal{{customer.id}}Label" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+            <h5 class="modal-title" id="deleteModal{{customer.id}}Label">Delete: {{customer.name}} ?</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+            </button>
+            </div>
+            <div class="modal-body">
+            This will permanantly delete the customer and any associated hashfiles and hashes. Are you sure you want to continue?
+            </div>
+            <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
+            <form action="{{ url_for('customers.customers_delete', customer_id=customer.id) }}" method="POST">
+                <input class="btn btn-danger" type="submit" value="Delete">
+            </form>
+            </div>
+        </div>
+        </div>
+    </div>
+    {% endfor %}
 {% endblock content %}

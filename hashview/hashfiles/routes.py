@@ -11,6 +11,7 @@ hashfiles = Blueprint('hashfiles', __name__)
 def hashfiles_list():
     hashfiles = Hashfiles.query.all()
     customers = Customers.query.all()
+    jobs = Jobs.query.all()
 
     cracked_rate = {}
 
@@ -19,9 +20,9 @@ def hashfiles_list():
         hash_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id==hashfile.id).count()
         cracked_rate[hashfile.id] = "(" + str(cracked_cnt) + "/" + str(hash_cnt) + ")"
 
-    return render_template('hashfiles.html', title='Hashfiles', hashfiles=hashfiles, customers=customers, cracked_rate=cracked_rate)
+    return render_template('hashfiles.html', title='Hashfiles', hashfiles=hashfiles, customers=customers, cracked_rate=cracked_rate, jobs=jobs)
 
-@hashfiles.route("/hashfiles/delete/<int:hashfile_id>", methods=['GET'])
+@hashfiles.route("/hashfiles/delete/<int:hashfile_id>", methods=['GET', 'POST'])
 @login_required
 def hashfiles_delete(hashfile_id):
     hashfile = Hashfiles.query.get_or_404(hashfile_id)

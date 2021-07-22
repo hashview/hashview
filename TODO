@@ -52,11 +52,6 @@ Jobs
             - deletes jobtasks
             - delete job
             - redirects to joblist
-    - Job info
-        - Tasks assigned
-        - creation date
-        - started date
-        - completed date
     - Edit
 
 Analytics

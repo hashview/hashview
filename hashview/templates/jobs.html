@@ -73,6 +73,70 @@ Jobs contain a series of tasks (hashcat commands). Jobs also have an associated 
         </div>
     </article>
     {% for job in jobs %}
+    <!-- InfoModal -->
+    <div class="modal fade" id="infoModal{{job.id}}" tabindex="-1" aria-labelledby="infoModal{{job.id}}Label" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+            <h5 class="modal-title" id="infoModal{{job.id}}Label">Info: {{job.name}}</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+            </button>
+            </div>
+            <div class="modal-body">
+                <table class="table">
+                    <thead>
+                      <tbody>
+                          <tr>
+                            <th scope="row">Associated Tasks</th>
+                            <td>
+                                {% for job_task in job_tasks %}
+                                    {% if job_task.job_id == job.id %}
+                                        {% for task in tasks %}
+                                            {% if task.id == job_task.task_id%}
+                                                {{ task.name }} <br>
+                                            {% endif %}
+                                        {% endfor %}
+                                    {% endif %}
+                                {% endfor %}
+                            </td>
+                          </tr>
+                          <tr>
+                            <th scope="row">Creation Date</th>
+                            <td>
+                                {{job.created_at}}
+                            </td>
+                          </tr>
+                          <tr>                              
+                            <th scope="row">Started At</th>
+                            <td>
+                                {% if job.started_at %}
+                                    {{job.started_at}}
+                                {% else %}
+                                    Not started
+                                {% endif %}
+                            </td>
+                            </tr>   
+                            <th scope="row">Ended At</th>
+                            <td>
+                                {% if job.ended_at %}
+                                    {{job.ended_at}}
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
+                          </tr>
+                      </tbody>
+                  </table>
+            </div>
+            <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
+            </div>
+        </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% for job in jobs %}
     <!-- DeleteModal -->
     <div class="modal fade" id="deleteModal{{job.id}}" tabindex="-1" aria-labelledby="deleteModal{{job.id}}Label" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">

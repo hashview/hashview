@@ -17,7 +17,9 @@ def jobs_list():
     customers = Customers.query.all()
     users = Users.query.all()
     hashfiles = Hashfiles.query.all()
-    return render_template('jobs.html', title='Jobs', jobs=jobs, customers=customers, users=users, hashfiles=hashfiles)
+    job_tasks = JobTasks.query.all()
+    tasks = Tasks.query.all()
+    return render_template('jobs.html', title='Jobs', jobs=jobs, customers=customers, users=users, hashfiles=hashfiles, job_tasks=job_tasks, tasks=tasks)
 
 @jobs.route("/jobs/add", methods=['GET', 'POST'])
 @login_required

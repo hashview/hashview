@@ -134,18 +134,13 @@ Customers
 Hashfiles
     - List customers
         - List hashfiles
-            - Cracked vs un cracked
             - Control
                 - Download Cracked
     - Filter Computer Accounts on Import
     - if > retention date Delete
         - delete Associated Jobs
         - if no other hashfiles exists for customer, delete customer
-    - let non-admins delete hashfiles?
     - Delete
-        - When deleting one of two hash files of a given client, if both hashfiles have the same uncracked hash and one hashfile is deleted, both references to the uncracked hash will be removed. should only be one.
-            (need to confirm if no other hashfilehash entry exists for the specific customer :())
-        - confirmation
         - list associated jobs
 
 Change 'user/wordlist/task/customer add's into popup'

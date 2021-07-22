@@ -116,20 +116,11 @@ Dynamic Wordlists
         - Name: All Recovered Hashes
 
 Rules
-    - info 
-        - List Associated tasks
-        - list Associated Jobs?
     - Edit 
         - Rules in browser
-    - Delete
 
 Customers
-    - info
-        - List Associated Hashfiles
-        - List associated Jobs
-        - Creation date
-    - Delete
-        - Confirmation
+    - test
 
 Hashfiles
     - List customers
@@ -273,3 +264,12 @@ Home page
         - Show cracked rate
         - Show hc_output :(
     - Give ability to stop jobs / tasks
+
+To Test:
+    1) load two hashfiles for a single customer
+    2) remove one hashfile
+    3) both cracked/uncracked count of other hashfile should not be affected
+
+    1) load three hashfiles, two for one customer a third for a second customer
+    2) remove one hashfile
+    3) remaining cracked/uncracked counts should not be affected

@@ -46,7 +46,7 @@ class Settings(db.Model):
 class Jobs(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
-    created = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     status = db.Column(db.String(20), nullable=False)               # Running, Paused, Completed, Queued, Canceled, Ready, Incomplete
     started_at = db.Column(db.DateTime, nullable=True)    # These defaults should be changed

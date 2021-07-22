@@ -12,7 +12,45 @@ If everything looks good, click complete below.
     <article class="media content-section">
         <form method="POST" action="">
             {{ form.hidden_tag() }}
-            TODO
+            <table class="table">
+                <tbody>
+                        <tr>
+                            <td>Job Name:</td>
+                            <td>{{ job.name }}</td>
+                        </tr>
+                        <tr>
+                            <td>Customer:</td>
+                            <td>{{ customer.name }}</td>
+                        </tr>
+                        <tr>
+                            <td>Hashfile:</td>
+                            <td>{{ hashfile.name }} ({{ cracked_rate }})</td>
+                        </tr>
+                        <tr>
+                            <td>Tasks:</td>
+                            <td>
+                                {% for job_task in job_tasks %}
+                                    {% for task in tasks %}
+                                        {% if task.id == job_task.task_id %}
+                                            {{ task.name }} <br>
+                                        {% endif %}
+                                    {% endfor %}
+                                {% endfor %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Notifications:</td>
+                            <td>
+                                {% if job_notification %}
+                                    Job Notification: {{job_notification.method}} <br>
+                                {% endif %}
+                                {% if hash_notification %}
+                                    Hash Notification ({{hash_notification_cnt}} Hashes): {{hash_notification.method}} <br>
+                                {% endif %}
+                            </td>
+                        </tr>
+                </tbody>
+            </table>
             <div class="form-group">
                 {{ form.submit(class="btn btn-primary")}}
             </div>

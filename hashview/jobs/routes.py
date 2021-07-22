@@ -254,7 +254,7 @@ def jobs_assign_notifications(job_id):
     form.hashes.choices = [(str(c[0].id), c[1].username + ':' + c[0].ciphertext) for c in db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()]
     
     if form.validate_on_submit():
-        if form.job_completion.data:
+        if form.job_completion.data != 'none':
             job_notification = JobNotifications(
                 owner_id = current_user.id,
                 job_id = job_id,
@@ -306,6 +306,19 @@ def jobs_summary(job_id):
     job = Jobs.query.get(job_id)
     form = JobSummaryForm()
     job_tasks = JobTasks.query.filter_by(job_id=job_id).all()
+    tasks = Tasks.query.all()
+    hashfile = Hashfiles.query.get(job.hashfile_id)
+    customer = Customers.query.get(job.customer_id)
+    #hashfile_hashes = HashfileHashes.query.filter_by(job_id=job_id).all() # this should be a join of some kind
+    cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).count()
+    hash_total = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id==hashfile.id).count()
+    cracked_rate = str(cracked_cnt) + '/' + str(hash_total)
+    hash_notification_cnt = db.session.query(HashNotifications).join(HashfileHashes, HashNotifications.hash_id==HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id == hashfile.id).count()
+    hash_notification = db.session.query(HashNotifications).join(HashfileHashes, HashNotifications.hash_id==HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id == hashfile.id).first()
+    job_notification = JobNotifications.query.filter_by(job_id = job.id).first()
+
+    #hash_notifications = HashNotifications.query.all()
+    job_notification = JobNotifications.query.filter_by(job_id=job_id).first()
 
     if form.validate_on_submit():
         for job_task in job_tasks:
@@ -318,7 +331,7 @@ def jobs_summary(job_id):
 
         return redirect(url_for('jobs.jobs_list'))
     else:
-        return render_template('jobs_summary.html', title='Job Summary', job=job, form=form)
+        return render_template('jobs_summary.html', title='Job Summary', job=job, form=form, job_notification=job_notification, cracked_rate=cracked_rate, job_tasks=job_tasks, hash_notification_cnt=hash_notification_cnt, customer=customer, hashfile=hashfile, tasks=tasks, hash_notification=hash_notification)
 
 @jobs.route("/jobs/start/<int:job_id>", methods=['GET'])
 @login_required

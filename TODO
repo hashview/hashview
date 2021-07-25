@@ -86,10 +86,8 @@ Add SSL
 Move hashfiles out of admin only view
 
 Search
+    - Do we even let the user pick which type, or just run queries on both?
     - Export Results
-    - Search by hash
-    - search by user
-    - Filter by company
 
 Wordlists
     - Change wordlist path attribute in db to be relative to app install path

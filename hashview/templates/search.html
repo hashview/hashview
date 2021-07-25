@@ -1,0 +1,81 @@
+{% extends "layout.html"%}
+{% block header %}
+<br>
+<br>
+<br>
+<br>
+<br>
+{% endblock header %}
+{% block content %}
+<article class="media content-section">
+    <div class="media-body">
+        <div class="content-section">
+            <form method="POST" action="" enctype="multipart/form-data">
+                {{ searchForm.hidden_tag() }}
+                <div class="input-group mb-3">
+                    <div class="input-group-prepend">
+     
+                        {% if searchForm.search_type.errors %}
+                            {{ searchForm.search_type(class="is-invalid") }}
+                            {{ searchForm.query(class="is-invalid")}}
+                            <div class="invalid-feedback">
+                                {% for error in searchForm.search_type.errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ searchForm.search_type(class="btn btn-outline-secondary dropdown-toggle") }} 
+                            {{ searchForm.query(class="form-control")}}
+                        {% endif %}
+                    </div> 
+                </div>
+                <div class="form-group">
+                    {{ searchForm.submit(class="btn btn-outline-info")}}
+                </div>
+            </form>
+        </div>
+        {% if results %}
+            <table class="table">
+                <thead>
+                <tr>
+                    <th scope="col">Customer</th>
+                    <th scope="col">Username</th>
+                    <th scope="col">Hash</th>
+                    <th scope="col">Plaintext</th>
+                </tr>
+                </thead>
+                <tbody>
+                    {% for entry in results %}
+                        <tr>
+                            <td>
+                                {% for hashfile in hashfiles %}
+                                    {% if hashfile.id == entry[1].hashfile_id %}
+                                        {% for customer in customers %}
+                                            {% if customer.id == hashfile.customer_id %}
+                                                {{ customer.name }}
+                                            {% endif %}
+                                        {% endfor %}
+                                    {% endif %}
+                                {% endfor %}
+                            </td>
+                            <td>
+                                {{entry[1].username}}
+                            </td>
+                            <td>
+                                {{ entry[0].ciphertext }}
+                            </td>
+                            <td>
+                                {% if entry[0].cracked %}
+                                    {{ entry[0].plaintext }}
+                                {% else %}
+                                    <i>unrecovered</i>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+</article>
+{% endblock content %}

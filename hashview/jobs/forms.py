@@ -1,7 +1,7 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, SubmitField, IntegerField, SelectField, TextAreaField, FileField, SelectMultipleField, widgets
-from wtforms.validators import DataRequired, ValidationError, Optional
-from hashview.models import Jobs, Hashfiles
+from wtforms import StringField, SubmitField, SelectField, TextAreaField, FileField, SelectMultipleField, widgets
+from wtforms.validators import DataRequired, ValidationError
+from hashview.models import Jobs
 
 
 class JobsForm(FlaskForm):
@@ -55,5 +55,4 @@ class JobsNotificationsForm(FlaskForm):
     submit = SubmitField('Next')
 
 class JobSummaryForm(FlaskForm):
-
     submit = SubmitField('Complete')

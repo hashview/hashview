@@ -43,6 +43,7 @@ def create_app(config_class=Config):
     from hashview.wordlists.routes import wordlists
     from hashview.analytics.routes import analytics
     from hashview.notifications.routes import notifications
+    from hashview.searches.routes import searches
 
     app.register_blueprint(agents)
     app.register_blueprint(api)
@@ -58,5 +59,6 @@ def create_app(config_class=Config):
     app.register_blueprint(wordlists)
     app.register_blueprint(analytics)
     app.register_blueprint(notifications)
+    app.register_blueprint(searches)
 
     return app

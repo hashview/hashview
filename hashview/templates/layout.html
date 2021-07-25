@@ -42,7 +42,7 @@
                                         <div class="dropdown-divider"></div>
                                     {% endif %}
                                     <a class="dropdown-item" href="{{ url_for('analytics.get_analytics') }}">Analytics</a>
-                                    <a class="dropdown-item" href="#">Search</a>
+                                    <a class="dropdown-item" href="{{ url_for('searches.searches_list') }}">Search</a>
                                     <a class="dropdown-item" href="{{ url_for('wordlists.wordlists_list') }}">Wordlists</a>
                                     <a class="dropdown-item" href="{{ url_for('hashfiles.hashfiles_list' )}}">Hashfiles</a>
                                     <a class="dropdown-item" href="{{ url_for('rules.rules_list') }}">Rules</a>

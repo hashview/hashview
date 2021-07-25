@@ -51,9 +51,9 @@ Jobs contain a series of tasks (hashcat commands). Jobs also have an associated 
                             </td>
                             <td>
                                 {% if job.status == 'Ready' %}
-                                    <a class="fa fa-check btn btn-success" href="/jobs/start/{{job.id}}" role="button" title=start></a>
+                                    <a class="fa fa-play btn btn-success" href="/jobs/start/{{job.id}}" role="button" title=start></a>
                                 {% elif job.status == 'Queued' or job.status == 'Running' %}
-                                    <a class="fa fa-close btn btn-secondary" href="/jobs/stop/{{job.id}}" role="button" title=stop></a>
+                                    <a class="fa fa-stop btn btn-secondary" href="/jobs/stop/{{job.id}}" role="button" title=stop></a>
                                 {% elif job.status == 'Completed' %}
                                     <a class="fa fa-check btn btn-primary" href="#" role="button" title=Completed></a>
                                 {% elif job.status == 'Canceled' %}

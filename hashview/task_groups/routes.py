@@ -12,6 +12,7 @@ task_groups = Blueprint('task_groups', __name__)
 @login_required
 def task_groups_list():
     task_groups = TaskGroups.query.all()
+    
     return render_template('task_groups.html', title='Task Groups', task_groups=task_groups) 
 
 @task_groups.route("/task_groups/add", methods=['GET', 'POST'])

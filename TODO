@@ -3,6 +3,7 @@ Tasks
         - Support Bruteforce task
         - Support combinator task
         - Support Bandril approach
+        - Support for cewl
     - Task info
         - List Associated TaskGroups
             - Going to require parsing tasks entry in task_groups
@@ -35,6 +36,8 @@ Taskgroups
 
 Jobs
     - Create Jobs
+        - List
+            - add column for cracked rate
         - Assign existing Hashfiles
             - Exising Hashfile
                 - Grey out tab if no pre-existing hashfile exists
@@ -77,17 +80,15 @@ Agents
     - Rename Agents
 
 API
-    - Turn into legit resful api using flask_restful / api
     - Figure out unauthorized UUID issue
 
 Add SSL
 - Options in config
 
-Move hashfiles out of admin only view
-
 Search
     - Do we even let the user pick which type, or just run queries on both?
     - Export Results
+    - Expand search text box
 
 Wordlists
     - Change wordlist path attribute in db to be relative to app install path
@@ -104,7 +105,7 @@ Rules
         - Rules in browser
 
 Customers
-    - test
+    - Run tests
 
 Hashfiles
     - List customers
@@ -257,3 +258,14 @@ To Test:
     1) load three hashfiles, two for one customer a third for a second customer
     2) remove one hashfile
     3) remaining cracked/uncracked counts should not be affected
+
+# Next Phase
+- Add ability for users / admins? to import plaintext's and auto convert to specific hashes
+API
+    - Turn into legit resful api using flask_restful / api
+
+
+User Registration/password reset broken
+update pushover stuff on job
+profile -> pushover notification when null auto populates
+update cracked hashes from agent to server. 

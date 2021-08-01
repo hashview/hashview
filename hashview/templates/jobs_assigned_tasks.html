@@ -59,6 +59,17 @@ The following are tasks that are assigned to the job. Each task is run once.
                                     {% endfor %}
                                 </div>
                             </div>
+                            <div class="dropdown show">
+                                <a class="btn btn-primary dropdown-toggle" href="#" role="button" id="dropdownMenuLink2" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                                Add Task Group
+                                </a>
+                            
+                                <div class="dropdown-menu" aria-labelledby="dropdownMenuLink2">
+                                    {% for task_group in task_groups %}
+                                        <a class="dropdown-item" href="/jobs/{{job.id}}/assign_task_group/{{task_group.id}}">{{task_group.name}}</a>
+                                    {% endfor %}
+                                </div>
+                            </div>
                         </td>
                     </tr>
                 </tbody>

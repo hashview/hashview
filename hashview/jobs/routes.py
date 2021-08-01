@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, redirect, abort, flash, url_for, c
 from flask_login import login_required, current_user
 from sqlalchemy.sql.elements import Null
 from hashview.jobs.forms import JobsForm, JobsNewHashFileForm, JobsNotificationsForm, JobSummaryForm
-from hashview.models import HashNotifications, JobNotifications, Jobs, Customers, Hashfiles, Users, HashfileHashes, Hashes, JobTasks, Tasks
+from hashview.models import HashNotifications, JobNotifications, Jobs, Customers, Hashfiles, Users, HashfileHashes, Hashes, JobTasks, Tasks, TaskGroups
 from hashview.utils.utils import save_file, get_filehash, import_hashfilehashes, build_hashcat_command
 from hashview import db
 import os
@@ -137,14 +137,14 @@ def jobs_list_tasks(job_id):
     job = Jobs.query.get(job_id)
     tasks = Tasks.query.all()
     job_tasks = JobTasks.query.filter_by(job_id=job_id)
+    task_groups = TaskGroups.query.all()
     # Right now wer're doing nested loops in the template, this could probably be solved with a left/join select
 
-    return render_template('jobs_assigned_tasks.html', title='Jobs Assigned Tasks', job=job, tasks=tasks, job_tasks=job_tasks)
+    return render_template('jobs_assigned_tasks.html', title='Jobs Assigned Tasks', job=job, tasks=tasks, job_tasks=job_tasks, task_groups=task_groups)
 
 @jobs.route("/jobs/<int:job_id>/assign_task/<int:task_id>", methods=['GET'])
 @login_required
 def jobs_assigned_task(job_id, task_id):
-    task = Tasks.query.get(task_id)
     # TODO
     #exists = JobTasks.query.filter_by(job_id=job_id, task_id=task_id)
     #if exists:
@@ -155,6 +155,21 @@ def jobs_assigned_task(job_id, task_id):
     db.session.commit()
 
     return redirect("/jobs/"+str(job_id)+"/tasks")
+
+@jobs.route("/jobs/<int:job_id>/assign_task_group/<int:task_group_id>", methods=['GET'])
+@login_required
+def jobs_assign_task_group(job_id, task_group_id):
+    job = Jobs.query.get(job_id)
+    task_group = TaskGroups.query.get(task_group_id)
+
+    for task_group_entry in list(task_group.tasks):
+        if task_group_entry.isdigit():
+            task = Tasks.query.get(task_group_entry)
+            job_task = JobTasks(job_id=job_id, task_id=task_group_entry, status='Not Started')
+            db.session.add(job_task)
+            db.session.commit()
+    
+    return redirect("/jobs/" + str(job_id) + "/tasks")
 
 @jobs.route("/jobs/<int:job_id>/move_task_up/<int:task_id>", methods=['GET'])
 @login_required

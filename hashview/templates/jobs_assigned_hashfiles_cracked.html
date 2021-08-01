@@ -24,7 +24,13 @@ The following hashes are already cracked in Hashview's Local database!
                         <tr>
                             <td>{{entry[1].username}}</td>
                             <td>{{entry[0].ciphertext}}</td>
-                            <td>{{entry[0].plaintext}}</td>
+                            <td>
+                                {% if entry[0].plaintext %}
+                                    {{entry[0].plaintext}}
+                                {% else %}
+                                    <i>None</i>
+                                {% endif %}
+                            </td>
                         </tr>
                     {% endfor %}
                 </tbody>

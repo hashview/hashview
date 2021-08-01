@@ -80,9 +80,13 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
     # Open file
     file = open(hashfile_path, 'r')
     lines = file.readlines()
+    print(lines)
 
     # for line in file, 
     for line in lines:
+        print(line)
+        print(file_type)
+        print(hash_type)
         if file_type == 'hash_only':
             hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
             username = None

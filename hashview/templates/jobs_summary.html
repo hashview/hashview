@@ -41,6 +41,9 @@ If everything looks good, click complete below.
                         <tr>
                             <td>Notifications:</td>
                             <td>
+                                {% if not job_notification and not hash_notification %}
+                                    <i>None</i>
+                                {% endif %}
                                 {% if job_notification %}
                                     Job Notification: {{job_notification.method}} <br>
                                 {% endif %}

@@ -7,6 +7,7 @@ from hashview.utils.utils import save_file, get_filehash, import_hashfilehashes,
 from hashview import db
 import os
 import time
+import secrets
 
 jobs = Blueprint('jobs', __name__)
 
@@ -88,17 +89,30 @@ def jobs_assigned_hashfile(job_id):
             # User submitted copied/pasted hashes
             # Going to have to save a file manually instead of using save_file since save_file requires form data to be passed and we're not collecting that object for this tab
 
-            hashfile_path = os.path.join(current_app.root_path, save_file('control/tmp', jobsNewHashFileForm.name.data))
-
-            hashfile = Hashfiles(name=jobsNewHashFileForm.name, customer_id=job.customer_id, owner_id=current_user.id)
+            hashfile = Hashfiles(name=jobsNewHashFileForm.name.data, customer_id=job.customer_id, owner_id=current_user.id)
             db.session.add(hashfile)
             db.session.commit()
+
+            random_hex = secrets.token_hex(8)
+            hashfile_path = 'hashview/control/tmp/' + random_hex
+
+            hashfilehashes_file = open(hashfile_path, 'w+') 
+
+            hashfilehashes_file.write(jobsNewHashFileForm.hashfilehashes.data)
+            hashfilehashes_file.close()
             
-            # Delete hashfile
-            # TODO
-    # This is janky af, we should really have this be a wtf form
-    # however, since we want to add addition text to the options in the list, im not sure if thats possible
-    # so instead we're just processing this as a regular form post
+            if not import_hashfilehashes(   hashfile_id=hashfile.id, 
+                                            hashfile_path=hashfile_path, 
+                                            file_type=jobsNewHashFileForm.file_type.data, 
+                                            hash_type=jobsNewHashFileForm.hash_type.data
+                                            ):
+                return ('Something went wrong')
+
+            job.hashfile_id = hashfile.id
+            db.session.commit()
+
+            return redirect(str(hashfile.id))
+         
     elif request.method == 'POST' and request.form['hashfile_id']:
         job.hashfile_id = request.form['hashfile_id']
         db.session.commit()

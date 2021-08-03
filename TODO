@@ -46,7 +46,6 @@ Jobs
                     - Give example (?) on mouse over
                 - Select hash Type
                     - on other allow user to type in hashtype
-                - Allow copy/past of hashes
         - Assign Tasks
             - Should probably be a form :/
             - Remove task from assignable tasks that are already assigned to the job
@@ -80,8 +79,9 @@ Agents
     - Rename Agents
 
 API
-    - Figure out unauthorized UUID issue
-
+    - Update CPU/GPU count
+    - update cracks with each checkin
+    
 Add SSL
 - Options in config
 
@@ -103,9 +103,6 @@ Dynamic Wordlists
 Rules
     - Edit 
         - Rules in browser
-
-Customers
-    - Run tests
 
 Hashfiles
     - List customers
@@ -189,15 +186,6 @@ If owner or admin
     - delete Jobs
     hashfiles/customers/hashes?
 
-Change buttons (info, edit, delete) to Icons
-    - Task
-    - Customers
-    - Wordlists
-    - Task Lists
-    - Task Groups
-    - Rules
-    - Jobs
-
 taskgroups / hashfiles should probably be renamed to task_groups and hash_files, word_lists?
 
 Change dropdown alignment of jobs, tasks, manage (in templates/layout.html)
@@ -243,13 +231,6 @@ Standardize modals
         - rules
         - users
 
-Home page
-    - Show active jobs & tasks
-        - Show owner
-        - Show cracked rate
-        - Show hc_output :(
-    - Give ability to stop jobs / tasks
-
 To Test:
     1) load two hashfiles for a single customer
     2) remove one hashfile
@@ -259,13 +240,22 @@ To Test:
     2) remove one hashfile
     3) remaining cracked/uncracked counts should not be affected
 
+    1) set forgot password
+    2) attempt to login as the user prior to reset
+    3) does it work?
+    4) what happens if we request another token?
+
 # Next Phase
 - Add ability for users / admins? to import plaintext's and auto convert to specific hashes
 API
     - Turn into legit resful api using flask_restful / api
 
 
+
+
 User Registration/password reset broken
 update pushover stuff on job
 profile -> pushover notification when null auto populates
 update cracked hashes from agent to server. 
+
+Update agent to stop downloading the same rules over and over again

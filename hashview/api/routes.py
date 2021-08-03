@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, redirect, request, send_from_directory, current_app
 import sqlalchemy
 from hashview.models import HashNotifications, TaskQueues, Agents, JobTasks, Tasks, Wordlists, Rules, Jobs, Hashes, HashfileHashes, JobNotifications, Users, Hashfiles
-from hashview.utils.utils import save_file, get_md5_hash, send_email, update_dynamic_wordlist, send_pushover
+from hashview.utils.utils import save_file, get_md5_hash, send_email, update_dynamic_wordlist, send_pushover, update_job_task_status
 from hashview import db
 from sqlalchemy.ext.declarative import DeclarativeMeta
 import time
@@ -38,7 +38,7 @@ class AlchemyEncoder(json.JSONEncoder):
 
 def agentAuthorized(uuid):
     agent = Agents.query.filter_by(uuid=uuid).first()
-    if agent.status == 'Online':
+    if agent.status == 'Online' or agent.status == 'Working' or agent.status == 'Idle':
         return True
     return False
 
@@ -48,86 +48,6 @@ def updateHeartbeat(uuid):
         agent.src_ip = request.remote_addr
         agent.last_checkin = time.strftime('%Y-%m-%d %H:%M:%S')
         db.session.commit()
-
-def updateJobTaskStatus(jobtask_id, status):
-
-    jobtask = JobTasks.query.get(jobtask_id)
-    jobtask.status = status
-    if status == 'Completed':
-        jobtask.agent_id = None
-    db.session.commit()
-
-    # Update Jobs
-    # TODO
-    # Shouldn't we be changing the job stats to match the jobtask status?
-    # Add started at time
-    job = Jobs.query.get(jobtask.job_id)
-    if job.status == 'Queued':
-        job.status = 'Running'
-        job.started_at = time.strftime('%Y-%m-%d %H:%M:%S')
-        db.session.commit()
-
-    # TODO
-    # This is such a janky way of doing this. Instead of having the agent tell us its done, we're just assuming
-    # That if no other tasks are active we must be done
-    done = True
-    jobtasks = JobTasks.query.all()
-    for jobtask in jobtasks:
-        if jobtask.status == 'Queued' or jobtask.status == 'Running' or jobtask.status == 'Importing':
-            done = False
-    
-    if done:
-        job.status = 'Completed'
-        job.ended_at = time.strftime('%Y-%m-%d %H:%M:%S')
-        db.session.commit()
-
-        start_time = datetime.strptime(str(job.started_at), '%Y-%m-%d %H:%M:%S')
-        end_time = datetime.strptime(str(job.ended_at), '%Y-%m-%d %H:%M:%S')
-        durration = (abs(end_time - start_time).seconds) # So dumb you cant conver this to minutes, only resolution is seconds or days :(
-
-        hashfile = Hashfiles.query.get(job.hashfile_id)
-        hashfile.runtime += durration
-        db.session.commit()
-
-        # TODO
-        # mark all jobtasks as completed
-        job_notifications = JobNotifications.query.filter_by(job_id = job.id)
-        
-        for job_notification in job_notifications:
-            user = Users.query.get(job_notification.owner_id)
-            cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==job.hashfile_id).count()
-            uncracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).count()
-            if job_notification.method == 'email':
-                send_email(user, 'Hashview Job: "' + job.name + '" Has Completed!', 'Your job has completed. It ran for a total of ' + str(durration) + ' seconds and resulted in a total of ' + str(cracked_cnt) + ' out of ' + str(cracked_cnt+uncracked_cnt) + ' hashes being recovered!')
-            elif job_notification.method == 'push':
-                if user.pushover_key and user.pushover_id:
-                    send_pushover(user, 'Message from Hashview', 'Hashview Job: "' + job.name + '" Has Completed!')
-                else:
-                    send_email(user, 'Hashview: Missing Pushover Key', 'Hello, you were due to recieve a pushover notification, but because your account was not provisioned with an pushover ID and Key, one could not be set. Please log into hashview and set these options under Manage->Profile.')
-            db.session.delete(job_notification)
-            db.session.commit()
-        
-        # Send Hash Completion Notifications
-        hash_notifications = HashNotifications.query.all()
-        for hash_notification in hash_notifications:
-            user = Users.query.get(hash_notification.owner_id)
-            message = "Congratulations, the following users's hashes have been recovered: \n\n"
-            
-            # There's probably a way to do this in one query but im lazy
-            cracked_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()
-            for cracked_hash in cracked_hashes:
-                if cracked_hash[0].id == hash_notification.hash_id:
-                    message += cracked_hash[1].username + "\n"
-                    if hash_notification.method == 'email':
-                        send_email(user, 'Hashview User Hash Recovered!', message)
-                    elif hash_notification.method == 'push':
-                        if user.pushover_key and user.pushover_id:
-                            send_pushover(user, 'Message from Hashview', message)
-                    else:
-                        send_email(user, 'Hashview: Missing Pushover Key', 'Hello, you were due to recieve a pushover notification, but because your account was not provisioned with an pushover ID and Key, one could not be set. Please log into hashview and set these options under Manage->Profile.')
-            db.session.delete(hash_notification)
-            db.session.commit()
-
 
 @api.route('/v1/not_authorized', methods=['GET', 'POST'])
 def api_unauthorized():
@@ -164,7 +84,7 @@ def api_get_queue():
 @api.route('/v1/queue/<int:id>', methods=['GET'])
 def api_get_queue_assignment(id):
     if not agentAuthorized(request.cookies.get('agent_uuid')):
-        return redirect("/v1/agents/"+uuid+"/authorize") 
+        return redirect("/v1/not_authorized") 
 
     updateHeartbeat(request.cookies.get('agent_uuid'))
 
@@ -188,11 +108,11 @@ def api_get_queue_assignment(id):
 @api.route('/v1/queue/<int:id>/status', methods=['POST'])
 def api_set_queue_assignment_status(id):
     if not agentAuthorized(request.cookies.get('agent_uuid')):
-        return redirect("/v1/agents/"+uuid+"/authorize") 
+        return redirect("/v1/not_authorized") 
 
     status_json = request.get_json()
     updateHeartbeat(request.cookies.get('agent_uuid'))
-    updateJobTaskStatus(jobtask_id = id, status= status_json['status'])
+    update_job_task_status(jobtask_id = id, status= status_json['status'])
 
     message = {
         'status': 200,
@@ -205,7 +125,7 @@ def api_set_queue_assignment_status(id):
 @api.route('/v1/task/<int:id>', methods=['GET'])
 def api_get_task(id):
     if not agentAuthorized(request.cookies.get('agent_uuid')):
-        return redirect("/v1/agents/"+uuid+"/authorize")
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('agent_uuid'))
     task = Tasks.query.get(id)
@@ -217,7 +137,7 @@ def api_get_task(id):
 @api.route('/v1/jobtask/<int:id>', methods=['GET'])
 def api_get_jobtask(id):
     if not agentAuthorized(request.cookies.get('agent_uuid')):
-        return redirect("/v1/agents/"+uuid+"/authorize")
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('agent_uuid'))
     jobtask = JobTasks.query.filter_by(task_id=id).first()
@@ -232,11 +152,11 @@ def api_get_jobtask(id):
 @api.route('/v1/jobtask/<int:id>/status', methods=['POST'])
 def api_set_queue_jobtask_status(id):
     if not agentAuthorized(request.cookies.get('agent_uuid')):
-        return redirect("/v1/agents/"+uuid+"/authorize") 
+        return redirect("/v1/not_authorized") 
 
     status_json = request.get_json()
     updateHeartbeat(request.cookies.get('agent_uuid'))
-    updateJobTaskStatus(jobtask_id = id, status= status_json['status'])
+    update_job_task_status(jobtask_id = id, status= status_json['status'])
 
     message = {
         'status': 200,
@@ -289,11 +209,23 @@ def api_set_agent_heartbeat(uuid):
             return jsonify(message)
         else:
             agent_data = request.json
+
             # Check authorization cookies
             if agent_data['agent_status'] == 'Working':
                 # Parse hc_status data
                 jobtask_id = agent_data['agent_task']
                 jobtask= JobTasks.query.get(jobtask_id)
+                agent.status = agent_data['agent_status']
+
+                if agent_data['hc_status']:
+                    agent.hc_status = agent_data['agent_status']
+                    hc_status = str(agent_data['hc_status']).replace("\'", "\"")             
+                    json_response = json.loads(hc_status)
+                    agent.benchmark = json_response['Speed # *']
+                    agent.hc_status = str(agent_data['hc_status']).replace("\'", "\"")                       
+
+                db.session.commit()
+
                 if not jobtask or jobtask.status == 'Canceled':
                     message = {
                         'status': 200,
@@ -327,6 +259,8 @@ def api_set_agent_heartbeat(uuid):
                         }
                         return jsonify(message)
                     else:
+                        agent.status = 'Idle'
+                        db.session.commit()
                         message = {
                             'status': 200,
                             'type': 'message',
@@ -377,7 +311,7 @@ def api_authorize(uuid):
 @api.route('/v1/wordlist', methods=['GET'])
 def api_get_wordlist():
     if not agentAuthorized(request.cookies.get('agent_uuid')):
-        return redirect("/v1/agents/"+uuid+"/authorize")
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('agent_uuid'))
     wordlists = Wordlists.query.all()
@@ -417,7 +351,7 @@ def api_get_update_wordlist(wordlist_id):
 @api.route('/v1/rules', methods=['GET'])
 def api_get_rules():
     if not agentAuthorized(request.cookies.get('agent_uuid')):
-        return redirect("/v1/agents/"+uuid+"/authorize") 
+        return redirect("/v1/not_authorized") 
 
     updateHeartbeat(request.cookies.get('agent_uuid'))
     rules = Rules.query.all()
@@ -430,7 +364,7 @@ def api_get_rules():
 @api.route('/v1/rules/<int:id>', methods=['GET'])
 def api_get_rules_download(id):
     if not agentAuthorized(request.cookies.get('agent_uuid')):
-        return redirect("/v1/agents/"+uuid+"/authorize") 
+        return redirect("/v1/not_authorized") 
 
     updateHeartbeat(request.cookies.get('agent_uuid'))
     rules = Rules.query.get(id)
@@ -446,7 +380,7 @@ def api_get_rules_download(id):
 @api.route('/v1/job/<int:id>', methods=['GET'])
 def api_get_job(id):
     if not agentAuthorized(request.cookies.get('agent_uuid')):
-        return redirect("/v1/agents/"+uuid+"/authorize")
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('agent_uuid'))
     job = Jobs.query.get(id)
@@ -520,6 +454,31 @@ def api_put_jobtask_crackfile_upload(jobtask_id):
 
     # delete file
     os.remove(crackfile_path)
+
+    message = {
+        'status': 200,
+        'type': 'message',
+        'msg': 'OK'
+    }
+    return jsonify(message)
+
+@api.route('/v1/agents/<int:uuid>/stats', methods=['POST'])
+def api_set_stats(uuid):
+    if not agentAuthorized(request.cookies.get('agent_uuid')):
+        return redirect("/v1/not_authorized") 
+
+    agent = Agents.query.filter_by(uuid=uuid).first()
+    
+    if (request.cookies.get('cpu_count')):
+        agent.cpu_count = request.cookies.get('cpu_count')
+    
+    if (request.cookies.get('gpu_count')):
+        agent.gpu_count = request.cookies.get('gpu_count')
+
+    if (request.cookies.get('bechmark')):
+        agent.benchmark = request.cookies.get('benchmark')
+    
+    db.session.commit()
 
     message = {
         'status': 200,

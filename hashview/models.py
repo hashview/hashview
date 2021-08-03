@@ -56,12 +56,12 @@ class Jobs(db.Model):
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     #notify_completed = db.Column(db.Boolean, nullable=False, default=False)
-    jobtasks = db.relationship('JobTasks', backref='tbd', lazy=True)
+    #jobtasks = db.relationship('JobTasks', backref='tbd', lazy=True)
 
 class JobTasks(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    job_id = db.Column(db.Integer, db.ForeignKey('jobs.id'), nullable=False)
-    task_id = db.Column(db.Integer, db.ForeignKey('tasks.id'), nullable=False)
+    job_id = db.Column(db.Integer, nullable=False)
+    task_id = db.Column(db.Integer, nullable=False)
     command = db.Column(db.String(1024))                  
     status = db.Column(db.String(50), nullable=False)       # Running, Paused, Not Started, Completed, Queued, Canceled, Importing
     agent_id = db.Column(db.Integer, db.ForeignKey('agents.id'))
@@ -94,7 +94,7 @@ class Agents(db.Model):
     name = db.Column(db.String(100), nullable=False)         # can probably be reduced
     src_ip = db.Column(db.String(15), nullable=False)
     uuid = db.Column(db.String(60), nullable=False)          # can probably be reduced
-    status = db.Column(db.String(20), nullable=False)        # Pending, Syncing, Working, 
+    status = db.Column(db.String(20), nullable=False)        # Pending, Syncing, Working, Idle
     hc_status = db.Column(db.String(6000))
     last_checkin = db.Column(db.DateTime)
     benchmark = db.Column(db.String(20))

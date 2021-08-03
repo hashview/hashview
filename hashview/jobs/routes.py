@@ -8,6 +8,7 @@ from hashview import db
 import os
 import time
 import secrets
+import json
 
 jobs = Blueprint('jobs', __name__)
 
@@ -176,12 +177,11 @@ def jobs_assign_task_group(job_id, task_group_id):
     job = Jobs.query.get(job_id)
     task_group = TaskGroups.query.get(task_group_id)
 
-    for task_group_entry in list(task_group.tasks):
-        if task_group_entry.isdigit():
-            task = Tasks.query.get(task_group_entry)
-            job_task = JobTasks(job_id=job_id, task_id=task_group_entry, status='Not Started')
-            db.session.add(job_task)
-            db.session.commit()
+    for task_group_entry in json.loads(task_group.tasks):
+        print(task_group_entry)
+        job_task = JobTasks(job_id=job_id, task_id=task_group_entry, status='Not Started')
+        db.session.add(job_task)
+        db.session.commit()
     
     return redirect("/jobs/" + str(job_id) + "/tasks")
 

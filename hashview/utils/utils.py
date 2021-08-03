@@ -3,8 +3,10 @@ import secrets
 import hashlib
 import subprocess
 import hashlib
+import time
+from datetime import datetime
 from hashview import mail, db
-from hashview.models import Settings, Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs
+from hashview.models import Settings, Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs, JobTasks, JobNotifications, HashNotifications
 from flask_mail import Message
 from flask import current_app
 from pushover import Client
@@ -33,8 +35,9 @@ def send_email(user, subject, message):
     mail.send(msg)
 
 def send_pushover(user, subject, message):
-    client = Client(user.pushover_key, api_token=user.pushover_id)
-    client.send_message(message, title=subject)
+    if user.pusherover_key and user.pushover_id:
+        client = Client(user.pushover_key, api_token=user.pushover_id)
+        client.send_message(message, title=subject)
 
 def get_keyspace(method, wordlist_id, rule_id, mask):
     settings = Settings.query.first()
@@ -180,3 +183,82 @@ def build_hashcat_command(job_id, task_id):
     print("cmd: " + cmd)
 
     return cmd
+
+def update_job_task_status(jobtask_id, status):
+
+    jobtask = JobTasks.query.get(jobtask_id)
+    jobtask.status = status
+    if status == 'Completed':
+        jobtask.agent_id = None
+    db.session.commit()
+
+    # Update Jobs
+    # TODO
+    # Shouldn't we be changing the job stats to match the jobtask status?
+    # Add started at time
+    job = Jobs.query.get(jobtask.job_id)
+    if job.status == 'Queued':
+        job.status = 'Running'
+        job.started_at = time.strftime('%Y-%m-%d %H:%M:%S')
+        db.session.commit()
+
+    # TODO
+    # This is such a janky way of doing this. Instead of having the agent tell us its done, we're just assuming
+    # That if no other tasks are active we must be done
+    done = True
+    jobtasks = JobTasks.query.all()
+    for jobtask in jobtasks:
+        if jobtask.status == 'Queued' or jobtask.status == 'Running' or jobtask.status == 'Importing':
+            done = False
+    
+    if done:
+        job.status = 'Completed'
+        job.ended_at = time.strftime('%Y-%m-%d %H:%M:%S')
+        db.session.commit()
+
+        start_time = datetime.strptime(str(job.started_at), '%Y-%m-%d %H:%M:%S')
+        end_time = datetime.strptime(str(job.ended_at), '%Y-%m-%d %H:%M:%S')
+        durration = (abs(end_time - start_time).seconds) # So dumb you cant conver this to minutes, only resolution is seconds or days :(
+
+        hashfile = Hashfiles.query.get(job.hashfile_id)
+        hashfile.runtime += durration
+        db.session.commit()
+
+        # TODO
+        # mark all jobtasks as completed
+        job_notifications = JobNotifications.query.filter_by(job_id = job.id)
+        
+        for job_notification in job_notifications:
+            user = Users.query.get(job_notification.owner_id)
+            cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==job.hashfile_id).count()
+            uncracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).count()
+            if job_notification.method == 'email':
+                send_email(user, 'Hashview Job: "' + job.name + '" Has Completed!', 'Your job has completed. It ran for a total of ' + str(durration) + ' seconds and resulted in a total of ' + str(cracked_cnt) + ' out of ' + str(cracked_cnt+uncracked_cnt) + ' hashes being recovered!')
+            elif job_notification.method == 'push':
+                if user.pushover_key and user.pushover_id:
+                    send_pushover(user, 'Message from Hashview', 'Hashview Job: "' + job.name + '" Has Completed!')
+                else:
+                    send_email(user, 'Hashview: Missing Pushover Key', 'Hello, you were due to recieve a pushover notification, but because your account was not provisioned with an pushover ID and Key, one could not be set. Please log into hashview and set these options under Manage->Profile.')
+            db.session.delete(job_notification)
+            db.session.commit()
+        
+        # Send Hash Completion Notifications
+        hash_notifications = HashNotifications.query.all()
+        for hash_notification in hash_notifications:
+            user = Users.query.get(hash_notification.owner_id)
+            message = "Congratulations, the following users's hashes have been recovered: \n\n"
+            
+            # There's probably a way to do this in one query but im lazy
+            cracked_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()
+            for cracked_hash in cracked_hashes:
+                if cracked_hash[0].id == hash_notification.hash_id:
+                    message += cracked_hash[1].username + "\n"
+                    if hash_notification.method == 'email':
+                        send_email(user, 'Hashview User Hash Recovered!', message)
+                    elif hash_notification.method == 'push':
+                        if user.pushover_key and user.pushover_id:
+                            send_pushover(user, 'Message from Hashview', message)
+                    else:
+                        send_email(user, 'Hashview: Missing Pushover Key', 'Hello, you were due to recieve a pushover notification, but because your account was not provisioned with an pushover ID and Key, one could not be set. Please log into hashview and set these options under Manage->Profile.')
+            db.session.delete(hash_notification)
+            db.session.commit()

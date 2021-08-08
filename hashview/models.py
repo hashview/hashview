@@ -123,7 +123,7 @@ class Wordlists(db.Model):
 
 class Tasks(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(50), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
     hc_attackmode = db.Column(db.String(25), nullable=False) # dictionary, mask, bruteforce, combinator
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     wl_id = db.Column(db.Integer)

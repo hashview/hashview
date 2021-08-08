@@ -47,7 +47,7 @@ def rules_delete(rule_id):
     rule = Rules.query.get(rule_id)
     if current_user.admin or rule.owner_id == current_user.id:
         # Check if part of a task
-        tasks = Tasks.query.filter_by(rule_id=rule.id)
+        tasks = Tasks.query.filter_by(rule_id=rule.id).first()
         if tasks:
             flash('Rules is currently used in a task and can not be delete.', 'danger')
         else:

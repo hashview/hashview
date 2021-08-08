@@ -27,7 +27,7 @@ def wordlists_add():
         if form.wordlist.data:
             #wordlist_path = os.path.join(current_app.root_path, save_file('control/wordlists', form.wordlist.data))
             wordlist_path = save_file('control/wordlists', form.wordlist.data)
-
+            print('File saved')
             wordlist = Wordlists(name=form.name.data,
                                 owner_id=current_user.id, 
                                 type='static', 

@@ -3,6 +3,7 @@ from flask_login import login_required
 from hashview.models import Agents, Customers, HashfileHashes, Hashes, Hashfiles
 from hashview import db
 import re
+import operator
 
 # TODO
 # This whole things is a mess
@@ -39,12 +40,12 @@ def get_analytics():
             fig1_cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').count()
             fig1_uncracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '0').count()
     else:
-        fig1_cracked_cnt = db.session.query(Hashes).filter(Hashes.cracked=='1').count()
-        fig1_uncracked_cnt = db.session.query(Hashes).filter(Hashes.cracked=='0').count()
+        fig1_cracked_cnt = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').count()
+        fig1_uncracked_cnt = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='0').count()
     
     fig1_data = [
-        ("cracked: " + str(fig1_cracked_cnt), fig1_cracked_cnt),
-        ("uncracked: " + str(fig1_uncracked_cnt), fig1_uncracked_cnt)
+        ("Recovered: " + str(fig1_cracked_cnt), fig1_cracked_cnt),
+        ("Unrecovered: " + str(fig1_uncracked_cnt), fig1_uncracked_cnt)
     ]
 
     fig1_labels = [row[0] for row in fig1_data]
@@ -62,8 +63,8 @@ def get_analytics():
             fig2_cracked_hashes = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').all()
             fig2_uncracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '0').count()
     else:
-        fig2_cracked_hashes = db.session.query(Hashes).filter(Hashes.cracked=='1').all()
-        fig2_uncracked_cnt = db.session.query(Hashes).filter(Hashes.cracked=='0').count()
+        fig2_cracked_hashes = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').all()
+        fig2_uncracked_cnt = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='0').count()
     
     fig2_fails_complexity_cnt = 0
     fig2_meets_complexity_cnt = 0
@@ -88,11 +89,36 @@ def get_analytics():
     fig2_data = [
         ("Fails Complexity: " + str(fig2_fails_complexity_cnt), fig2_fails_complexity_cnt),
         ("Meets Complexity: " + str(fig2_meets_complexity_cnt), fig2_meets_complexity_cnt),
-        ("Uncracked: " + str(fig2_uncracked_cnt), fig2_uncracked_cnt)
+        ("Unrecovered: " + str(fig2_uncracked_cnt), fig2_uncracked_cnt)
     ]
 
     fig2_labels = [row[0] for row in fig2_data]
     fig2_values = [row[1] for row in fig2_data]
+
+    # General Stats Table
+    total_runtime = 0
+    total_accounts = 0
+    total_unique_hashes = 0
+    if customer_id:
+        # we have a customer
+        if hashfile_id:
+            hashfile = Hashfiles.query.get(hashfile_id)
+            total_runtime = hashfile.runtime
+            total_accounts = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id==hashfile_id).count()
+            total_unique_hashes = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id==hashfile_id).distinct('ciphertext').count()
+        else:
+            # just a customer, no specific hashfile
+            hashfiles = Hashfiles.query.filter_by(customer_id=customer_id).all()
+            for hashfile in hashfiles:
+                total_runtime = total_runtime + hashfile.runtime
+            total_accounts = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).count()
+            total_unique_hashes = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).distinct('ciphertext').count()
+    else:
+        hashfiles = Hashfiles.query.all()
+        for hashfile in hashfiles:
+            total_runtime = total_runtime + hashfile.runtime
+        total_accounts = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).count()
+        total_unique_hashes = db.session.query(Hashes).count()
 
 
     # Figure 3 (Charset Breakdown)
@@ -158,49 +184,37 @@ def get_analytics():
     fig3_labels = []
     fig3_values = []
 
-    # Dynamically populating our arrays
-    if numeric > 0:
-        fig3_labels.append('numeric')
-        fig3_values.append(numeric)
-    if loweralpha > 0:
-        fig3_labels.append('loweralpha')
-        fig3_values.append(loweralpha)
-    if upperalpha > 0:
-        fig3_labels.append('upperalpha')
-        fig3_values.append(upperalpha)
-    if special > 0:
-        fig3_labels.append('special')
-        fig3_values.append(special)
-    if mixedalpha > 0:
-        fig3_labels.append('mixedalpha')
-        fig3_values.append(mixedalpha)
-    if loweralphanum > 0:
-        fig3_labels.append('loweralphanum')
-        fig3_values.append(loweralphanum)
-    if upperalphanum > 0:
-        fig3_labels.append('upperalphanum')
-        fig3_values.append(upperalphanum)
-    if loweralphaspecial> 0:
-        fig3_labels.append('loweralphaspecial')
-        fig3_values.append(loweralphaspecial)
-    if upperalphaspecial > 0:
-        fig3_labels.append('upperalphaspecial')
-        fig3_values.append(upperalphaspecial)
-    if specialnum > 0:
-        fig3_labels.append('specialnum')
-        fig3_values.append(specialnum)
-    if mixedalphaspecial > 0:
-        fig3_labels.append('mixedalphaspecial')
-        fig3_values.append(mixedalphaspecial)
-    if upperalphaspecialnum> 0:
-        fig3_labels.append('upperalphaspecialnum')
-        fig3_values.append(upperalphaspecialnum)
-    if loweralphaspecialnum > 0:
-        fig3_labels.append('loweralphaspecialnum')
-        fig3_values.append(loweralphaspecialnum)
-    if mixedalphaspecialnum> 0:
-        fig3_labels.append('mixedalphaspecialnum')
-        fig3_values.append(mixedalphaspecialnum)
+    # We only want the top 4 with the 5th being other
+    fig3_dict = {
+        "Numeric Only": numeric, 
+        "LowerAlpha Only": loweralpha, 
+        "UpperAlpha Only": upperalpha, 
+        "Special Only": special, 
+        "MixedAlpha": mixedalpha, 
+        "LowerAlphaNumeric": loweralphanum, 
+        "LowerAlphaSpecial": loweralphaspecial, 
+        "UpperAlphaSpecial": upperalphaspecial, 
+        "SpecialNumeric": specialnum, 
+        "MixedAlphaSpecial": mixedalphaspecial, 
+        "UpperAlphaSpecialNumeric": upperalphaspecialnum, 
+        "LowerAlphaSpecialNumeric": loweralphaspecialnum, 
+        "MixedAlphaSpecialNumeric": mixedalphaspecialnum
+        }
+
+    fig3_array_sorted = dict(sorted(fig3_dict.items(), key=operator.itemgetter(1),reverse=True))
+
+    limit = 0
+    fig3_other = 0
+    for key in fig3_array_sorted:
+        if limit <= 3:
+            fig3_labels.append(key)
+            fig3_values.append(fig3_array_sorted[key])
+            limit += 1
+        else:
+            fig3_other += fig3_array_sorted[key]
+
+    fig3_labels.append('Other')
+    fig3_values.append(fig3_other)
 
     # Figure 4 (Passwords by Length)
     if customer_id:
@@ -244,7 +258,7 @@ def get_analytics():
             # just a customer, no specific hashfile
             fig5_cracked_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').all()
     else:
-        fig5_cracked_hashes = db.session.query(Hashes, Hashfiles).filter(Hashes.cracked=='1').all()
+        fig5_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').all()
 
     fig5_data = {}
 
@@ -279,7 +293,13 @@ def get_analytics():
                             fig4_values=fig4_values,
                             fig5_labels=fig5_labels,
                             fig5_values=fig5_values,
-                            customers=customers, hashfiles=hashfiles, hashfile_id=hashfile_id, customer_id=customer_id)
+                            customers=customers, 
+                            hashfiles=hashfiles, 
+                            hashfile_id=hashfile_id, 
+                            customer_id=customer_id,
+                            total_runtime=total_runtime,
+                            total_accounts=total_accounts,
+                            total_unique_hashes=total_unique_hashes)
 
 # serve a list of cracks
 @analytics.route('/analytics/download', methods=['GET'])
@@ -319,8 +339,8 @@ def analytics_download_hashes():
             cracked_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').all()
             uncracked_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '0').all()
     else:
-        cracked_hashes = db.session.query(Hashes, HashfileHashes).filter(Hashes.cracked=='1').all()
-        uncracked_hashes = db.session.query(Hashes, HashfileHashes).filter(Hashes.cracked=='1').all()
+        cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').all()
+        uncracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').all()
 
     outfile = open('hashview/control/tmp/' + filename, 'w')
 

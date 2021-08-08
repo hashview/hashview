@@ -6,7 +6,7 @@ import hashlib
 import time
 from datetime import datetime
 from hashview import mail, db
-from hashview.models import Settings, Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs, JobTasks, JobNotifications, HashNotifications
+from hashview.models import Settings, Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs, JobTasks, JobNotifications, HashNotifications, Users
 from flask_mail import Message
 from flask import current_app
 from pushover import Client
@@ -18,8 +18,24 @@ def save_file(path, form_file):
     form_file.save(file_path)
     return file_path
 
+def _count_generator(reader):
+    b = reader(1024 * 1024)
+    while b:
+        yield b
+        b = reader(1024 * 1024)
+
 def get_linecount(filepath):
-    return sum(1 for line in open(filepath))
+    
+    with open(filepath, 'rb') as fp:
+        c_generator = _count_generator(fp.raw.read)
+        count = sum(buffer.count(b'\n') for buffer in c_generator)
+        return count + 1
+ 
+ 
+    #args = ['wc', '-l', filepath]
+    #p = subprocess.run(args, check=False, stdout=subprocess.PIPE, encoding='utf-8')
+    #return p.stdout.split('\n')[0]
+    #return sum(1 for line in open(filepath))
 
 def get_filehash(filepath):
     sha256_hash = hashlib.sha256()
@@ -35,7 +51,7 @@ def send_email(user, subject, message):
     mail.send(msg)
 
 def send_pushover(user, subject, message):
-    if user.pusherover_key and user.pushover_id:
+    if user.pushover_key and user.pushover_id:
         client = Client(user.pushover_key, api_token=user.pushover_id)
         client.send_message(message, title=subject)
 
@@ -56,8 +72,7 @@ def get_keyspace(method, wordlist_id, rule_id, mask):
     cmd.append('--keyspace')
 
     p = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, encoding='utf-8')
-    print(p.stdout.split('\n')[0])
-    return_value = p.stdout.split('\n')[0]
+    return_value = p.stdout.split('\n')[-2]
 
     return return_value
 
@@ -83,13 +98,9 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
     # Open file
     file = open(hashfile_path, 'r')
     lines = file.readlines()
-    print(lines)
 
     # for line in file, 
     for line in lines:
-        print(line)
-        print(file_type)
-        print(hash_type)
         if file_type == 'hash_only':
             hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
             username = None
@@ -169,16 +180,16 @@ def build_hashcat_command(job_id, task_id):
     session = secrets.token_hex(4)
 
     if attackmode == 'bruteforce':
-        cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + ' -a 3 ' + target_file
+        cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -a 3 ' + target_file
     elif attackmode == 'maskmode':
-        cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + ' -a 3 ' + target_file + ' ' + mask
+        cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -a 3 ' + target_file + ' ' + mask
     elif attackmode == 'dictionary':
         if isinstance(task.rule_id, int):
-            cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + ' -r ' + relative_rules_path + ' ' + target_file + ' ' + relative_wordlist_path
+            cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -r ' + relative_rules_path + ' ' + target_file + ' ' + relative_wordlist_path
         else:
-            cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + target_file + ' ' + relative_wordlist_path
+            cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + target_file + ' ' + relative_wordlist_path
     elif attackmode == 'combinator':
-      cmd = hc_binpath + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 5' + ' --outfile ' + crack_file + ' ' + ' -a 1 ' + target_file + ' ' + wordlist_one.path + ' ' + ' ' + wordlist_two.path + ' ' + relative_rules_path
+      cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -a 1 ' + target_file + ' ' + wordlist_one.path + ' ' + ' ' + wordlist_two.path + ' ' + relative_rules_path
 
     print("cmd: " + cmd)
 
@@ -206,7 +217,7 @@ def update_job_task_status(jobtask_id, status):
     # This is such a janky way of doing this. Instead of having the agent tell us its done, we're just assuming
     # That if no other tasks are active we must be done
     done = True
-    jobtasks = JobTasks.query.all()
+    jobtasks = JobTasks.query.filter_by(job_id=job.id).all()
     for jobtask in jobtasks:
         if jobtask.status == 'Queued' or jobtask.status == 'Running' or jobtask.status == 'Importing':
             done = False

@@ -47,7 +47,13 @@
                     <div class="dropdown-divider"></div>
                 {% endif %}
                 {% for hashfile in hashfiles %}
-                    <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}&hashfile_id={{hashfile.id}}"> {{hashfile.name}} </a>
+                    {% if customer_id %}
+                        {% if hashfile.customer_id|string() == customer_id|string() %}
+                            <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}&hashfile_id={{hashfile.id}}"> {{hashfile.name}} </a>
+                        {% endif %}
+                    {% else %}
+                        <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}&hashfile_id={{hashfile.id}}"> {{hashfile.name}} </a>
+                    {% endif %}
                 {% endfor %}
         </div>
     </div>
@@ -57,207 +63,300 @@
 {% endblock header %}
 {% block content %}
 <!-- this layout is so jank, someone please help me-->
+<br>
+<br>
 <div class="container">
     <div class="row">
         <!-- spacer -->
     </div>
     <div class="row">
       <div class="col"  align="center">
-          <canvas id="TotalCrackedHashes" width="300" height="300">
-                <script>
-                    var vis1 = document.getElementById("TotalCrackedHashes").getContext("2d");
-                    var doughNut = new Chart(vis1, {
-                        type: 'doughnut',
-                        data: {
-                            labels: {{ fig1_labels | safe }},
-                            datasets: [{
-                                label: "my label",
-                                data: {{ fig1_values | safe }},
-                                backgroundColor: ['rgba(192, 0, 0, 0.5)', 'rgba(0, 128, 0, 0.5)']
-                            }]
-                        },
-                        options: {
-                            responsive: false,
-                            plugins:{
-                                legend: {
-                                    position: 'bottom',
+        <div class="card">
+            <h5 class="card-header">Recovered Accounts</h5>
+            <div class="card-body">
+                <canvas id="TotalCrackedHashes" width="300" height="300">
+                    <script>
+                        var vis1 = document.getElementById("TotalCrackedHashes").getContext("2d");
+                        var doughNut = new Chart(vis1, {
+                            type: 'doughnut',
+                            data: {
+                                labels: {{ fig1_labels | safe }},
+                                datasets: [{
+                                    label: "my label",
+                                    data: {{ fig1_values | safe }},
+                                    backgroundColor: ['rgba(192, 0, 0, 0.5)', 'rgba(0, 128, 0, 0.5)']
+                                }]
+                            },
+                            options: {
+                                responsive: false,
+                                plugins:{
+                                    legend: {
+                                        position: 'bottom',
+                                    },
                                 },
+                                elements: {
+                                    center: {
+                                        text: 'Red is 2/3 of the total numbers',
+                                        color: '#FF6384', // Default is #000000
+                                        fontStyle: 'Arial', // Default is Arial
+                                        sidePadding: 20, // Default is 20 (as a percentage)
+                                        minFontSize: 25, // Default is 20 (in px), set to false and text will not wrap.
+                                        lineHeight: 25 // Default is 25 (in px), used for when text wraps
+                                    }
+                                }
                             }
-                        }
-                    });
-                </script>
-          </canvas>
+                        });
+                    </script>
+              </canvas>
+            </div>
+        </div>
+          
+
       </div>
       <div class="col" align="center">
-        <canvas id="Complexity" width="300" height="300">
-            <script>
-                var ctx = document.getElementById("Complexity").getContext("2d");
-                var doughNut = new Chart(ctx, {
-                    type: 'doughnut',
-                    data: {
-                        labels: {{ fig2_labels | safe }},
-                        datasets: [{
-                            label: "my label",
-                            data: {{ fig2_values | safe }},
-                            backgroundColor: ['rgba(192, 0, 0, 0.5)', 'rgba(227, 108, 10, 0.5)', 'rgba(0, 128, 0, 0.5)']
-                        }]
-                    },
-                    options: {
-                        responsive: false,
-                        plugins:{
-                            legend: {
-                                position: 'bottom',
+        <div class="card">
+            <h5 class="card-header">Password Complexity</h5>
+            <div class="card-body">
+                <canvas id="Complexity" width="300" height="300">
+                    <script>
+                        var ctx = document.getElementById("Complexity").getContext("2d");
+                        var doughNut = new Chart(ctx, {
+                            type: 'doughnut',
+                            data: {
+                                labels: {{ fig2_labels | safe }},
+                                datasets: [{
+                                    label: "my label",
+                                    data: {{ fig2_values | safe }},
+                                    backgroundColor: ['rgba(192, 0, 0, 0.5)', 'rgba(227, 108, 10, 0.5)', 'rgba(0, 128, 0, 0.5)']
+                                }]
                             },
-                        }
-                    }
-                });
-            </script>
-        </canvas>
+                            options: {
+                                responsive: false,
+                                plugins:{
+                                    legend: {
+                                        position: 'bottom',
+                                    },
+                                }
+                            }
+                        });
+                    </script>
+                </canvas>
+            </div>
+          </div>
+
       </div>
     </div>
     <div class="row">
         <div class="col" align="center">
           <br>
-          <br>
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
           <br>
-          <br>
         </div>
     </div>
     <div class="row">
-        <div class="col" align="left">
-            Placeholder for general stats <br><br>
-            {% if customer_id %}
-                {% if hashfile_id %}
-                    <a class="btn btn-primary btn-sm" href="/analytics/download?type=found&customer_id={{customer_id}}&hashfile_id={{hashfile_id}}" role="button">Cracked</a> <br>
-                {% else %}
-                    <a class="btn btn-primary btn-sm" href="/analytics/download?type=found&customer_id={{customer_id}}" role="button">Cracked</a> <br>
-                {% endif %}
-            {% else %}
-                <a class="btn btn-primary btn-sm" href="/analytics/download?type=found" role="button">Cracked</a> <br>
-            {% endif %}
-            <br>
-            {% if customer_id %}
-                {% if hashfile_id %}
-                    <a class="btn btn-primary btn-sm" href="/analytics/download?type=left&customer_id={{customer_id}}&hashfile_id={{hashfile_id}}" role="button">Uncracked</a> <br>
-                {% else %}
-                    <a class="btn btn-primary btn-sm" href="/analytics/download?type=left&customer_id={{customer_id}}" role="button">Uncracked</a> <br>
-                {% endif %}
-            {% else %}
-                <a class="btn btn-primary btn-sm" href="/analytics/download?type=left" role="button">Uncracked</a> <br>
-            {% endif %}
+        <div class="col" align="center">
+            <div class="card">
+                <h5 class="card-header">General Stats</h5>
+                <div class="card-body">
+                    <table class="table">
+                        <tbody>
+                            <tr>
+                                <td>
+                                    Total Accounts:
+                                </td>
+                                <td>
+                                    {{ total_accounts }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    Total Unique Hashes:
+                                </td>
+                                <td>
+                                    {{ total_unique_hashes }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    Total Runtime (Seconds):
+                                </td>
+                                <td>
+                                    {{total_runtime}}
+                                </td>
+                            </tr>
+                            <tr>                                
+                                <td>
+                                    Download Recovered:
+                                </td>
+                                <td>
+                                    {% if customer_id %}
+                                        {% if hashfile_id %}
+                                            <a class="btn btn-primary btn-sm" href="/analytics/download?type=found&customer_id={{customer_id}}&hashfile_id={{hashfile_id}}" role="button">Cracked</a> <br>
+                                        {% else %}
+                                            <a class="btn btn-primary btn-sm" href="/analytics/download?type=found&customer_id={{customer_id}}" role="button">Cracked</a> <br>
+                                        {% endif %}
+                                    {% else %}
+                                        <a class="btn btn-primary btn-sm" href="/analytics/download?type=found" role="button">Cracked</a> <br>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>                                
+                                <td>
+                                    Download Unrecovered:
+                                </td>
+                                <td>
+                                    {% if customer_id %}
+                                        {% if hashfile_id %}
+                                            <a class="btn btn-primary btn-sm" href="/analytics/download?type=left&customer_id={{customer_id}}&hashfile_id={{hashfile_id}}" role="button">Uncracked</a> <br>
+                                        {% else %}
+                                            <a class="btn btn-primary btn-sm" href="/analytics/download?type=left&customer_id={{customer_id}}" role="button">Uncracked</a> <br>
+                                        {% endif %}
+                                    {% else %}
+                                        <a class="btn btn-primary btn-sm" href="/analytics/download?type=left" role="button">Uncracked</a> <br>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </tbody>
+                      </table>
+                </div>
+              </div>
         </div>
         <div class="col" align="center">
-            <canvas id="CharSet" width="300" height="300">
-                <script>
-                    var ctx = document.getElementById("CharSet").getContext("2d");
-                    var doughNut = new Chart(ctx, {
-                        type: 'doughnut',
-                        data: {
-                            labels: {{ fig3_labels | safe }},
-                            datasets: [{
-                                label: "my label",
-                                data: {{ fig3_values | safe }},
-                                backgroundColor: [  'rgba(192, 0, 0, 0.5)', 
-                                                    'rgba(227, 108, 10, 0.5)', 
-                                                    'rgba(224, 202, 33, 0.5)', 
-                                                    'rgba(0, 128, 0, 0.5)',]
-                            }]
-                        },
-                        options: {
-                            responsive: false,
-                            plugins:{
-                                legend: {
-                                    position: 'bottom',
+            <div class="card">
+                <h5 class="card-header">Composition Makeup</h5>
+                <div class="card-body">
+                    <canvas id="CharSet" width="300" height="300">
+                        <script>
+                            var ctx = document.getElementById("CharSet").getContext("2d");
+                            var doughNut = new Chart(ctx, {
+                                type: 'doughnut',
+                                data: {
+                                    labels: {{ fig3_labels | safe }},
+                                    datasets: [{
+                                        label: "my label",
+                                        data: {{ fig3_values | safe }},
+                                        backgroundColor: [  'rgba(192, 0, 0, 0.5)', 
+                                                            'rgba(227, 108, 10, 0.5)', 
+                                                            'rgba(224, 202, 33, 0.5)', 
+                                                            'rgba(0, 128, 0, 0.5)',
+                                                            'rgba(128, 128, 128, 0.5)',]
+                                    }]
                                 },
-                            }
-                        }
-                    });
-                </script>
-            </canvas>
+                                options: {
+                                    responsive: false,
+                                    plugins:{
+                                        legend: {
+                                            position: 'bottom',
+                                        },
+                                    }
+                                }
+                            });
+                        </script>
+                    </canvas>
+                </div>
+              </div>
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
           <br>
-          <br>
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
           <br>
-          <br>
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
-            <canvas id="PasswordsCountByLength" width="600" height="300">
-                <script>
-                    var ctx = document.getElementById("PasswordsCountByLength").getContext("2d");
-                    var doughNut = new Chart(ctx, {
-                        type: 'bar',
-                        data: {
-                            labels: {{ fig4_labels | safe }},
-                            datasets: [{
-                                label: "Password Counts by Lengths",
-                                data: {{ fig4_values | safe }},
-                                backgroundColor: ['rgba(0, 128, 0, 0.5)']
-                            }]
-                        },
-                        options: {
-                            responsive: false,
-                            plugins:{
-                                legend: {
-                                    position: 'bottom',
+            <div class="card">
+                <h5 class="card-header">Passwords Count by Length</h5>
+                <div class="card-body">
+                    <canvas id="PasswordsCountByLength" width="800" height="300">
+                        <script>
+                            var ctx = document.getElementById("PasswordsCountByLength").getContext("2d");
+                            var doughNut = new Chart(ctx, {
+                                type: 'bar',
+                                data: {
+                                    labels: {{ fig4_labels | safe }},
+                                    datasets: [{
+                                        label: "Password Counts by Lengths",
+                                        data: {{ fig4_values | safe }},
+                                        backgroundColor: ['rgba(0, 128, 0, 0.5)']
+                                    }]
                                 },
-                            }
-                        }
-                    });
-                </script>
-            </canvas>
+                                options: {
+                                    responsive: false,
+                                    plugins:{
+                                        legend: {
+                                            display: false,
+                                        },
+                                    }
+                                }
+                            });
+                        </script>
+                    </canvas>
+                </div>
+              </div>
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
           <br>
-          <br>
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
           <br>
-          <br>
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
-            <canvas id="Top10Passwords" width="600" height="300">
-                <script>
-                    var ctx = document.getElementById("Top10Passwords").getContext("2d");
-                    var doughNut = new Chart(ctx, {
-                        type: 'bar',
-                        data: {
-                            labels: {{ fig5_labels | safe }},
-                            datasets: [{
-                                label: "Top 10 Passwords",
-                                data: {{ fig5_values | safe }},
-                                backgroundColor: ['rgba(0, 128, 0, 0.5)']
-                            }]
-                        },
-                        options: {
-                            responsive: false,
-                            plugins:{
-                                legend: {
-                                    position: 'bottom',
+            <div class="card">
+                <h5 class="card-header">Top 10 Passwords</h5>
+                <div class="card-body">
+                    <canvas id="Top10Passwords" width="800" height="300">
+                        <script>
+                            var ctx = document.getElementById("Top10Passwords").getContext("2d");
+                            var doughNut = new Chart(ctx, {
+                                type: 'bar',
+                                data: {
+                                    labels: {{ fig5_labels | safe }},
+                                    datasets: [{
+                                        label: "Top 10 Passwords",
+                                        data: {{ fig5_values | safe }},
+                                        backgroundColor: ['rgba(0, 128, 0, 0.5)']
+                                    }]
                                 },
-                            }
-                        }
-                    });
-                </script>
-            </canvas>
+                                options: {
+                                    responsive: false,
+                                    plugins:{
+                                        legend: {
+                                            display: false,
+                                        },
+                                    }
+                                }
+                            });
+                        </script>
+                    </canvas>
+                </div>
+              </div>
+
+        </div>
+    </div>
+    <div class="row">
+        <div class="col" align="center">
+          <br>
+          <br>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col" align="center">
+          <br>
+          <br>
         </div>
     </div>
 {% endblock content %}

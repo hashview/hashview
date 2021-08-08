@@ -259,3 +259,12 @@ profile -> pushover notification when null auto populates
 update cracked hashes from agent to server. 
 
 Update agent to stop downloading the same rules over and over again
+
+Add 'insta crack results' as flash on import
+Add indexes
+add subhash for hashfile inserts
+
+filter imports for usernames that contain non english characters
+filter rules file that contain non-english characters
+
+Max runtime per job admin setting

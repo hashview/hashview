@@ -7,7 +7,7 @@
 
 ### Requirements
 
-1. Hashcat installed and working (https://hashcat.net/hashcat/)  
+1. Hashcat installed and working (https://hashcat.net/hashcat/) Version 6.0+ 
 2. Hashcat installed and working (just double checking)  
 3. Python 3.7+
 4. Mysql DB installed with known username/password   

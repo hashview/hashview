@@ -16,7 +16,7 @@ def agents_list():
             agent_name = agentsForm.name.data
             agent_id = agentsForm.id.data
 
-            agent.get(agent_id)
+            agent = Agents.get(agent_id)
             agent.name = agent_name
             db.session.commit()
 
@@ -27,6 +27,31 @@ def agents_list():
             return render_template('agents.html', title='agents', agents=agents, agentsForm=agentsForm)
     else:
         abort(403)
+
+@agents.route("/agents/edit/<int:agent_id>", methods=['GET', 'POST'])
+@login_required
+def agents_edit(agent_id):
+    if current_user.admin:
+        agentsForm = AgentsForm()
+
+        if agentsForm.validate_on_submit():
+            agent_name = agentsForm.name.data
+            agent_id = agentsForm.id.data
+
+            agent = Agents.query.get(agent_id)
+            agent.name = agent_name
+            db.session.commit()
+
+            flash('Updated Agents Name', 'success')
+            return redirect(url_for('agents.agents_list'))
+        else:
+            agent = Agents.query.get(agent_id)
+            return render_template('agents_edit.html', title='agents', agent=agent, agentsForm=agentsForm)
+    else:
+        flash('You are unauthorized to edit agent data.', 'danger')
+    redirect(url_for('agents.agents_list'))
+
+
 
 @agents.route("/agents/<int:agent_id>/authorize", methods=['GET'])
 @login_required

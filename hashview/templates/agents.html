@@ -36,7 +36,7 @@ Agents are remote workers that process distributed hashcat jobs.
                                 {% else %}
                                     <a class="fa fa-close btn btn-secondary" href="/agents/{{agent.id}}/deauthorize" role="button" title=Deauthorize></a>
                                 {% endif %}
-                                <button type="button" class="fa fa-edit btn btn-warning" data-toggle="modal" data-target="#editModal{{agent.id}}" title=Edit></button>
+                                    <a class="fa fa-edit btn btn-warning" href="/agents/edit/{{agent.id}}" role="button" title=Edit></a>
                                 <button type="button" class="fa fa-trash fa-1x btn btn-danger" data-toggle="modal" data-target="#deleteModal{{agent.id}}" title=Delete></button>
                             </td>
                         </tr>
@@ -46,44 +46,6 @@ Agents are remote workers that process distributed hashcat jobs.
         </div>
     </article>
     {% for agent in agents %}
-    <!-- EditModal -->
-    <div class="modal fade" id="editModal{{agent.id}}" tabindex="-1" aria-labelledby="editModal{{agent.id}}Label" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-            <h5 class="modal-title" id="editModal{{agent.id}}Label">Edit: {{agent.name}} ?</h5>
-            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                <span aria-hidden="true">&times;</span>
-            </button>
-            </div>
-            <div class="content-section">
-                <form method="POST" action="" enctype="multipart/form-data">
-                    {{ agentsForm.hidden_tag() }}
-                    <fieldset class="form-group">
-                        <div class="form-group">
-                            {{ agentsForm.name.label(class="form-control-label") }}
-            
-                            {% if agentsForm.name.errors %}
-                                {{ agentsForm.name(class="form-control form-control-lg is-invalid") }}
-                                <div class="invalid-feedback">
-                                    {% for error in agentsForm.name.errors %}
-                                        <span>{{ error }}</span>
-                                    {% endfor %}
-                                </div>
-                            {% else %}
-                                {{ agentsForm.name(class="form-control form-control-lg") }}
-                            {% endif %}
-                        </div> 
-                    </fieldset>
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
-                    <div class="form-group">
-                        {{ agentsForm.submit(class="btn btn-outline-info")}}
-                    </div>
-                </form>
-            </div>
-        </div>
-        </div>
-    </div>
     <!-- DeleteModal -->
     <div class="modal fade" id="deleteModal{{agent.id}}" tabindex="-1" aria-labelledby="deleteModal{{agent.id}}Label" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">

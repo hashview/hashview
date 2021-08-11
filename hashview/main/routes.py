@@ -24,19 +24,20 @@ def home():
     tasks = Tasks.query.all()
     agents = Agents.query.all()
 
-    progress_list = {}
-    time_estimated_list ={}
+    recovered_list = {}
+    time_estimated_list = {}
 
     # Create Agent Progress
     for agent in agents:
-        progress_list[agent.id] = json.loads(agent.hc_status)['Progress']
-        time_estimated_list[agent.id] = json.loads(agent.hc_status)['Time_Estimated']
+        if agent.hc_status:
+            recovered_list[agent.id] = json.loads(agent.hc_status)['Recovered']
+            time_estimated_list[agent.id] = json.loads(agent.hc_status)['Time_Estimated']
 
     # These are going to have to be put into an array :(
     #fig1_cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).count()
     #fig1_uncracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==hashfile_id).count()
 
-    return render_template('home.html', jobs=jobs, users=users, customers=customers, job_tasks=job_tasks, tasks=tasks, agents=agents, progress_list=progress_list, time_estimated_list=time_estimated_list)
+    return render_template('home.html', jobs=jobs, users=users, customers=customers, job_tasks=job_tasks, tasks=tasks, agents=agents, recovered_list=recovered_list, time_estimated_list=time_estimated_list)
 
 @main.route("/job_task/stop/<int:job_task_id>")
 @login_required

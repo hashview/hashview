@@ -141,7 +141,10 @@ def jobs_assigned_hashfile_cracked(job_id, hashfile_id):
     job = Jobs.query.get(job_id)
     hashfile = Hashfiles.query.get(hashfile_id)
     # Can be optimized to only return the hash and plaintext
-    cracked_hashfiles_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).all()
+    cracked_hashfiles_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).all()
+    cracked_hashfiles_hashes_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id == HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id).count()
+    if cracked_hashfiles_hashes_cnt > 0:
+        flash(str(cracked_hashfiles_hashes_cnt) + " instacracked Hashes!", 'success')
     # Oppertunity for either a stored procedure or for some fancy queries.
  
     return render_template('jobs_assigned_hashfiles_cracked.html', title='Jobs Assigned Hashfiles Cracked', hashfile=hashfile, job=job, cracked_hashfiles_hashes=cracked_hashfiles_hashes)
@@ -153,7 +156,7 @@ def jobs_list_tasks(job_id):
     tasks = Tasks.query.all()
     job_tasks = JobTasks.query.filter_by(job_id=job_id)
     task_groups = TaskGroups.query.all()
-    # Right now wer're doing nested loops in the template, this could probably be solved with a left/join select
+    # Right now we're doing nested loops in the template, this could probably be solved with a left/join select
 
     return render_template('jobs_assigned_tasks.html', title='Jobs Assigned Tasks', job=job, tasks=tasks, job_tasks=job_tasks, task_groups=task_groups)
 
@@ -282,7 +285,7 @@ def jobs_assign_notifications(job_id):
     job = Jobs.query.get(job_id)
 
     # populate the forms dynamically with the choices in the database
-    form.hashes.choices = [(str(c[0].id), c[1].username + ':' + c[0].ciphertext) for c in db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()]
+    form.hashes.choices = [(str(c[0].id), str(c[1].username) + ':' + c[0].ciphertext) for c in db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()]
     
     if form.validate_on_submit():
         if form.job_completion.data != 'none':
@@ -340,7 +343,6 @@ def jobs_summary(job_id):
     tasks = Tasks.query.all()
     hashfile = Hashfiles.query.get(job.hashfile_id)
     customer = Customers.query.get(job.customer_id)
-    #hashfile_hashes = HashfileHashes.query.filter_by(job_id=job_id).all() # this should be a join of some kind
     cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).count()
     hash_total = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id==hashfile.id).count()
     cracked_rate = str(cracked_cnt) + '/' + str(hash_total)
@@ -348,7 +350,6 @@ def jobs_summary(job_id):
     hash_notification = db.session.query(HashNotifications).join(HashfileHashes, HashNotifications.hash_id==HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id == hashfile.id).first()
     job_notification = JobNotifications.query.filter_by(job_id = job.id).first()
 
-    #hash_notifications = HashNotifications.query.all()
     job_notification = JobNotifications.query.filter_by(job_id=job_id).first()
 
     if form.validate_on_submit():

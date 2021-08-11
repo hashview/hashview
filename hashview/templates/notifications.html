@@ -33,7 +33,7 @@ These are your notifications.
                             <td>{{ job_notification.method }}</td>
                             <td>
                                 <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal">Change Method</button>
-                                <a class="fa fa-trash btn btn-danger" href="/notifications/job/{{job_notification_id}}" role="button" title=Delete></a>
+                                <a class="fa fa-trash btn btn-danger" href="/notifications/job/{{job_notification.id}}" role="button" title=Delete></a>
                             </td>
                         </tr>
                     {% endfor %}
@@ -67,7 +67,7 @@ These are your notifications.
                             </td>
                             <td>
                                 <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal">Change Method</button>
-                                <a class="fa fa-trash btn btn-danger" href="/notifications/hash/{{hash_notification_id}}" role="button", title=Delete></a>
+                                <a class="fa fa-trash btn btn-danger" href="/notifications/delete/hash/{{hash_notification.id}}" role="button", title=Delete></a>
                             </td>
                         </tr>
                     {% endfor %}

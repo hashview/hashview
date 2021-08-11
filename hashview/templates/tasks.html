@@ -64,25 +64,35 @@ Task are predefined hashcat commands. Any number of tasks can be assigned to a J
                               <tr>
                                 <th scope="row">Associated Jobs</th>
                                 <td>
+                                    {% set associated_jobs = namespace(value=0) %}
                                     {% for job_task in job_tasks %}
                                         {% if job_task.task_id == task.id %}
                                             {% for job in jobs %}
                                                 {% if job.id == job_task.job_id%}
+                                                    {% set associated_jobs.value = 1 %}
                                                     {{ job.name }} <br>
                                                 {% endif %}
                                             {% endfor %}
                                         {% endif %}
                                     {% endfor %}
+                                    {% if associated_jobs.value == 0 %}
+                                        <i>none</i><br>
+                                    {% endif %}
                                 </td>
                               </tr>
                               <tr>
                                 <th scope="row">Associated Wordlists</th>
                                 <td>
+                                    {% set associated_wordlists = namespace(value=0) %}
                                     {% for wordlist in wordlists %}
                                         {% if wordlist.id == task.wl_id %}
+                                            {% set associated_wordlists.value = 1 %}
                                             {{ wordlist.name }} <br>
                                         {% endif %}
                                     {% endfor %}    
+                                    {% if associated_wordlists.value == 0 %}
+                                        <i>none</i><br>
+                                    {% endif %}
                                 </td>
                               </tr>
                               <tr>                              

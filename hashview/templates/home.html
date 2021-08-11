@@ -5,101 +5,125 @@
     <br>
     <br>
     <br>
-    {% for job in jobs %}
-        <div class="card" style="width: 57rem;">
-        <div class="card-header" id="headingOne">
-            <h5 class="mb-0">
-            <button class="btn btn-link" data-toggle="collapse" data-target="#collapse{{job.id}}" aria-expanded="true" aria-controls="collapse{{job.id}}">
-                {% for customer in customers%} 
-                    {% if customer.id == job.customer_id %}
-                        {{ customer.name }}:
-                    {% endif %}
-                {% endfor %}
-                {{job.name}} 
-                {% for user in users %}
-                    {% if user.id == job.owner_id %}
-                        ({{ user.first_name }} {{ user.last_name }})
-                    {% endif %} 
-                {% endfor %}
-            </button>
-            </h5>
-        </div>
-    
-        <div id="collapse{{job.id}}" class="collapse show" aria-labelledby="heading{{job.id}}" data-parent="#accordion">
-            <div class="card-body">
-            {% set total = namespace(value=0) %}
-            {% set tasks_completed = namespace(value=0) %}
-            {% set tasks_ready = namespace(value=0) %}
-            {% set tasks_running = namespace(value=0) %}
-            {% for job_task in job_tasks %}
-                {% if job_task.job_id == job.id %}
-                    {% set total.value = total.value + 1 %}
-                    {% if job_task.status == 'Ready' %}
-                        {% set tasks_ready.value = tasks_ready.value + 1 %}
-                    {% elif job_task.status == 'Completed' %}
-                        {% set tasks_completed.value = tasks_completed.value + 1 %}
-                    {% elif job_task.status == 'Running' %}
-                        {% set tasks_running.value = tasks_running.value + 1 %}
-                    {% endif %}
-                {% endif %}
-            {% endfor %}
-
-            <div class="progress">
-                <div class="progress-bar" role="progressbar" style="width: {{ (tasks_completed.value / total.value) * 100 }}%" aria-valuenow="{{tasks_completed.value / total.value }}" aria-valuemin="0" aria-valuemax="100"> Completed </div>
-                <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" role="progressbar" style="width: {{ (tasks_running.value / total.value) * 100 }}%" aria-valuenow="{{tasks_running.value / total.value }}" aria-valuemin="0" aria-valuemax="100">In Progress</div>
-            </div>
-            <!--Bar graph of hashes cracked --><br>
-            <table class="table">
-                <thead>
-                    <tr>
-                      <th scope="col">Task Name</th>
-                      <th scope="col">Status</th>
-                      <th scope="col">Progress</th>
-                      <th scope="col">EST Task Completion</th>
-                      <th scope="col">Control</th>                   
-                    </tr>
-                  </thead>
-                <tbody>
-                    {% for job_task in job_tasks %}
-                        {% if job_task.job_id == job.id %}
-                            <tr>
-                                <td>
-                                    {% for task in tasks %}
-                                        {% if task.id == job_task.task_id %}
-                                            {{ task.name }}
-                                        {% endif %}
-                                    {% endfor %}
-                                </td>
-                                <td>
-                                    {{ job_task.status }}
-                                </td>
-                                <td>
-                                    {% for agent in agents %}
-                                        {% if agent.id == job_task.agent_id %}
-                                            {{progress_list[agent.id].split(' ')[1]}}
-                                        {% endif %}
-                                    {% endfor %}
-                                </td>
-                                <td>
-                                    {% for agent in agents %}
-                                        {% if agent.id == job_task.agent_id %}
-                                            {{time_estimated_list[agent.id]}}
-                                        {% endif %}
-                                    {% endfor %}
-                                </td>
-                                <td>
-                                    {% if job_task.status == 'Running'%}
-                                        <a class="fa fa-stop btn btn-secondary" href="/job_task/stop/{{job_task.id}}" role="button" title=stop></a>
-                                    {% endif %}
-                                </td>
-                            </tr>
+    {% if jobs.count() > 0 %}
+        {% for job in jobs %}
+            <div class="card" style="width: 57rem;">
+            <div class="card-header" id="headingOne">
+                <h5 class="mb-0">
+                <button class="btn btn-link" data-toggle="collapse" data-target="#collapse{{job.id}}" aria-expanded="true" aria-controls="collapse{{job.id}}">
+                    {% for customer in customers%} 
+                        {% if customer.id == job.customer_id %}
+                            {{ customer.name }}:
                         {% endif %}
                     {% endfor %}
-                </tbody>
-              </table>
+                    {{job.name}} 
+                    {% for user in users %}
+                        {% if user.id == job.owner_id %}
+                            ({{ user.first_name }} {{ user.last_name }})
+                        {% endif %} 
+                    {% endfor %}
+                </button>
+                </h5>
             </div>
-        </div>
-        </div>
-    {% endfor %}
+        
+            <div id="collapse{{job.id}}" class="collapse show" aria-labelledby="heading{{job.id}}" data-parent="#accordion">
+                <div class="card-body">
+                {% set total = namespace(value=0) %}
+                {% set tasks_completed = namespace(value=0) %}
+                {% set tasks_ready = namespace(value=0) %}
+                {% set tasks_running = namespace(value=0) %}
+                {% for job_task in job_tasks %}
+                    {% if job_task.job_id == job.id %}
+                        {% set total.value = total.value + 1 %}
+                        {% if job_task.status == 'Ready' %}
+                            {% set tasks_ready.value = tasks_ready.value + 1 %}
+                        {% elif job_task.status == 'Completed' %}
+                            {% set tasks_completed.value = tasks_completed.value + 1 %}
+                        {% elif job_task.status == 'Running' %}
+                            {% set tasks_running.value = tasks_running.value + 1 %}
+                        {% endif %}
+                    {% endif %}
+                {% endfor %}
+
+                <div class="progress">
+                    <div class="progress-bar" role="progressbar" style="width: {{ (tasks_completed.value / total.value) * 100 }}%" aria-valuenow="{{tasks_completed.value / total.value }}" aria-valuemin="0" aria-valuemax="100"> Completed </div>
+                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" role="progressbar" style="width: {{ (tasks_running.value / total.value) * 100 }}%" aria-valuenow="{{tasks_running.value / total.value }}" aria-valuemin="0" aria-valuemax="100">In Progress</div>
+                </div>
+                <!--Bar graph of hashes cracked --><br>
+                <table class="table">
+                    <thead>
+                        <tr>
+                        <th scope="col">Task Name</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Agent</th>
+                        <th scope="col">Recovered</th>
+                        <th scope="col">Rate</th>
+                        <th scope="col">EST Completion</th>
+                        <th scope="col">Control</th>                   
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for job_task in job_tasks %}
+                            {% if job_task.job_id == job.id %}
+                                <tr>
+                                    <td>
+                                        {% for task in tasks %}
+                                            {% if task.id == job_task.task_id %}
+                                                {{ task.name }}
+                                            {% endif %}
+                                        {% endfor %}
+                                    </td>
+                                    <td>
+                                        {{ job_task.status }}
+                                    </td>
+                                    <td>
+                                        {% for agent in agents %}
+                                            {% if agent.id == job_task.agent_id %}
+                                                {{ agent.name }}
+                                            {% endif %}
+                                        {% endfor %}
+                                    </td>
+                                    <td>
+                                        {% for agent in agents %}
+                                            {% if agent.id == job_task.agent_id %}
+                                                {% if recovered_list[agent.id] %}
+                                                    {{recovered_list[agent.id].split(' ')[0]}}
+                                                {% endif %}
+                                            {% endif %}
+                                        {% endfor %}
+                                    </td>
+                                    <td>
+                                        {% for agent in agents %}
+                                            {% if agent.id == job_task.agent_id %}
+                                                {{ agent.benchmark }}
+                                            {% endif %}
+                                        {% endfor %}                                        
+                                    </td>
+                                    <td>
+                                        {% for agent in agents %}
+                                            {% if agent.id == job_task.agent_id %}
+                                                {% if recovered_list[agent.id] %}
+                                                    {{time_estimated_list[agent.id].split('(')[1].split(')')[0]}}
+                                                {% endif %}
+                                            {% endif %}
+                                        {% endfor %}
+                                    </td>
+                                    <td>
+                                        {% if job_task.status == 'Running'%}
+                                            <a class="fa fa-stop btn btn-secondary" href="/job_task/stop/{{job_task.id}}" role="button" title=stop></a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endif %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+                </div>
+            </div>
+            </div>
+        {% endfor %}
+    {% else %}
+            <h1>I'm Hungry for Hashes.... Feed Me... Om nom</h1>
+    {% endif %}
   </div>
 {% endblock content %}

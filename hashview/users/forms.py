@@ -10,7 +10,7 @@ class UsersForm(FlaskForm):
     password = PasswordField('Password', validators=[DataRequired(), Length(min=14)])
     confirm_password = PasswordField('Confirm Password', validators=[DataRequired(), EqualTo('password')])
     pushover_id = StringField('Pushover Id (optional)')
-    pushover_key = PasswordField('Pushover Key (optional)')
+    pushover_key = StringField('Pushover Key (optional)')
     submit = SubmitField('Register')
 
     def validate_email(self, email):
@@ -34,7 +34,7 @@ class ProfileForm(FlaskForm):
     first_name = StringField('First Name', validators=[DataRequired(), Length(min=1, max=20)])
     last_name = StringField('Last Name', validators=[DataRequired(), Length(min=1, max=20)])
     pushover_id = StringField('Pushover Id (optional)')
-    pushover_key = PasswordField('Pushover Key (optional)')
+    pushover_key = StringField('Pushover Key (optional)')
     submit = SubmitField('Update')
 
 class RequestResetForm(FlaskForm):

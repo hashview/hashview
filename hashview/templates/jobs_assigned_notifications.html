@@ -28,52 +28,61 @@ Would you like to be notified when the job completes AND/OR when specific hashes
         {{ form.hidden_tag() }}
         <fieldset class="form-group">
            <div class="form-group">
-            {{ form.job_completion.label(class="form-control-label") }}
+                {{ form.job_completion.label(class="form-control-label") }}
 
-            {% if form.job_completion.errors %}
-                {{ form.job_completion(class="form-control form-control-lg is-invalid") }}
-                <div class="invalid-feedback">
-                    {% for error in form.job_completion.errors %}
-                        <span>{{ error }}</span>
-                    {% endfor %}
-                </div>
-            {% else %}
-                {{ form.job_completion(class="form-control form-control-lg") }}
-            {% endif %}
-           </div> 
-           <div class="form-group">
-            {{ form.hash_completion.label(class="form-control-label") }}
+                {% if form.job_completion.errors %}
+                    {{ form.job_completion(class="form-control form-control-lg is-invalid") }}
+                    <div class="invalid-feedback">
+                        {% for error in form.job_completion.errors %}
+                            <span>{{ error }}</span>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    {{ form.job_completion(class="form-control form-control-lg") }}
+                {% endif %}
+            </div> 
+            <div class="form-group">
+                {{ form.hash_completion.label(class="form-control-label") }}
 
-            {% if form.hash_completion.errors %}
-                {{ form.hash_completion(class="form-control form-control-lg is-invalid") }}
-                <div class="invalid-feedback">
-                    {% for error in form.hash_completion.errors %}
-                        <span>{{ error }}</span>
-                    {% endfor %}
-                </div>
-            {% else %}
-                {{ form.hash_completion(class="form-control form-control-lg", onchange="showHashes()") }}
-            {% endif %}            
+                {% if form.hash_completion.errors %}
+                    {{ form.hash_completion(class="form-control form-control-lg is-invalid") }}
+                    <div class="invalid-feedback">
+                        {% for error in form.hash_completion.errors %}
+                            <span>{{ error }}</span>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    {{ form.hash_completion(class="form-control form-control-lg", onchange="showHashes()") }}
+                {% endif %}            
 
-           </div> 
-           <div class="form-group" style=display:none id="hashes">
-            {{ form.hashes.label(class="form-control-label") }}
-
-            {% if form.hashes.errors %}
-                {{ form.hashes(class="form-control form-control-lg is-invalid") }}
-                <div class="invalid-feedback">
-                    {% for error in form.hashes.errors %}
-                        <span>{{ error }}</span>
-                    {% endfor %}s
-                </div>
-            {% else %}
-                {% for hash in form.hashes %}
-                <div class="form-check">
-                    {{ hash(class="form-check-input") }}
-                    {{ hash.label(class="form-check-label") }}
-                </div>
-                {% endfor %}
-            {% endif %}    
+            </div> 
+            <div class="form-group" style=display:none id="hashes">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th scope="col">
+                                    Notify
+                            </th>
+                            <th scope="col">User:Hash</th>                 
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <div class="form-check">
+                            {% for hash in form.hashes %}
+                                <tr>
+                                    <td>
+                                        <center>
+                                            {{ hash(class="form-check-input") }}
+                                        </center>
+                                    </td>
+                                    <td>
+                                        {{ hash.label(class="form-check-label") }}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </div>
+                    </tbody>
+                </table>
            </div> 
         </fieldset>
         <div class="form-group">

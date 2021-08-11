@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, url_for, flash, abort, redirect, request
 from flask_login import login_required, logout_user, current_user, login_user
 from hashview.users.forms import LoginForm, UsersForm, ProfileForm, RequestResetForm, ResetPasswordForm
-from hashview.utils.utils import send_email
+from hashview.utils.utils import send_email, send_pushover
 from hashview.models import Users
 from hashview import db, bcrypt
 
@@ -82,10 +82,17 @@ def profile():
         form.pushover_key.data = current_user.pushover_key
     return render_template('profile.html', title='Profile', form=form)
 
+@users.route("/profile/send_test_pushover", methods=['GET'])
+@login_required
+def send_test_pushover():
+    user = Users.query.get(current_user.id)
+    send_pushover(user, 'Test Message From Hashview', 'This is a test pushover message from hashview')
+    flash('Pushover Sent', 'success')
+    return redirect(url_for('users.profile'))
+
 @users.route("/reset_password", methods=['GET', 'POST'])
 def reset_request():
-    # TODO
-    # Conditional returns based on if a user submitted via admin or via unauthed
+
     form = RequestResetForm()
     if form.validate_on_submit():
         user = Users.query.filter_by(email_address=form.email.data).first()
@@ -100,6 +107,26 @@ If you did not make this request... then something phishy is going on.
         flash('An email has been sent to '+  form.email.data, 'info')
         return redirect(url_for('users.login')) 
     return render_template('reset_request.html', title='Reset Password', form=form)
+
+@users.route("/admin_reset_password/<int:user_id>", methods=['GET', 'POST'])
+@login_required
+def admin_reset(user_id):
+    if current_user.admin:
+        user = Users.query.get(user_id)
+        token = user.get_reset_token()
+        subject = 'Password Reset Request.'
+        message = f'''To reset your password, vist the following link:
+{url_for('users.reset_token', token=token, _external=True)}
+
+If you did not make this request... then something phishy is going on.
+'''
+        send_email(user, subject, message)
+        flash('An email has been sent to '+  user.email_address, 'info')
+        return redirect(url_for('users.users_list'))
+    else:
+        flash('Unauthorized to reset users account.', 'danger')
+        return redirect(url_for('users.users_list'))
+
 
 @users.route("/reset_password/<token>", methods=['GET', 'POST'])
 def reset_token(token):

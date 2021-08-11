@@ -76,7 +76,9 @@ These are the awesome people that use Hashview.
                 </div>
                 <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">No</button>
-                <button type="button" class="btn btn-primary">Yes</button>
+                <form action="{{ url_for('users.admin_reset', user_id=user.id) }}" method="POST">
+                    <input class="btn btn-primary" type="submit" value="Yes">
+                </form>
                 </div>
             </div>
             </div>
@@ -100,7 +102,7 @@ These are the awesome people that use Hashview.
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
                 <form action="{{ url_for('users.users_delete', user_id=user.id) }}" method="POST">
                     <input class="btn btn-danger" type="submit" value="Delete">
-                  </form>
+                </form>
                 </div>
             </div>
             </div>

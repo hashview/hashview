@@ -6,7 +6,7 @@ import hashlib
 import time
 from datetime import datetime
 from hashview import mail, db
-from hashview.models import Settings, Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs, JobTasks, JobNotifications, HashNotifications, Users
+from hashview.models import Settings, Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs, JobTasks, JobNotifications, HashNotifications, Users, Agents
 from flask_mail import Message
 from flask import current_app
 from pushover import Client
@@ -53,7 +53,10 @@ def send_email(user, subject, message):
 def send_pushover(user, subject, message):
     if user.pushover_key and user.pushover_id:
         client = Client(user.pushover_key, api_token=user.pushover_id)
-        client.send_message(message, title=subject)
+        try:
+            client.send_message(message, title=subject)
+        except:
+            send_email(user, "Error Sending Push Notification", "Check your Pushover API keys in  your profile. Original Message: " + message)
 
 def get_keyspace(method, wordlist_id, rule_id, mask):
     settings = Settings.query.first()
@@ -198,9 +201,13 @@ def build_hashcat_command(job_id, task_id):
 def update_job_task_status(jobtask_id, status):
 
     jobtask = JobTasks.query.get(jobtask_id)
+    
     jobtask.status = status
     if status == 'Completed':
         jobtask.agent_id = None
+        agent = Agents.query.get(jobtask.agent_id)
+        if agent:
+            agent.hc_status = ''
     db.session.commit()
 
     # Update Jobs
@@ -239,6 +246,7 @@ def update_job_task_status(jobtask_id, status):
         # mark all jobtasks as completed
         job_notifications = JobNotifications.query.filter_by(job_id = job.id)
         
+        # Send Notifications
         for job_notification in job_notifications:
             user = Users.query.get(job_notification.owner_id)
             cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==job.hashfile_id).count()

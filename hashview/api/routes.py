@@ -92,7 +92,11 @@ def api_get_queue_assignment(id):
     agent = Agents.query.filter_by(uuid=request.cookies.get('agent_uuid')).first()
     if agent:
         # we really dont need to filter by both id and agent_id :/
-        assigned_task = JobTasks.query.filter_by(id=id, agent_id=agent.id).first()
+        assigned_task = JobTasks.query.filter_by(agent_id=agent.id).first()
+        print("id: "+ str(id))
+        print("agent_id: "+ str(agent.id))
+        print("assigned_task: " + str(assigned_task.id))
+        print("assigned_task: " + str(assigned_task))
         # yeah why keep our response consistant like we did with wordlists and rules :smh:
         return json.dumps(assigned_task, cls=AlchemyEncoder)
     else:
@@ -156,7 +160,7 @@ def api_set_queue_jobtask_status(id):
 
     status_json = request.get_json()
     updateHeartbeat(request.cookies.get('agent_uuid'))
-    update_job_task_status(jobtask_id = id, status= status_json['status'])
+    update_job_task_status(jobtask_id = id, status = status_json['status'])
 
     message = {
         'status': 200,
@@ -250,6 +254,7 @@ def api_set_agent_heartbeat(uuid):
                     job_task_entry = JobTasks.query.filter_by(status = 'Queued').first()
                     if job_task_entry:
                         job_task_entry.agent_id = agent.id
+                        job_task_entry.status = 'Running'
                         db.session.commit()
                         message = {
                             'status': 200,
@@ -324,7 +329,7 @@ def api_get_wordlist():
 @api.route('/v1/wordlist/<int:wordlist_id>', methods=['GET'])
 def api_get_wordlist_download(wordlist_id):
     if not agentAuthorized(request.cookies.get('agent_uuid')):
-        return redirect("/v1/agents/"+uuid+"/authorize") 
+        return redirect("/v1/not_authorized") 
 
     updateHeartbeat(request.cookies.get('agent_uuid'))
     wordlist = Wordlists.query.get(wordlist_id)
@@ -447,9 +452,12 @@ def api_put_jobtask_crackfile_upload(jobtask_id):
         # Does doing an import with multiple 'where' clauses make sense here, maybe we just stick with sub_ciphertext only since that _should_ be unique
         record = Hashes.query.filter_by(hash_type=hashtype, sub_ciphertext=get_md5_hash(ciphertext), cracked='0').first()
         if record:
-            record.plaintext = plaintext.decode('UTF-8')
-            record.cracked = 1
-            db.session.commit()
+            try:
+                record.plaintext = plaintext.decode('UTF-8')
+                record.cracked = 1
+                db.session.commit()
+            except:
+                print('Attempted to import non UTF-8 character: ' + str(encoded_plaintext))
 
 
     # delete file

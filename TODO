@@ -263,19 +263,15 @@ show notification selection on table load if previously selected by the user
 # COMPLETE BEFORE OPEN BETA
 - Notificaiton emails should contain link
 - Login redirection based on URL
-- Update pushover stuff in profile
 - Grey out pushover option in hash notifications
 - Test if user can reset password to something < 14 chars long
-- Add flash for instacrack data
 - Add back buttons to job
-- Add ability to edit
-- Remove computer accounts during job import process
+- Add ability to edit job
 - Sanity check when user submits invalid hashfile formats
 
 
 Fix why agents keep asking for rules file
-try/catch push notification
-add pushover test button in profile
 
+Deleting of hashfiles does not remove uncracked hashes (tested with ntlmv1 and ntlmv2 hashes)
 
 

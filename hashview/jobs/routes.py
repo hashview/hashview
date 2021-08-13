@@ -142,7 +142,7 @@ def jobs_assigned_hashfile_cracked(job_id, hashfile_id):
     hashfile = Hashfiles.query.get(hashfile_id)
     # Can be optimized to only return the hash and plaintext
     cracked_hashfiles_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).all()
-    cracked_hashfiles_hashes_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id == HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id).count()
+    cracked_hashfiles_hashes_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id == HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).count()
     if cracked_hashfiles_hashes_cnt > 0:
         flash(str(cracked_hashfiles_hashes_cnt) + " instacracked Hashes!", 'success')
     # Oppertunity for either a stored procedure or for some fancy queries.

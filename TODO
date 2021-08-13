@@ -46,6 +46,7 @@ Jobs
                     - Give example (?) on mouse over
                 - Select hash Type
                     - on other allow user to type in hashtype
+                - After selecting Hash format, the hashtype menu should be restricted to only show those possible hashes. i.e. no NetNTLMv1->Kerberos
         - Assign Tasks
             - Should probably be a form :/
             - Remove task from assignable tasks that are already assigned to the job

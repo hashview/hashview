@@ -37,12 +37,15 @@ def hashfiles_delete(hashfile_id):
             else:
                 hashfile_hashes = HashfileHashes.query.filter_by(hashfile_id = hashfile_id).all()
                 for hashfile_hash in hashfile_hashes:
-                    hashes = Hashes.query.filter_by(id=hashfile_hash.id, cracked=0).all()
+                    hashes = Hashes.query.filter_by(id=hashfile_hash.hash_id, cracked=0).all()
                     for hash in hashes:
                         # Check to see if our hashfile is the ONLY hashfile that has this hash
-                        hashfile_cnt = HashfileHashes.query.filter_by(hash_id=hash.id).distinct('hashfile_id')
+                        # if duplicates exist, they can still be removed. Once the hashfile_hash entry is remove, 
+                        # the total number of matching hash_id's will be reduced to < 2 and then can be deleted
+                        hashfile_cnt = HashfileHashes.query.filter_by(hash_id=hash.id).distinct('hashfile_id').count()
                         if hashfile_cnt < 2:
                             db.session.delete(hash)
+                            db.session.commit()
                             HashNotifications.query.filter_by(hash_id=hashfile_hash.hash_id).delete()
                     db.session.delete(hashfile_hash)
                 db.session.delete(hashfile)

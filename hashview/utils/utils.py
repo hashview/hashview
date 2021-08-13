@@ -30,12 +30,6 @@ def get_linecount(filepath):
         c_generator = _count_generator(fp.raw.read)
         count = sum(buffer.count(b'\n') for buffer in c_generator)
         return count + 1
- 
- 
-    #args = ['wc', '-l', filepath]
-    #p = subprocess.run(args, check=False, stdout=subprocess.PIPE, encoding='utf-8')
-    #return p.stdout.split('\n')[0]
-    #return sum(1 for line in open(filepath))
 
 def get_filehash(filepath):
     sha256_hash = hashlib.sha256()
@@ -109,14 +103,22 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
             username = None
         elif file_type == 'pwdump':
             # do we let user select LM so that we crack those instead of NTLM?
-            hash_id = import_hash_only(line=line.split(':')[3], hash_type='1000')
-            username = line.split(':')[0]
+            # First extracting usernames so we can filter out machine accounts
+            if '$' in line.split(':')[0]:
+                continue
+            else:
+                hash_id = import_hash_only(line=line.split(':')[3], hash_type='1000')
+                username = line.split(':')[0]
         elif file_type == 'kerberos':
             hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
             username = line.split('$')[5]
         elif file_type == 'NetNTLM':
-            hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
-            username = line.split(':')[0]
+            # First extracting usernames so we can filter out machine accounts
+            if '$' in line.split(':')[0]:
+                continue
+            else:
+                hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
+                username = line.split(':')[0]
         else:
             print(str(file_type))
             return False

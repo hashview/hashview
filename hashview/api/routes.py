@@ -398,7 +398,7 @@ def api_get_job(id):
 @api.route('/v1/jobtask/<int:jobtask_id>/hashfile/<int:hashfile_id>', methods=['GET'])
 def api_get_hashfile(jobtask_id, hashfile_id):
     if not agentAuthorized(request.cookies.get('agent_uuid')):
-        return redirect("/v1/agents/"+uuid+"/authorize")
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('agent_uuid'))
     
@@ -419,7 +419,7 @@ def api_get_hashfile(jobtask_id, hashfile_id):
 @api.route('/v1/jobtask/<int:jobtask_id>/crackfile/upload', methods=['POST'])
 def api_put_jobtask_crackfile_upload(jobtask_id):
     if not agentAuthorized(request.cookies.get('agent_uuid')):
-        return redirect("/v1/agents/"+uuid+"/authorize")
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('agent_uuid'))
 
@@ -447,6 +447,13 @@ def api_put_jobtask_crackfile_upload(jobtask_id):
             ciphertext = entry.split(':')[0]
             encoded_plaintext = entry.split(':')[1]
             plaintext = bytes.fromhex(encoded_plaintext.rstrip())
+        if hashtype == 5600 or hashtype == 5500:
+            ciphertext = entry.split(':')[0] + ":" + entry.split(':')[1].upper() + ":" + entry.split(':')[2].upper() + ":" + entry.split(':')[3].upper() + ":" + entry.split(':')[4].upper() + ":" + entry.split(':')[5].upper()
+            ciphertext = ciphertext.lower()
+            print(ciphertext)
+            encoded_plaintext = entry.split(':')[6] # does it make sense to do -1 instead
+            plaintext = bytes.fromhex(encoded_plaintext.rstrip())
+        print(str(hashtype))
         #if hashtype == 13100 or hashtype == 19200 or hashtype == 19600 or hashtype == 19700 or hashtype == 19800 or hashtype == 19900:
 
         # Does doing an import with multiple 'where' clauses make sense here, maybe we just stick with sub_ciphertext only since that _should_ be unique

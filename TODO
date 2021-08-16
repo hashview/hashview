@@ -55,7 +55,6 @@ Jobs
             - deletes jobtasks
             - delete job
             - redirects to joblist
-    - Edit
 
 Analytics
     - I think outerjoins should be .joins
@@ -98,7 +97,6 @@ Hashfiles
         - List hashfiles
             - Control
                 - Download Cracked
-    - Filter Computer Accounts on Import
     - if > retention date Delete
         - delete Associated Jobs
         - if no other hashfiles exists for customer, delete customer
@@ -266,13 +264,6 @@ show notification selection on table load if previously selected by the user
 - Login redirection based on URL
 - Grey out pushover option in hash notifications
 - Test if user can reset password to something < 14 chars long
-- Add back buttons to job
-- Add ability to edit job
 - Sanity check when user submits invalid hashfile formats
 
-
 Fix why agents keep asking for rules file
-
-Deleting of hashfiles does not remove uncracked hashes (tested with ntlmv1 and ntlmv2 hashes)
-
-

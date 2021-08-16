@@ -19,12 +19,21 @@ Apply hashes to be cracked. You can either copy/paste the desired hashes below, 
 </script>
 <nav>
     <div class="nav nav-tabs" id="nav-tab" role="tablist">
-        <a class="nav-link active" id="nav-new-hashfile-tab" data-toggle="tab" href="#nav-new-hashfile" role="tab" aria-controls="nav-new-hashfile" aria-selected="true">New Hashfile</a>
-        <a class="nav-link" id="nav-existing-hashfile-tab" data-toggle="tab" href="#nav-existing-hashfile" role="tab" aria-controls="nav-existing-hashfile" aria-selected="false">Existing Hashfile</a>
+        {% if job.hashfile_id == None %}
+            <a class="nav-link active" id="nav-new-hashfile-tab" data-toggle="tab" href="#nav-new-hashfile" role="tab" aria-controls="nav-new-hashfile" aria-selected="true">New Hashfile</a>
+            <a class="nav-link" id="nav-existing-hashfile-tab" data-toggle="tab" href="#nav-existing-hashfile" role="tab" aria-controls="nav-existing-hashfile" aria-selected="false">Existing Hashfile</a>
+        {% else %}
+            <a class="nav-link" id="nav-new-hashfile-tab" data-toggle="tab" href="#nav-new-hashfile" role="tab" aria-controls="nav-new-hashfile" aria-selected="false">New Hashfile</a>
+            <a class="nav-link active" id="nav-existing-hashfile-tab" data-toggle="tab" href="#nav-existing-hashfile" role="tab" aria-controls="nav-existing-hashfile" aria-selected="true">Existing Hashfile</a>
+        {% endif %}
     </div>
 </nav>
 <div class="tab-content" id="nav-tabContent">
-    <div class="tab-pane fade show active" id="nav-new-hashfile" role="tabpanel" aria-labelledby="nav-new-hashfile-tab">
+    {% if job.hashfile_id == None %}
+        <div class="tab-pane fade show active" id="nav-new-hashfile" role="tabpanel" aria-labelledby="nav-new-hashfile-tab">
+    {% else %}
+        <div class="tab-pane fade" id="nav-new-hashfile" role="tabpanel" aria-labelledby="nav-new-hashfile-tab">
+    {% endif %}
         <br>
         <div class="content-section">
             <form action='' id='hf_form' method='post' name='hf_form' enctype='multipart/form-data'>
@@ -126,7 +135,11 @@ Apply hashes to be cracked. You can either copy/paste the desired hashes below, 
             </form>
         </div>
     </div>
-    <div class="tab-pane fade" id="nav-existing-hashfile" role="tabpanel" aria-labelledby="nav-existing-hashfile-tab">
+    {% if job.hashfile_id == None %}
+        <div class="tab-pane fade" id="nav-existing-hashfile" role="tabpanel" aria-labelledby="nav-existing-hashfile-tab">
+    {% else %}
+        <div class="tab-pane fade show active" id="nav-existing-hashfile" role="tabpanel" aria-labelledby="nav-existing-hashfile-tab">      
+    {% endif %}
         <br>
         <div class="content-section">
             <form action='' class='form-horizontal' id='hf_form' method='post' name='hf_form'>
@@ -135,7 +148,11 @@ Apply hashes to be cracked. You can either copy/paste the desired hashes below, 
                         <label class="form-control-label" for="hashfile">Hashfile</label>
                         <select class="form-control form-control-lg" id="hashfile_id" name="hashfile_id">
                             {% for hashfile in hashfiles %}
-                                <option value='{{hashfile.id}}'>
+                                {% if hashfile.id == job.hashfile_id %}
+                                    <option value='{{hashfile.id}}' selected>
+                                {% else %}
+                                    <option value='{{hashfile.id}}'>
+                                {% endif %}
                                     {% for key, value in hashfile_cracked_rate.items() %}
                                         {% if key|string() == hashfile.id|string() %}
                                             {{ value }} {{hashfile.name}} 
@@ -147,6 +164,7 @@ Apply hashes to be cracked. You can either copy/paste the desired hashes below, 
                     </div>
                 </fieldset>
                 <div class="form-group">
+                    <a class="btn btn-secondary" href="{{ url_for('jobs.jobs_list') }}">Back</a>
                     <button class='btn btn-primary' type='submit'>Next</button>
                 </div>
             </form>

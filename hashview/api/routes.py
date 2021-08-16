@@ -1,14 +1,12 @@
 from flask import Blueprint, jsonify, redirect, request, send_from_directory, current_app
-import sqlalchemy
-from hashview.models import HashNotifications, TaskQueues, Agents, JobTasks, Tasks, Wordlists, Rules, Jobs, Hashes, HashfileHashes, JobNotifications, Users, Hashfiles
-from hashview.utils.utils import save_file, get_md5_hash, send_email, update_dynamic_wordlist, send_pushover, update_job_task_status
+from hashview.models import Agents, JobTasks, Tasks, Wordlists, Rules, Jobs, Hashes, HashfileHashes
+from hashview.utils.utils import save_file, get_md5_hash, update_dynamic_wordlist, update_job_task_status
 from hashview import db
 from sqlalchemy.ext.declarative import DeclarativeMeta
 import time
 import os
 import json
 import codecs
-from datetime import datetime
 
 api = Blueprint('api', __name__)
 
@@ -56,26 +54,6 @@ def api_unauthorized():
         'type': 'Error',
         'msg': 'Your agent is not authorized to work with this cluster.'
     }
-    return jsonify(message)
-
-@api.route('/v1/queue', methods=['GET'])
-def api_get_queue():
-    if not agentAuthorized(request.cookies.get('agent_uuid')):
-        return redirect("/v1/agents/"+uuid+"/authorize") 
-
-    queue = TaskQueues.query.filter_by(status = 'Queued').first()
-    if queue:
-        message = {
-            # TODO
-            'status': 200,
-            'msg': 'todo'
-        }
-    else:
-        message = {
-            'status': 200,
-            'type': 'Error',
-            'msg': 'There are no items on the queue to process'
-        }
     return jsonify(message)
 
 # force or restart a queue item

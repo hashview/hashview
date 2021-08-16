@@ -62,8 +62,8 @@ Jobs contain a series of tasks (hashcat commands). Jobs also have an associated 
                                 {% if job.status != 'Incomplete' %}
                                     <a class="fa fa-pie-chart btn btn-warning" href="/analytics?customer_id={{job.customer_id}}&hashfile_id={{job.hashfile_id}}" role="button" title=Analytics></a>
                                     <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{job.id}}" title=Info></button>
-                                    <button type="button" class="fa fa-edit btn btn-warning" data-toggle="modal" data-target="#editModal{{job.id}}" title=Edit></button>
                                 {% endif %}
+                                <a class="fa fa-edit btn btn-warning" href="/jobs/{{job.id}}/assigned_hashfile/" role="button" title=Edit></a>
                                 <button type="button" class="fa fa-trash btn btn-danger" data-toggle="modal" data-target="#deleteModal{{job.id}}" title=Delete></button>
                             </td>
                         </tr>

@@ -85,7 +85,7 @@ def jobs_assigned_hashfile(job_id):
             db.session.commit()
 
             return redirect(str(hashfile.id))
-  
+
         elif jobsNewHashFileForm.hashfilehashes.data:
             # User submitted copied/pasted hashes
             # Going to have to save a file manually instead of using save_file since save_file requires form data to be passed and we're not collecting that object for this tab
@@ -113,7 +113,7 @@ def jobs_assigned_hashfile(job_id):
             db.session.commit()
 
             return redirect(str(hashfile.id))
-         
+        
     elif request.method == 'POST' and request.form['hashfile_id']:
         job.hashfile_id = request.form['hashfile_id']
         db.session.commit()

@@ -86,6 +86,7 @@ Would you like to be notified when the job completes AND/OR when specific hashes
            </div> 
         </fieldset>
         <div class="form-group">
+            <a class="btn btn-secondary" href="{{ url_for('jobs.jobs_list_tasks', job_id = job.id) }}">Back</a>
             {{ form.submit(class="btn btn-primary")}}
         </div>
     </form>

@@ -155,11 +155,7 @@ Settings
         - set
         - validate
         - how to run on periodic basis?
-
-DB
-- Add DB indexes
-- Add foreign keys
-
+        
 Add favicon
 
 Force settings population if unset
@@ -236,7 +232,6 @@ To Test:
 - Add ability for users / admins? to import plaintext's and auto convert to specific hashes
 API
     - Turn into legit resful api using flask_restful / api
-
 
 update pushover stuff on job
 profile -> pushover notification when null auto populates

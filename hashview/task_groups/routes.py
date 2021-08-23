@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, abort
 from flask_login import login_required, current_user
 from hashview.task_groups.forms import TaskGroupsForm
-from hashview.models import Tasks, TaskGroups, Users
+from hashview.models import Tasks, TaskGroups, Users, Jobs
 from hashview import db
 from hashview.utils.utils import get_keyspace
 import json
@@ -12,9 +12,10 @@ task_groups = Blueprint('task_groups', __name__)
 @login_required
 def task_groups_list():
     task_groups = TaskGroups.query.all()
+    tasks = Tasks.query.all()
     users = Users.query.all()
 
-    return render_template('task_groups.html', title='Task Groups', task_groups=task_groups, users=users) 
+    return render_template('task_groups.html', title='Task Groups', task_groups=task_groups, users=users, tasks=tasks) 
 
 @task_groups.route("/task_groups/add", methods=['GET', 'POST'])
 @login_required

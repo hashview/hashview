@@ -9,15 +9,6 @@ Tasks
 Taskgroups
     - List
         - Number of Tasks
-        - Control
-            - Info
-                - List associated tasks
-                    - Task name 
-                    - Task Type
-                - List associated Jobs
-    - Info
-        - List tasknames
-        - List associated jobs
     - Assign Tasks 
         - Allow for task creation at task assignment (why did i even allow this in the first place)
         - Does it make sense to put these in a form?

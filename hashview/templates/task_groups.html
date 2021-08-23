@@ -46,23 +46,52 @@ Task Groups are a set of tasks that can be assigned to job.
     </article>
     {% for task_group in task_groups %}
     <!-- Info Modal -->
-        <div class="modal fade" id="infoModal{{task_group.id}}" tabindex="-1" aria-labelledby="infoModal{{task_group.id}}Label" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                <h5 class="modal-title" id="infoModal{{task_group.id}}Label">Info: {{task_group.name}}</h5>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-                </div>
-                ...
-                </div>
-                <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-                </div>
+    <div class="modal fade" id="infoModal{{task_group.id}}" tabindex="-1" aria-labelledby="infoModal{{task_group.id}}Label" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+            <h5 class="modal-title" id="infoModal{{task_group.id}}Label">Info: {{task_group.name}}</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+            </button>
             </div>
+            <div class="modal-body">
+                <table class="table">
+                    <thead>
+                      <tbody>
+                          <tr>                              
+                            <th scope="row">Associated Tasks</th>
+                            <td>
+                                {% for task_group_task_entry in task_group.tasks.split(',') %}
+                                    <!-- So hacky -->
+                                    <!-- Now you may ask your self, why does the first comparison use strings, but the others use ints.... i dont know but it works -->
+                                    {% for task in tasks %}
+                                        {% if '[' in task_group_task_entry %}
+                                            {% if task.id|string() == task_group_task_entry.split('[')[1] %}
+                                                {{ task.name }} <br>
+                                            {% endif %}
+                                        {% endif %}
+                                        {% if ']' in task_group_task_entry %}
+                                            {% if task.id|int() == task_group_task_entry.split(']')[0]|int() %}
+                                                {{ task.name }} <br>
+                                            {% endif %}
+                                        {% endif %}
+                                        {% if task.id|int() == task_group_task_entry|int() %}
+                                            {{ task.name }} <br>
+                                        {% endif %}
+                                    {% endfor %}
+                                {% endfor %}
+                            </td>
+                          </tr>
+                      </tbody>
+                  </table>
+            </div>
+            <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
             </div>
         </div>
+        </div>
+    </div>
     {% endfor %}
     {% for task_group in task_groups %}
     <!-- Edit Modal -->

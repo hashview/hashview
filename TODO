@@ -4,9 +4,6 @@ Tasks
         - Support combinator task
         - Support Bandril approach
         - Support for cewl
-    - Task info
-        - List Associated TaskGroups
-            - Going to require parsing tasks entry in task_groups
     - Task Edit
     - Delete Task
         - Prevent Deletion if associated to a Job

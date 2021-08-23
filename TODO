@@ -5,12 +5,6 @@ Tasks
         - Support Bandril approach
         - Support for cewl
     - Task Edit
-    - Delete Task
-        - Prevent Deletion if associated to a Job
-        - List Associated Jobs
-        - List Associated Wordlists
-        - List Associated TaskGroups
-            - Going to require parsing tasks entry in task_groups
 
 Taskgroups
     - List

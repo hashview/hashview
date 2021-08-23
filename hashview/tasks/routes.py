@@ -69,17 +69,21 @@ def tasks_add():
 @login_required
 def tasks_delete(task_id):
     task = Tasks.query.get(task_id)
+    task_groups = TaskGroups.query.all()
     if current_user.admin or task.owner_id == current_user.id:
 
         # Check if associated with JobTask (which implies its associated with a job)
         jobtasks = JobTasks.query.all()
         for jobtask in jobtasks:
             if jobtask.task_id == task_id:
-                flash('Can not delete. Task is associated to one or more jobs', 'danger')
-                return(url_for('tasks.task_list'))
+                flash('Can not delete. Task is associated to one or more jobs.', 'danger')
+                return redirect(url_for('tasks.tasks_list'))
         
-        # TODO
-        # Check if associated with TaskGroup
+        for task_group in task_groups:
+            if str(task_id) in task_group.tasks:
+                flash('Can not delete. The Task is associated to one or more Task Groups.', 'danger')
+                return redirect(url_for('tasks.tasks_list'))
+
 
         db.session.delete(task)
         db.session.commit()

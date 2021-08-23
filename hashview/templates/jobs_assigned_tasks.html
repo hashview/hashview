@@ -37,9 +37,9 @@ The following are tasks that are assigned to the job. Each task is run once.
                                 {% endfor %}                                
                             </td>
                             <td>
-                                <a class="btn btn-primary" href="/jobs/{{job.id}}/move_task_up/{{job_task.task_id}}" role="button">Up</a>
-                                <a class="btn btn-primary" href="/jobs/{{job.id}}/move_task_down/{{job_task.task_id}}" role="button">Down</a>
-                                <a class="btn btn-primary" href="/jobs/{{job.id}}/remove_task/{{job_task.task_id}}" role="button">Delete</a>
+                                <a class="fa fa-arrow-up btn btn-success btn-sm" href="/jobs/{{job.id}}/move_task_up/{{job_task.task_id}}" role="button" title='Move Up'></a>
+                                <a class="fa fa-arrow-down btn btn-success btn-sm" href="/jobs/{{job.id}}/move_task_down/{{job_task.task_id}}" role="button" title='Move Down'></a>
+                                <a class="fa fa-trash btn btn-danger btn-sm" href="/jobs/{{job.id}}/remove_task/{{job_task.task_id}}" role="button" title='Delete'></a>
                             </td>
                         </tr>
                     {% endfor %}

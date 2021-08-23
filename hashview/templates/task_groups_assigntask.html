@@ -27,10 +27,9 @@ Each task will be ran once in order selected You can create new tasks by selecti
                                     <td>{{ task.name }}</td>
                                     <td>{{ task.hc_attackmode}}</td>
                                     <td>
-                                        <a class="btn btn-success btn-sm" href="/task_groups/assigned_tasks/{{task_group.id}}/promote_task/{{task.id}}" role="button">Up</a>
-                                        <a class="btn btn-success btn-sm" href="/task_groups/assigned_tasks/{{task_group.id}}/demote_task/{{task.id}}" role="button">Down</a>
-                                        <a class="btn btn-info btn-sm" href="#" role="button">Edit</a>
-                                        <a class="btn btn-danger btn-sm" href="/task_groups/assigned_tasks/{{task_group.id}}/remove_task/{{task.id}}" role="button">Delete</a>
+                                        <a class="fa fa-arrow-up btn btn-success btn-sm" href="/task_groups/assigned_tasks/{{task_group.id}}/promote_task/{{task.id}}" role="button" title='Move Up'></a>
+                                        <a class="fa fa-arrow-down btn btn-success btn-sm" href="/task_groups/assigned_tasks/{{task_group.id}}/demote_task/{{task.id}}" role="button" title='Move Down'></a>
+                                        <a class="fa fa-trash btn btn-danger btn-sm" href="/task_groups/assigned_tasks/{{task_group.id}}/remove_task/{{task.id}}" role="button" title=delete></a>
                                     </td>
                                 </tr>
                             {% endif %}

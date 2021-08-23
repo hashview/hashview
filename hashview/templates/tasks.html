@@ -96,9 +96,18 @@ Task are predefined hashcat commands. Any number of tasks can be assigned to a J
                                 </td>
                               </tr>
                               <tr>                              
-                                <th scope="row">Associated TaskGroups</th>
+                                <th scope="row">Associated Task Groups</th>
                                 <td>
-                                    TBD
+                                    {% set associated_task_groups = namespace(value=0) %}
+                                    {% for task_group in task_groups %}
+                                        {% if task.id|string() in task_group.tasks %}
+                                            {% set associated_task_groups.value = 1 %}
+                                            {{ task_group.name }} <br>
+                                        {% endif %}
+                                    {% endfor %}
+                                    {% if associated_task_groups.value == 0 %}
+                                        <i>none</i><br>
+                                    {% endif %}                                    
                                 </td>
                               </tr>
                           </tbody>

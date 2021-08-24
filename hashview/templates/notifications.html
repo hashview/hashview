@@ -16,6 +16,7 @@ These are your notifications.
                 <thead>
                 <tr>
                     <th scope="col">Job Name</th>
+                    <th scope="col">Hash File</th>
                     <th scope="col">Method</th>
                     <th scope="col">Control</th>
                 </tr>
@@ -30,10 +31,20 @@ These are your notifications.
                                     {% endif %}
                                 {% endfor %}
                             </td>
+                            <td>
+                                {% for job in jobs %}
+                                    {% if job.id == job_notification.job_id %}
+                                        {% for hashfile in hashfiles %}
+                                            {% if hashfile.id == job.hashfile_id %}
+                                                {{hashfile.name}}
+                                            {% endif %}
+                                        {% endfor %}
+                                    {% endif %}
+                                {% endfor %}
+                            </td>
                             <td>{{ job_notification.method }}</td>
                             <td>
-                                <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal">Change Method</button>
-                                <a class="fa fa-trash btn btn-danger" href="/notifications/job/{{job_notification.id}}" role="button" title=Delete></a>
+                                <button type="button" class="fa fa-trash btn btn-danger" data-toggle="modal" data-target="#deleteJobNotificationModal{{job_notification.id}}" title=Delete></button>
                             </td>
                         </tr>
                     {% endfor %}
@@ -66,7 +77,6 @@ These are your notifications.
                                 {{hash_notification.method}}
                             </td>
                             <td>
-                                <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#infoModal">Change Method</button>
                                 <a class="fa fa-trash btn btn-danger" href="/notifications/delete/hash/{{hash_notification.id}}" role="button", title=Delete></a>
                             </td>
                         </tr>
@@ -75,4 +85,28 @@ These are your notifications.
             </table>
         </div>
     </article>
+    {% for job_notification in job_notifications %}
+    <!-- DeleteJobNotificationModal -->
+    <div class="modal fade" id="deleteJobNotificationModal{{job_notification.id}}" tabindex="-1" aria-labelledby="deleteJobNotificationModal{{job_notification.id}}Label" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+            <h5 class="modal-title" id="deleteJobNotificationModal{{job_notification.id}}Label">Delete: {{job_notification.name}} ?</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+            </button>
+            </div>
+            <div class="modal-body">
+                Are you sure you want to delete the notification for this job?
+            </div>
+            <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
+            <form action="{{ url_for('notifications.notifications_job_delete', notification_id=job_notification.id) }}" method="GET">
+                <input class="btn btn-danger" type="submit" value="Delete">
+            </form>
+            </div>
+        </div>
+        </div>
+    </div>
+    {% endfor %}
 {% endblock content %}

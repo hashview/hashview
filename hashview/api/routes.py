@@ -1,6 +1,6 @@
-from flask import Blueprint, jsonify, redirect, request, send_from_directory, current_app
-from hashview.models import Agents, JobTasks, Tasks, Wordlists, Rules, Jobs, Hashes, HashfileHashes
-from hashview.utils.utils import save_file, get_md5_hash, update_dynamic_wordlist, update_job_task_status
+from flask import Blueprint, jsonify, redirect, request, send_from_directory, current_app, url_for
+from hashview.models import Agents, JobTasks, Tasks, Wordlists, Rules, Jobs, Hashes, HashfileHashes, Users, HashNotifications
+from hashview.utils.utils import save_file, get_md5_hash, update_dynamic_wordlist, update_job_task_status, send_email, send_pushover
 from hashview import db
 from sqlalchemy.ext.declarative import DeclarativeMeta
 import time
@@ -71,10 +71,7 @@ def api_get_queue_assignment(id):
     if agent:
         # we really dont need to filter by both id and agent_id :/
         assigned_task = JobTasks.query.filter_by(agent_id=agent.id).first()
-        print("id: "+ str(id))
-        print("agent_id: "+ str(agent.id))
-        print("assigned_task: " + str(assigned_task.id))
-        print("assigned_task: " + str(assigned_task))
+
         # yeah why keep our response consistant like we did with wordlists and rules :smh:
         return json.dumps(assigned_task, cls=AlchemyEncoder)
     else:
@@ -428,10 +425,8 @@ def api_put_jobtask_crackfile_upload(jobtask_id):
         if hashtype == 5600 or hashtype == 5500:
             ciphertext = entry.split(':')[0] + ":" + entry.split(':')[1].upper() + ":" + entry.split(':')[2].upper() + ":" + entry.split(':')[3].upper() + ":" + entry.split(':')[4].upper() + ":" + entry.split(':')[5].upper()
             ciphertext = ciphertext.lower()
-            print(ciphertext)
             encoded_plaintext = entry.split(':')[6] # does it make sense to do -1 instead
             plaintext = bytes.fromhex(encoded_plaintext.rstrip())
-        print(str(hashtype))
         #if hashtype == 13100 or hashtype == 19200 or hashtype == 19600 or hashtype == 19700 or hashtype == 19800 or hashtype == 19900:
 
         # Does doing an import with multiple 'where' clauses make sense here, maybe we just stick with sub_ciphertext only since that _should_ be unique
@@ -447,6 +442,35 @@ def api_put_jobtask_crackfile_upload(jobtask_id):
 
     # delete file
     os.remove(crackfile_path)
+
+    # Send Hash Completion Notifications
+    hash_notifications = HashNotifications.query.all()
+    print("1")
+    for hash_notification in hash_notifications:
+        print("2")
+        user = Users.query.get(hash_notification.owner_id)
+        message = "Congratulations, the following users's hashes have been recovered: \n\n"
+        
+        # There's probably a way to do this in one query but im lazy
+        cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()
+        for cracked_hash in cracked_hashes:
+            print("3")
+            print(str(cracked_hash[0].id) + " (" + str(cracked_hash[0].ciphertext) + " vs " + str(hash_notification.hash_id))
+            if cracked_hash[0].id == hash_notification.hash_id:
+                print("4")
+                message += str(cracked_hash[1].username) + "\n"
+                message += 'You can check the results using the following link: ' + "\n"
+                message += url_for('searches.searches_list', hash_id=cracked_hash[0].id, _external=True)
+                if hash_notification.method == 'email':
+                    print("5")
+                    send_email(user, 'Hashview User Hash Recovered!', message)
+                elif hash_notification.method == 'push':
+                    if user.pushover_key and user.pushover_id:
+                        send_pushover(user, 'Message from Hashview', message)
+                else:
+                    send_email(user, 'Hashview: Missing Pushover Key', 'Hello, you were due to recieve a pushover notification, but because your account was not provisioned with an pushover ID and Key, one could not be set. Please log into hashview and set these options under Manage->Profile.')
+                db.session.delete(hash_notification)
+                db.session.commit()
 
     message = {
         'status': 200,

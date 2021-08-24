@@ -167,15 +167,26 @@ Form layout
 
 Users
     - Delete   
-        - Remove all 
+        - Remove all or migrate all
             - wordlists
             - jobs
             - tasks
+            - hash_notifications
+            - Job_notifications
+            - Hashfiles
+            - Rules
+            - Task_groups
+    - Info
+        - Associated Jobs
+        - Associated Wordlists
+        - Associated Hash_notifications
+        - Associated Job_notifications
+        - Associated Hashfiles
+        - Associated Rules (We're going to run into a problem when an associated rule is used in a task assigned to a job thats not associated to this user)
+        - Associated Task_groups (same as above)
+        - Associated Tasks (same as above)
 
 Notifications
-    - confirmation before deletion 
-    - Manageable by owner
-    - how to handle deletion of user
     - Optimize hashes object in notifications_list class/route.
 
 All
@@ -221,10 +232,6 @@ update cracked hashes from agent to server.
 
 Update agent to stop downloading the same rules over and over again
 
-Add 'insta crack results' as flash on import
-Add indexes
-add subhash for hashfile inserts
-
 filter imports for usernames that contain non english characters
 filter rules file that contain non-english characters
 
@@ -237,7 +244,7 @@ Prevent duplicate Notifications
 show notification selection on table load if previously selected by the user
 
 # COMPLETE BEFORE OPEN BETA
-- Notificaiton emails should contain link
+- Notificaition emails should contain link
 - Login redirection based on URL
 - Grey out pushover option in hash notifications
 - Test if user can reset password to something < 14 chars long

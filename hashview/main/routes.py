@@ -16,7 +16,6 @@ main = Blueprint('main', __name__)
 @main.route("/")
 @login_required
 def home():
-    #jobs = Jobs.query.filter_by(status='Running').all()
     jobs = Jobs.query.filter(or_((Jobs.status.like('Running')),(Jobs.status.like('Queued'))))
     users = Users.query.all()
     customers = Customers.query.all()

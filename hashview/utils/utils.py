@@ -8,7 +8,7 @@ from datetime import datetime
 from hashview import mail, db
 from hashview.models import Settings, Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs, JobTasks, JobNotifications, HashNotifications, Users, Agents
 from flask_mail import Message
-from flask import current_app
+from flask import current_app, url_for
 from pushover import Client
 
 def save_file(path, form_file):
@@ -264,22 +264,24 @@ def update_job_task_status(jobtask_id, status):
             db.session.commit()
         
         # Send Hash Completion Notifications
-        hash_notifications = HashNotifications.query.all()
-        for hash_notification in hash_notifications:
-            user = Users.query.get(hash_notification.owner_id)
-            message = "Congratulations, the following users's hashes have been recovered: \n\n"
+        #hash_notifications = HashNotifications.query.all()
+        #for hash_notification in hash_notifications:
+        #    user = Users.query.get(hash_notification.owner_id)
+        #    message = "Congratulations, the following users's hashes have been recovered: \n\n"
             
             # There's probably a way to do this in one query but im lazy
-            cracked_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()
-            for cracked_hash in cracked_hashes:
-                if cracked_hash[0].id == hash_notification.hash_id:
-                    message += cracked_hash[1].username + "\n"
-                    if hash_notification.method == 'email':
-                        send_email(user, 'Hashview User Hash Recovered!', message)
-                    elif hash_notification.method == 'push':
-                        if user.pushover_key and user.pushover_id:
-                            send_pushover(user, 'Message from Hashview', message)
-                    else:
-                        send_email(user, 'Hashview: Missing Pushover Key', 'Hello, you were due to recieve a pushover notification, but because your account was not provisioned with an pushover ID and Key, one could not be set. Please log into hashview and set these options under Manage->Profile.')
-            db.session.delete(hash_notification)
-            db.session.commit()
+        #    cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()
+        #    for cracked_hash in cracked_hashes:
+        #        if cracked_hash[0].id == hash_notification.hash_id:
+        #            message += str(cracked_hash[1].username) + "\n"
+        #            message += 'You can check the results using the following link: ' + "\n"
+        #            message += url_for('searches.searches_list', hash_id=cracked_hash[0].id, _external=True)
+        #            if hash_notification.method == 'email':
+        #                send_email(user, 'Hashview User Hash Recovered!', message)
+        #            elif hash_notification.method == 'push':
+        #                if user.pushover_key and user.pushover_id:
+        #                    send_pushover(user, 'Message from Hashview', message)
+        #            else:
+        #                send_email(user, 'Hashview: Missing Pushover Key', 'Hello, you were due to recieve a pushover notification, but because your account was not provisioned with an pushover ID and Key, one could not be set. Please log into hashview and set these options under Manage->Profile.')
+        #            db.session.delete(hash_notification)
+        #            db.session.commit()

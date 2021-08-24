@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, redirect, flash, url_for
 from flask_login import login_required, current_user
-from hashview.models import JobNotifications, HashNotifications, Jobs, Hashes
+from hashview.models import JobNotifications, HashNotifications, Jobs, Hashes, Hashfiles
 from hashview import db
 
 
@@ -12,12 +12,11 @@ notifications = Blueprint('notifications', __name__)
 def notifications_list():
     job_notifications = JobNotifications.query.filter_by(owner_id=current_user.id).all()
     hash_notifications = HashNotifications.query.filter_by(owner_id=current_user.id).all()
+    hashfiles = Hashfiles.query.all()
     jobs = Jobs.query.all()
-    hashes = db.session.query(Hashes).join(HashNotifications, Hashes.id == HashNotifications.hash_id).filter(Hashes.cracked == '0').all()
-    for hash in hashes:
-        print(str(hash.id))   
+    hashes = db.session.query(Hashes).join(HashNotifications, Hashes.id == HashNotifications.hash_id).all()
 
-    return render_template('notifications.html', title='Notifications', job_notifications=job_notifications, hash_notifications=hash_notifications, jobs=jobs, hashes=hashes)
+    return render_template('notifications.html', title='Notifications', job_notifications=job_notifications, hash_notifications=hash_notifications, jobs=jobs, hashes=hashes, hashfiles=hashfiles)
 
 
 @notifications.route("/notifications/delete/job/<int:notification_id>", methods=['GET'])

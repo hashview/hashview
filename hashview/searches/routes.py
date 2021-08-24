@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect, url_for
+from flask import Blueprint, render_template, redirect, url_for, request
 from flask_login import login_required
 from hashview.searches.forms import SearchForm
 from hashview.models import HashNotifications, Customers, Hashfiles, HashfileHashes, Hashes
@@ -22,10 +22,11 @@ def searches_list():
         elif searchForm.search_type.data == 'password':
             results = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.plaintext == searchForm.query.data).all()
         else:
-            return redirect(url_for(searches()))
+            return redirect(url_for('searches.searches_list'))
+    elif request.args.get("hash_id"):
+        results = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id == HashfileHashes.hash_id).filter(Hashes.id == request.args.get("hash_id"))
     else:
-        hashes = None
-        hashfile_hashes = None
         customers = None
         results = None
+        
     return render_template('search.html', title='Search', searchForm=searchForm, customers=customers, results=results, hashfiles=hashfiles )

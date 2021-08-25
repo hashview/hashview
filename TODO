@@ -17,8 +17,6 @@ Taskgroups
         - Prevent Deletion if assigned to a Job
 
 Jobs
-    - List
-        - add column for cracked rate
     - Create Jobs
         - Assign existing Hashfiles
             - Exising Hashfile
@@ -51,8 +49,6 @@ Analytics
     - Show users based on matching hashes
     - show users based on matching cracked passwords
 
-Agents
-
 API
     - Update CPU/GPU count
     - update cracks with each checkin
@@ -75,17 +71,14 @@ Rules
         - Rules in browser
 
 Hashfiles
-    - List customers
-        - List hashfiles
-            - Control
-                - Download Cracked
+    - list Hash type
     - if > retention date Delete
         - delete Associated Jobs
         - if no other hashfiles exists for customer, delete customer
     - Delete
         - list associated jobs
-
-Change 'user/wordlist/task/customer add's into popup'
+Login
+    - Should be a card style
 
 Installation Instructions:
 Installation files
@@ -141,15 +134,6 @@ Settings
 Add favicon
 
 Force settings population if unset
-
-If owner or admin
-    - delete Wordlists
-    - delete rules
-    - delete tasks
-    - delete taskgroups
-    - stop Jobs
-    - delete Jobs
-    hashfiles/customers/hashes?
 
 taskgroups / hashfiles should probably be renamed to task_groups and hash_files, word_lists?
 
@@ -208,13 +192,6 @@ Standardize modals
         - users
 
 To Test:
-    1) load two hashfiles for a single customer
-    2) remove one hashfile
-    3) both cracked/uncracked count of other hashfile should not be affected
-
-    1) load three hashfiles, two for one customer a third for a second customer
-    2) remove one hashfile
-    3) remaining cracked/uncracked counts should not be affected
 
     1) set forgot password
     2) attempt to login as the user prior to reset
@@ -222,11 +199,13 @@ To Test:
     4) what happens if we request another token?
 
 # Next Phase
-- Add ability for users / admins? to import plaintext's and auto convert to specific hashes
+General
+    - Add ability for users / admins? to import plaintext's and auto convert to specific hashes
 API
     - Turn into legit resful api using flask_restful / api
+Jobs
+    - Increase speed of importation of new hashes
 
-update pushover stuff on job
 profile -> pushover notification when null auto populates
 update cracked hashes from agent to server. 
 
@@ -244,10 +223,10 @@ Prevent duplicate Notifications
 show notification selection on table load if previously selected by the user
 
 # COMPLETE BEFORE OPEN BETA
-- Notificaition emails should contain link
-- Login redirection based on URL
 - Grey out pushover option in hash notifications
 - Test if user can reset password to something < 14 chars long
 - Sanity check when user submits invalid hashfile formats
+- prevent job with no tasks.
+- HashFiles should show type
 
 Fix why agents keep asking for rules file

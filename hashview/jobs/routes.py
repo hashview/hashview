@@ -163,14 +163,14 @@ def jobs_list_tasks(job_id):
 @jobs.route("/jobs/<int:job_id>/assign_task/<int:task_id>", methods=['GET'])
 @login_required
 def jobs_assigned_task(job_id, task_id):
-    # TODO
-    #exists = JobTasks.query.filter_by(job_id=job_id, task_id=task_id)
-    #if exists:
-    #    flash('Task already assigned to the job.', 'warning')
-    #else:
-    job_task = JobTasks(job_id=job_id, task_id=task_id, status='Not Started')
-    db.session.add(job_task)
-    db.session.commit()
+    
+    exists = JobTasks.query.filter_by(job_id=job_id, task_id=task_id).first()
+    if exists:
+        flash('Task already assigned to the job.', 'warning')
+    else:
+        job_task = JobTasks(job_id=job_id, task_id=task_id, status='Not Started')
+        db.session.add(job_task)
+        db.session.commit()
 
     return redirect("/jobs/"+str(job_id)+"/tasks")
 
@@ -377,7 +377,7 @@ def jobs_start(job_id):
 
             db.session.commit()
             flash('Job has been Started!', 'success')
-            return redirect(url_for('jobs.jobs_list'))
+            return redirect(url_for('main.home'))
         else:
             flash('You do not have rights to start this job!', 'danger')
             return redirect(url_for('jobs.jobs_list'))

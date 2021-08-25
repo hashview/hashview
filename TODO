@@ -71,12 +71,10 @@ Rules
         - Rules in browser
 
 Hashfiles
-    - list Hash type
     - if > retention date Delete
         - delete Associated Jobs
         - if no other hashfiles exists for customer, delete customer
-    - Delete
-        - list associated jobs
+        
 Login
     - Should be a card style
 
@@ -227,6 +225,5 @@ show notification selection on table load if previously selected by the user
 - Test if user can reset password to something < 14 chars long
 - Sanity check when user submits invalid hashfile formats
 - prevent job with no tasks.
-- HashFiles should show type
 
 Fix why agents keep asking for rules file

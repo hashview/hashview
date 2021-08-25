@@ -35,44 +35,86 @@ The following are a list of Hash Files currently configured in Hashview. All Has
                                 <tr>
                                     <td></td>
                                     <td>{{ hashfile.name }}</td>
-                                    <td>TBD</td>
+                                    <td>
+                                        {{hash_type_dict[hashfile.id]}}
+                                    </td>
                                     <td>
                                         {{cracked_rate[hashfile.id]}}
                                     </td>
                                     <td>
                                         <a class="fa fa-download btn btn-primary" href="/analytics/download?type=found&customer_id={{customer.id}}&hashfile_id={{hashfile.id}}" role="button" title=Download></a> 
                                         <a class="fa fa-pie-chart btn btn-warning" href="/analytics?customer_id={{customer.id}}&hashfile_id={{hashfile.id}}" role="button" title=Analytics></a> 
+                                        <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{hashfile.id}}" title=Info></button>
                                         <button type="button" class="fa fa-trash btn btn-danger" data-toggle="modal" data-target="#deleteModal{{hashfile.id}}" title=Delete></button>
                                     </td>
                                 </tr>
-                                <!-- DeleteModal -->
-                                <div class="modal fade" id="deleteModal{{hashfile.id}}" tabindex="-1" aria-labelledby="deleteModal{{hashfile.id}}Label" aria-hidden="true">
-                                    <div class="modal-dialog modal-dialog-centered">
-                                    <div class="modal-content">
-                                        <div class="modal-header">
-                                        <h5 class="modal-title" id="deleteModal{{hashfile.id}}Label">Delete: {{hashfile.name}} ?</h5>
-                                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                                            <span aria-hidden="true">&times;</span>
-                                        </button>
-                                        </div>
-                                        <div class="modal-body">
-                                            This will permanantly delete the hashfile. Are you sure you want to continue?
-                                        </div>
-                                        <div class="modal-footer">
-                                            <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
-                                            <form action="{{ url_for('hashfiles.hashfiles_delete', hashfile_id=hashfile.id) }}" method="POST">
-                                                <input class="btn btn-danger" type="submit" value="Delete">
-                                            </form>
-                                        </div>
-                                    </div>
-                                    </div>
-                                </div>
                             {% endif %}
                         {% endfor %}
-
                     {% endfor %}
                 </tbody>
               </table>
         </div>
     </article>
+    {% for hashfile in hashfiles %}
+        <!-- InfoModal -->
+        <div class="modal fade" id="infoModal{{hashfile.id}}" tabindex="-1" aria-labelledby="infoModal{{hashfile.id}}Label" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="infoModal{{hashfile.id}}Label">Info: {{hashfile.name}} ?</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <table class="table">
+                        <thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">Associated Jobs</th>
+                                    <td>
+                                        {% set associated_jobs = namespace(value=0) %}
+                                        {% for job in jobs %}
+                                            {% if job.hashfile_id == hashfile.id %}
+                                                {% set associated_jobs.value = 1 %}
+                                                {{ job.name }} <br>
+                                            {% endif %}
+                                        {% endfor %}
+                                        {% if associated_jobs.value == 0 %}
+                                            <i>none</i><br>
+                                        {% endif %}                                        
+                                    </td>
+                                </tr>
+                            </tbody>
+                    </table>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
+                </div>
+            </div>
+            </div>
+        </div>
+        <!-- DeleteModal -->
+        <div class="modal fade" id="deleteModal{{hashfile.id}}" tabindex="-1" aria-labelledby="deleteModal{{hashfile.id}}Label" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deleteModal{{hashfile.id}}Label">Delete: {{hashfile.name}} ?</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    This will permanantly delete the hashfile. Are you sure you want to continue?
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
+                    <form action="{{ url_for('hashfiles.hashfiles_delete', hashfile_id=hashfile.id) }}" method="POST">
+                        <input class="btn btn-danger" type="submit" value="Delete">
+                    </form>
+                </div>
+            </div>
+            </div>
+        </div>
+    {% endfor %}
 {% endblock content %}

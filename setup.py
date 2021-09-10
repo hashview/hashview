@@ -65,11 +65,8 @@ while len(hashview_admin_password) < 14:
     hashview_admin_password = getpass('Enter a password for the Administrator account: ')
 
 hashview_port = input('What port should hashview listen on: ') # Sanitation checks to ensure: int, 1-65535, is entered.
-while int(hashview_port) > 65530 or type(hashview_port) != int:
-    print('Error: Invalid port.')
-    hashview_port = input('What port should hashview listen on: ')
 
-use_ssl = input('Would you use SSL (will generate self signed certs)?  [y/N]: ')
+use_ssl = input('Would you use SSL (will generate self signed certs)? [y/N]: ')
 if use_ssl == 'y' or use_ssl == 'Y':
     use_ssl = True
 
@@ -104,7 +101,7 @@ smtp_username = input('Enter username used to authenticate to the SMTP server [E
 
 smtp_password = getpass('Enter the password used to authenticate to the SMTP server [Enter for none]: ')
 
-smtp_tls = input('Does the SMTP server use TLS?: [y/N]')
+smtp_tls = input('Does the SMTP server use TLS? [y/N]:')
 if smtp_tls == 'y' or smtp_tls == 'Y':
     smtp_tls = True
 
@@ -117,18 +114,18 @@ while not os.path.exists(hashcat_path):
 # Write config file
 config = open("hashview/config.conf", "w")
 config.write("[database]\n")
-config.write("host = " + str(db_server)) + "\n"
-config.write("username = " + str(db_username)) + "\n"
-config.write("password = " + str(db_password)) + "\n\n"
+config.write("host = " + str(db_server) + "\n")
+config.write("username = " + str(db_username) + "\n")
+config.write("password = " + str(db_password) + "\n\n")
 
 config.write("[SMTP]\n")
-config.write("server = " + str(smtp_server)) + "\n"
+config.write("server = " + str(smtp_server) + "\n")
 config.write("port = 25\n")
-config.write("password = " + str(db_password)) + "\n"
-config.write("use_tls = " + str(smtp_tls)) + "\n"
-config.write("username = " + str(smtp_username)) + "\n"
-config.write("password = " + str(smtp_password)) + "\n"
-config.write("default_sender = " + str(smtp_sender_address)) + "\n"
+config.write("password = " + str(db_password) + "\n")
+config.write("use_tls = " + str(smtp_tls) + "\n")
+config.write("username = " + str(smtp_username) + "\n")
+config.write("password = " + str(smtp_password) + "\n")
+config.write("default_sender = " + str(smtp_sender_address) + "\n")
 
 config.close()
 

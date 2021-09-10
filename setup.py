@@ -64,10 +64,10 @@ while len(hashview_admin_password) < 14:
     print('Error: Password must be more than 14 characters.')
     hashview_admin_password = getpass('Enter a password for the Administrator account: ')
 
-hashview_port = input('What port should hashview listen on?: ') # Sanitation checks to ensure: int, 1-65535, is entered.
-while hashview_port > 65530 or type(hashview_port) != int:
+hashview_port = input('What port should hashview listen on: ') # Sanitation checks to ensure: int, 1-65535, is entered.
+while int(hashview_port) > 65530 or type(hashview_port) != int:
     print('Error: Invalid port.')
-    hashview_port = input('What port should hashview listen on?: ')
+    hashview_port = input('What port should hashview listen on: ')
 
 use_ssl = input('Would you use SSL (will generate self signed certs)?  [y/N]: ')
 if use_ssl == 'y' or use_ssl == 'Y':

@@ -54,8 +54,16 @@ The following are tasks that are assigned to the job. Each task is run once.
                             
                                 <div class="dropdown-menu" aria-labelledby="dropdownMenuLink">
                                     {% for task in tasks %}
-                                        <!-- TODO: filter out tasks already assigned to the job -->
-                                        <a class="dropdown-item" href="/jobs/{{job.id}}/assign_task/{{task.id}}">{{task.name}}</a>
+                                        {% set already_assigned = namespace(value=0) %}
+                                        {% for job_task in job_tasks %}
+                                            {% if job_task.task_id == task.id %}
+                                                {% set already_assigned.value = 1 %}
+                                            {% endif %}
+                                        {% endfor %}
+                                        {% if already_assigned.value == 0 %}
+                                            <!-- TODO: filter out tasks already assigned to the job -->
+                                            <a class="dropdown-item" href="/jobs/{{job.id}}/assign_task/{{task.id}}">{{task.name}}</a>
+                                        {% endif %}
                                     {% endfor %}
                                 </div>
                             </div>

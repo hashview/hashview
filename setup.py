@@ -5,10 +5,10 @@ from getpass import getpass
 
 # Step 1
 # Check version of python
-if sys.version.info.major < 3:
+if sys.version_info.major < 3:
     print('You must be running python 3.6 or newer')
     exit()
-if sys.version.info.minor < 6:
+if sys.version_info.minor < 6:
     print('You must be running python 3.6 or newer')
     exit()
 

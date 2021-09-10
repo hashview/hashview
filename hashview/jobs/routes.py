@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from sqlalchemy.sql.elements import Null
 from hashview.jobs.forms import JobsForm, JobsNewHashFileForm, JobsNotificationsForm, JobSummaryForm
 from hashview.models import HashNotifications, JobNotifications, Jobs, Customers, Hashfiles, Users, HashfileHashes, Hashes, JobTasks, Tasks, TaskGroups
-from hashview.utils.utils import save_file, get_filehash, import_hashfilehashes, build_hashcat_command
+from hashview.utils.utils import save_file, get_filehash, import_hashfilehashes, build_hashcat_command, validate_hashfile
 from hashview import db
 import os
 import time
@@ -15,7 +15,7 @@ jobs = Blueprint('jobs', __name__)
 @jobs.route("/jobs", methods=['GET', 'POST'])
 @login_required
 def jobs_list():
-    jobs = Jobs.query.all()
+    jobs = Jobs.query.order_by(Jobs.created_at.desc()).all()
     customers = Customers.query.all()
     users = Users.query.all()
     hashfiles = Hashfiles.query.all()
@@ -27,7 +27,7 @@ def jobs_list():
 @login_required
 def jobs_add():
     jobs = Jobs.query.all()
-    customers = Customers.query.all()
+    customers = Customers.query.order_by(Customers.name).all()
     jobsForm = JobsForm()
     if jobsForm.validate_on_submit():
         customer_id = jobsForm.customer_id.data
@@ -67,32 +67,34 @@ def jobs_assigned_hashfile(job_id):
             # User submitted a file upload
             hashfile_path = os.path.join(current_app.root_path, save_file('control/tmp', jobsNewHashFileForm.hashfile.data))
 
-            hashfile = Hashfiles(name=jobsNewHashFileForm.hashfile.data.filename, customer_id=job.customer_id, owner_id=current_user.id)
-            db.session.add(hashfile)
-            db.session.commit()
-            
-            # Parse Hashfile
-            if not import_hashfilehashes(   hashfile_id=hashfile.id, 
-                                            hashfile_path=hashfile_path, 
-                                            file_type=jobsNewHashFileForm.file_type.data, 
-                                            hash_type=jobsNewHashFileForm.hash_type.data
-                                            ):
-                return ('Something went wrong')
+            has_problem = validate_hashfile(hashfile_path, jobsNewHashFileForm.file_type.data, jobsNewHashFileForm.hash_type.data)
 
-            # Delete hashfile file on disk
-            # TODO
-            job.hashfile_id = hashfile.id
-            db.session.commit()
+            if has_problem:
+                flash(has_problem, 'danger')
+                return redirect(str(job.id)+"/assigned_hashfile/")
+            else:
+                hashfile = Hashfiles(name=jobsNewHashFileForm.hashfile.data.filename, customer_id=job.customer_id, owner_id=current_user.id)
+                db.session.add(hashfile)
+                db.session.commit()
+                
+                # Parse Hashfile
+                if not import_hashfilehashes(   hashfile_id=hashfile.id, 
+                                                hashfile_path=hashfile_path, 
+                                                file_type=jobsNewHashFileForm.file_type.data, 
+                                                hash_type=jobsNewHashFileForm.hash_type.data
+                                                ):
+                    return ('Something went wrong')
+
+                # Delete hashfile file on disk
+                # TODO
+                job.hashfile_id = hashfile.id
+                db.session.commit()
 
             return redirect(str(hashfile.id))
 
         elif jobsNewHashFileForm.hashfilehashes.data:
             # User submitted copied/pasted hashes
             # Going to have to save a file manually instead of using save_file since save_file requires form data to be passed and we're not collecting that object for this tab
-
-            hashfile = Hashfiles(name=jobsNewHashFileForm.name.data, customer_id=job.customer_id, owner_id=current_user.id)
-            db.session.add(hashfile)
-            db.session.commit()
 
             random_hex = secrets.token_hex(8)
             hashfile_path = 'hashview/control/tmp/' + random_hex
@@ -101,18 +103,29 @@ def jobs_assigned_hashfile(job_id):
 
             hashfilehashes_file.write(jobsNewHashFileForm.hashfilehashes.data)
             hashfilehashes_file.close()
-            
-            if not import_hashfilehashes(   hashfile_id=hashfile.id, 
-                                            hashfile_path=hashfile_path, 
-                                            file_type=jobsNewHashFileForm.file_type.data, 
-                                            hash_type=jobsNewHashFileForm.hash_type.data
-                                            ):
-                return ('Something went wrong')
 
-            job.hashfile_id = hashfile.id
-            db.session.commit()
+            has_problem = validate_hashfile(hashfile_path, jobsNewHashFileForm.file_type.data, jobsNewHashFileForm.hash_type.data)
 
-            return redirect(str(hashfile.id))
+            if has_problem:
+                flash(has_problem, 'danger')
+                return redirect(str(job.id)+"/assigned_hashfile/")
+            else:
+                hashfile = Hashfiles(name=jobsNewHashFileForm.name.data, customer_id=job.customer_id, owner_id=current_user.id)
+                db.session.add(hashfile)
+                db.session.commit()            
+
+
+                if not import_hashfilehashes(   hashfile_id=hashfile.id, 
+                                                hashfile_path=hashfile_path, 
+                                                file_type=jobsNewHashFileForm.file_type.data, 
+                                                hash_type=jobsNewHashFileForm.hash_type.data
+                                                ):
+                    return ('Something went wrong')
+
+                job.hashfile_id = hashfile.id
+                db.session.commit()
+
+                return redirect(str(hashfile.id))
         
     elif request.method == 'POST' and request.form['hashfile_id']:
         job.hashfile_id = request.form['hashfile_id']
@@ -181,7 +194,6 @@ def jobs_assign_task_group(job_id, task_group_id):
     task_group = TaskGroups.query.get(task_group_id)
 
     for task_group_entry in json.loads(task_group.tasks):
-        print(task_group_entry)
         job_task = JobTasks(job_id=job_id, task_id=task_group_entry, status='Not Started')
         db.session.add(job_task)
         db.session.commit()

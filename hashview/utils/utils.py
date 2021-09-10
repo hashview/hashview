@@ -6,7 +6,7 @@ import hashlib
 import time
 from datetime import datetime
 from hashview import mail, db
-from hashview.models import Settings, Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs, JobTasks, JobNotifications, HashNotifications, Users, Agents
+from hashview.models import Settings, Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs, JobTasks, JobNotifications, Users, Agents
 from flask_mail import Message
 from flask import current_app, url_for
 from pushover import Client
@@ -98,39 +98,35 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
 
     # for line in file, 
     for line in lines:
-        if file_type == 'hash_only':
-            hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
-            username = None
-        elif file_type == 'pwdump':
-            # do we let user select LM so that we crack those instead of NTLM?
-            # First extracting usernames so we can filter out machine accounts
-            if '$' in line.split(':')[0]:
-                continue
+        # TODO
+        # If line is empty:
+        if len(line) > 0:
+            if file_type == 'hash_only':
+                hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
+                username = None
+            elif file_type == 'pwdump':
+                # do we let user select LM so that we crack those instead of NTLM?
+                # First extracting usernames so we can filter out machine accounts
+                if '$' in line.split(':')[0]:
+                    continue
+                else:
+                    hash_id = import_hash_only(line=line.split(':')[3], hash_type='1000')
+                    username = line.split(':')[0]
+            elif file_type == 'kerberos':
+                hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
+                username = line.split('$')[5]
+            elif file_type == 'NetNTLM':
+                # First extracting usernames so we can filter out machine accounts
+                if '$' in line.split(':')[0]:
+                    continue
+                else:
+                    hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
+                    username = line.split(':')[0]
             else:
-                hash_id = import_hash_only(line=line.split(':')[3], hash_type='1000')
-                username = line.split(':')[0]
-        elif file_type == 'kerberos':
-            hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
-            username = line.split('$')[5]
-        elif file_type == 'NetNTLM':
-            # First extracting usernames so we can filter out machine accounts
-            if '$' in line.split(':')[0]:
-                continue
-            else:
-                hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
-                username = line.split(':')[0]
-        else:
-            print(str(file_type))
-            return False
-        hashfilehashes = HashfileHashes(hash_id=hash_id, username=username, hashfile_id=hashfile_id)
-        db.session.add(hashfilehashes)
-        db.session.commit()
-
-    # - parse each line based on hash type
-    #   - Insert into hashes table with hash type, sub_ciphertext (md5?)
-    #   - Get hash id
-    #   - insert into hashfile hashes, hash.id, username, and hashfile.id
-    
+                return False
+            hashfilehashes = HashfileHashes(hash_id=hash_id, username=username, hashfile_id=hashfile_id)
+            db.session.add(hashfilehashes)
+            db.session.commit() 
 
     return True
 
@@ -196,12 +192,10 @@ def build_hashcat_command(job_id, task_id):
     elif attackmode == 'combinator':
       cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -a 1 ' + target_file + ' ' + wordlist_one.path + ' ' + ' ' + wordlist_two.path + ' ' + relative_rules_path
 
-    print("cmd: " + cmd)
-
     return cmd
 
 def update_job_task_status(jobtask_id, status):
-
+    
     jobtask = JobTasks.query.get(jobtask_id)
     
     jobtask.status = status
@@ -285,3 +279,145 @@ def update_job_task_status(jobtask_id, status):
         #                send_email(user, 'Hashview: Missing Pushover Key', 'Hello, you were due to recieve a pushover notification, but because your account was not provisioned with an pushover ID and Key, one could not be set. Please log into hashview and set these options under Manage->Profile.')
         #            db.session.delete(hash_notification)
         #            db.session.commit()
+
+# Dumb way of doing this, we return with an error message if we have an issue with the hashfile
+# and return false if hashfile is okay. :/ Should be the otherway around :shrug emoji:
+def validate_hashfile(hashfile_path, file_type, hash_type):
+
+    file = open(hashfile_path, 'r')
+    lines = file.readlines()
+    line_number = 0
+
+    # for line in file, 
+    for line in lines:
+        line_number += 1
+        # TODO
+        # Skip entries that are just newlines
+        if len(line) > 50000:
+            return 'Error line ' + str(line_number) + ' is too long. Line length: ' + str(len(line)) + '. Max length is 50,000 chars.'
+        if len(line) > 0:
+
+            # Check file types & hash types
+            if file_type == 'hash_only':
+                if ':' in line:
+                    return 'Error line ' + str(line_number) + ' contains a : character. File should be hashes only. No usernames'
+                if hash_type == '0' or hash_type == '1000':
+                    if len(line.rstrip()) != 32:
+                        return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 32'
+            elif file_type == 'pwdump':
+                if ':' not in line:
+                    return 'Error line ' + str(line_number) + ' is missing a : character. Pwdump file should include usernames.'
+                # This is slow af :(
+                colon_cnt = 0
+                for char in line:
+                    if char == ':':
+                        colon_cnt += 1
+                if colon_cnt < 6:
+                    return 'Error line ' + str(line_number) + '. File does not appear to be be in a pwdump format.' 
+                if hash_type == '1000':
+                    if len(line.split(':')[3]) != 32:
+                        return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 32'
+                else:
+                    return 'Sorry. The only Hash Type we support for PWDump files is NTLM'
+                
+            elif file_type == 'kerberos':
+                if '$' not in line:
+                    return 'Error line ' + str(line_number) + ' is missing a $ character. kerberos file should include these.'  
+                dollar_cnt = 0
+                if hash_type == '7500':
+                    # This is slow af :(
+                    for char in line:
+                        if char == '$':
+                            dollar_cnt += 1
+                    if dollar_cnt != 6:
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 23, AS-REQ Pre-Auth'
+                    if line.split('$')[1] != 'krb5pa':
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 23, AS-REQ Pre-Auth'
+                    if line.split('$')[2] != '23':
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 23, AS-REQ Pre-Auth'
+                elif hash_type == '13100':
+                    # This is slow af :(
+                    for char in line:
+                        if char == '$':
+                            dollar_cnt += 1
+                    if dollar_cnt != 7:
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 23, TGS-REP'
+                    if line.split('$')[1] != 'krb5tgs':
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 23, TGS-REP'
+                    if line.split('$')[2] != '23':
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 23, TGS-REP'                    
+                elif hash_type == '18200':
+                    # This is slow af :(
+                    for char in line:
+                        if char == '$':
+                            dollar_cnt += 1
+                    if dollar_cnt != 4:
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 23, AS-REP'
+                    if line.split('$')[1] != 'krb5asrep':
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 23, AS-REP'
+                    if line.split('$')[2] != '23':
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 23, AS-REP'                      
+                elif hash_type == '19600':
+                    # This is slow af :(
+                    for char in line:
+                        if char == '$':
+                            dollar_cnt += 1
+                    if dollar_cnt != 6:
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 17, TGS-REP (AES128-CTS-HMAC-SHA1-96)'
+                    if line.split('$')[1] != 'krb5tgs':
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 17, TGS-REP (AES128-CTS-HMAC-SHA1-96)'
+                    if line.split('$')[2] != '17':
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 17, TGS-REP (AES128-CTS-HMAC-SHA1-96)'                     
+                elif hash_type == '19700':
+                    # This is slow af :(
+                    for char in line:
+                        if char == '$':
+                            dollar_cnt += 1
+                    if dollar_cnt != 6:
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 18, TGS-REP (AES256-CTS-HMAC-SHA1-96)'
+                    if line.split('$')[1] != 'krb5tgs':
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 18, TGS-REP (AES256-CTS-HMAC-SHA1-96)'
+                    if line.split('$')[2] != '18':
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 18, TGS-REP (AES256-CTS-HMAC-SHA1-96)'      
+                elif hash_type == '19800':
+                    # This is slow af :(
+                    for char in line:
+                        if char == '$':
+                            dollar_cnt += 1
+                    if dollar_cnt != 5:
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 17, Pre-Auth'
+                    if line.split('$')[1] != 'krb5pa':
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 17, Pre-Auth'
+                    if line.split('$')[2] != '17':
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 17, Pre-Auth'  
+                elif hash_type == '19900':
+                    # This is slow af :(
+                    for char in line:
+                        if char == '$':
+                            dollar_cnt += 1
+                    if dollar_cnt != 5:
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 18, Pre-Auth'
+                    if line.split('$')[1] != 'krb5pa':
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 18, Pre-Auth'
+                    if line.split('$')[2] != '18':
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 18, Pre-Auth'  
+                else:
+                    return 'Sorry. The only suppported Hash Types are: 7500, 13100, 18200, 19600, 19700, 19800 and 19900.'
+
+            elif file_type == 'NetNTLM':
+                # Excellent oppertunity to unique sort usernames and return error for duplicates
+                if ':' not in line:
+                    return 'Error line ' + str(line_number) + ' is missing a : character. NetNTLM file should include usernames.'
+                # This is slow af :(
+                colon_cnt = 0
+                for char in line:
+                    if char == ':':
+                        colon_cnt += 1
+                if colon_cnt < 5:
+                    return 'Error line ' + str(line_number) + '. File does not appear to be be in a NetNTLM format.'    
+
+
+        # Check hash_types
+
+
+    return False

@@ -30,7 +30,7 @@ class JobsNewHashFileForm(FlaskForm):
                                                     ('5600', '(5600) NetNTLMv2'),
                                                     ('7500', '(7500) Kerberos 5 AS-REQ Pre-Auth etype 23'),
                                                     ('13100', '(13100) Kerberos 5 TGS-REP etype 23'),
-                                                    ('18200', '(19200) Kerberos 5 AS-REP etype 23'),
+                                                    ('18200', '(18200) Kerberos 5 AS-REP etype 23'),
                                                     ('19600', '(19600) Kerberos 5 TGS-REP etype 17 (AES128-CTS-HMAC-SHA1-96)'),
                                                     ('19700', '(19700) Kerberos 5 TGS-REP etype 18 (AES256-CTS-HMAC-SHA1-96)'),
                                                     ('19800', '(19800) Kerberos 5 TGS-REP etype 18 (AES256-CTS-HMAC-SHA1-96)'),

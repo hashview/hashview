@@ -2,7 +2,7 @@ flask
 flask-wtf
 email_validator
 flask-sqlalchemy
-mysql-connector
+mysql-connector-python
 flask-bcrypt
 flask-login
 flask-mail
@@ -10,3 +10,4 @@ flask-migrate
 flask-script
 python-pushover
 WTForms-SQLAlchemy
+getpass

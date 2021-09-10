@@ -13,7 +13,7 @@ customers = Blueprint('customers', __name__)
 @customers.route("/customers", methods=['GET'])
 @login_required
 def customers_list():
-    customers = Customers.query.all()
+    customers = Customers.query.order_by(Customers.name).all()
     jobs = Jobs.query.all()
     hashfiles = Hashfiles.query.all()
     return render_template('customers.html', title='Cusomters', customers=customers, jobs=jobs, hashfiles=hashfiles)

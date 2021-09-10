@@ -29,7 +29,6 @@ Jobs
                 - After selecting Hash format, the hashtype menu should be restricted to only show those possible hashes. i.e. no NetNTLMv1->Kerberos
         - Assign Tasks
             - Should probably be a form :/
-            - Remove task from assignable tasks that are already assigned to the job
             - redirect back to assign tasks if no tasks are assigned
         - Offer cancel button along the entire process
             - deletes jobtasks
@@ -109,7 +108,7 @@ Installation files
             - create administrator account
         
         - export FLASK_APP=hashview.py 
-            - flask db init
+            - flask db-init
             - flask db migrate
             - flask db upgrade
 
@@ -223,7 +222,10 @@ show notification selection on table load if previously selected by the user
 # COMPLETE BEFORE OPEN BETA
 - Grey out pushover option in hash notifications
 - Test if user can reset password to something < 14 chars long
-- Sanity check when user submits invalid hashfile formats
 - prevent job with no tasks.
 
 Fix why agents keep asking for rules file
+# Bug
+
+Analytics will show blank entries for top 10/password count by length as empty if password is blank.
+

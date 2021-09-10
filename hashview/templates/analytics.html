@@ -181,10 +181,18 @@
                             </tr>
                             <tr>
                                 <td>
-                                    Total Runtime (Seconds):
+                                    Total Runtime:
                                 </td>
                                 <td>
-                                    {{total_runtime}}
+                                    {% if total_runtime > 604800 %}
+                                        {{ (total_runtime/604800)|round|int }} weeks<br>
+                                    {% elif total_runtime > 3600 %}
+                                        {{ (total_runtime/3600)|round|int }} hours<br>
+                                    {% elif total_runtime > 60 %}
+                                        {{ (total_runtime/60)|round|int }} minutes<br>
+                                    {% elif total_runtime < 60 %}
+                                        < 1 minute<br>                                        
+                                    {% endif %}
                                 </td>
                             </tr>
                             <tr>                                

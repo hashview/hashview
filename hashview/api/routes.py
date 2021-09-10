@@ -215,6 +215,9 @@ def api_set_agent_heartbeat(uuid):
 
             # if agent_status == 'Idle'
             if agent_data['agent_status'] == 'Idle':
+                # Clear hc_status if we're idle
+                agent.hc_status = ""
+                db.session.commit()
                 already_assigned_task = JobTasks.query.filter_by(agent_id = agent.id).first()
                 if already_assigned_task != None:
                     message = {
@@ -445,24 +448,23 @@ def api_put_jobtask_crackfile_upload(jobtask_id):
 
     # Send Hash Completion Notifications
     hash_notifications = HashNotifications.query.all()
-    print("1")
+
     for hash_notification in hash_notifications:
-        print("2")
+
         user = Users.query.get(hash_notification.owner_id)
         message = "Congratulations, the following users's hashes have been recovered: \n\n"
         
         # There's probably a way to do this in one query but im lazy
         cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()
         for cracked_hash in cracked_hashes:
-            print("3")
-            print(str(cracked_hash[0].id) + " (" + str(cracked_hash[0].ciphertext) + " vs " + str(hash_notification.hash_id))
+
+
             if cracked_hash[0].id == hash_notification.hash_id:
-                print("4")
+
                 message += str(cracked_hash[1].username) + "\n"
                 message += 'You can check the results using the following link: ' + "\n"
                 message += url_for('searches.searches_list', hash_id=cracked_hash[0].id, _external=True)
                 if hash_notification.method == 'email':
-                    print("5")
                     send_email(user, 'Hashview User Hash Recovered!', message)
                 elif hash_notification.method == 'push':
                     if user.pushover_key and user.pushover_id:

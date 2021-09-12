@@ -8,14 +8,11 @@ from flask_mail import Mail
 from flask_migrate import Migrate
 
 db = SQLAlchemy()
-#db.create_all() # Forces schema updates (does not work)
 bcrypt = Bcrypt()
 login_manager = LoginManager()
 login_manager.login_view = 'users.login'
 login_manager.login_message_category = 'info'
-
 mail = Mail()
-
 migrate = Migrate()
 
 def create_app(config_class=Config):

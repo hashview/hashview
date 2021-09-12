@@ -52,23 +52,27 @@ requirements = open('requirements.txt', 'r')
 for entry in requirements:
     install_and_import('transliterate')
 
+
+# Generate Certs
 # prompt for info
-print('\nCollecting Hashview Web Application Configuration Information')
-hashview_admin_email = input('Enter Email address for the Administrator account. You will use this to log into the app: ')
-while len(hashview_admin_email) == 0:
-    print('Error: You must provide an email address.')
-    hashview_admin_email = input("Invalid email address. Try again: ")
+# print('\nCollecting Hashview Web Application Configuration Information')
+# hashview_admin_email = input('Enter Email address for the Administrator account. You will use this to log into the app: ')
+#while len(hashview_admin_email) == 0:
+#    print('Error: You must provide an email address.')
+#    hashview_admin_email = input("Invalid email address. Try again: ")
 
-hashview_admin_password = getpass('Enter a password for the Administrator account: ')
-while len(hashview_admin_password) < 14:
-    print('Error: Password must be more than 14 characters.')
-    hashview_admin_password = getpass('Enter a password for the Administrator account: ')
+#hashview_admin_password = getpass('Enter a password for the Administrator account: ')
+#while len(hashview_admin_password) < 14:
+#    print('Error: Password must be more than 14 characters.')
+#    hashview_admin_password = getpass('Enter a password for the Administrator account: ')
+#
+#hashview_port = input('What port should hashview listen on: ') # Sanitation checks to ensure: int, 1-65535, is entered.
 
-hashview_port = input('What port should hashview listen on: ') # Sanitation checks to ensure: int, 1-65535, is entered.
-
-use_ssl = input('Would you use SSL (will generate self signed certs)? [y/N]: ')
-if use_ssl == 'y' or use_ssl == 'Y':
-    use_ssl = True
+#use_ssl = input('Would you use SSL (will generate self signed certs)? [y/N]: ')
+#if use_ssl == 'y' or use_ssl == 'Y':
+#    use_ssl = True
+#else:
+#    use_tls = False
 
 print('\nCollecting Hashview Database Configuration Information')
 db_server = input('Enter the IP or hostname of the server running mysql. i.e. 127.0.0.1 or localhost: ')
@@ -104,6 +108,8 @@ smtp_password = getpass('Enter the password used to authenticate to the SMTP ser
 smtp_tls = input('Does the SMTP server use TLS? [y/N]:')
 if smtp_tls == 'y' or smtp_tls == 'Y':
     smtp_tls = True
+else:
+    smtp_tls = False
 
 print('\nCollecting Hashcat Configuration Information')
 hashcat_path = input('Enter the path to a local install of hashcat: ')
@@ -121,7 +127,6 @@ config.write("password = " + str(db_password) + "\n\n")
 config.write("[SMTP]\n")
 config.write("server = " + str(smtp_server) + "\n")
 config.write("port = 25\n")
-config.write("password = " + str(db_password) + "\n")
 config.write("use_tls = " + str(smtp_tls) + "\n")
 config.write("username = " + str(smtp_username) + "\n")
 config.write("password = " + str(smtp_password) + "\n")
@@ -130,6 +135,12 @@ config.write("default_sender = " + str(smtp_sender_address) + "\n")
 config.close()
 
 print('Writing hashview config at: hashview/config.conf')
+
+# There's probably a better way to do this:
+print('Bulding Database')
+os.system('export FLASK_APP=hashview.py; flask db init')
+os.system('export FLASK_APP=hashview.py; flask db migrate')
+os.system('export FLASK_APP=hashview.py; flask db upgrade')
     #           create/copy example config
     #         - export FLASK_APP=hashview.py 
     #         - flask db init

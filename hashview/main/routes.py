@@ -9,10 +9,6 @@ from sqlalchemy import or_
 
 main = Blueprint('main', __name__)
 
-#############################################
-# Main
-#############################################
-
 @main.route("/")
 @login_required
 def home():

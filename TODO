@@ -76,6 +76,7 @@ Hashfiles
         
 Login
     - Should be a card style
+    - Unauthed User Registration
 
 Installation Instructions:
 Installation files
@@ -147,6 +148,7 @@ Form layout
         - Jobs
 
 Users
+    - Add admin, or promote existing user to admin (if admin)
     - Delete   
         - Remove all or migrate all
             - wordlists

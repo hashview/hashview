@@ -57,6 +57,15 @@ with app.app_context():
         db.session.add(user)
         db.session.commit()
 
+    # Setting hashcat bin path
+    if len(settings.hashcat_path) == 0:
+        hashcat_path = input('Enter the path to hashcat bin: ')
+        while len(hashcat_path) == 0 or (not os.exists(hashcat_path)):
+            print('Error: File not found, or invalid path.')
+            hashcat_path = input("Enter the path to hashcat bin: ")
+        settings.hashcat_path = hashcat_path
+        db.session.commit()
+
     # Setup dynamic wordlist
     if dynamic_wordlists == 0:
         print('\nSetting up dynamic wordlist.')
@@ -167,14 +176,7 @@ with app.app_context():
         db.session.add(task)
         db.session.commit() 
 
-    # Setting hashcat bin path
-    if len(settings.hashcat_path) == 0:
-        hashcat_path = input('Enter the path to hashcat bin: ')
-        while len(hashcat_path) == 0 or (not os.exists(hashcat_path)):
-            print('Error: File not found, or invalid path.')
-            hashcat_path = input("Enter the path to hashcat bin: ")
-        settings.hashcat_path = hashcat_path
-        db.session.commit()
+
 
     print('Done! Running Hashview! Enjoy.')
 

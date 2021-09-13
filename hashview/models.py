@@ -41,7 +41,6 @@ class Settings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     retention_period = db.Column(db.Integer)
     hashcat_path = db.Column(db.String(255))
-    db_version = db.Column(db.String(5), nullable=False)
 
 class Jobs(db.Model):
     id = db.Column(db.Integer, primary_key=True)

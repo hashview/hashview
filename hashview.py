@@ -104,18 +104,8 @@ with app.app_context():
         cmd = "gzip -d -k install/best64.rule.gz"
         os.system(cmd)
         os.replace('install/best64.rule', 'hashview/control/rules/best64.rule')
-    
-        wordlist_path = 'hashview/control/wordlists/rockyou.txt'
-        wordlist = Wordlists(name='Rockyou.txt',
-            owner_id='1', 
-            type='static', 
-            path=wordlist_path, # Can we make this a relative path?
-            checksum=get_filehash(wordlist_path),
-            size=get_linecount(wordlist_path))
-        db.session.add(wordlist)
-        db.session.commit()
 
-        rules_path = 'control/rules/best64.rule'
+        rules_path = 'hashview/control/rules/best64.rule'
         
         rule = Rules(   name='Best64 Rule', 
                         owner_id='1', 

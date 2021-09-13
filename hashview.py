@@ -14,7 +14,7 @@ app = create_app()
 # We needed some code to execute on app launch to check for whether or not this is a fresh install
 # and if it was a fresh install to prompt the user for key information, populate the data base, and continue execution
 with app.app_context():
-    from hashview.models import Users, Wordlists, Rules, Tasks
+    from hashview.models import Users, Wordlists, Rules, Tasks, Settings
     from hashview.utils.utils import get_filehash, get_linecount, get_keyspace
     from hashview import db, bcrypt
     from getpass import getpass
@@ -25,6 +25,7 @@ with app.app_context():
     static_wordlists = Wordlists.query.filter_by(type='static').count()
     rules = Rules.query.count()
     tasks = Tasks.query.count()
+    settings = Settings.query.first()
 
     # If no admins exist prompt user to generate new admin account
     if users == 0:
@@ -59,7 +60,7 @@ with app.app_context():
     # Setup dynamic wordlist
     if dynamic_wordlists == 0:
         print('\nSetting up dynamic wordlist.')
-        wordlist_path = 'control/wordlists/dynamic-all.txt'
+        wordlist_path = 'hashview/control/wordlists/dynamic-all.txt'
         open(wordlist_path, 'w')
         wordlist = Wordlists(name='All Recovered Hashes',
                     owner_id='1', 
@@ -77,7 +78,7 @@ with app.app_context():
         os.system(cmd)
         os.replace('install/rockyou.txt', 'hashview/control/wordlists/rockyou.txt')
     
-        wordlist_path = 'control/wordlists/rockyou.txt'
+        wordlist_path = 'hashview/control/wordlists/rockyou.txt'
         wordlist = Wordlists(name='Rockyou.txt',
             owner_id='1', 
             type='static', 
@@ -94,7 +95,7 @@ with app.app_context():
         os.system(cmd)
         os.replace('install/best64.rule', 'hashview/control/rules/best64.rule')
     
-        wordlist_path = 'control/wordlists/rockyou.txt'
+        wordlist_path = 'hashview/control/wordlists/rockyou.txt'
         wordlist = Wordlists(name='Rockyou.txt',
             owner_id='1', 
             type='static', 
@@ -151,7 +152,6 @@ with app.app_context():
 
         
         # mask mode of all 8 characters
-
         task = Tasks(   name='?a?a?a?a?a?a?a?a [8]', 
                         owner_id='1',
                         wl_id=None,
@@ -166,6 +166,15 @@ with app.app_context():
         )   
         db.session.add(task)
         db.session.commit() 
+
+    # Setting hashcat bin path
+    if len(settings.hashcat_path) == 0:
+        hashcat_path = input('Enter the path to hashcat bin: ')
+        while len(hashcat_path) == 0 or (not os.exists(hashcat_path)):
+            print('Error: File not found, or invalid path.')
+            hashcat_path = input("Enter the path to hashcat bin: ")
+        settings.hashcat_path = hashcat_path
+        db.session.commit()
 
     print('Done! Running Hashview! Enjoy.')
 

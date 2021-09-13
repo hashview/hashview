@@ -61,10 +61,6 @@ Wordlists
     - Change wordlist path attribute in db to be relative to app install path
         - does this affect the path returned by the API to agents?
 
-Dynamic Wordlists
-    - Create manually for now
-        - Name: All Recovered Hashes
-
 Rules
     - Edit 
         - Rules in browser
@@ -119,7 +115,7 @@ Installation files
             - flask db upgrade 
         - What do we do with previous wordlists/rules and dynamic wordlist?
 
-Wiki Instruction
+Wiki Instructions
 
 Settings
     - OPTIMIZE TABLE hashes;
@@ -128,10 +124,10 @@ Settings
         - set
         - validate
         - how to run on periodic basis?
-        
-Add favicon
+    - Max runtime for jobs
+    - Max runtime for tasks
 
-Force settings population if unset
+Add favicon
 
 taskgroups / hashfiles should probably be renamed to task_groups and hash_files, word_lists?
 
@@ -200,6 +196,7 @@ To Test:
 # Next Phase
 General
     - Add ability for users / admins? to import plaintext's and auto convert to specific hashes
+    - Support Domain Cached Credentials (hashtype 1100)
 API
     - Turn into legit resful api using flask_restful / api
 Jobs
@@ -208,12 +205,8 @@ Jobs
 profile -> pushover notification when null auto populates
 update cracked hashes from agent to server. 
 
-Update agent to stop downloading the same rules over and over again
-
 filter imports for usernames that contain non english characters
 filter rules file that contain non-english characters
-
-Max runtime per job admin setting
 
 Dynamic hashfile based on hashtype.
 

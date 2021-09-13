@@ -58,7 +58,7 @@ with app.app_context():
         db.session.commit()
 
     # Setting hashcat bin path
-    if settings.hashcat_path == None:
+    if not settings:
         hashcat_path = input('Enter the path to hashcat bin: ')
         while len(hashcat_path) == 0 or (not os.exists(hashcat_path)):
             print('Error: File not found, or invalid path.')

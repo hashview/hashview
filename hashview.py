@@ -60,7 +60,7 @@ with app.app_context():
     # Setting hashcat bin path
     if not settings:
         hashcat_path = input('Enter the path to hashcat bin: ')
-        while len(hashcat_path) == 0 or (not os.exists(hashcat_path)):
+        while len(hashcat_path) == 0 or (not os.path.exists(hashcat_path)):
             print('Error: File not found, or invalid path.')
             hashcat_path = input("Enter the path to hashcat bin: ")
         settings.hashcat_path = hashcat_path

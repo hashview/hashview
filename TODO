@@ -173,6 +173,7 @@ All
         - jobs/id/status
         - jobs/delete/id
         - agents/delete/id
+    - When all hashes are cracked, all active tasks should be killed
 
 Standardize modals
     - info
@@ -221,6 +222,8 @@ show notification selection on table load if previously selected by the user
 
 Fix why agents keep asking for rules file
 # Bug
+Setup doesnt have ssl folder
+need to generate ssl keys
+setup doesnt create hashview db 
 
 Analytics will show blank entries for top 10/password count by length as empty if password is blank.
-

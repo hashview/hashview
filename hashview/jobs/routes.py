@@ -96,6 +96,10 @@ def jobs_assigned_hashfile(job_id):
             # User submitted copied/pasted hashes
             # Going to have to save a file manually instead of using save_file since save_file requires form data to be passed and we're not collecting that object for this tab
 
+            if len(jobsNewHashFileForm.name.data) == 0:
+                flash('You must assign a name to the hashfile', 'danger')
+                return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
+
             random_hex = secrets.token_hex(8)
             hashfile_path = 'hashview/control/tmp/' + random_hex
 
@@ -108,7 +112,7 @@ def jobs_assigned_hashfile(job_id):
 
             if has_problem:
                 flash(has_problem, 'danger')
-                return redirect(str(job.id)+"/assigned_hashfile/")
+                return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
             else:
                 hashfile = Hashfiles(name=jobsNewHashFileForm.name.data, customer_id=job.customer_id, owner_id=current_user.id)
                 db.session.add(hashfile)
@@ -292,6 +296,12 @@ def jobs_assign_notifications(job_id):
     form = JobsNotificationsForm()
     job = Jobs.query.get(job_id)
 
+    # Check if job has any assigned tasks, and if not, send the user back to the task assigned page.
+    job_tasks = JobTasks.query.filter_by(job_id=job_id).count()
+    if job_tasks == 0:
+        flash('You must assign at least one task.', 'warning')
+        return redirect("/jobs/"+str(job_id)+"/tasks")
+
     # populate the forms dynamically with the choices in the database
     form.hashes.choices = [(str(c[0].id), str(c[1].username) + ':' + c[0].ciphertext) for c in db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()]
     
@@ -308,13 +318,15 @@ def jobs_assign_notifications(job_id):
         if form.hash_completion.data:
             if form.hashes.data:
                 for hash_id in form.hashes.data:
-                    hash_notification = HashNotifications(
-                        owner_id = current_user.id,
-                        hash_id = hash_id,
-                        method = form.hash_completion.data
-                    )
-                    db.session.add(hash_notification)
-                    db.session.commit()
+                    hash_notification_exists = HashNotifications.query.filter_by(hash_id=hash_id).filter_by(owner_id=current_user.id).first()
+                    if not hash_notification_exists:
+                        hash_notification = HashNotifications(
+                            owner_id = current_user.id,
+                            hash_id = hash_id,
+                            method = form.hash_completion.data
+                        )
+                        db.session.add(hash_notification)
+                        db.session.commit()
             if form.hash_completion.data == 'email':
                 print( 'user wants an email')
             if form.hash_completion.data == 'push':

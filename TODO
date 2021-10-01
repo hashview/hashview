@@ -165,9 +165,6 @@ Users
         - Associated Task_groups (same as above)
         - Associated Tasks (same as above)
 
-Notifications
-    - Optimize hashes object in notifications_list class/route.
-
 All
     - change uri scheme to be consistent
         - jobs/id/status
@@ -211,14 +208,12 @@ filter rules file that contain non-english characters
 
 Dynamic hashfile based on hashtype.
 
-Prevent duplicate Notifications
 
 show notification selection on table load if previously selected by the user
 
 # COMPLETE BEFORE OPEN BETA
 - Grey out pushover option in hash notifications
 - Test if user can reset password to something < 14 chars long
-- prevent job with no tasks.
 
 Fix why agents keep asking for rules file
 # Bug
@@ -227,3 +222,7 @@ need to generate ssl keys
 setup doesnt create hashview db 
 
 Analytics will show blank entries for top 10/password count by length as empty if password is blank.
+
+Homepage agent status window (connected, disconnected, busy, etc)
+support VERSION info being sent from agents to server
+remove ability for user to select (other hashtype) when building job

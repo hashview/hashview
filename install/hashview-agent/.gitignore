@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 
 # C extensions
+ C extensions
 *.so
 
 # Distribution / packaging
@@ -133,15 +134,11 @@ dmypy.json
 
 # config
 config.conf
-
-# config
-config.conf
 rules_manifest.txt
 wordlist_manifest.txt
 
 # control
-hashview/control/rules/*
-hashview/control/wordlists/*
-hashview/control/tmp/*
-hashview/control/hashes/*
-hashview/ssl/*
+agent/control/rules/*
+agent/control/wordlists/*
+agent/control/tmp/*
+agent/control/hashes/*

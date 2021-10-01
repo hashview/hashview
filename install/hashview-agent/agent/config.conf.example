@@ -1,0 +1,11 @@
+[HASHVIEW]
+# ip or hostname
+server = 
+port = 
+# true or false
+use_ssl = 
+
+[AGENT]
+NAME = 
+UUID = 
+HC_BIN_PATH =

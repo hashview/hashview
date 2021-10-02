@@ -109,7 +109,8 @@
         </div>
         </fieldset>
         <div class="form-group">
-            {{ form.submit(class="btn btn-outline-info")}}
+            <a class="btn btn-secondary" href="{{ url_for('users.users_list')}}">Back</a>
+            {{ form.submit(class="btn btn-primary pull-right")}}
         </div>
     </form>
 </div>

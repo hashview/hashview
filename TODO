@@ -226,3 +226,4 @@ Analytics will show blank entries for top 10/password count by length as empty i
 Homepage agent status window (connected, disconnected, busy, etc)
 support VERSION info being sent from agents to server
 remove ability for user to select (other hashtype) when building job
+add delete temp folder option for admin

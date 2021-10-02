@@ -419,5 +419,8 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
 
         # Check hash_types
 
-
     return False
+
+def getHashviewVersion():
+    with open("VERSION.TXT") as f:
+        return f.read().split('\n')[0]

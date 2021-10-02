@@ -130,7 +130,8 @@ Apply hashes to be cracked. You can either copy/paste the desired hashes below, 
                 </fieldset>
                 <br>
                 <div class="form-group">
-                    <button class='btn btn-primary' type='submit'>Next</button>
+                    <a class="btn btn-secondary" href="{{ url_for('jobs.jobs_list') }}">Back</a>
+                    <button class='btn btn-primary pull-right' type='submit'>Next</button>              
                 </div>
             </form>
         </div>
@@ -165,7 +166,7 @@ Apply hashes to be cracked. You can either copy/paste the desired hashes below, 
                 </fieldset>
                 <div class="form-group">
                     <a class="btn btn-secondary" href="{{ url_for('jobs.jobs_list') }}">Back</a>
-                    <button class='btn btn-primary' type='submit'>Next</button>
+                    <button class='btn btn-primary pull-right' type='submit'>Next</button>
                 </div>
             </form>
         </div>

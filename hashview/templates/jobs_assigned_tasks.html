@@ -66,8 +66,7 @@ The following are tasks that are assigned to the job. Each task is run once.
                                         {% endif %}
                                     {% endfor %}
                                 </div>
-                            </div>
-                            <div class="dropdown show">
+
                                 <a class="btn btn-primary dropdown-toggle" href="#" role="button" id="dropdownMenuLink2" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                                 Add Task Group
                                 </a>
@@ -85,5 +84,5 @@ The following are tasks that are assigned to the job. Each task is run once.
         </div>
     </article>
     <a class="btn btn-secondary" href="{{ url_for('jobs.jobs_assigned_hashfile', job_id=job.id) }}">Back</a>
-    <a class="btn btn-primary" href="/jobs/{{job.id}}/notifications" role="button">Next</a>
+    <a class="btn btn-primary pull-right" href="/jobs/{{job.id}}/notifications" role="button">Next</a>
 {% endblock content %}

@@ -57,7 +57,8 @@ Provide the Name of the Job and the Customer it is for.
             </div>
         </fieldset>
         <div class="form-group">
-            {{ jobsForm.submit(class="btn btn-outline-info")}}
+            <a class="btn btn-danger" href="/jobs" role="button" title='Cancel'>Cancel</a>
+            {{ jobsForm.submit(class="btn btn-primary pull-right")}}
         </div>
     </form>
 </div>

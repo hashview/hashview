@@ -37,5 +37,6 @@ The following hashes are already cracked in Hashview's Local database!
               </table>
         </div>
     </article>
-    <a class="btn btn-primary" href="/jobs/{{job.id}}/tasks" role="button">Next</a>
+    <a class="btn btn-secondary" href="{{ url_for('jobs.jobs_assigned_hashfile', job_id=job.id) }}">Back</a>
+    <a class="btn btn-primary pull-right" href="/jobs/{{job.id}}/tasks" role="button">Next</a>
 {% endblock content %}

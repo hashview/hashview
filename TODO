@@ -49,8 +49,7 @@ Analytics
     - show users based on matching cracked passwords
 
 API
-    - Update CPU/GPU count
-    - update cracks with each checkin
+support VERSION info being sent from agents to server
 
 Search
     - Do we even let the user pick which type, or just run queries on both?
@@ -215,7 +214,6 @@ show notification selection on table load if previously selected by the user
 - Grey out pushover option in hash notifications
 - Test if user can reset password to something < 14 chars long
 
-Fix why agents keep asking for rules file
 # Bug
 Setup doesnt have ssl folder
 need to generate ssl keys
@@ -225,4 +223,8 @@ Analytics will show blank entries for top 10/password count by length as empty i
 
 Homepage agent status window (connected, disconnected, busy, etc)
 support VERSION info being sent from agents to server
-remove ability for user to select (other hashtype) when building job
+
+Get help with search layout :/
+Profile page add space between buttons
+
+send push notifications when agent is offline

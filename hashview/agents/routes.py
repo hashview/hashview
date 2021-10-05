@@ -1,8 +1,10 @@
-from flask import Blueprint, render_template, abort, flash, redirect, url_for
+from flask import Blueprint, render_template, abort, flash, redirect, url_for, send_from_directory
 from flask_login import login_required, current_user
 from hashview.agents.forms import AgentsForm
-from hashview.models import Agents
+from hashview.models import Agents, JobTasks
+from hashview.utils.utils import getHashviewVersion
 from hashview import db
+import os
 
 agents = Blueprint('agents', __name__)
 
@@ -51,8 +53,6 @@ def agents_edit(agent_id):
         flash('You are unauthorized to edit agent data.', 'danger')
     redirect(url_for('agents.agents_list'))
 
-
-
 @agents.route("/agents/<int:agent_id>/authorize", methods=['GET'])
 @login_required
 def agents_authorize(agent_id):
@@ -89,7 +89,24 @@ def agents_deauthorize(agent_id):
 @login_required
 def agents_delete(agent_id):
     if current_user.admin:
-        agents = Agents.query.all()
-        return render_template('agents_edit.html', title='agents', agents=agents)
+        jobtasks = JobTasks.query.filter_by(agent_id = agent_id).count()
+        if jobtasks > 0:
+            flash('Error: Agent is active with a task.', 'danger')
+        else:
+            agent = Agents.query.get(agent_id)
+            db.session.delete(agent)
+            db.session.commit()
+            flash('Agent removed', 'success')
+        return redirect(url_for('agents.agents_list'))
     else:
         abort(403)
+
+@agents.route("/agents/download", methods=['GET'])
+@login_required
+def agents_download():
+    version = getHashviewVersion()
+    filename = 'hashview-agent.' + version + '.tgz'
+    cmd = 'tar -czf hashview/control/tmp/' + filename + ' install/hashview-agent/*'
+    os.system(cmd)
+
+    return send_from_directory('control/tmp', filename, as_attachment=True)

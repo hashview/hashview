@@ -61,12 +61,12 @@ The following are tasks that are assigned to the job. Each task is run once.
                                             {% endif %}
                                         {% endfor %}
                                         {% if already_assigned.value == 0 %}
-                                            <!-- TODO: filter out tasks already assigned to the job -->
                                             <a class="dropdown-item" href="/jobs/{{job.id}}/assign_task/{{task.id}}">{{task.name}}</a>
                                         {% endif %}
                                     {% endfor %}
                                 </div>
-
+                                </div>
+                                <div class="dropdown show">
                                 <a class="btn btn-primary dropdown-toggle" href="#" role="button" id="dropdownMenuLink2" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                                 Add Task Group
                                 </a>

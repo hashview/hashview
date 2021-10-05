@@ -49,8 +49,7 @@ Analytics
     - show users based on matching cracked passwords
 
 API
-    - Update CPU/GPU count
-    - update cracks with each checkin
+support VERSION info being sent from agents to server
 
 Search
     - Do we even let the user pick which type, or just run queries on both?
@@ -224,7 +223,8 @@ Analytics will show blank entries for top 10/password count by length as empty i
 
 Homepage agent status window (connected, disconnected, busy, etc)
 support VERSION info being sent from agents to server
-remove ability for user to select (other hashtype) when building job
 
 Get help with search layout :/
 Profile page add space between buttons
+
+send push notifications when agent is offline

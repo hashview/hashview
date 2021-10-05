@@ -78,8 +78,10 @@ def getHashcatPid():
             try:
                 pinfo = proc.as_dict(attrs=['pid', 'name', 'cmdline'])
                 # In the future we should change this to session id
-                if 'hashcat' in pinfo['name'].lower() and 'hc_cracked_' in pinfo['cmdline'].lower():
-                    return pinfo['pid']
+                if 'hashcat' in pinfo['name'].lower():
+                    for cli_args in pinfo['cmdline']:
+                        if 'hc_cracked_' in cli_args:
+                            return pinfo['pid']
             except:
                 return False
     return False
@@ -331,7 +333,8 @@ def hashcatParser(filepath):
             item = line.split(': ')
             gpu = item[0].replace('Speed.#', 'Speed #').replace('.', '').replace('*', '')
             gpu = re.sub('\d', '', gpu)
-            status[gpu] = line.split(' ')[1] + ' ' + line.split(' ')[2]
+            #status[gpu] = line.split(' ')[1] + ' ' + line.split(' ')[2]
+            status[gpu] = re.search(r"\b\d+.*/s\b", line).group()
         elif line.startswith('HWMon.Dev.'):
             item = line.split('.: ')
             gpu = item[0].replace('HWMon.Dev.', 'HWMon Dev ').replace('.', '')
@@ -435,6 +438,16 @@ if __name__ == '__main__':
                         print('PID: '+str(pid))
                         if pid:
                             killHashcat(pid)
+                # upload cracks
+                crack_file = 'control/outfiles/hc_cracked_' + str(job['id']) + '_' + str(job_task['task_id']) + '.txt'
+                if os.path.exists(crack_file):
+                    getHashTypeResponse = getHashType(job['hashfile_id'])
+                    if getHashTypeResponse['msg'] == 'OK':
+                        uploadCrackFileResponse = uploadCrackFile(crack_file, getHashTypeResponse['hash_type'])
+                        if uploadCrackFileResponse['msg'] == 'OK':
+                            print('Upload Success!')
+                else:
+                    print('No Results. Skipping upload.')
 
 
                 print('Done working')

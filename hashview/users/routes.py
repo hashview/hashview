@@ -41,9 +41,9 @@ def users_add():
         if form.validate_on_submit():
             hashed_password = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
             if form.pushover_id.data and form.pushover_key.data:
-                user = Users(first_name=form.first_name.data, last_name=form.last_name.data, email_address=form.email.data, password=hashed_password, pushover_id=form.pushover_id.data, pushover_key=form.pushover_key.data)
+                user = Users(first_name=form.first_name.data, last_name=form.last_name.data, email_address=form.email.data, admin=form.is_admin.data, password=hashed_password, pushover_id=form.pushover_id.data, pushover_key=form.pushover_key.data)
             else:
-                user = Users(first_name=form.first_name.data, last_name=form.last_name.data, email_address=form.email.data, password=hashed_password)
+                user = Users(first_name=form.first_name.data, last_name=form.last_name.data, email_address=form.email.data, admin=form.is_admin.data, password=hashed_password)
             db.session.add(user)
             db.session.commit()
             flash(f'Account created for {form.email.data}!', 'success')

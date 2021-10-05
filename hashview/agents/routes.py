@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, abort, flash, redirect, url_for, send_from_directory
 from flask_login import login_required, current_user
 from hashview.agents.forms import AgentsForm
-from hashview.models import Agents
+from hashview.models import Agents, JobTasks
 from hashview.utils.utils import getHashviewVersion
 from hashview import db
 import os
@@ -89,8 +89,15 @@ def agents_deauthorize(agent_id):
 @login_required
 def agents_delete(agent_id):
     if current_user.admin:
-        agents = Agents.query.all()
-        return render_template('agents_edit.html', title='agents', agents=agents)
+        jobtasks = JobTasks.query.filter_by(agent_id = agent_id).count()
+        if jobtasks > 0:
+            flash('Error: Agent is active with a task.', 'danger')
+        else:
+            agent = Agents.query.get(agent_id)
+            db.session.delete(agent)
+            db.session.commit()
+            flash('Agent removed', 'success')
+        return redirect(url_for('agents.agents_list'))
     else:
         abort(403)
 

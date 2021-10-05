@@ -10,54 +10,56 @@ If everything looks good, click complete below.
 {% endblock header %}
 {% block content %}
     <article class="media content-section">
-        <form method="POST" action="">
-            {{ form.hidden_tag() }}
-            <table class="table">
-                <tbody>
-                        <tr>
-                            <td>Job Name:</td>
-                            <td>{{ job.name }}</td>
-                        </tr>
-                        <tr>
-                            <td>Customer:</td>
-                            <td>{{ customer.name }}</td>
-                        </tr>
-                        <tr>
-                            <td>Hashfile:</td>
-                            <td>{{ hashfile.name }} ({{ cracked_rate }})</td>
-                        </tr>
-                        <tr>
-                            <td>Tasks:</td>
-                            <td>
-                                {% for job_task in job_tasks %}
-                                    {% for task in tasks %}
-                                        {% if task.id == job_task.task_id %}
-                                            {{ task.name }} <br>
-                                        {% endif %}
+        <div class="media-body">
+            <form method="POST" action="">
+                {{ form.hidden_tag() }}
+                <table class="table">
+                    <tbody>
+                            <tr>
+                                <td>Job Name:</td>
+                                <td>{{ job.name }}</td>
+                            </tr>
+                            <tr>
+                                <td>Customer:</td>
+                                <td>{{ customer.name }}</td>
+                            </tr>
+                            <tr>
+                                <td>Hashfile:</td>
+                                <td>{{ hashfile.name }} ({{ cracked_rate }})</td>
+                            </tr>
+                            <tr>
+                                <td>Tasks:</td>
+                                <td>
+                                    {% for job_task in job_tasks %}
+                                        {% for task in tasks %}
+                                            {% if task.id == job_task.task_id %}
+                                                {{ task.name }} <br>
+                                            {% endif %}
+                                        {% endfor %}
                                     {% endfor %}
-                                {% endfor %}
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>Notifications:</td>
-                            <td>
-                                {% if not job_notification and not hash_notification %}
-                                    <i>None</i>
-                                {% endif %}
-                                {% if job_notification %}
-                                    Job Notification: {{job_notification.method}} <br>
-                                {% endif %}
-                                {% if hash_notification %}
-                                    Hash Notification ({{hash_notification_cnt}} Hashes): {{hash_notification.method}} <br>
-                                {% endif %}
-                            </td>
-                        </tr>
-                </tbody>
-            </table>
-            <div class="form-group">
-                <a class="btn btn-secondary" href="{{ url_for('jobs.jobs_assign_notifications', job_id = job.id) }}">Back</a>
-                {{ form.submit(class="btn btn-primary")}}
-            </div>
-        </form>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Notifications:</td>
+                                <td>
+                                    {% if not job_notification and not hash_notification %}
+                                        <i>None</i>
+                                    {% endif %}
+                                    {% if job_notification %}
+                                        Job Notification: {{job_notification.method}} <br>
+                                    {% endif %}
+                                    {% if hash_notification %}
+                                        Hash Notification ({{hash_notification_cnt}} Hashes): {{hash_notification.method}} <br>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                    </tbody>
+                </table>
+                <div class="form-group">
+                    <a class="btn btn-secondary" href="{{ url_for('jobs.jobs_assign_notifications', job_id = job.id) }}">Back</a>
+                    {{ form.submit(class="btn btn-primary pull-right")}}
+                </div>
+            </form>
+        </div>
     </article>
 {% endblock content %}

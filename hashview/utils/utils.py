@@ -4,6 +4,7 @@ import hashlib
 import subprocess
 import hashlib
 import time
+import _md5
 from datetime import datetime
 from hashview import mail, db
 from hashview.models import Settings, Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs, JobTasks, JobNotifications, Users, Agents
@@ -74,8 +75,9 @@ def get_keyspace(method, wordlist_id, rule_id, mask):
     return return_value
 
 def get_md5_hash(string):
-    m = hashlib.md5()
-    m.update(string.encode('utf-8'))
+    #m = hashlib.md5()
+    #m.update(string.encode('utf-8'))
+    m = _md5.md5(string.encode('utf-8'))
     return m.hexdigest()
 
 def import_hash_only(line, hash_type):
@@ -87,9 +89,6 @@ def import_hash_only(line, hash_type):
         db.session.add(new_hash)
         db.session.commit()
         return new_hash.id
-
-def import_pwdump(line):
-    return True
 
 def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
     # Open file
@@ -304,6 +303,21 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                 if hash_type == '0' or hash_type == '1000':
                     if len(line.rstrip()) != 32:
                         return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 32'
+                if hash_type == '2100':
+                    if '$' not in line:
+                        return 'Error line ' + str(line_number) + ' is missing a $ character. DCC2 Hashes should have these.'
+                    dollar_cnt = 0
+                    hash_cnt = 0
+                    for char in line:
+                        if char == '$':
+                            dollar_cnt += 1
+                        if char == '#':
+                            hash_cnt += 1
+                    if dollar_cnt != 2:
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: DCC2 MS Cache'
+                    if hash_cnt != 2:
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: DCC2 MS Cache'
+
             elif file_type == 'pwdump':
                 if ':' not in line:
                     return 'Error line ' + str(line_number) + ' is missing a : character. Pwdump file should include usernames.'
@@ -318,8 +332,7 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                     if len(line.split(':')[3]) != 32:
                         return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 32'
                 else:
-                    return 'Sorry. The only Hash Type we support for PWDump files is NTLM'
-                
+                    return 'Sorry. The only Hash Type we support for PWDump files is NTLM'   
             elif file_type == 'kerberos':
                 if '$' not in line:
                     return 'Error line ' + str(line_number) + ' is missing a $ character. kerberos file should include these.'  
@@ -419,5 +432,8 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
 
         # Check hash_types
 
-
     return False
+
+def getHashviewVersion():
+    with open("VERSION.TXT") as f:
+        return f.read().split('\n')[0]

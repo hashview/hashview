@@ -29,7 +29,6 @@ def hashfiles_list():
 def hashfiles_delete(hashfile_id):
     hashfile = Hashfiles.query.get_or_404(hashfile_id)
     jobs = Jobs.query.filter_by(hashfile_id = hashfile_id).first()
-    hashfile_hashes = HashfileHashes.query.filter_by(hashfile_id = hashfile_id).all()
 
     if hashfile:
         if current_user.admin or hashfile.owner_id == current_user.id:
@@ -39,7 +38,7 @@ def hashfiles_delete(hashfile_id):
             else:
                 hashfile_hashes = HashfileHashes.query.filter_by(hashfile_id = hashfile_id).all()
                 for hashfile_hash in hashfile_hashes:
-                    hashes = Hashes.query.filter_by(id=hashfile_hash.hash_id, cracked=0).all()
+                    hashes = Hashes.query.filter_by(id=hashfile_hash.hash_id).filter_by(cracked=0).all()
                     for hash in hashes:
                         # Check to see if our hashfile is the ONLY hashfile that has this hash
                         # if duplicates exist, they can still be removed. Once the hashfile_hash entry is remove, 

@@ -5,6 +5,28 @@
     <br>
     <br>
     <br>
+    <h1>Agent Status</h1>
+    <table class="table">
+        <tbody>
+            <tr>
+                {% if agents %}
+                    {% for agent in agents %}
+                        <td>
+                            <div class="card">
+                                <div class="card-header">{{agent.name}}</div>
+                                <div class="card-body ">
+                                    <h7 class="card-text mb-2">Last Seen: {{agent.last_checkin}}</h7>
+                                </div>
+                            </div>
+                        </td>
+                    {% endfor %}
+                {% endif %}
+            </tr>
+        </tbody>
+    </table>
+    <br>
+    <br>
+    <br>
     {% if jobs.count() > 0 %}
         {% for job in jobs %}
             <div class="card" style="width: 57rem;">
@@ -122,8 +144,6 @@
             </div>
             </div>
         {% endfor %}
-    {% else %}
-            <h1>I'm Hungry for Hashes.... Feed Me... Om nom</h1>
     {% endif %}
   </div>
 {% endblock content %}

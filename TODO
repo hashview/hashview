@@ -12,7 +12,6 @@ Taskgroups
     - Assign Tasks 
         - Allow for task creation at task assignment (why did i even allow this in the first place)
         - Does it make sense to put these in a form?
-        - Dont allow for duplicate tasks to be assigned
     - Delete task_groups
         - Prevent Deletion if assigned to a Job
 
@@ -49,7 +48,7 @@ Analytics
     - show users based on matching cracked passwords
 
 API
-support VERSION info being sent from agents to server
+    - support VERSION info being sent from agents to server
 
 Search
     - Do we even let the user pick which type, or just run queries on both?
@@ -72,6 +71,11 @@ Hashfiles
 Login
     - Should be a card style
     - Unauthed User Registration
+
+Scheduled Events
+    - Data Retention Periods
+    - Status (is running / died)
+    - Mark agent as inactive after a period of time
 
 Installation Instructions:
 Installation files
@@ -119,12 +123,13 @@ Wiki Instructions
 Settings
     - OPTIMIZE TABLE hashes;
     - OPTIMIZE TABLE hashfile_hashes;
-    - retention
+    - Retention
         - set
         - validate
         - how to run on periodic basis?
     - Max runtime for jobs
     - Max runtime for tasks
+    - Max timeout from agents
 
 Add favicon
 
@@ -133,7 +138,7 @@ taskgroups / hashfiles should probably be renamed to task_groups and hash_files,
 Change dropdown alignment of jobs, tasks, manage (in templates/layout.html)
 
 Form layout
-    - Adjust label\nfield to lable field\n
+    - Adjust label\nfield to label field\n
         - Task
         - Customers
         - Wordlists
@@ -143,6 +148,8 @@ Form layout
         - Jobs
 
 Users
+    - List
+        - List role of Admin or User
     - Add admin, or promote existing user to admin (if admin)
     - Delete   
         - Remove all or migrate all
@@ -184,7 +191,6 @@ Standardize modals
         - users
 
 To Test:
-
     1) set forgot password
     2) attempt to login as the user prior to reset
     3) does it work?
@@ -193,20 +199,15 @@ To Test:
 # Next Phase
 General
     - Add ability for users / admins? to import plaintext's and auto convert to specific hashes
-    - Support Domain Cached Credentials (hashtype 1100)
-API
-    - Turn into legit resful api using flask_restful / api
 Jobs
     - Increase speed of importation of new hashes
 
 profile -> pushover notification when null auto populates
-update cracked hashes from agent to server. 
 
 filter imports for usernames that contain non english characters
 filter rules file that contain non-english characters
 
 Dynamic hashfile based on hashtype.
-
 
 show notification selection on table load if previously selected by the user
 
@@ -224,7 +225,6 @@ Analytics will show blank entries for top 10/password count by length as empty i
 Homepage agent status window (connected, disconnected, busy, etc)
 support VERSION info being sent from agents to server
 
-Get help with search layout :/
-Profile page add space between buttons
-
 send push notifications when agent is offline
+
+on job summary, shows notifications as true when none are set for the user.

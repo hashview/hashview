@@ -18,6 +18,7 @@ These are the awesome people that use Hashview.
                     <th scope="col">First</th>
                     <th scope="col">Last</th>
                     <th scope="col">Email</th>
+                    <th scope="col">Role</th>
                     <th scope="col">Control</th>
                   </tr>
                 </thead>
@@ -27,6 +28,13 @@ These are the awesome people that use Hashview.
                             <td>{{ user.first_name }}</td>
                             <td>{{ user.last_name }}</td>
                             <td>{{ user.email_address }}</td>
+                            <td>
+                                {% if user.admin %}
+                                    Admin
+                                {% else %}
+                                    User
+                                {% endif %}
+                            </td>
                             <td>
                                 <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{user.id}}" title=Info></button>
                                 <button type="button" class="fa fa-undo btn btn-warning" data-toggle="modal" data-target="#resetModal{{user.id}}" title='Reset Password'></button>

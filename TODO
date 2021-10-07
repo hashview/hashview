@@ -1,39 +1,3 @@
-Tasks 
-    - Create Task
-        - Support Bruteforce task
-        - Support combinator task
-        - Support Bandril approach
-        - Support for cewl
-    - Task Edit
-
-Taskgroups
-    - List
-        - Number of Tasks
-    - Assign Tasks 
-        - Allow for task creation at task assignment (why did i even allow this in the first place)
-        - Does it make sense to put these in a form?
-    - Delete task_groups
-        - Prevent Deletion if assigned to a Job
-
-Jobs
-    - Create Jobs
-        - Assign existing Hashfiles
-            - Exising Hashfile
-                - Grey out tab if no pre-existing hashfile exists
-            - New hashfiles
-                - Select file format
-                    - Give example (?) on mouse over
-                - Select hash Type
-                    - on other allow user to type in hashtype
-                - After selecting Hash format, the hashtype menu should be restricted to only show those possible hashes. i.e. no NetNTLMv1->Kerberos
-        - Assign Tasks
-            - Should probably be a form :/
-            - redirect back to assign tasks if no tasks are assigned
-        - Offer cancel button along the entire process
-            - deletes jobtasks
-            - delete job
-            - redirects to joblist
-
 Analytics
     - I think outerjoins should be .joins
     - Set color scheme to look good
@@ -53,7 +17,6 @@ API
 Search
     - Do we even let the user pick which type, or just run queries on both?
     - Export Results
-    - Expand search text box
 
 Wordlists
     - Change wordlist path attribute in db to be relative to app install path
@@ -146,10 +109,9 @@ Form layout
         - Task Groups
         - Rules
         - Jobs
+        - Notifications
 
 Users
-    - List
-        - List role of Admin or User
     - Add admin, or promote existing user to admin (if admin)
     - Delete   
         - Remove all or migrate all
@@ -228,3 +190,4 @@ support VERSION info being sent from agents to server
 send push notifications when agent is offline
 
 on job summary, shows notifications as true when none are set for the user.
+tasks that use dynamic wordlists do not update keyspace count (maybe we should just remove keyspace count all together)

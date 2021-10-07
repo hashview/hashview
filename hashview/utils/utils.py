@@ -103,6 +103,9 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
             if file_type == 'hash_only':
                 hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
                 username = None
+            elif file_type == 'shadow':
+                hash_id= import_hash_only(line=line.split(':')[1], hash_type=hash_type)
+                username = line.split(':')[0]
             elif file_type == 'pwdump':
                 # do we let user select LM so that we crack those instead of NTLM?
                 # First extracting usernames so we can filter out machine accounts
@@ -317,6 +320,18 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                         return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: DCC2 MS Cache'
                     if hash_cnt != 2:
                         return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: DCC2 MS Cache'
+            if file_type == 'shadow':
+                if ':' not in line:
+                    return 'Error line ' + str(line_number) + ' is missing a : character. shadow file should include usernames.'
+                if hash_type == '1800':
+                    dollar_cnt = 0
+                    for char in line:
+                        if char == '$':
+                            dollar_cnt+=1
+                    if dollar_cnt != 3:
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt from a shadow file.'
+                    if '$6$' not in line:
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt from a shadow file.'
 
             elif file_type == 'pwdump':
                 if ':' not in line:

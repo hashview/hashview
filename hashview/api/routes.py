@@ -778,7 +778,7 @@ def v2_api_put_jobtask_crackfile_upload(hash_type):
     #for entry in lines:
     for entry in file_contents['file'].split('\n'):
         if ':' in entry:
-            if hashtype == 1000 or hashtype == 2100 or hashtype == 13100 or hashtype == 19200 or hashtype == 19600 or hashtype == 19700 or hashtype == 19800 or hashtype == 19900:
+            if hashtype == 1000 or hashtype == 1800 or hashtype == 2100 or hashtype == 13100 or hashtype == 19200 or hashtype == 19600 or hashtype == 19700 or hashtype == 19800 or hashtype == 19900:
                 ciphertext = entry.split(':')[0]
                 encoded_plaintext = entry.split(':')[1]
                 plaintext = bytes.fromhex(encoded_plaintext.rstrip())

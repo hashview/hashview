@@ -11,6 +11,7 @@ import sys
 import psutil
 import re
 import signal
+import builtins
 from threading import Thread
 
 
@@ -362,10 +363,9 @@ if __name__ == '__main__':
     from agent import config
 
     if args.debug:
-        print('running app with debug')
-
+        builtins.state = 'debug'
     else:
-        print('running app w/o debug')
+        builtins.state = 'normal'
     
     # Main loop
     while (1):
@@ -385,12 +385,10 @@ if __name__ == '__main__':
             response = send_heartbeat(agent_status, '')
             if response['msg'] == 'Go Away':
                 print("We're not wanted")
-            if response['msg'] == 'OK':
-                print("we're okay to keep going")
             if response['msg'] == 'START':
                 # We've been assigned a task
                 # First we'll sync our rules
-                print("We've been assigned Task Id: " + str(response['job_task_id']))
+                print("[*] We've been assigned Task Id: " + str(response['job_task_id']))
                 job_task = jobTasks(response['job_task_id'])
 
                 # Shouldnt be necessary, but server side sometimes doesnt get set
@@ -403,13 +401,13 @@ if __name__ == '__main__':
                 for wordlist in json.loads(wordlists_list):
                     if wordlist['id'] == task['wl_id']:
                         if wordlist['type'] == 'dynamic':
-                            print('Task is using a dynamic wordlist. Initiating update')
+                            print('[*] Task is using a dynamic wordlist. Initiating update')
                             update_response = updateDynamicWordlists(wordlist['id'])
                 
                             if update_response['msg'] != 'OK':
-                                print('Something broke during the updateing of the dynamic wordlist: ' + str(wordlist['id']))
+                                print('[!] Something broke during the updateing of the dynamic wordlist: ' + str(wordlist['id']))
                             else:
-                                print('Update Complete')
+                                print('[*] Update Complete')
 
 
                 # Get Job, so that we can get our hashfile

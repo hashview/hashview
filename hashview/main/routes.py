@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from hashview.models import Jobs, JobTasks, Users, Customers, Tasks, Agents
 from hashview.utils.utils import update_job_task_status
 import json
-from hashview import db
+from hashview import db, scheduler
 from sqlalchemy import or_
 
 
@@ -12,6 +12,7 @@ main = Blueprint('main', __name__)
 @main.route("/")
 @login_required
 def home():
+    print(str(type(db.session)))
     jobs = Jobs.query.filter(or_((Jobs.status.like('Running')),(Jobs.status.like('Queued'))))
     users = Users.query.all()
     customers = Customers.query.all()

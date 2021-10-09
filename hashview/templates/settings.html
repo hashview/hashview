@@ -21,7 +21,7 @@
                 <form method="POST" action="">
                     {{ HashviewForm.hidden_tag() }}
                     <fieldset class="form-group">
-                        <!-- Not used... yet 
+                        
                         <div class="form-group">
                             {{ HashviewForm.retention_period.label(class="form-control-label") }}
                             {% if HashviewForm.retention_period.errors %}
@@ -35,7 +35,7 @@
                                 {{ HashviewForm.retention_period(class="form-control form-control-lg") }}
                             {% endif %}
                         </div>
-                        -->
+                        
                         <div class="form-group">
                             {{ HashviewForm.hashcat_path.label(class="form-control-label") }}
                             {% if HashviewForm.hashcat_path.errors %}

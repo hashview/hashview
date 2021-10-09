@@ -327,10 +327,6 @@ def jobs_assign_notifications(job_id):
                         )
                         db.session.add(hash_notification)
                         db.session.commit()
-            if form.hash_completion.data == 'email':
-                print( 'user wants an email')
-            if form.hash_completion.data == 'push':
-                print('user wants a push')
         
         return redirect("/jobs/"+str(job_id)+"/summary")
     else:

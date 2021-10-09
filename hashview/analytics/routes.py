@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, render_template, request, redirect, send_from_directory
 from flask_login import login_required
-from hashview.models import Agents, Customers, HashfileHashes, Hashes, Hashfiles
+from hashview.models import Customers, HashfileHashes, Hashes, Hashfiles
 from hashview import db
 import re
 import operator

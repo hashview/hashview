@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, redirect, url_for, request
 from flask_login import login_required
 from hashview.searches.forms import SearchForm
-from hashview.models import HashNotifications, Customers, Hashfiles, HashfileHashes, Hashes
+from hashview.models import Customers, Hashfiles, HashfileHashes, Hashes
 from hashview import db
 
 searches = Blueprint('searches', __name__)

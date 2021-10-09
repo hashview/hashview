@@ -1,6 +1,9 @@
 import argparse
 import logging
-from hashview import create_app 
+from hashview import create_app
+from hashview.models import Hashfiles
+from hashview.utils.utils import send_email
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--debug", action="store_true", help="increase output verbosity")
@@ -8,7 +11,6 @@ args = parser.parse_args()
 
 
 app = create_app()
-
 
 # There's probaby a better way to do this
 # We needed some code to execute on app launch to check for whether or not this is a fresh install
@@ -170,6 +172,99 @@ with app.app_context():
 
 
     print('Done! Running Hashview! Enjoy.')
+
+
+
+
+
+# Launching our scheduler
+def data_retention_cleanup():
+    with app.app_context():
+        from hashview.models import Settings, Jobs, JobTasks, JobNotifications, HashfileHashes, HashNotifications, Hashes, Hashfiles
+        from hashview.utils.utils import send_email
+        from datetime import datetime, timedelta
+        from hashview import db
+        
+
+        print('Im retaining all the data: ' + str(datetime.now()))
+
+        setting = Settings.query.get('1')
+        retention_period = setting.retention_period
+        #retention_period = 80
+        filter_after = datetime.today() - timedelta(days = retention_period)
+
+        # Remove job, job tasks and job notifications
+        jobs = Jobs.query.filter(Jobs.created_at < filter_after).all()
+        for job in jobs:
+            # Send email saying we've deleted their job
+            user = Users.query.get(job.owner_id)
+            #user = Users.query.get(2) # using my own email for testing
+            subject = 'Hashview removed an old job: ' + str(job.name)
+            message = 'Hello ' + str(user.first_name) + ', \n\n In accordance to the data retention policy of ' + str(retention_period) + ' days, your job "' + str(job.name) + '" was deleted.'
+            send_email(user, subject, message)
+
+            JobTasks.query.filter_by(job_id=job.id).delete()
+            JobNotifications.query.filter_by(job_id=job.id).delete()
+
+            db.session.delete(job)
+            db.session.commit()
+
+            print("Job Name: " + str(job.name) + '  Owner ID: ' + str(job.owner_id))
+
+        # Remove Hashfiles (note hashfiles might be associated to a job thats < retention period. Those jobs should be removed too)
+        hashfiles = Hashfiles.query.filter(Hashfiles.uploaded_at < filter_after).all()
+        for hashfile in hashfiles:
+
+            # Job, jobtask and job notifications
+            jobs = Jobs.query.filter_by(hashfile_id = hashfile.id).all()
+            for job in jobs:
+                print("Hashfile->jobs: Job Name: " +str(job.name))
+                user = Users.query.get(job.owner_id)
+                #user = Users.query.get(2) # using my own email for testing
+                subject = 'Hashview removed a job that was associated to an old hash file: ' + str(job.name)
+                message = 'Hello ' + str(user.first_name) + ', \n\n In accordance to the data retention policy of ' + str(retention_period) + ' days, your hashfile "' + str(hashfile.name) + '" was associated with a job "' + str(job.name) + '". This job was deleted.'
+                send_email(user, subject, message)
+
+                JobTasks.query.filter_by(job_id=job.id).delete()
+                JobNotifications.query.filter_by(job_id=job.id).delete()
+
+                db.session.delete(job)
+                db.session.commit()
+                
+            # Hashfiles, HashfileHashes and Hash notifications
+            print('Hashfile Name: ' + str(hashfile.name) + '    Owner ID: ' + str(hashfile.owner_id))
+            user = Users.query.get(hashfile.owner_id)
+            #user = Users.query.get(2) # using my own email for testing
+            subject = 'Hashview removed an old Hashfile: ' + str(hashfile.name)
+            message = 'Hello ' + str(user.first_name) + ', \n\n In accordance to the data retention policy of ' + str(retention_period) + ' days, your hashfile "' + str(hashfile.name) + '" was removed.'
+            send_email(user, subject, message)
+
+            hashfile_hashes = HashfileHashes.query.filter_by(hashfile_id = hashfile.id).all()
+            for hashfile_hash in hashfile_hashes:
+                hashes = Hashes.query.filter_by(id=hashfile_hash.hash_id).filter_by(cracked=0).all()
+                for hash in hashes:
+                    # Check to see if our hashfile is the ONLY hashfile that has this hash
+                    # if duplicates exist, they can still be removed. Once the hashfile_hash entry is remove, 
+                    # the total number of matching hash_id's will be reduced to < 2 and then can be deleted
+                    hashfile_cnt = HashfileHashes.query.filter_by(hash_id=hash.id).distinct('hashfile_id').count()
+                    if hashfile_cnt < 2:
+                        db.session.delete(hash)
+                        db.session.commit()
+                        HashNotifications.query.filter_by(hash_id=hashfile_hash.hash_id).delete()
+                db.session.delete(hashfile_hash)
+            db.session.delete(hashfile)
+            db.session.commit()
+
+        # Clean temp folder of files older than RETENTION PERIOD
+
+        print('==============')
+
+#This shows up twice... i dont know why
+with app.app_context():
+    from hashview import scheduler
+    scheduler.delete_all_jobs
+    scheduler.add_job(id='DATA_RETENTION', func=data_retention_cleanup, trigger='cron', minute='*') # change to day='*'
+
 
 if __name__ == '__main__':
     if args.debug:

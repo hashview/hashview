@@ -10,8 +10,8 @@ class HashviewSettingsForm(FlaskForm):
     submit = SubmitField('Update')
 
     def validate_rention_period(self, retention_period):
-        if int(retention_period.data) < 0 or int(retention_period.data) > 65535:
-            raise ValidationError('Range must be between 0 and 65535. 0 Days means indefinate.')
+        if int(retention_period.data) < 1 or int(retention_period.data) > 65535:
+            raise ValidationError('Range must be between 1 and 65535.')
 
     def validate_hashcat_path(self, hashcat_path):
         exists = os.path.isfile(str(hashcat_path.data))

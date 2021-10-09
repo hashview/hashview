@@ -6,7 +6,7 @@ import hashlib
 import time
 import _md5
 from datetime import datetime
-from hashview import mail, db
+from hashview import db, mail
 from hashview.models import Settings, Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs, JobTasks, JobNotifications, Users, Agents
 from flask_mail import Message
 from flask import current_app, url_for

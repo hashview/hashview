@@ -6,14 +6,24 @@ from flask_login import LoginManager
 from hashview.config import Config
 from flask_mail import Mail
 from flask_migrate import Migrate
+from flask_apscheduler import APScheduler
+#import hashview.scheduled_tasks.scheduled_tasks as s
+#import hashview.utils.foo as s
 
 db = SQLAlchemy()
+#s.db = SQLAlchemy()
+
+
 bcrypt = Bcrypt()
 login_manager = LoginManager()
 login_manager.login_view = 'users.login'
 login_manager.login_message_category = 'info'
 mail = Mail()
 migrate = Migrate()
+scheduler = APScheduler()
+
+#import hashview.models as HM
+#s.settings = HM.Settings
 
 def create_app(config_class=Config):
 
@@ -25,6 +35,8 @@ def create_app(config_class=Config):
     login_manager.init_app(app)
     mail.init_app(app)
     migrate.init_app(app, db)
+    scheduler.init_app(app)
+    scheduler.start()
 
     from hashview.agents.routes import agents
     from hashview.api.routes import api
@@ -57,5 +69,9 @@ def create_app(config_class=Config):
     app.register_blueprint(analytics)
     app.register_blueprint(notifications)
     app.register_blueprint(searches)
+
+    #from hashview.utils.utils import data_retention_cleanup
+    #from hashview.scheduled_tasks.scheduled_tasks import data_retention_cleanup
+    #scheduler.add_job(id='DATA_RETENTION', func=data_retention_cleanup, trigger='cron', minute='*')
 
     return app

@@ -8,6 +8,7 @@ flask-login
 flask-mail
 flask-migrate
 flask-script
+flask-apscheduler
 python-pushover
 WTForms-SQLAlchemy
 getpass

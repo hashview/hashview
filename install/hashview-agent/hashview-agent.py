@@ -376,7 +376,7 @@ if __name__ == '__main__':
             agent_status = 'Working'
             response = send_heartbeat(agent_status, 'somevalue')
             if response['msg'] == 'Canceled':
-                print("Looks like we've been canceled")
+                print("[*] Looks like we've been canceled.")
         else:
             sync_rules()
             sync_wordlists()
@@ -384,7 +384,7 @@ if __name__ == '__main__':
             # Send Heartbeat
             response = send_heartbeat(agent_status, '')
             if response['msg'] == 'Go Away':
-                print("We're not wanted")
+                print("[*] We're not wanted")
             if response['msg'] == 'START':
                 # We've been assigned a task
                 # First we'll sync our rules
@@ -431,9 +431,8 @@ if __name__ == '__main__':
 
                     response = send_heartbeat(agent_status, hc_status)
                     if response['msg'] == 'Canceled':
-                        print('We\'ve been canceled')
+                        print('[*] We\'ve been canceled')
                         pid = getHashcatPid()
-                        print('PID: '+str(pid))
                         if pid:
                             killHashcat(pid)
                 # upload cracks
@@ -443,12 +442,12 @@ if __name__ == '__main__':
                     if getHashTypeResponse['msg'] == 'OK':
                         uploadCrackFileResponse = uploadCrackFile(crack_file, getHashTypeResponse['hash_type'])
                         if uploadCrackFileResponse['msg'] == 'OK':
-                            print('Upload Success!')
+                            print('[*] Upload Success!')
                 else:
-                    print('No Results. Skipping upload.')
+                    print('[*] No Results. Skipping upload.')
 
 
-                print('Done working')
+                print('[*] Done working')
 
                 # upload cracks
                 crack_file = 'control/outfiles/hc_cracked_' + str(job['id']) + '_' + str(job_task['task_id']) + '.txt'
@@ -457,15 +456,15 @@ if __name__ == '__main__':
                     if getHashTypeResponse['msg'] == 'OK':
                         uploadCrackFileResponse = uploadCrackFile(crack_file, getHashTypeResponse['hash_type'])
                         if uploadCrackFileResponse['msg'] == 'OK':
-                            print('Upload Success!')
+                            print('[*] Upload Success!')
                 else:
-                    print('No Results. Skipping upload.')
+                    print('[*] No Results. Skipping upload.')
 
                 # Set status to complete
                 updateJobTaskResponse = updateJobTask(job_task['id'], 'Completed')
                 if updateJobTaskResponse['msg'] == 'OK':
-                    print('Task Successfully Set to Completed')
+                    print('[*] Task Successfully Set to Completed')
 
-        print('sleeping')
+        print('[*] Sleeping')
         time.sleep(10)
 

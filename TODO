@@ -25,18 +25,12 @@ Wordlists
 Rules
     - Edit 
         - Rules in browser
-
-Hashfiles
-    - if > retention date Delete
-        - delete Associated Jobs
-        - if no other hashfiles exists for customer, delete customer
         
 Login
     - Should be a card style
     - Unauthed User Registration
 
 Scheduled Events
-    - Data Retention Periods
     - Status (is running / died)
     - Mark agent as inactive after a period of time
 
@@ -86,10 +80,6 @@ Wiki Instructions
 Settings
     - OPTIMIZE TABLE hashes;
     - OPTIMIZE TABLE hashfile_hashes;
-    - Retention
-        - set
-        - validate
-        - how to run on periodic basis?
     - Max runtime for jobs
     - Max runtime for tasks
     - Max timeout from agents

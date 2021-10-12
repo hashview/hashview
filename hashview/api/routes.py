@@ -860,11 +860,18 @@ def v2_api_set_queue_jobtask_status():
     updateHeartbeat(request.cookies.get('uuid'))
 
     status_json = request.get_json()
-    update_job_task_status(jobtask_id = status_json['job_task_id'], status = status_json['task_status'])
 
-    message = {
-        'status': 200,
-        'type': 'message',
-        'msg': 'OK'
-    }
+    if (update_job_task_status(jobtask_id = status_json['job_task_id'], status = status_json['task_status'])):
+
+        message = {
+            'status': 200,
+            'type': 'message',
+            'msg': 'OK'
+        }
+    else:
+        message = {
+            'status': 500,
+            'type': 'message',
+            'msg': 'Error setting jobtask status. Detail: job_task_id='+str(status_json['job_task_id'])+' status='+str(status_json['task_status'])
+        }
     return jsonify(message)

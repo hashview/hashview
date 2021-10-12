@@ -1,8 +1,7 @@
 import argparse
 import logging
+import builtins
 from hashview import create_app
-from hashview.models import Hashfiles
-from hashview.utils.utils import send_email
 
 
 parser = argparse.ArgumentParser()
@@ -180,23 +179,21 @@ with app.app_context():
     print('Done! Running Hashview! Enjoy.')
 
 
-
-
-
 # Launching our scheduler
 def data_retention_cleanup():
     with app.app_context():
         from hashview.models import Settings, Jobs, JobTasks, JobNotifications, HashfileHashes, HashNotifications, Hashes, Hashfiles
         from hashview.utils.utils import send_email
         from datetime import datetime, timedelta
+        import time
+        import sys
+        import os
         from hashview import db
-        
 
-        print('Im retaining all the data: ' + str(datetime.now()))
+        print('[DEBUG] Im retaining all the data: ' + str(datetime.now()))
 
         setting = Settings.query.get('1')
         retention_period = setting.retention_period
-        #retention_period = 80
         filter_after = datetime.today() - timedelta(days = retention_period)
 
         # Remove job, job tasks and job notifications
@@ -215,7 +212,7 @@ def data_retention_cleanup():
             db.session.delete(job)
             db.session.commit()
 
-            print("Job Name: " + str(job.name) + '  Owner ID: ' + str(job.owner_id))
+            print("[DEBUG] Job Name: " + str(job.name) + '  Owner ID: ' + str(job.owner_id))
 
         # Remove Hashfiles (note hashfiles might be associated to a job thats < retention period. Those jobs should be removed too)
         hashfiles = Hashfiles.query.filter(Hashfiles.uploaded_at < filter_after).all()
@@ -224,7 +221,7 @@ def data_retention_cleanup():
             # Job, jobtask and job notifications
             jobs = Jobs.query.filter_by(hashfile_id = hashfile.id).all()
             for job in jobs:
-                print("Hashfile->jobs: Job Name: " +str(job.name))
+                print("[DEBUG] Hashfile->jobs: Job Name: " +str(job.name))
                 user = Users.query.get(job.owner_id)
                 #user = Users.query.get(2) # using my own email for testing
                 subject = 'Hashview removed a job that was associated to an old hash file: ' + str(job.name)
@@ -238,7 +235,7 @@ def data_retention_cleanup():
                 db.session.commit()
                 
             # Hashfiles, HashfileHashes and Hash notifications
-            print('Hashfile Name: ' + str(hashfile.name) + '    Owner ID: ' + str(hashfile.owner_id))
+            print('[DEBUG] Hashfile Name: ' + str(hashfile.name) + '    Owner ID: ' + str(hashfile.owner_id))
             user = Users.query.get(hashfile.owner_id)
             #user = Users.query.get(2) # using my own email for testing
             subject = 'Hashview removed an old Hashfile: ' + str(hashfile.name)
@@ -262,21 +259,28 @@ def data_retention_cleanup():
             db.session.commit()
 
         # Clean temp folder of files older than RETENTION PERIOD
+        for file in os.listdir('hashview/control/tmp'):
+            print('[DEBUG] hashview.py->data_retention_cleanup() ' + file)
+            if os.stat('hashview/control/tmp/' + file).st_mtime < time.time() - retention_period * 86400:
+                os.remove('hashview/control/tmp/' + file)
+                print('[DEBUG] hashview.py->data_retention_cleanup() Removed: hashview/control/tmp/' + file)
 
-        print('==============')
+        print('[DEBUG] ==============')
 
-#This shows up twice... i dont know why
+# This shows up twice... i dont know why
 with app.app_context():
     from hashview import scheduler
     scheduler.delete_all_jobs
-    scheduler.add_job(id='DATA_RETENTION', func=data_retention_cleanup, trigger='cron', hour=1) 
+    scheduler.add_job(id='DATA_RETENTION', func=data_retention_cleanup, trigger='cron', hour='1') #hour=1
 
 
 if __name__ == '__main__':
     if args.debug:
+        builtins.state = 'debug'
         app.run(host='0.0.0.0', port=443, ssl_context=('./hashview/ssl/cert.pem', './hashview/ssl/key.pem'), debug=True)
 
     else:
+        builtins.state = 'normal'
         log = logging.getLogger('werkzeug')
         log.setLevel(logging.ERROR)  
         app.run(host='0.0.0.0', port=443, ssl_context=('./hashview/ssl/cert.pem', './hashview/ssl/key.pem'), debug=False)

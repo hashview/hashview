@@ -3,6 +3,7 @@ import json
 from agent.config import Config
 # to supress SSL Error messages
 import urllib3
+import builtins
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from requests.packages.urllib3.util.retry import Retry
@@ -21,18 +22,22 @@ def get(url):
     else:
         path += 'http://'
 
-    #headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
     cookie = {
         'uuid': Config.UUID,
         'name': Config.NAME
     }
 
     path += Config.HASHVIEW_SERVER + ':' + Config.HASHVIEW_PORT + url
+
+    if builtins.state == 'debug':
+        print('[DEBUG] http.py->GET: ' + path)
+        print('[DEBUG] http.py->GET: ' + cookie)
+
     response = http.get(path, verify=False, cookies=cookie, retries=retries)
     if response.status_code == 200:
         return response.content
     else:
-        print('HTTP POST (response): Got an unexpected return code:' + str(response.status_code))
+        print('[!] HTTP POST (response): Got an unexpected return code:' + str(response.status_code))
 
 def post(url, data):
     path = ''
@@ -48,13 +53,14 @@ def post(url, data):
         'name': Config.NAME
     }
 
-    #print(path)
-    #print(data)
-    #print(cookie)
+    if builtins.state == 'debug':
+        print('[DEBUG] http.py->POST: ' + path)
+        print('[DEBUG] http.py->POST: ' + data)
+        print('[DEBUG] http.py->POST: ' + cookie)
 
     # put in try/catch statement for timeouts etc.
     response = http.post(path, data=json.dumps(data), verify=False, cookies=cookie, headers=headers)
     if response.status_code == 200:
         return response.text
     else:
-        print('HTTP POST (response): Got an unexpected return code:' + str(response.status_code))
+        print('[!] HTTP POST (response): Got an unexpected return code:' + str(response.status_code))

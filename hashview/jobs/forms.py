@@ -29,6 +29,7 @@ class JobsNewHashFileForm(FlaskForm):
                                                     ('1000', '(1000) NTLM '),
                                                     ('1800', '(1800) sha512crypt (Unix)'),
                                                     ('2100', '(2100) DCC2, MS Cache2'),
+                                                    ('3200', '(3200) bcrypt $2*$, Blowfish (unix)'),
                                                     ('5500', '(5500) NetNTLMv1 / NetNTLMv1+ESS'),
                                                     ('5600', '(5600) NetNTLMv2'),
                                                     ('7500', '(7500) Kerberos 5 AS-REQ Pre-Auth etype 23'),

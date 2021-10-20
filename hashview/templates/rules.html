@@ -17,6 +17,7 @@ Rules are a set of instructions to be combined with Wordlists. Hashview comes pr
                 <tr>
                     <th scope="col">Name</th>
                     <th scope="col">Size</th>
+                    <th scope="col">Owner</th>
                     <th scope="col">Control</th>
                 </tr>
                 </thead>
@@ -25,6 +26,13 @@ Rules are a set of instructions to be combined with Wordlists. Hashview comes pr
                         <tr>
                             <td>{{ rule.name }}</td>
                             <td>{{ rule.size }}</td>
+                            <td>
+                                {% for user in users %}
+                                    {% if user.id == rule.owner_id %}
+                                        {{ user.first_name }} {{ user.last_name }}
+                                    {% endif %}
+                                {% endfor %}
+                            </td>
                             <td>
                                 <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{rule.id}}" title=Info></button>
                                 <button type="button" class="fa fa-trash btn btn-danger" data-toggle="modal" data-target="#deleteModal{{rule.id}}" title=Delete></button>

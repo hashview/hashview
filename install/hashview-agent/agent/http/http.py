@@ -22,18 +22,22 @@ def get(url):
     else:
         path += 'http://'
 
+    with open('VERSION.TXT', 'r') as f:
+        version = f.readline().strip('\n')
+
     cookie = {
         'uuid': Config.UUID,
-        'name': Config.NAME
+        'name': Config.NAME,
+        'version': version
     }
 
     path += Config.HASHVIEW_SERVER + ':' + Config.HASHVIEW_PORT + url
 
     if builtins.state == 'debug':
         print('[DEBUG] http.py->GET: ' + path)
-        print('[DEBUG] http.py->GET: ' + cookie)
+        print('[DEBUG] http.py->GET: ' + str(cookie))
 
-    response = http.get(path, verify=False, cookies=cookie, retries=retries)
+    response = http.get(path, verify=False, cookies=cookie)
     if response.status_code == 200:
         return response.content
     else:
@@ -45,18 +49,22 @@ def post(url, data):
         path += 'https://'
     else:
         path += 'http://'
+
+    with open('VERSION.TXT', 'r') as f:
+        version = f.readline().strip('\n')
     
     path += Config.HASHVIEW_SERVER + ':' + Config.HASHVIEW_PORT + url
     headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
     cookie = {
         'uuid': Config.UUID,
-        'name': Config.NAME
+        'name': Config.NAME,
+        'version': version
     }
 
     if builtins.state == 'debug':
         print('[DEBUG] http.py->POST: ' + path)
         print('[DEBUG] http.py->POST: ' + data)
-        print('[DEBUG] http.py->POST: ' + cookie)
+        print('[DEBUG] http.py->POST: ' + str(cookie))
 
     # put in try/catch statement for timeouts etc.
     response = http.post(path, data=json.dumps(data), verify=False, cookies=cookie, headers=headers)

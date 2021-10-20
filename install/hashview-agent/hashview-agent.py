@@ -66,7 +66,6 @@ if not os.path.exists('agent/config.conf'):
 
     config.close()
 
-
 def send_heartbeat(agent_status, hc_status):
     return api.heartbeat(agent_status, hc_status)
 

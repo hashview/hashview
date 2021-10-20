@@ -302,6 +302,25 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                         return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: DCC2 MS Cache'
                     if hash_cnt != 2:
                         return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: DCC2 MS Cache'
+                if hash_type == '1800':
+                    dollar_cnt = 0
+                    for char in line:
+                        if char == '$':
+                            dollar_cnt+=1
+                    if dollar_cnt != 3:
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt.'
+                    if '$6$' not in line:
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt.'                        
+                if hash_type == '3200':
+                    if '$' not in line:
+                        return 'Error line ' + str(line_number) + ' is missing a $ character. bcrypt Hashes should have these.'
+                    dollar_cnt = 0
+                    for char in line:
+                        if char == '$':
+                            dollar_cnt += 1
+                    if dollar_cnt != 3:
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: bcrypt'
+                       
             if file_type == 'shadow':
                 if ':' not in line:
                     return 'Error line ' + str(line_number) + ' is missing a : character. shadow file should include usernames.'

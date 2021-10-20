@@ -10,7 +10,7 @@ hashfiles = Blueprint('hashfiles', __name__)
 @login_required
 def hashfiles_list():
     hashfiles = Hashfiles.query.all()
-    customers = Customers.query.all()
+    customers = Customers.query.order_by(Customers.name).all()
     jobs = Jobs.query.all()
 
     cracked_rate = {}
@@ -38,7 +38,7 @@ def hashfiles_delete(hashfile_id):
             else:
                 hashfile_hashes = HashfileHashes.query.filter_by(hashfile_id = hashfile_id).all()
                 for hashfile_hash in hashfile_hashes:
-                    hashes = Hashes.query.filter_by(id=hashfile_hash.hash_id).filter_by(cracked=0).all()
+                    hashes = Hashes.query.filter_by(id=hashfile_hash.hash_id).filter_by(cracked=0)
                     for hash in hashes:
                         # Check to see if our hashfile is the ONLY hashfile that has this hash
                         # if duplicates exist, they can still be removed. Once the hashfile_hash entry is remove, 
@@ -47,7 +47,8 @@ def hashfiles_delete(hashfile_id):
                         if hashfile_cnt < 2:
                             db.session.delete(hash)
                             db.session.commit()
-                            HashNotifications.query.filter_by(hash_id=hashfile_hash.hash_id).delete()
+                        HashNotifications.query.filter_by(hash_id=hashfile_hash.hash_id).delete()
+                    #db.session.delete(hashes)
                     db.session.delete(hashfile_hash)
                 db.session.delete(hashfile)
                 db.session.commit()

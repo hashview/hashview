@@ -40,7 +40,6 @@ class Users(db.Model, UserMixin):
 class Settings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     retention_period = db.Column(db.Integer)
-    hashcat_path = db.Column(db.String(255))
 
 class Jobs(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -119,7 +118,6 @@ class Tasks(db.Model):
     wl_id = db.Column(db.Integer)
     rule_id = db.Column(db.Integer)
     hc_mask = db.Column(db.String(50))
-    keyspace = db.Column(db.BigInteger, nullable=False)
 
 class TaskGroups(db.Model):
     id = db.Column(db.Integer, primary_key=True)

@@ -182,7 +182,4 @@ send push notifications when agent is offline
 on job summary, shows notifications as true when none are set for the user.
 tasks that use dynamic wordlists do not update keyspace count (maybe we should just remove keyspace count all together)
 
-enforce version checking on agents
-test agent upgrades
-remove/rename v1 api
-remove dependency on hashcat for server (genkeyspace)
+Include upgrade instructions for agents

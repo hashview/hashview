@@ -18,7 +18,6 @@ Task are predefined hashcat commands. Any number of tasks can be assigned to a J
                     <th scope="col">Task Name</th>
                     <th scope="col">Owner</th>
                     <th scope="col">Type</th>
-                    <th scope="col">Keyspace</th>
                     <th scope="col">Control</th>
                   </tr>
                 </thead>
@@ -34,7 +33,6 @@ Task are predefined hashcat commands. Any number of tasks can be assigned to a J
                                 {% endfor %}
                             </td>
                             <td>{{ task.hc_attackmode}}</td>
-                            <td>{{ task.keyspace }}</td>
                             <td>
                                 <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{task.id}}" title=Info></button>
                                 <button type="button" class="fa fa-edit btn btn-warning" data-toggle="modal" data-target="#editModal{{task.id}}" title=Edit></button>

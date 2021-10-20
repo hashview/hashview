@@ -16,7 +16,7 @@ app = create_app()
 # and if it was a fresh install to prompt the user for key information, populate the data base, and continue execution
 with app.app_context():
     from hashview.models import Users, Wordlists, Rules, Tasks, Settings
-    from hashview.utils.utils import get_filehash, get_linecount, get_keyspace
+    from hashview.utils.utils import get_filehash, get_linecount
     from hashview import db, bcrypt
     from getpass import getpass
     import os
@@ -60,11 +60,6 @@ with app.app_context():
 
     # Setting hashcat bin path
     if not settings:
-        hashcat_path = input('Enter the path to hashcat bin: ')
-        while len(hashcat_path) == 0 or (not os.path.exists(hashcat_path)):
-            print('Error: File not found, or invalid path.')
-            hashcat_path = input("Enter the path to hashcat bin: ")
-        settings = Settings(hashcat_path=hashcat_path)
 
         retention_period = input('Enter how long data should be retained in DB in days. (note: cracked hashes->plaintext will be be safe from retention culling): ')
         while retention_period < 1 or retention_period > 65535:

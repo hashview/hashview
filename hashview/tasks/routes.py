@@ -3,7 +3,6 @@ from flask_login import login_required, current_user
 from hashview.tasks.forms import TasksForm
 from hashview.models import TaskGroups, Tasks, Wordlists, Rules, Users, Jobs, JobTasks
 from hashview import db
-from hashview.utils.utils import get_keyspace
 
 tasks = Blueprint('tasks', __name__)
 
@@ -34,12 +33,7 @@ def tasks_add():
                             owner_id=current_user.id,
                             wl_id=wordlist_id,
                             rule_id=rule_id, 
-                            hc_attackmode=tasksForm.hc_attackmode.data,
-                            keyspace=get_keyspace(  method=tasksForm.hc_attackmode.data, 
-                                                    wordlist_id = wordlist_id, 
-                                                    rule_id=rule_id,
-                                                    mask=None
-                            )
+                            hc_attackmode=tasksForm.hc_attackmode.data
             )             
             db.session.add(task)
             db.session.commit()
@@ -51,11 +45,6 @@ def tasks_add():
                             rule_id=None, 
                             hc_attackmode=tasksForm.hc_attackmode.data,
                             hc_mask=tasksForm.mask.data,
-                            keyspace=get_keyspace(  method=tasksForm.hc_attackmode.data, 
-                                                    wordlist_id = None, 
-                                                    rule_id=None,
-                                                    mask=tasksForm.mask.data
-                )
             )   
             db.session.add(task)
             db.session.commit() 

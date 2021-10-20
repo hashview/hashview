@@ -53,27 +53,6 @@ def send_pushover(user, subject, message):
         except:
             send_email(user, "Error Sending Push Notification", "Check your Pushover API keys in  your profile. Original Message: " + message)
 
-def get_keyspace(method, wordlist_id, rule_id, mask):
-    settings = Settings.query.first()
-    return_value = 0
-    cmd = [settings.hashcat_path]
-    if method == 'dictionary':
-        wordlist = Wordlists.query.filter_by(id=wordlist_id).first()
-        cmd.append(wordlist.path)
-    if rule_id != None:
-        rule = Rules.query.filter_by(id=rule_id).first()
-        cmd.append('-r')
-        cmd.append(rule.path)
-    elif method == 'maskmode':
-        cmd.append('-a3')
-        cmd.append(mask)
-    cmd.append('--keyspace')
-
-    p = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, encoding='utf-8')
-    return_value = p.stdout.split('\n')[-2]
-
-    return return_value
-
 def get_md5_hash(string):
     #m = hashlib.md5()
     #m.update(string.encode('utf-8'))

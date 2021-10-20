@@ -3,14 +3,17 @@
 # Hashview
 [![Build Status](https://travis-ci.org/hashview/hashview.svg?branch=master)](https://travis-ci.org/hashview/hashview)
 
->**Hashview** is a tool for security professionals to help organize and automate the repetitious tasks related to password cracking. Hashview is a web application that manages hashcat (https://hashcat.net) commands. Hashview strives to bring constiency in your hashcat tasks while delivering analytics with pretty pictures ready for ctrl+c, ctrl+v into your reports.
+>**Hashview** is a tool for security professionals to help organize and automate the repetitious tasks related to password cracking. It is broken into two compoents, the Hashview Server, and Hashview Agent. The Hashview Server is a web application that manages one or more agents, deployed by you on dedicated hardware. (note you can run the server and agent on the same machine). Hashview strives to bring constiency in your hashcat tasks while delivering analytics with pretty pictures ready for ctrl+c, ctrl+v into your reports.
 
-### Requirements
+## Server Requirements
 
-1. Hashcat installed and working (https://hashcat.net/hashcat/) Version 6.0+ 
-2. Hashcat installed and working (just double checking)  
-3. Python 3.7+
-4. Mysql DB installed with known username/password   
+1. Python 3.7+
+2. Mysql DB installed with known username/password   
+
+## Agent Requirements
+
+1. Python 3.7+
+2. Hashcat
 
 ## Installation
 

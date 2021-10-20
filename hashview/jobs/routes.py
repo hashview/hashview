@@ -234,10 +234,6 @@ def jobs_move_task_up(job_id, task_id):
     db.session.commit()
 
     for entry in new_jobtasks:
-        keyspace = 0
-        for task in tasks:
-            if task.id == entry:
-                keyspace = task.keyspace
         job_task = JobTasks(job_id=job_id, task_id=entry, status='Not Started')
         db.session.add(job_task)
         db.session.commit()

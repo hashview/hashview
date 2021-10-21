@@ -183,3 +183,6 @@ on job summary, shows notifications as true when none are set for the user.
 tasks that use dynamic wordlists do not update keyspace count (maybe we should just remove keyspace count all together)
 
 Include upgrade instructions for agents
+when we upgrade agent the manifest files are overwitten
+
+Hide pushover key data

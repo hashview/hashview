@@ -11,7 +11,7 @@ def heartbeat(agent_status, hc_status):
 
     response = http.post('/v1/agents/heartbeat', json.loads(json.dumps(message)))
     decoded_response = json.loads(response)
-    if decoded_response['type'] == 'message' and decoded_response['status'] == '200':
+    if decoded_response['type'] == 'message' and decoded_response['status'] == 200:
         return decoded_response
     elif decoded_response['type'] == 'message' and decoded_response['status'] == 426:
         print('Our agent version is older than the servers. You need to upgrade your agent before continuing.')
@@ -74,7 +74,7 @@ def tasks(task_id):
 def updateDynamicWordlists(wordlist_id):
     response = http.get('/v1/updateWordlist/' + str(wordlist_id))
     decoded_response = json.loads(response)
-    if decoded_response['type'] == 'message' and decoded_response['status'] == '200':
+    if decoded_response['type'] == 'message' and decoded_response['status'] == 200:
         return decoded_response
     elif decoded_response['type'] == 'message' and decoded_response['status'] == 426:
         print('Our agent version is older than the servers. You need to upgrade your agent before continuing.')
@@ -91,7 +91,7 @@ def uploadCrackFile(file_path, hash_type):
     # we use jobtask to determin hashtype server side. 
         response =  http.post('/v1/uploadCrackFile/' + str(hash_type), data={'file': file.read()})
         decoded_response = json.loads(response)
-        if decoded_response['type'] == 'message' and decoded_response['status'] == '200':
+        if decoded_response['type'] == 'message' and decoded_response['status'] == 200:
             return decoded_response
         elif decoded_response['type'] == 'message' and decoded_response['status'] == 426:
             print('Our agent version is older than the servers. You need to upgrade your agent before continuing.')
@@ -103,7 +103,7 @@ def uploadCrackFile(file_path, hash_type):
 def getHashType(hashfile_id):
     response = http.get('/v1/getHashType/' + str(hashfile_id))
     decoded_response = json.loads(response)
-    if decoded_response['type'] == 'message' and decoded_response['status'] == '200':
+    if decoded_response['type'] == 'message' and decoded_response['status'] == 200:
         return decoded_response
     elif decoded_response['type'] == 'message' and decoded_response['status'] == 426:
         print('Our agent version is older than the servers. You need to upgrade your agent before continuing.')
@@ -120,7 +120,7 @@ def updateJobTask(job_task_id, task_status):
 
     response = http.post('/v1/jobtask/status', json.loads(json.dumps(message)))
     decoded_response = json.loads(response)
-    if decoded_response['type'] == 'message' and decoded_response['status'] == '200':
+    if decoded_response['type'] == 'message' and decoded_response['status'] == 200:
         return decoded_response
     elif decoded_response['type'] == 'message' and decoded_response['status'] == 426:
         print('Our agent version is older than the servers. You need to upgrade your agent before continuing.')

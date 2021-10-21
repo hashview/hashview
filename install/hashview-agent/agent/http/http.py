@@ -62,8 +62,8 @@ def post(url, data):
     }
 
     if builtins.state == 'debug':
-        print('[DEBUG] http.py->POST: ' + path)
-        print('[DEBUG] http.py->POST: ' + data)
+        print('[DEBUG] http.py->POST: ' + str(path))
+        print('[DEBUG] http.py->POST: ' + str(data))
         print('[DEBUG] http.py->POST: ' + str(cookie))
 
     # put in try/catch statement for timeouts etc.

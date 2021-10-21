@@ -94,29 +94,29 @@
                 {% endif %}
             </div>
             <div class="form-group">
-                {{ form.pushover_id.label(class="form-control-label") }}
-                {% if form.pushover_id.errors %}
-                    {{ form.pushover_id(class="form-control form-control-lg is-invalid") }}
+                {{ form.pushover_app_id.label(class="form-control-label") }}
+                {% if form.pushover_app_id.errors %}
+                    {{ form.pushover_app_id(class="form-control form-control-lg is-invalid") }}
                     <div class="invalid-feedback">
-                        {% for error in form.pushover_id.errors %}
+                        {% for error in form.pushover_app_id.errors %}
                             <span>{{ error }}</span>
                         {% endfor %}
                     </div>
                 {% else %}
-                    {{ form.pushover_id(class="form-control form-control-lg") }}
+                    {{ form.pushover_app_id(class="form-control form-control-lg") }}
                 {% endif %}
             </div>
             <div class="form-group">
-                {{ form.pushover_key.label(class="form-control-label") }}
-                {% if form.pushover_key.errors %}
-                    {{ form.pushover_key(class="form-control form-control-lg is-invalid") }}
+                {{ form.pushover_user_key.label(class="form-control-label") }}
+                {% if form.pushover_user_key.errors %}
+                    {{ form.pushover_user_key(class="form-control form-control-lg is-invalid") }}
                     <div class="invalid-feedback">
-                        {% for error in form.pushover_key.errors %}
+                        {% for error in form.pushover_user_key.errors %}
                             <span>{{ error }}</span>
                         {% endfor %}
                     </div>
                 {% else %}
-                    {{ form.pushover_key(class="form-control form-control-lg") }}
+                    {{ form.pushover_user_key(class="form-control form-control-lg") }}
                 {% endif %}
             </div>
         </fieldset>

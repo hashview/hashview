@@ -40,8 +40,8 @@ def users_add():
         form = UsersForm()
         if form.validate_on_submit():
             hashed_password = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
-            if form.pushover_id.data and form.pushover_key.data:
-                user = Users(first_name=form.first_name.data, last_name=form.last_name.data, email_address=form.email.data, admin=form.is_admin.data, password=hashed_password, pushover_id=form.pushover_id.data, pushover_key=form.pushover_key.data)
+            if form.pushover_app_id.data and form.pushover_user_key.data:
+                user = Users(first_name=form.first_name.data, last_name=form.last_name.data, email_address=form.email.data, admin=form.is_admin.data, password=hashed_password, pushover_app_id=form.pushover_app_id.data, pushover_user_key=form.pushover_user_key.data)
             else:
                 user = Users(first_name=form.first_name.data, last_name=form.last_name.data, email_address=form.email.data, admin=form.is_admin.data, password=hashed_password)
             db.session.add(user)
@@ -71,19 +71,17 @@ def profile():
     if form.validate_on_submit():
         current_user.first_name = form.first_name.data
         current_user.last_name = form.last_name.data
-        if form.pushover_id.data:
-            current_user.pushover_id = form.pushover_id.data 
-        if form.pushover_key.data:
-            current_user.pushover_key = form.pushover_key.data 
+        if form.pushover_app_id.data:
+            current_user.pushover_app_id = form.pushover_app_id.data 
+        if form.pushover_user_key.data:
+            current_user.pushover_user_key = form.pushover_user_key.data 
         db.session.commit()
         flash('Profile Updated!', 'success')
         return redirect(url_for('users.profile'))
     elif request.method == 'GET':
         form.first_name.data = current_user.first_name
         form.last_name.data = current_user.last_name
-        form.pushover_id.data = current_user.pushover_id
-        form.pushover_key.data = current_user.pushover_key
-    return render_template('profile.html', title='Profile', form=form)
+    return render_template('profile.html', title='Profile', form=form, current_user=current_user)
 
 @users.route("/profile/send_test_pushover", methods=['GET'])
 @login_required

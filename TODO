@@ -185,4 +185,4 @@ tasks that use dynamic wordlists do not update keyspace count (maybe we should j
 Include upgrade instructions for agents
 when we upgrade agent the manifest files are overwitten
 
-Hide pushover key data
+if no agents on homepage direct user to install agents

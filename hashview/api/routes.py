@@ -396,7 +396,7 @@ def v1_api_put_jobtask_crackfile_upload(hash_type):
             if hash_notification.method == 'email':
                 send_email(user, 'Hashview User Hash Recovered!', message)
             elif hash_notification.method == 'push':
-                if user.pushover_key and user.pushover_id:
+                if user.pushover_user_key and user.pushover_app_id:
                     send_pushover(user, 'Message from Hashview', message)
             else:
                 send_email(user, 'Hashview: Missing Pushover Key', 'Hello, you were due to recieve a pushover notification, but because your account was not provisioned with an pushover ID and Key, one could not be set. Please log into hashview and set these options under Manage->Profile.')

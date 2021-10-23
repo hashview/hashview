@@ -259,10 +259,10 @@ with app.app_context():
 if __name__ == '__main__':
     if args.debug:
         builtins.state = 'debug'
-        app.run(host='0.0.0.0', port=443, ssl_context=('./hashview/ssl/cert.pem', './hashview/ssl/key.pem'), debug=True)
+        app.run(host='0.0.0.0', port=8443, ssl_context=('./hashview/ssl/cert.pem', './hashview/ssl/key.pem'), debug=True)
 
     else:
         builtins.state = 'normal'
         log = logging.getLogger('werkzeug')
         log.setLevel(logging.ERROR)  
-        app.run(host='0.0.0.0', port=443, ssl_context=('./hashview/ssl/cert.pem', './hashview/ssl/key.pem'), debug=False)
+        app.run(host='0.0.0.0', port=8443, ssl_context=('./hashview/ssl/cert.pem', './hashview/ssl/key.pem'), debug=False)

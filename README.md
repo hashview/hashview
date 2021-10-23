@@ -42,8 +42,10 @@ git clone https://github.com/hashview/hashview/
 cd hashview
 pip3 install -r requirements.txt
 ./setup.py
-./hashview.py
+./hashview.py # ( note you can add a --debug if you are attempting to troubleshoot an issue)
 ```
+
+
 
 ### Developing and Contributing
 

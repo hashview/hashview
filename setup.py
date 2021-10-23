@@ -52,28 +52,6 @@ requirements = open('requirements.txt', 'r')
 for entry in requirements:
     install_and_import('transliterate')
 
-
-# Generate Certs
-# prompt for info
-# print('\nCollecting Hashview Web Application Configuration Information')
-# hashview_admin_email = input('Enter Email address for the Administrator account. You will use this to log into the app: ')
-#while len(hashview_admin_email) == 0:
-#    print('Error: You must provide an email address.')
-#    hashview_admin_email = input("Invalid email address. Try again: ")
-
-#hashview_admin_password = getpass('Enter a password for the Administrator account: ')
-#while len(hashview_admin_password) < 14:
-#    print('Error: Password must be more than 14 characters.')
-#    hashview_admin_password = getpass('Enter a password for the Administrator account: ')
-#
-#hashview_port = input('What port should hashview listen on: ') # Sanitation checks to ensure: int, 1-65535, is entered.
-
-#use_ssl = input('Would you use SSL (will generate self signed certs)? [y/N]: ')
-#if use_ssl == 'y' or use_ssl == 'Y':
-#    use_ssl = True
-#else:
-#    use_tls = False
-
 print('\nCollecting Hashview Database Configuration Information')
 db_server = input('Enter the IP or hostname of the server running mysql. i.e. 127.0.0.1 or localhost: ')
 while len(db_server) == 0:
@@ -134,5 +112,9 @@ print('Writing hashview config at: hashview/config.conf')
 print('Bulding Database')
 os.system('export FLASK_APP=hashview.py; flask db upgrade')
     
+# Generating SSL Certs
+print('Generating SSL Certificates')
+os.system('openssl req -x509 -newkey rsa:4096 -nodes -out ./hashview/ssl/cert.pem -keyout ./hashview/ssl/key.pem -days 365')
+
 print('You can now start your instance of hashview by running the following command: ./hashview.py')
 print('Done.')

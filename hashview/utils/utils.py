@@ -331,6 +331,8 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
             elif file_type == 'kerberos':
                 if '$' not in line:
                     return 'Error line ' + str(line_number) + ' is missing a $ character. kerberos file should include these.'  
+                if len(line) > 16384:
+                    return 'Error line ' + str(line_number) + ' is too long. Max char length is 16384. If you need long please submit an issue on GitHub'
                 dollar_cnt = 0
                 if hash_type == '7500':
                     # This is slow af :(

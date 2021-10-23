@@ -186,3 +186,4 @@ Include upgrade instructions for agents
 when we upgrade agent the manifest files are overwitten
 
 if no agents on homepage direct user to install agents
+Function that uses validate_hashes doesnt return the flash message page. It just renders a blank page, then when the user clicksback/reload they see the flash

@@ -24,9 +24,11 @@
 sudo apt update
 sudo apt install mysql-server
 sudo mysql_secure_installation
+```
 
+```
 # Log into your mysql server and create a dedicated user for hashview. Hashview can run as root, but doesnt need to. And since we practice what we preach. we should use a lower priv account for this. If you're installing hashview on a different server than the system where the mysql db is running on, adjust the account creation accordingly.
-mysql -u root -p
+sudo mysql
 CREATE USER 'hashview'@'localhost' IDENTIFIED BY 'DoNotUseThisPassword123!';
 GRANT ALL PRIVILEGES ON hashview.* TO 'hashview'@'localhost';
 FLUSH PRIVILEGES;
@@ -35,11 +37,12 @@ exit
 ```
 
 ```
-apt-get install python3 python3-pip python3-flask
-pip3 install -r requirements.txt
+sudo apt-get install python3 python3-pip python3-flask
 git clone https://github.com/hashview/hashview/
 cd hashview
-./install.py
+pip3 install -r requirements.txt
+./setup.py
+./hashview.py
 ```
 
 ### Developing and Contributing

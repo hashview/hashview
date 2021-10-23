@@ -128,7 +128,7 @@ class TaskGroups(db.Model):
 class Hashes(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sub_ciphertext = db.Column(db.String(32), nullable=False, index=True)
-    ciphertext = db.Column(db.String(16384), nullable=False) # Setting this to max value for now. If we run into this being a limitation in the future we can revisit changing thist to TEXT or BLOB. https://sheeri.org/max-varchar-size/
+    ciphertext = db.Column(db.String(16383), nullable=False) # Setting this to max value for now. If we run into this being a limitation in the future we can revisit changing thist to TEXT or BLOB. https://sheeri.org/max-varchar-size/
     hash_type = db.Column(db.Integer, nullable=False, index=True)
     cracked = db.Column(db.Boolean, nullable=False)
     plaintext = db.Column(db.String(256), index=True)

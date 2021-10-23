@@ -36,39 +36,6 @@ Scheduled Events
 
 Installation Instructions:
 Installation files
-
-    - install.sh
-        - check for python3
-        - check for mysql?
-        - Cert Gen
-        - pip install
-        - create config for db (ask for creds)
-            - db username
-            - db password
-            - db host
-            - SMTP settings
-                - sender address
-                - server
-                - username
-                - password
-                - TLS
-            - hashview admin email address
-            - hashview admin password     
-            - hashview hashcat path
-            - set default retention period 365
-        - create db hashview
-            - Set up settings table
-            - create new Tasks
-            - create dummy wordlist
-                - create dummy dynamic wordlist
-            - create dumy rules
-            - create administrator account
-        
-        - export FLASK_APP=hashview.py 
-            - flask db-init
-            - flask db migrate
-            - flask db upgrade
-
     - upgrade.sh
         - export FLASK_APP=hashview.py 
             - flask db migrate
@@ -142,12 +109,6 @@ Standardize modals
         - rules
         - users
 
-To Test:
-    1) set forgot password
-    2) attempt to login as the user prior to reset
-    3) does it work?
-    4) what happens if we request another token?
-
 # Next Phase
 General
     - Add ability for users / admins? to import plaintext's and auto convert to specific hashes
@@ -167,15 +128,9 @@ show notification selection on table load if previously selected by the user
 - Grey out pushover option in hash notifications
 - Test if user can reset password to something < 14 chars long
 
-# Bug
-Setup doesnt have ssl folder
-need to generate ssl keys
-setup doesnt create hashview db 
-
 Analytics will show blank entries for top 10/password count by length as empty if password is blank.
 
 Homepage agent status window (connected, disconnected, busy, etc)
-support VERSION info being sent from agents to server
 
 send push notifications when agent is offline
 
@@ -185,5 +140,4 @@ tasks that use dynamic wordlists do not update keyspace count (maybe we should j
 Include upgrade instructions for agents
 when we upgrade agent the manifest files are overwitten
 
-if no agents on homepage direct user to install agents
 Function that uses validate_hashes doesnt return the flash message page. It just renders a blank page, then when the user clicksback/reload they see the flash

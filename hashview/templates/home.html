@@ -20,6 +20,10 @@
                             </div>
                         </td>
                     {% endfor %}
+                {% else %}
+                    <p>
+                        No Agents configured. Please <a href="/agents"> add </a> a new agent.
+                    </p>
                 {% endif %}
             </tr>
         </tbody>

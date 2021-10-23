@@ -63,10 +63,11 @@ with app.app_context():
     if not settings:
 
         retention_period = input('Enter how long data should be retained in DB in days. (note: cracked hashes->plaintext will be be safe from retention culling): ')
-        while retention_period < 1 or retention_period > 65535:
+        while int(retention_period) < 1 or int(retention_period) > 65535:
             print('Error: Retention must be between 1 day and 65535 days')
             retention_period = input("Enter how long data should be retained in DB in days. (note: cracked hashes->plaintext will be be safe from retention culling): ")
 
+        settings = Settings(retention_period = retention_period)
         db.session.add(settings)
         db.session.commit()
 

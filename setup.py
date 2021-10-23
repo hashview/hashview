@@ -105,17 +105,11 @@ smtp_username = input('Enter username used to authenticate to the SMTP server [E
 
 smtp_password = getpass('Enter the password used to authenticate to the SMTP server [Enter for none]: ')
 
-smtp_tls = input('Does the SMTP server use TLS? [y/N]:')
+smtp_tls = input('Does the SMTP server use TLS? [y/N]: ')
 if smtp_tls == 'y' or smtp_tls == 'Y':
     smtp_tls = True
 else:
     smtp_tls = False
-
-print('\nCollecting Hashcat Configuration Information')
-hashcat_path = input('Enter the path to a local install of hashcat: ')
-while not os.path.exists(hashcat_path):
-    print("Error: File not found.")
-    hashcat_path = input('Enter the path to a local install of hashcat: ')
 
 # Write config file
 config = open("hashview/config.conf", "w")

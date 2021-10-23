@@ -11,5 +11,4 @@ flask-script
 flask-apscheduler
 python-pushover
 WTForms-SQLAlchemy
-getpass
 packaging

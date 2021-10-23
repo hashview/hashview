@@ -142,3 +142,4 @@ os.system('export FLASK_APP=hashview.py; flask db upgrade')
     #         - flask db upgrade
     #
     
+print('Done. You can now start your instance of hashview by running the following command: ./hashview.py')

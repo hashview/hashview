@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 import argparse
 import logging
 import builtins
@@ -128,11 +129,6 @@ with app.app_context():
                         wl_id='1',
                         rule_id=None, 
                         hc_attackmode='dictionary',
-                        keyspace=get_keyspace(  method='dictionary', 
-                                                wordlist_id = '1', 
-                                                rule_id=None,
-                                                mask=None
-                        )
         )             
         db.session.add(task)
         db.session.commit()
@@ -142,12 +138,7 @@ with app.app_context():
                 owner_id='1',
                 wl_id='1',
                 rule_id='1', 
-                hc_attackmode='dictionary',
-                keyspace=get_keyspace(  method='dictionary', 
-                                        wordlist_id = '1', 
-                                        rule_id='1',
-                                        mask=None
-                )
+                hc_attackmode='dictionary'
         )             
         db.session.add(task)
         db.session.commit()
@@ -159,12 +150,7 @@ with app.app_context():
                         wl_id=None,
                         rule_id=None, 
                         hc_attackmode='maskmode',
-                        hc_mask='?a?a?a?a?a?a?a?a',
-                        keyspace=get_keyspace(  method='maskmode', 
-                                                wordlist_id = None, 
-                                                rule_id=None,
-                                                mask='?a?a?a?a?a?a?a?a'
-            )
+                        hc_mask='?a?a?a?a?a?a?a?a'
         )   
         db.session.add(task)
         db.session.commit() 

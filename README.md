@@ -30,12 +30,13 @@ mysql -u root -p
 CREATE USER 'hashview'@'localhost' IDENTIFIED BY 'DoNotUseThisPassword123!';
 GRANT ALL PRIVILEGES ON hashview.* TO 'hashview'@'localhost';
 FLUSH PRIVILEGES;
+create database hashview;
 exit
 ```
 
 ```
-apt-get install python3 python3-pip
-pip3 install transliterate
+apt-get install python3 python3-pip python3-flask
+pip3 install -r requirements.txt
 git clone https://github.com/hashview/hashview/
 cd hashview
 ./install.py

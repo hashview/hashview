@@ -18,7 +18,7 @@
 
 ## Installation
 
-#### Setup mysql. 
+#### 1) Setup mysql. 
 These instructions are for Ubuntu, but in theory Hashview should be able to run on any *nix system.
 
 ```
@@ -27,7 +27,7 @@ sudo apt install mysql-server
 sudo mysql_secure_installation
 ```
 
-#### Configure MySQL
+#### 2) Configure MySQL
 Log into your mysql server and create a dedicated user for hashview. Hashview can run as root, but doesnt need to. And since we practice what we preach. we should use a lower priv account for this. If you're installing hashview on a different server than the system where the mysql db is running on, adjust the account creation 
 ```
 sudo mysql
@@ -39,7 +39,7 @@ exit
 ```
 
 
-#### Install Hashview
+#### 3) Install Hashview
 The following are to install hashview after the mysql db has been setup
 ```
 sudo apt-get install python3 python3-pip python3-flask

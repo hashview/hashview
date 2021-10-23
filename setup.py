@@ -133,13 +133,6 @@ print('Writing hashview config at: hashview/config.conf')
 # There's probably a better way to do this:
 print('Bulding Database')
 os.system('export FLASK_APP=hashview.py; flask db init')
-os.system('export FLASK_APP=hashview.py; flask db migrate')
-os.system('export FLASK_APP=hashview.py; flask db upgrade')
-    #           create/copy example config
-    #         - export FLASK_APP=hashview.py 
-    #         - flask db init
-    #         - flask db migrate
-    #         - flask db upgrade
-    #
     
-print('Done. You can now start your instance of hashview by running the following command: ./hashview.py')
+print('You can now start your instance of hashview by running the following command: ./hashview.py')
+print('Done.')

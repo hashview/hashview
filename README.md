@@ -50,6 +50,24 @@ pip3 install -r requirements.txt
 ./hashview.py # (note you can add a --debug if you are attempting to troubleshoot an issue)
 ```
 
+## Installing Hashview-Agent
+After you've installed hashview you will need to install a hashview-agent. The agent can run on the same system as hashview, but doesn't have to.
+
+#### 1) Log into hashview as an Administrator
+#### 2) Navigate to Agents Menu
+#### 3) Click Download Agent to get a .tgz package of the hashview-agent
+#### 4) Move agent to the system you'd like to run it on
+#### 5) Install Agent
+You will need to decompress the package and run the `hashview-agent.py` script. Upon initial execution it will prompt you for information about your hashview server.
+```
+tar -xzvf hashview-agent.<version>.tgz
+cd install/
+cp -r hashview-agent ../
+cd ../hashview-agent
+python3 ./hashview-agent.py
+```
+
+
 
 
 ### Developing and Contributing

@@ -10,6 +10,9 @@ Analytics
     - Both Bar graphs should render widths dynamically
     - Show users based on matching hashes
     - show users based on matching cracked passwords
+    - Change to seperate json queries per portlet
+    - Show instacrack rate
+    - Top passwords across customers
 
 API
     - support VERSION info being sent from agents to server
@@ -118,9 +121,11 @@ Jobs
 profile -> pushover notification when null auto populates
 
 filter imports for usernames that contain non english characters
+filter krbtgt account?
 filter rules file that contain non-english characters
 
 Dynamic hashfile based on hashtype.
+dynamic task with top X masks
 
 show notification selection on table load if previously selected by the user
 
@@ -141,3 +146,9 @@ Include upgrade instructions for agents
 when we upgrade agent the manifest files are overwitten
 
 Function that uses validate_hashes doesnt return the flash message page. It just renders a blank page, then when the user clicksback/reload they see the flash
+
+Include linke with email/job notification
+
+Invalid certificate error
+
+When resetting a password for a nonexistant user, app crashes

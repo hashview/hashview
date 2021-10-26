@@ -97,14 +97,15 @@ def reset_request():
     form = RequestResetForm()
     if form.validate_on_submit():
         user = Users.query.filter_by(email_address=form.email.data).first()
-        token = user.get_reset_token()
-        subject = 'Password Reset Request.'
-        message = f'''To reset your password, vist the following link:
-{url_for('users.reset_token', token=token, _external=True)}
+        if user:
+            token = user.get_reset_token()
+            subject = 'Password Reset Request.'
+            message = f'''To reset your password, vist the following link:
+    {url_for('users.reset_token', token=token, _external=True)}
 
-If you did not make this request... then something phishy is going on.
-'''
-        send_email(user, subject, message)
+    If you did not make this request... then something phishy is going on.
+    '''
+            send_email(user, subject, message)
         flash('An email has been sent to '+  form.email.data, 'info')
         return redirect(url_for('users.login')) 
     return render_template('reset_request.html', title='Reset Password', form=form)

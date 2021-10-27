@@ -91,10 +91,10 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                 if '$' in line.split(':')[0]:
                     continue
                 else:
-                    hash_id = import_hash_only(line=line.split(':')[3], hash_type='1000')
+                    hash_id = import_hash_only(line=line.split(':')[3].lower(), hash_type='1000')
                     username = line.split(':')[0]
             elif file_type == 'kerberos':
-                hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
+                hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
                 username = line.split('$')[5]
             elif file_type == 'NetNTLM':
                 # First extracting usernames so we can filter out machine accounts

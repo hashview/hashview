@@ -341,25 +341,19 @@ def v1_api_put_jobtask_crackfile_upload(hash_type):
     # save to file    
     file_contents = request.get_json()
 
-    #crackfile_path = os.path.join(current_app.root_path, save_file('control/tmp', file_contents['file']))
-
     hashtype = hash_type
-    
-    # Because the contents of the crack file will be different depending on the hashtype, we'll need to
-    # Parse based on what the original hashes were
-    #file_object = open(crackfile_path, 'r')
-    #lines = file_object.readlines()
-    #lines = file_contents['file'].readlines()
-
-    decode_hex = codecs.getdecoder("hex_codec")
 
     #for entry in lines:
     for entry in file_contents['file'].split('\n'):
         if ':' in entry:
             if hashtype == 0 or hashtype == 1000 or hashtype == 1800 or hashtype == 2100 or hashtype == 13100 or hashtype == 19200 or hashtype == 19600 or hashtype == 19700 or hashtype == 19800 or hashtype == 19900:
-                ciphertext = entry.split(':')[0]
-                encoded_plaintext = entry.split(':')[1]
+                encoded_plaintext = entry.split(':')[-1]
+                elements = entry.split(':')
+                # Remove cracked hash
+                elements.pop()
+                ciphertext = ''.join(elements)
                 plaintext = bytes.fromhex(encoded_plaintext.rstrip())
+
             if hashtype == 5600 or hashtype == 5500:
                 ciphertext = entry.split(':')[0] + ":" + entry.split(':')[1].upper() + ":" + entry.split(':')[2].upper() + ":" + entry.split(':')[3].upper() + ":" + entry.split(':')[4].upper() + ":" + entry.split(':')[5].upper()
                 ciphertext = ciphertext.lower()

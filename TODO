@@ -152,3 +152,11 @@ Include linke with email/job notification
 Invalid certificate error
 
 Remove task groups number of tasks
+
+add 'none' result for local check when none is returned
+
+select all option for hash notifications
+
+remove all tasks in task assignments
+
+Disable test push notification button until values are set.

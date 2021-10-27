@@ -37,8 +37,8 @@ class JobsNewHashFileForm(FlaskForm):
                                                     ('18200', '(18200) Kerberos 5 AS-REP etype 23'),
                                                     ('19600', '(19600) Kerberos 5 TGS-REP etype 17 (AES128-CTS-HMAC-SHA1-96)'),
                                                     ('19700', '(19700) Kerberos 5 TGS-REP etype 18 (AES256-CTS-HMAC-SHA1-96)'),
-                                                    ('19800', '(19800) Kerberos 5 TGS-REP etype 18 (AES256-CTS-HMAC-SHA1-96)'),
-                                                    ('19900', '(19900) Kerberos 5 TGS-REP etype 18 (AES256-CTS-HMAC-SHA1-96)')], validators=[DataRequired()])
+                                                    ('19800', '(19800) Kerberos 5, etype 17, Pre-Auth'),
+                                                    ('19900', '(19900) Kerberos 5, etype 18, Pre-Auth')], validators=[DataRequired()])
     hashfilehashes = TextAreaField('Hashes')
     hashfile = FileField('Upload Hashfile')
     submit = SubmitField('Next')

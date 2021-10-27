@@ -71,7 +71,7 @@ def jobs_assigned_hashfile(job_id):
 
             if has_problem:
                 flash(has_problem, 'danger')
-                return redirect(str(job.id)+"/assigned_hashfile/")
+                return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
             else:
                 hashfile = Hashfiles(name=jobsNewHashFileForm.hashfile.data.filename, customer_id=job.customer_id, owner_id=current_user.id)
                 db.session.add(hashfile)

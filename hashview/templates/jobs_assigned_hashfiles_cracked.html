@@ -20,19 +20,33 @@ The following hashes are already cracked in Hashview's Local database!
                   </tr>
                 </thead>
                 <tbody>
-                    {% for entry in cracked_hashfiles_hashes %}
-                        <tr>
-                            <td>{{entry[1].username}}</td>
-                            <td>{{entry[0].ciphertext}}</td>
-                            <td>
-                                {% if entry[0].plaintext %}
-                                    {{entry[0].plaintext}}
-                                {% else %}
-                                    <i>None</i>
-                                {% endif %}
-                            </td>
-                        </tr>
-                    {% endfor %}
+                    {% if cracked_hashfiles_hashes|length > 0%}
+                        {% for entry in cracked_hashfiles_hashes %}
+                            <tr>
+                                <td>{{entry[1].username}}</td>
+                                <td>{{entry[0].ciphertext}}</td>
+                                <td>
+                                    {% if entry[0].plaintext %}
+                                        {{entry[0].plaintext}}
+                                    {% else %}
+                                        <i>None</i>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    {% else %}
+                            <tr>
+                                <td>
+                                    <i>none</i>
+                                </td>
+                                <td>
+                                    <i>none</i>
+                                </td>
+                                <td>
+                                    <i>none</i>
+                                </td>
+                            </tr>
+                    {% endif %}
                 </tbody>
               </table>
         </div>

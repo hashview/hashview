@@ -156,7 +156,20 @@ Remove task groups number of tasks
 add 'none' result for local check when none is returned
 
 select all option for hash notifications
+```
+$(document).ready(function() {
+    $("#select-all").click(function () {
+        $('input[name=hashes]').prop("checked" , true);
+    }
+    $("#select-none").click(function () {
+        $('input[name=hashes]').prop("checked" , false);
+    }
+}
+```
 
 remove all tasks in task assignments
 
 Disable test push notification button until values are set.
+
+remove 'none:' in downloaded hashes that dont have a username
+dynamic wordlist based on usernames

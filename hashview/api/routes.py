@@ -346,23 +346,33 @@ def v1_api_put_jobtask_crackfile_upload(hash_type):
     #for entry in lines:
     for entry in file_contents['file'].split('\n'):
         if ':' in entry:
-            if hashtype == 0 or hashtype == 1000 or hashtype == 1800 or hashtype == 2100 or hashtype == 13100 or hashtype == 19200 or hashtype == 19600 or hashtype == 19700 or hashtype == 19800 or hashtype == 19900:
-                encoded_plaintext = entry.split(':')[-1]
-                elements = entry.split(':')
-                # Remove cracked hash
-                elements.pop()
-                ciphertext = ''.join(elements)
-                plaintext = bytes.fromhex(encoded_plaintext.rstrip())
+            encoded_plaintext = entry.split(':')[-1]
+            plaintext = bytes.fromhex(encoded_plaintext.rstrip())
+            elements = entry.split(':')
+            # Remove cracked hash
+            elements.pop()
+            ciphertext = ':'.join(elements).lower()
+            print('Plaintext: ' + str(plaintext))
+            print('ciphertext: ' + str(ciphertext))
+            print('sub_ciphertext: ' + str(get_md5_hash(ciphertext)))
 
-            if hashtype == 5600 or hashtype == 5500:
-                ciphertext = entry.split(':')[0] + ":" + entry.split(':')[1].upper() + ":" + entry.split(':')[2].upper() + ":" + entry.split(':')[3].upper() + ":" + entry.split(':')[4].upper() + ":" + entry.split(':')[5].upper()
-                ciphertext = ciphertext.lower()
-                encoded_plaintext = entry.split(':')[6] # does it make sense to do -1 instead
-                plaintext = bytes.fromhex(encoded_plaintext.rstrip())
+            #if hashtype == 0 or hashtype == 1000 or hashtype == 1800 or hashtype == 2100 or hashtype == 13100 or hashtype == 19200 or hashtype == 19600 or hashtype == 19700 or hashtype == 19800 or hashtype == 19900:
+            #    encoded_plaintext = entry.split(':')[-1]
+            #    elements = entry.split(':')
+            #    # Remove cracked hash
+            #    elements.pop()
+            #    ciphertext = ''.join(elements)
+            #    plaintext = bytes.fromhex(encoded_plaintext.rstrip())
+
+            #if hashtype == 5600 or hashtype == 5500:
+            #    ciphertext = entry.split(':')[0] + ":" + entry.split(':')[1].upper() + ":" + entry.split(':')[2].upper() + ":" + entry.split(':')[3].upper() + ":" + entry.split(':')[4].upper() + ":" + entry.split(':')[5].upper()
+            #    ciphertext = ciphertext.lower()
+            #    encoded_plaintext = entry.split(':')[6] # does it make sense to do -1 instead
+            #    plaintext = bytes.fromhex(encoded_plaintext.rstrip())
             #if hashtype == 13100 or hashtype == 19200 or hashtype == 19600 or hashtype == 19700 or hashtype == 19800 or hashtype == 19900:
 
             # Does doing an import with multiple 'where' clauses make sense here, maybe we just stick with sub_ciphertext only since that _should_ be unique
-            record = Hashes.query.filter_by(hash_type=hashtype, sub_ciphertext=get_md5_hash(ciphertext), cracked='0').first()
+            record = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(ciphertext), cracked='0').first()
             if record:
                 try:
                     record.plaintext = plaintext.decode('UTF-8')

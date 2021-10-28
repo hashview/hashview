@@ -95,7 +95,10 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                     username = line.split(':')[0]
             elif file_type == 'kerberos':
                 hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
-                username = line.split('$')[5]
+                if hash_type == '18200':
+                    username = line.split('$')[3].split(':')[0]
+                else:
+                    username = line.split('$')[3]
             elif file_type == 'NetNTLM':
                 # First extracting usernames so we can filter out machine accounts
                 if '$' in line.split(':')[0]:

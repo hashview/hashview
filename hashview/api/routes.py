@@ -351,7 +351,7 @@ def v1_api_put_jobtask_crackfile_upload(hash_type):
             elements = entry.split(':')
             # Remove cracked hash
             elements.pop()
-            ciphertext = ':'.join(elements).lower()
+            ciphertext = ':'.join(elements)
             print('Plaintext: ' + str(plaintext))
             print('ciphertext: ' + str(ciphertext))
             print('sub_ciphertext: ' + str(get_md5_hash(ciphertext)))

@@ -60,6 +60,13 @@ def get_md5_hash(string):
     return m.hexdigest()
 
 def import_hash_only(line, hash_type):
+    # we have to uppercase the username because hashcat (right now) when cracking these hashes, will automatically, in the output capital it
+    # This is to my knowledge the only hash where we need to do this. It is dumb
+    if hash_type == '5600':
+        line_list = line.split(':')
+        line_list[0] = line_list[0].upper()
+        line = ':'.join(line_list)
+
     hash = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(line)).first()
     if hash:
         return hash.id
@@ -104,8 +111,8 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                 if '$' in line.split(':')[0]:
                     continue
                 else:
-                    hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
-                    username = line.split(':')[0]
+                    hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
+                    username = line.split(':')[0] 
             else:
                 return False
             hashfilehashes = HashfileHashes(hash_id=hash_id, username=username, hashfile_id=hashfile_id)

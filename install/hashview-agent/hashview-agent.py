@@ -434,16 +434,17 @@ if __name__ == '__main__':
                         pid = getHashcatPid()
                         if pid:
                             killHashcat(pid)
-                # upload cracks
-                crack_file = 'control/outfiles/hc_cracked_' + str(job['id']) + '_' + str(job_task['task_id']) + '.txt'
-                if os.path.exists(crack_file):
-                    getHashTypeResponse = getHashType(job['hashfile_id'])
-                    if getHashTypeResponse['msg'] == 'OK':
-                        uploadCrackFileResponse = uploadCrackFile(crack_file, getHashTypeResponse['hash_type'])
-                        if uploadCrackFileResponse['msg'] == 'OK':
-                            print('[*] Upload Success!')
-                else:
-                    print('[*] No Results. Skipping upload.')
+                            
+                    # upload cracks
+                    crack_file = 'control/outfiles/hc_cracked_' + str(job['id']) + '_' + str(job_task['task_id']) + '.txt'
+                    if os.path.exists(crack_file):
+                        getHashTypeResponse = getHashType(job['hashfile_id'])
+                        if getHashTypeResponse['msg'] == 'OK':
+                            uploadCrackFileResponse = uploadCrackFile(crack_file, getHashTypeResponse['hash_type'])
+                            if uploadCrackFileResponse['msg'] == 'OK':
+                                print('[*] Upload Success!')
+                    else:
+                        print('[*] No Results. Skipping upload.')
 
 
                 print('[*] Done working')

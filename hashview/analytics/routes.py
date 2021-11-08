@@ -124,6 +124,8 @@ def get_analytics():
     # Figure 3 (Charset Breakdown)
     # Reusing fig2_cracked_hashes data
 
+    blank = 0
+
     numeric = 0
     loweralpha = 0
     upperalpha = 0
@@ -150,7 +152,9 @@ def get_analytics():
         tmp_plaintext = re.sub(r"[0-9]", 'D', tmp_plaintext)
         tmp_plaintext = re.sub(r"[^0-9A-Za-z]", 'S', tmp_plaintext)
 
-        if not re.search("U", tmp_plaintext) and not re.search("L", tmp_plaintext) and re.search("D", tmp_plaintext) and not re.search("S", tmp_plaintext):
+        if len(tmp_plaintext) == 0:
+            blank += 1
+        elif not re.search("U", tmp_plaintext) and not re.search("L", tmp_plaintext) and re.search("D", tmp_plaintext) and not re.search("S", tmp_plaintext):
             numeric += 1
         elif not re.search("U", tmp_plaintext) and re.search("L", tmp_plaintext) and not re.search("D", tmp_plaintext) and not re.search("S", tmp_plaintext):
             loweralpha += 1
@@ -186,6 +190,7 @@ def get_analytics():
 
     # We only want the top 4 with the 5th being other
     fig3_dict = {
+        "Blank (unset)": blank,
         "Numeric Only": numeric, 
         "LowerAlpha Only": loweralpha, 
         "UpperAlpha Only": upperalpha, 
@@ -220,21 +225,20 @@ def get_analytics():
     if customer_id:
         # we have a customer
         if hashfile_id:
-            fig4_cracked_hashes = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).all()
+            fig4_cracked_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).all()
         else:
             # just a customer, no specific hashfile
-            fig4_cracked_hashes = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').all()
+            fig4_cracked_hashes = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').all()
     else:
-        fig4_cracked_hashes = db.session.query(Hashes).filter(Hashes.cracked=='1').all()
+        fig4_cracked_hashes = db.session.query(Hashes, HashfileHashes).filter(Hashes.cracked=='1').all()
 
     fig4_data = {}
 
     for entry in fig4_cracked_hashes:
-        if len(entry.plaintext) > 0:
-            if len(entry.plaintext) in fig4_data:
-                fig4_data[len(entry.plaintext)] += 1
-            else:
-                fig4_data[len(entry.plaintext)] = 1
+        if len(entry[0].plaintext) in fig4_data:
+            fig4_data[len(entry[0].plaintext)] += 1
+        else:
+            fig4_data[len(entry[0].plaintext)] = 1
 
     fig4_labels =[]
     fig4_values = []
@@ -262,12 +266,18 @@ def get_analytics():
 
     fig5_data = {}
 
+    blank_label = 'Blank (unset)'
     for entry in fig5_cracked_hashes:
         if len(entry[0].plaintext) > 0:
             if entry[0].plaintext in fig5_data:
                 fig5_data[entry[0].plaintext] += 1
             else:
                 fig5_data[entry[0].plaintext] = 1
+        else:
+            if blank_label in fig5_data:
+                fig5_data[blank_label] += 1
+            else:
+                fig5_data[blank_label] = 1
 
     fig5_labels =[]
     fig5_values = []

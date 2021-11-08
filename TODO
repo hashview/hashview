@@ -145,15 +145,11 @@ tasks that use dynamic wordlists do not update keyspace count (maybe we should j
 Include upgrade instructions for agents
 when we upgrade agent the manifest files are overwitten
 
-Function that uses validate_hashes doesnt return the flash message page. It just renders a blank page, then when the user clicksback/reload they see the flash
-
-Include linke with email/job notification
+Include link with email/job notification
 
 Invalid certificate error
 
 Remove task groups number of tasks
-
-add 'none' result for local check when none is returned
 
 select all option for hash notifications
 ```
@@ -173,3 +169,5 @@ Disable test push notification button until values are set.
 
 remove 'none:' in downloaded hashes that dont have a username
 dynamic wordlist based on usernames
+
+Fix job_task queue to be ordered when selected by API.

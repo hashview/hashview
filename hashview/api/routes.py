@@ -152,7 +152,7 @@ def v1_api_set_agent_heartbeat():
                     return jsonify(message)
                 else:
                     # Get first unassigned jobtask and 'assign' it to this agent
-                    job_task_entry = JobTasks.query.filter_by(status = 'Queued').first()
+                    job_task_entry = JobTasks.query.filter_by(status = 'Queued').order_by(JobTasks.id).first()
                     if job_task_entry:
                         job_task_entry.agent_id = agent.id
                         job_task_entry.status = 'Running'
@@ -352,9 +352,11 @@ def v1_api_put_jobtask_crackfile_upload(hash_type):
             # Remove cracked hash
             elements.pop()
             ciphertext = ':'.join(elements)
+            #if hash_type == 5600 or hash_type == 5500:
+            #    ciphertext=ciphertext.upper()        
             print('Plaintext: ' + str(plaintext))
-            print('ciphertext: ' + str(ciphertext))
-            print('sub_ciphertext: ' + str(get_md5_hash(ciphertext)))
+            #print('ciphertext: ' + str(ciphertext))
+            #print('sub_ciphertext: ' + str(get_md5_hash(ciphertext)))
 
             #if hashtype == 0 or hashtype == 1000 or hashtype == 1800 or hashtype == 2100 or hashtype == 13100 or hashtype == 19200 or hashtype == 19600 or hashtype == 19700 or hashtype == 19800 or hashtype == 19900:
             #    encoded_plaintext = entry.split(':')[-1]

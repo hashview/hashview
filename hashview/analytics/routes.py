@@ -26,19 +26,19 @@ def get_analytics():
     else:
         hashfile_id = None
 
-    customers = Customers.query.all()
+    customers = Customers.query.order_by(Customers.name).all()
     hashfiles = Hashfiles.query.all()
 
     # Figure 1 (Cracked vs uncracked)
     if customer_id:
         # we have a customer
         if hashfile_id: # with a hashfile
-            fig1_cracked_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).count()
-            fig1_uncracked_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==hashfile_id).count()
+            fig1_cracked_cnt = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).count()
+            fig1_uncracked_cnt = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==hashfile_id).count()
         else:
             # just a customer, no specific hashfile
-            fig1_cracked_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').count()
-            fig1_uncracked_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '0').count()
+            fig1_cracked_cnt = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').count()
+            fig1_uncracked_cnt = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '0').count()
     else:
         fig1_cracked_cnt = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').count()
         fig1_uncracked_cnt = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='0').count()
@@ -55,14 +55,14 @@ def get_analytics():
     if customer_id:
         # we have a customer
         if hashfile_id:
-            fig2_cracked_hashes = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).with_entities(Hashes.plaintext).all()
-            fig2_uncracked_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==hashfile_id).count()
+            fig2_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).with_entities(Hashes.plaintext).all()
+            fig2_uncracked_cnt = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==hashfile_id).count()
         else:
             # just a customer, no specific hashfile
-            fig2_cracked_hashes = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').with_entities(Hashes.plaintext).all()
-            fig2_uncracked_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '0').count()
+            fig2_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').with_entities(Hashes.plaintext).all()
+            fig2_uncracked_cnt = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '0').count()
     else:
-        fig2_cracked_hashes = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').with_entities(Hashes.plaintext).all()
+        fig2_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').with_entities(Hashes.plaintext).all()
         fig2_uncracked_cnt = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='0').count()
     
     fig2_fails_complexity_cnt = 0
@@ -71,7 +71,7 @@ def get_analytics():
     for entry in fig2_cracked_hashes:
         flags = 0
         if len(entry[0]) < 9:
-            fig2_fails_complexity_cnt = fig2_fails_complexity_cnt + 1
+            flags = 3
         if re.search(r"[a-z]", entry[0]):
             flags = flags + 1
         if re.search(r"[A-Z]", entry[0]):
@@ -80,6 +80,7 @@ def get_analytics():
             flags = flags + 1
         if not re.search(r"[^0-9A-Za-z]", entry[0]):
             flags = flags + 1
+        
         if flags < 3:
             fig2_fails_complexity_cnt = fig2_fails_complexity_cnt + 1
         else:
@@ -189,20 +190,20 @@ def get_analytics():
 
     # We only want the top 4 with the 5th being other
     fig3_dict = {
-        "Blank (unset)": blank,
-        "Numeric Only": numeric, 
-        "LowerAlpha Only": loweralpha, 
-        "UpperAlpha Only": upperalpha, 
-        "Special Only": special, 
-        "MixedAlpha": mixedalpha, 
-        "LowerAlphaNumeric": loweralphanum, 
-        "LowerAlphaSpecial": loweralphaspecial, 
-        "UpperAlphaSpecial": upperalphaspecial, 
-        "SpecialNumeric": specialnum, 
-        "MixedAlphaSpecial": mixedalphaspecial, 
-        "UpperAlphaSpecialNumeric": upperalphaspecialnum, 
-        "LowerAlphaSpecialNumeric": loweralphaspecialnum, 
-        "MixedAlphaSpecialNumeric": mixedalphaspecialnum
+        "Blank (unset): " + str(blank): blank,
+        "Numeric Only: " + str(numeric) : numeric, 
+        "LowerAlpha Only: " + str(loweralpha): loweralpha, 
+        "UpperAlpha Only: " + str(upperalpha): upperalpha, 
+        "Special Only: " + str(special): special, 
+        "MixedAlpha: " + str(mixedalpha): mixedalpha, 
+        "LowerAlphaNumeric: " + str(loweralphanum): loweralphanum, 
+        "LowerAlphaSpecial: " + str(loweralphaspecial): loweralphaspecial, 
+        "UpperAlphaSpecial: " + str(upperalphaspecial): upperalphaspecial, 
+        "SpecialNumeric: " + str(specialnum): specialnum, 
+        "MixedAlphaSpecial: " + str(mixedalphaspecial): mixedalphaspecial, 
+        "UpperAlphaSpecialNumeric: " + str(upperalphaspecialnum): upperalphaspecialnum, 
+        "LowerAlphaSpecialNumeric: " + str(loweralphaspecialnum): loweralphaspecialnum, 
+        "MixedAlphaSpecialNumeric: " + str(mixedalphaspecialnum): mixedalphaspecialnum
         }
 
     fig3_array_sorted = dict(sorted(fig3_dict.items(), key=operator.itemgetter(1),reverse=True))
@@ -217,7 +218,7 @@ def get_analytics():
         else:
             fig3_other += fig3_array_sorted[key]
 
-    fig3_labels.append('Other')
+    fig3_labels.append('Other: ' + str(fig3_other))
     fig3_values.append(fig3_other)
 
     # Figure 4 (Passwords by Length)
@@ -227,9 +228,9 @@ def get_analytics():
             fig4_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).with_entities(Hashes.plaintext).all()
         else:
             # just a customer, no specific hashfile
-            fig4_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).outerjoin(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').with_entities(Hashes.plaintext).all()
+            fig4_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).join(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').with_entities(Hashes.plaintext).all()
     else:
-        fig4_cracked_hashes = db.session.query(Hashes, HashfileHashes).filter(Hashes.cracked=='1').with_entities(Hashes.plaintext).all() 
+        fig4_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').with_entities(Hashes.plaintext).all() 
 
     fig4_data = {}
 

@@ -34,8 +34,8 @@ class LoginForm(FlaskForm):
 class ProfileForm(FlaskForm):
     first_name = StringField('First Name', validators=[DataRequired(), Length(min=1, max=20)])
     last_name = StringField('Last Name', validators=[DataRequired(), Length(min=1, max=20)])
-    pushover_app_id = StringField('Pushover Id (optional)')
-    pushover_user_key = StringField('Pushover Key (optional)')
+    pushover_user_key = StringField('Pushover User Key (optional)')
+    pushover_app_id = StringField('Pushover App Id (optional)')
     submit = SubmitField('Update')
 
 class RequestResetForm(FlaskForm):

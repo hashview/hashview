@@ -171,10 +171,10 @@ Disable test push notification button until values are set.
 remove 'none:' in downloaded hashes that dont have a username
 dynamic wordlist based on usernames
 
-
 Remove Num of tasks from taskgroup list
 
-analytics page, customer menu should be alpha betical
 make home page multiple jobs collapsable or only see your jobs
 
 Remember Me button doesnt work
+
+Remove .vscode from repo

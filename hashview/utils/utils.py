@@ -280,6 +280,9 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                 if hash_type == '0' or hash_type == '1000':
                     if len(line.rstrip()) != 32:
                         return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 32'
+                if hash_type == '500':
+                    if '$1$' not in line:
+                        return 'Error line ' + str(line_number) + ' appears to not be a valid md5Crypt hash'
                 if hash_type == '2100':
                     if '$' not in line:
                         return 'Error line ' + str(line_number) + ' is missing a $ character. DCC2 Hashes should have these.'

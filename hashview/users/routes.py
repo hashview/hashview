@@ -71,10 +71,10 @@ def profile():
     if form.validate_on_submit():
         current_user.first_name = form.first_name.data
         current_user.last_name = form.last_name.data
-        if form.pushover_app_id.data:
-            current_user.pushover_app_id = form.pushover_app_id.data 
         if form.pushover_user_key.data:
             current_user.pushover_user_key = form.pushover_user_key.data 
+        if form.pushover_app_id.data:
+            current_user.pushover_app_id = form.pushover_app_id.data 
         db.session.commit()
         flash('Profile Updated!', 'success')
         return redirect(url_for('users.profile'))

@@ -79,7 +79,11 @@ Edit your profile.
             </fieldset>
             <div class="form-group">
                 {{ form.submit(class="btn btn-primary pull-right") }}
-                <a class="btn btn-success " href="{{ url_for('users.send_test_pushover') }}">Test Pushover</a>
+                {% if not current_user.pushover_app_id or not current_user.pushover_user_key %}
+                    <a class="btn btn-success disabled" href="#">Test Pushover</a>
+                {% else %}
+                    <a class="btn btn-success " href="{{ url_for('users.send_test_pushover') }}">Test Pushover</a>
+                {% endif %}
             </div>
         </form>
     </div>

@@ -17,7 +17,6 @@ Task Groups are a set of tasks that can be assigned to job.
                   <tr>
                     <th scope="col">Task Group Name</th>
                     <th scope="col">Owner</th>
-                    <th scope="col">Number of Tasks</th>
                     <th scope="col">Control</th>
                   </tr>
                 </thead>
@@ -32,7 +31,6 @@ Task Groups are a set of tasks that can be assigned to job.
                                     {% endif %}
                                 {% endfor %}
                             </td>
-                            <td>TBD</td>
                             <td>
                                 <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{task_group.id}}" title=Info></button>
                                 <a class="fa fa-edit btn btn-warning" href="/task_groups/assigned_tasks/{{task_group.id}}" role="button" title=Edit></a>

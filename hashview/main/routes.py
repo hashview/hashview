@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect
+from flask import Blueprint, render_template, redirect, flash
 from flask_login import login_required, current_user
 from hashview.models import Jobs, JobTasks, Users, Customers, Tasks, Agents
 from hashview.utils.utils import update_job_task_status
@@ -43,6 +43,8 @@ def stop_job_task(job_task_id):
     if job_task and job:
         if current_user.admin or job.owner_id == current_user.id:
             update_job_task_status(job_task.id, 'Canceled')
+        else:
+            flash('You are unauthorized to stop this task', 'danger')
 
     return redirect("/")
 

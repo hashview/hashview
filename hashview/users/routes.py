@@ -39,7 +39,7 @@ def users_add():
     if current_user.admin:
         form = UsersForm()
         if form.validate_on_submit():
-            hashed_password = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
+            hashed_password = bcrypt.generate_password_hash(form.password.data).decode('latin-1')
             if form.pushover_app_id.data and form.pushover_user_key.data:
                 user = Users(first_name=form.first_name.data, last_name=form.last_name.data, email_address=form.email.data, admin=form.is_admin.data, password=hashed_password, pushover_app_id=form.pushover_app_id.data, pushover_user_key=form.pushover_user_key.data)
             else:

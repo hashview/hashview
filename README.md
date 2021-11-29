@@ -67,7 +67,7 @@ cd ../hashview-agent
 python3 ./hashview-agent.py
 ```
 
-
+#### 6) Once running, you (or another admin) will need to navigate back into Hashview->Manage->agents and approve the agent.
 
 
 ### Developing and Contributing

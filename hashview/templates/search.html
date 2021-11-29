@@ -58,14 +58,20 @@
                                 {% endfor %}
                             </td>
                             <td>
-                                {{entry[1].username}}
+                                {% if entry[1].username %}
+                                    {{entry[1].username | jinja_hex_decode }}
+                                {% else %}
+                                    <i>None</i>
+                                {% endif %}
                             </td>
                             <td>
-                                {{ entry[0].ciphertext }}
+                                <p class="text-break">
+                                    {{ entry[0].ciphertext }}
+                                </p>
                             </td>
                             <td>
                                 {% if entry[0].cracked %}
-                                    {{ entry[0].plaintext }}
+                                    {{ entry[0].plaintext | jinja_hex_decode }}
                                 {% else %}
                                     <i>unrecovered</i>
                                 {% endif %}

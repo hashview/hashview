@@ -25,6 +25,10 @@ scheduler = APScheduler()
 #import hashview.models as HM
 #s.settings = HM.Settings
 
+# Jinja2 Filter
+def jinja_hex_decode(text):
+    return bytes.fromhex(text).decode('latin-1')
+
 def create_app(config_class=Config):
 
     app = Flask(__name__)
@@ -70,8 +74,7 @@ def create_app(config_class=Config):
     app.register_blueprint(notifications)
     app.register_blueprint(searches)
 
-    #from hashview.utils.utils import data_retention_cleanup
-    #from hashview.scheduled_tasks.scheduled_tasks import data_retention_cleanup
-    #scheduler.add_job(id='DATA_RETENTION', func=data_retention_cleanup, trigger='cron', minute='*')
+    # Add custom Jinja2 Filters
+    app.add_template_filter(jinja_hex_decode)
 
     return app

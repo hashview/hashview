@@ -299,7 +299,7 @@ def jobs_assign_notifications(job_id):
         return redirect("/jobs/"+str(job_id)+"/tasks")
 
     # populate the forms dynamically with the choices in the database
-    form.hashes.choices = [(str(c[0].id), str(c[1].username) + ':' + c[0].ciphertext) for c in db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()]
+    form.hashes.choices = [(str(c[0].id), str(bytes.fromhex(c[1].username).decode('latin-1')) + ':' + c[0].ciphertext) for c in db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()]
     
     if form.validate_on_submit():
         if form.job_completion.data != 'none':

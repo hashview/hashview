@@ -341,51 +341,28 @@ def v1_api_put_jobtask_crackfile_upload(hash_type):
     # save to file    
     file_contents = request.get_json()
 
-    hashtype = hash_type
-
     #for entry in lines:
     for entry in file_contents['file'].split('\n'):
         if ':' in entry:
             encoded_plaintext = entry.split(':')[-1]
-            plaintext = bytes.fromhex(encoded_plaintext.rstrip())
+            #plaintext = bytes.fromhex(encoded_plaintext.rstrip())
+            plaintext = encoded_plaintext.rstrip().upper()
             elements = entry.split(':')
             # Remove cracked hash
             elements.pop()
             ciphertext = ':'.join(elements)
-            #if hash_type == 5600 or hash_type == 5500:
-            #    ciphertext=ciphertext.upper()        
+      
             print('Plaintext: ' + str(plaintext))
-            #print('ciphertext: ' + str(ciphertext))
-            #print('sub_ciphertext: ' + str(get_md5_hash(ciphertext)))
 
-            #if hashtype == 0 or hashtype == 1000 or hashtype == 1800 or hashtype == 2100 or hashtype == 13100 or hashtype == 19200 or hashtype == 19600 or hashtype == 19700 or hashtype == 19800 or hashtype == 19900:
-            #    encoded_plaintext = entry.split(':')[-1]
-            #    elements = entry.split(':')
-            #    # Remove cracked hash
-            #    elements.pop()
-            #    ciphertext = ''.join(elements)
-            #    plaintext = bytes.fromhex(encoded_plaintext.rstrip())
-
-            #if hashtype == 5600 or hashtype == 5500:
-            #    ciphertext = entry.split(':')[0] + ":" + entry.split(':')[1].upper() + ":" + entry.split(':')[2].upper() + ":" + entry.split(':')[3].upper() + ":" + entry.split(':')[4].upper() + ":" + entry.split(':')[5].upper()
-            #    ciphertext = ciphertext.lower()
-            #    encoded_plaintext = entry.split(':')[6] # does it make sense to do -1 instead
-            #    plaintext = bytes.fromhex(encoded_plaintext.rstrip())
-            #if hashtype == 13100 or hashtype == 19200 or hashtype == 19600 or hashtype == 19700 or hashtype == 19800 or hashtype == 19900:
-
-            # Does doing an import with multiple 'where' clauses make sense here, maybe we just stick with sub_ciphertext only since that _should_ be unique
             record = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(ciphertext), cracked='0').first()
             if record:
                 try:
-                    record.plaintext = plaintext.decode('UTF-8')
+                    #record.plaintext = plaintext.decode('latin-1')
+                    record.plaintext = plaintext
                     record.cracked = 1
                     db.session.commit()
                 except:
-                    print('Attempted to import non UTF-8 character: ' + str(encoded_plaintext))
-
-
-    # delete file
-    #os.remove(crackfile_path)
+                    print('Failed to import followint cracked hash: ' + str(encoded_plaintext))
 
     # Send Hash Completion Notifications
     hash_notifications = HashNotifications.query.all()

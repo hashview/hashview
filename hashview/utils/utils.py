@@ -118,7 +118,7 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                     username = line.split(':')[0] 
             else:
                 return False
-            hashfilehashes = HashfileHashes(hash_id=hash_id, username=username, hashfile_id=hashfile_id)
+            hashfilehashes = HashfileHashes(hash_id=hash_id, username=username.encode('latin-1').hex(), hashfile_id=hashfile_id)
             db.session.add(hashfilehashes)
             db.session.commit() 
 
@@ -135,7 +135,7 @@ def update_dynamic_wordlist(wordlist_id):
     # Open file
     file = open(wordlist.path, 'wt')
     for entry in hashes:
-        file.write(entry.plaintext + '\n')
+        file.write(str(bytes.fromhex(entry.plaintext).decode('latin-1')) + '\n')
     file.close()
 
     # update line count

@@ -34,9 +34,20 @@ Login
     - Should be a card style
     - Unauthed User Registration
 
+Jobs
+    - New job
+        - Notifications
+            - Check all / none hashes 
+        - Job Tasks
+            - Remove all tasks
+        - Stop Job after X ammount of successfully cracked hashes
+        - Stop Job after X ammount of time warning and preset
+        - Stop Task after X ammont of time warnning and preset
+
 Scheduled Events
     - Status (is running / died)
     - Mark agent as inactive after a period of time
+    - send push notifications when agent is offline
 
 Installation Instructions:
 Installation files
@@ -119,8 +130,6 @@ General
 Jobs
     - Increase speed of importation of new hashes
 
-profile -> pushover notification when null auto populates
-
 filter imports for usernames that contain non english characters
 filter krbtgt account?
 filter rules file that contain non-english characters
@@ -128,17 +137,7 @@ filter rules file that contain non-english characters
 Dynamic hashfile based on hashtype.
 dynamic task with top X masks
 
-show notification selection on table load if previously selected by the user
-
-# COMPLETE BEFORE OPEN BETA
-- Grey out pushover option in hash notifications
-- Test if user can reset password to something < 14 chars long
-
-Analytics will show blank entries for top 10/password count by length as empty if password is blank.
-
-Homepage agent status window (connected, disconnected, busy, etc)
-
-send push notifications when agent is offline
+show notification selection on table load if previously selected by the user (might be for anyuser)
 
 on job summary, shows notifications as true when none are set for the user.
 tasks that use dynamic wordlists do not update keyspace count (maybe we should just remove keyspace count all together)
@@ -149,8 +148,6 @@ when we upgrade agent the manifest files are overwitten
 Include link with email/job notification
 
 Invalid certificate error
-
-Remove task groups number of tasks
 
 select all option for hash notifications
 ```
@@ -164,14 +161,18 @@ $(document).ready(function() {
 }
 ```
 
-remove all tasks in task assignments
-check all/ check none in hash notification table
-
-Disable test push notification button until values are set.
-
-remove 'none:' in downloaded hashes that dont have a username
-
 make home page multiple jobs collapsable or only see your jobs
 
-
 Remove .vscode from repo
+
+Prevent adding of task to new job when assigning a task group and there's already a duplicate task.
+
+Support for compressed wordlists
+
+convert username/plaintext to hex
+
+upload rockyou2021
+
+sums of  composition makeups do not equal total cracked
+
+split notifications and select hashes into seperate pages

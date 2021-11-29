@@ -18,9 +18,9 @@ def searches_list():
         if searchForm.search_type.data == 'hash':
             results = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.ciphertext==searchForm.query.data).all()
         elif searchForm.search_type.data == 'user':
-            results = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(HashfileHashes.username.like('%' + searchForm.query.data + '%')).all()
+            results = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(HashfileHashes.username.like('%' + searchForm.query.data.encode('latin-1').hex() + '%')).all()
         elif searchForm.search_type.data == 'password':
-            results = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.plaintext == searchForm.query.data).all()
+            results = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.plaintext == searchForm.query.data.encode('latin-1').hex()).all()
         else:
             return redirect(url_for('searches.searches_list'))
     elif request.args.get("hash_id"):

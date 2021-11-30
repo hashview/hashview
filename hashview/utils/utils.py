@@ -81,7 +81,10 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
         if len(line) > 0:
             if file_type == 'hash_only':
                 hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
-                username = None
+                if hash_type == '2100':
+                    username = line.split('#')[1]
+                else:
+                    username = None
             elif file_type == 'shadow':
                 hash_id= import_hash_only(line=line.split(':')[1], hash_type=hash_type)
                 username = line.split(':')[0]

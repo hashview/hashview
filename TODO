@@ -185,3 +185,5 @@ Change agent manifest to json
 Change download left/found list to be based on hashtype when user selects all hashfiles all customers
 
 when syncing wordlists need to use random names, and not file names. otherwise new agents will will collide requests and the tmp directory file entry will be overwritten
+
+Check if all hashes cracked upon agent check in, and if all are cracked, cancel task/job

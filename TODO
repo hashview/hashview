@@ -34,6 +34,11 @@ Login
     - Should be a card style
     - Unauthed User Registration
 
+Tasks
+    - add support for markov chains
+    - dynamic task with top X masks (isnt this the same thing as markov)
+    - Add support for Cewl
+
 Jobs
     - New job
         - Notifications
@@ -169,10 +174,14 @@ Prevent adding of task to new job when assigning a task group and there's alread
 
 Support for compressed wordlists
 
-convert username/plaintext to hex
-
 upload rockyou2021
 
 sums of  composition makeups do not equal total cracked
 
-split notifications and select hashes into seperate pages
+split notifications and select hashes into seperate pages\
+
+Change agent manifest to json
+
+Change download left/found list to be based on hashtype when user selects all hashfiles all customers
+
+when syncing wordlists need to use random names, and not file names. otherwise new agents will will collide requests and the tmp directory file entry will be overwritten

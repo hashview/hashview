@@ -51,6 +51,7 @@ Jobs
         - Stop Job after X ammount of successfully cracked hashes
         - Stop Job after X ammount of time warning and preset
         - Stop Task after X ammont of time warnning and preset
+    - Prevent Editing of Job that is activly running
 
 Scheduled Events
     - Status (is running / died)

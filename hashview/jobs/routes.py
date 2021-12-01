@@ -299,7 +299,7 @@ def jobs_assign_notifications(job_id):
         return redirect("/jobs/"+str(job_id)+"/tasks")
 
     # populate the forms dynamically with the choices in the database
-    form.hashes.choices = [(str(c[0].id), str(bytes.fromhex(c[1].username).decode('latin-1')) + ':' + c[0].ciphertext) for c in db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()]
+    # form.hashes.choices = [(str(c[0].id), str(bytes.fromhex(c[1].username).decode('latin-1')) + ':' + c[0].ciphertext) for c in db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()]
     
     if form.validate_on_submit():
         if form.job_completion.data != 'none':
@@ -311,22 +311,40 @@ def jobs_assign_notifications(job_id):
             db.session.add(job_notification)
             db.session.commit()
 
-        if form.hash_completion.data:
-            if form.hashes.data:
-                for hash_id in form.hashes.data:
-                    hash_notification_exists = HashNotifications.query.filter_by(hash_id=hash_id).filter_by(owner_id=current_user.id).first()
+        if form.hash_completion.data == 'email' or form.hash_completion.data == 'push':
+            return redirect("/jobs/"+str(job_id)+"/notifications/" + str(form.hash_completion.data)+ "/hashes")
+        elif form.hash_completion.data == 'none':
+            return redirect("/jobs/" + str(job_id)+ "/summary")
+        else:
+            flash('Error. Invalid notification method', 'danger')
+            return redirect("/jobs/" + str(job_id) + "/notifications")
+    else:
+        return render_template('jobs_assigned_notifications.html', title='Jobs Assigned Notifications', job=job, form=form)
+
+@jobs.route("/jobs/<int:job_id>/notifications/<method>/hashes", methods=['GET', 'POST'])
+@login_required
+def jobs_assign_notification_hashes(job_id, method):
+    job = Jobs.query.get(job_id)
+    hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).with_entities(Hashes.id, HashfileHashes.username, Hashes.ciphertext).all()
+    existing_hash_notifications = HashNotifications.query.filter_by(owner_id=current_user.id)
+    if request.method == 'POST':
+        for entry in hashes:
+            for selected in request.form.getlist('selected'):
+                if str(selected) == str(entry[0]):
+                    hash_notification_exists = HashNotifications.query.filter_by(hash_id=entry[0]).filter_by(owner_id=current_user.id).first()
                     if not hash_notification_exists:
                         hash_notification = HashNotifications(
                             owner_id = current_user.id,
-                            hash_id = hash_id,
-                            method = form.hash_completion.data
+                            hash_id = entry[0],
+                            method = method
                         )
                         db.session.add(hash_notification)
                         db.session.commit()
-        
+        # Some for entry in request/post
+        # add hash notification if not already set
         return redirect("/jobs/"+str(job_id)+"/summary")
     else:
-        return render_template('jobs_assigned_notifications.html', title='Jobs Assigned Notifications', job=job, form=form)
+        return render_template('jobs_assigned_notifications_hashes.html', title='Assigned Hash Notifications', job=job, hashes=hashes, existing_hash_notifications=existing_hash_notifications)
 
 
 @jobs.route("/jobs/delete/<int:job_id>", methods=['GET', 'POST'])

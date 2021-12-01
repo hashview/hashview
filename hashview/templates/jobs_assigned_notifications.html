@@ -9,20 +9,6 @@ Would you like to be notified when the job completes AND/OR when specific hashes
 <br>
 {% endblock header %}
 {% block content %}
-<script>
-    function showHashes(){
-        var Index = document.getElementById('hash_completion'); 
-        // support all other attack types
-        if(Index.value == 'email' || Index.value == 'push')
-        {
-          document.getElementById('hashes').style.display = 'inline';
-        }
-        else
-        {
-          document.getElementById('hashes').style.display = 'none';
-        }
-    }
-</script>
 <div class="content-section">
     <form method="POST" action="">
         {{ form.hidden_tag() }}
@@ -56,34 +42,6 @@ Would you like to be notified when the job completes AND/OR when specific hashes
                 {% endif %}            
 
             </div> 
-            <div class="form-group" style=display:none id="hashes">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th scope="col">
-                                    Notify
-                            </th>
-                            <th scope="col">User:Hash</th>                 
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <div class="form-check">
-                            {% for hash in form.hashes %}
-                                <tr>
-                                    <td>
-                                        <center>
-                                            {{ hash(class="form-check-input") }}
-                                        </center>
-                                    </td>
-                                    <td>
-                                        {{ hash.label(class="form-check-label") }}
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </div>
-                    </tbody>
-                </table>
-           </div> 
         </fieldset>
         <div class="form-group">
             <a class="btn btn-secondary" href="{{ url_for('jobs.jobs_list_tasks', job_id = job.id) }}">Back</a>

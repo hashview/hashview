@@ -1,0 +1,68 @@
+{% extends "layout.html"%}
+{% block header %}
+<br>
+<h1>Hash Notifications</h1>
+<br>
+Select the hashes you wish to be notified by once cracked. Note, cracked hash notifications will persist after job has been completed or removed.
+<br>
+<br>
+<br>
+{% endblock header %}
+{% block content %}
+<div class="content-section">
+    <form method="POST" action="">
+        <div class="form-group">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th scope="col">
+                            Notify
+                        </th>
+                        <th scope="col">
+                            User
+                        </th>
+                        <th scope="col">
+                            Hash
+                        </th>                 
+                    </tr>
+                </thead>
+                <tbody>
+                    <div class="form-check">
+                        {% for hash in hashes %}
+                            <tr>
+                                <td>
+                                    <center>
+                                        {% set has_notification = namespace(value=0) %}
+                                        {% for entry in existing_hash_notifications %}
+                                            {% if entry.hash_id |string() == hash[0] |string() %}
+                                                {% set has_notification.value = 1 %}
+                                                <input class="form-check-input center" type="checkbox" name='selected' value="{{hash[0]}}" checked>
+                                            {% endif %}
+                                        {% endfor %}
+                                        {% if has_notification.value == 0 %}
+                                            <input class="form-check-input center" type="checkbox" name='selected' value="{{hash[0]}}">
+                                        {% endif %}
+                                    </center>
+                                </td>
+                                <td>
+                                    {{ hash[1] | jinja_hex_decode()}}
+                                </td>
+                                <td>
+                                    <p class="text-break">
+                                        {{ hash[2]}}
+                                    </p>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </div>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="form-group">
+            <a class="btn btn-secondary" href="{{ url_for('jobs.jobs_assign_notifications', job_id = job.id) }}">Back</a>
+            <input type="submit" class="btn btn-primary pull-right">
+        </div>
+    </form>
+</div>
+{% endblock content %}

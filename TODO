@@ -35,7 +35,6 @@ Rules
         
 Login
     - Should be a card style
-    - Unauthed User Registration
 
 Tasks
     - add support for markov chains
@@ -44,8 +43,13 @@ Tasks
 
 Jobs
     - New job
+        - New Hashfile
+            - Unique sort or error on netntlmv1, netntlmv2 hashes that share the same username
+        - Notifications should come before task selection
         - Notifications
+            - pre select email & hash notificaitons if previously set
             - Check all / none hashes 
+            - in table filter for user/hash
         - Job Tasks
             - Remove all tasks
         - Stop Job after X ammount of successfully cracked hashes
@@ -68,6 +72,9 @@ Installation files
 
 Wiki Instructions
 
+Notifications
+    - Include link with email/job notification
+
 Settings
     - OPTIMIZE TABLE hashes;
     - OPTIMIZE TABLE hashfile_hashes;
@@ -77,9 +84,11 @@ Settings
 
 Add favicon
 
-taskgroups / hashfiles should probably be renamed to task_groups and hash_files, word_lists?
+Code Cleanup
+    - taskgroups / hashfiles should probably be renamed to task_groups and hash_files, word_lists?
 
-Change dropdown alignment of jobs, tasks, manage (in templates/layout.html)
+UI Clean UP
+    - Change dropdown alignment of jobs, tasks, manage (in templates/layout.html)
 
 Form layout
     - Adjust label\nfield to label field\n
@@ -115,8 +124,6 @@ Users
         - Associated Tasks (same as above)
     - Add last login date to track stale users
 
-Search
-
 All
     - change uri scheme to be consistent
         - jobs/id/status
@@ -136,51 +143,26 @@ Standardize modals
         - rules
         - users
 
-# Next Phase
-General
-    - Add ability for users / admins? to import plaintext's and auto convert to specific hashes
-Jobs
-    - Increase speed of importation of new hashes
+Hashfiles
+    - Dynamic Hashfiles based on hashtype (uncracked)
 
-filter imports for usernames that contain non english characters
-filter krbtgt account?
-filter rules file that contain non-english characters
+Home
+    - make home page multiple jobs collapsable or only see your jobs
 
-Dynamic hashfile based on hashtype.
-dynamic task with top X masks
+Core
+    - Support for compressed wordlists
 
-show notification selection on table load if previously selected by the user (might be for anyuser)
+Agents
+    - Change agent manifest to json
 
-on job summary, shows notifications as true when none are set for the user.
+
+# Bugs
 tasks that use dynamic wordlists do not update keyspace count (maybe we should just remove keyspace count all together)
 
+# Before Release
 Include upgrade instructions for agents
 when we upgrade agent the manifest files are overwitten
-
-Include link with email/job notification
-
-Invalid certificate error
-
-select all option for hash notifications
-```
-$(document).ready(function() {
-    $("#select-all").click(function () {
-        $('input[name=hashes]').prop("checked" , true);
-    }
-    $("#select-none").click(function () {
-        $('input[name=hashes]').prop("checked" , false);
-    }
-}
-```
-
-make home page multiple jobs collapsable or only see your jobs
-
+    - Move manifests to wordlist/rules folder?
+Documnent Invalid certificate error and how to fix them on wiki
 Remove .vscode from repo
-
 Prevent adding of task to new job when assigning a task group and there's already a duplicate task.
-
-Support for compressed wordlists
-
-split notifications and select hashes into seperate pages\
-
-Change agent manifest to json

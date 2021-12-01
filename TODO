@@ -112,9 +112,9 @@ Users
         - Associated Rules (We're going to run into a problem when an associated rule is used in a task assigned to a job thats not associated to this user)
         - Associated Task_groups (same as above)
         - Associated Tasks (same as above)
+    - Add last login date to track stale users
 
 Search
-    - When no results are found in a search, return flash message saying so
 
 All
     - change uri scheme to be consistent

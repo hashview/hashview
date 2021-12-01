@@ -132,6 +132,7 @@ def get_analytics():
     special = 0
 
     mixedalpha = 0
+    mixedalphanum = 0
     loweralphanum = 0
     upperalphanum = 0
     loweralphaspecial = 0
@@ -164,6 +165,8 @@ def get_analytics():
             special += 1 
         elif re.search("U", tmp_plaintext) and re.search("L", tmp_plaintext) and not re.search("D", tmp_plaintext) and not re.search("S", tmp_plaintext):
             mixedalpha += 1
+        elif re.search("U", tmp_plaintext) and re.search("L", tmp_plaintext) and re.search("D", tmp_plaintext) and not re.search("S", tmp_plaintext):
+            mixedalphanum += 1
         elif not re.search("U", tmp_plaintext) and re.search("L", tmp_plaintext) and re.search("D", tmp_plaintext) and not re.search("S", tmp_plaintext):
             loweralphanum += 1
         elif re.search("U", tmp_plaintext) and not re.search("L", tmp_plaintext) and re.search("D", tmp_plaintext) and not re.search("S", tmp_plaintext):
@@ -196,6 +199,7 @@ def get_analytics():
         "UpperAlpha Only: " + str(upperalpha): upperalpha, 
         "Special Only: " + str(special): special, 
         "MixedAlpha: " + str(mixedalpha): mixedalpha, 
+        "MixedAlphaNumeric: " +str(mixedalphanum): mixedalphanum,
         "LowerAlphaNumeric: " + str(loweralphanum): loweralphanum, 
         "LowerAlphaSpecial: " + str(loweralphaspecial): loweralphaspecial, 
         "UpperAlphaSpecial: " + str(upperalphaspecial): upperalphaspecial, 
@@ -203,7 +207,8 @@ def get_analytics():
         "MixedAlphaSpecial: " + str(mixedalphaspecial): mixedalphaspecial, 
         "UpperAlphaSpecialNumeric: " + str(upperalphaspecialnum): upperalphaspecialnum, 
         "LowerAlphaSpecialNumeric: " + str(loweralphaspecialnum): loweralphaspecialnum, 
-        "MixedAlphaSpecialNumeric: " + str(mixedalphaspecialnum): mixedalphaspecialnum
+        "MixedAlphaSpecialNumeric: " + str(mixedalphaspecialnum): mixedalphaspecialnum,
+        "Other: " + str(other): other, 
         }
 
     fig3_array_sorted = dict(sorted(fig3_dict.items(), key=operator.itemgetter(1),reverse=True))

@@ -13,9 +13,12 @@ Analytics
     - Change to seperate json queries per portlet
     - Show instacrack rate
     - Top passwords across customers
+    - Change download left/found list to be based on hashtype when user selects all hashfiles all customers
 
 API
     - support VERSION info being sent from agents to server
+    - Check if all hashes cracked upon agent check in, and if all are cracked, cancel task/job
+    - when syncing wordlists need to use random names, and not file names. otherwise new agents will will collide requests and the tmp directory file entry will be overwritten
 
 Search
     - Do we even let the user pick which type, or just run queries on both?
@@ -110,6 +113,9 @@ Users
         - Associated Task_groups (same as above)
         - Associated Tasks (same as above)
 
+Search
+    - When no results are found in a search, return flash message saying so
+
 All
     - change uri scheme to be consistent
         - jobs/id/status
@@ -174,16 +180,6 @@ Prevent adding of task to new job when assigning a task group and there's alread
 
 Support for compressed wordlists
 
-upload rockyou2021
-
-sums of  composition makeups do not equal total cracked
-
 split notifications and select hashes into seperate pages\
 
 Change agent manifest to json
-
-Change download left/found list to be based on hashtype when user selects all hashfiles all customers
-
-when syncing wordlists need to use random names, and not file names. otherwise new agents will will collide requests and the tmp directory file entry will be overwritten
-
-Check if all hashes cracked upon agent check in, and if all are cracked, cancel task/job

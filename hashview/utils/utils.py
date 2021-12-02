@@ -121,7 +121,10 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                     username = line.split(':')[0] 
             else:
                 return False
-            hashfilehashes = HashfileHashes(hash_id=hash_id, username=username.encode('latin-1').hex(), hashfile_id=hashfile_id)
+            if username == None:
+                hashfilehashes = HashfileHashes(hash_id=hash_id, username=None, hashfile_id=hashfile_id)
+            else:
+                hashfilehashes = HashfileHashes(hash_id=hash_id, username=username.encode('latin-1').hex(), hashfile_id=hashfile_id)
             db.session.add(hashfilehashes)
             db.session.commit() 
 
@@ -283,6 +286,9 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                 if hash_type == '0' or hash_type == '1000':
                     if len(line.rstrip()) != 32:
                         return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 32'
+                if hash_type == '300':
+                    if len(line.rstrip()) != 40:
+                        return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 40'
                 if hash_type == '500':
                     if '$1$' not in line:
                         return 'Error line ' + str(line_number) + ' appears to not be a valid md5Crypt hash'

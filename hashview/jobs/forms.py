@@ -26,6 +26,7 @@ class JobsNewHashFileForm(FlaskForm):
                                                     ('kerberos', 'Kerberos')], validators=[DataRequired()])
     hash_type = SelectField('Hash Type', choices=[  ('', '--SELECT--'),
                                                     ('0', '(0) MD5'),
+                                                    ('300', '(300) MySQL4.1/MySQL5'),
                                                     ('500', '(500) md5crypt, MD5 (Unix), Cisco-IOS'),
                                                     ('1000', '(1000) NTLM '),
                                                     ('1800', '(1800) sha512crypt (Unix)'),

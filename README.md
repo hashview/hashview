@@ -14,7 +14,7 @@
 ## Agent Requirements
 
 1. Python 3.7+
-2. Hashcat
+2. Hashcat 6.2.x+
 
 ## Installation
 

@@ -45,7 +45,11 @@ Select the hashes you wish to be notified by once cracked. Note, cracked hash no
                                     </center>
                                 </td>
                                 <td>
-                                    {{ hash[1] | jinja_hex_decode()}}
+                                    {% if hash[1] %}
+                                        {{ hash[1] | jinja_hex_decode()}}
+                                    {% else %}
+                                        <i>none</i>
+                                    {% endif %}
                                 </td>
                                 <td>
                                     <p class="text-break">

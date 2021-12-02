@@ -154,7 +154,8 @@ Core
 
 Agents
     - Change agent manifest to json
-
+    - Check / validate hashcat versions before exeuction
+    - Move compressed download out of install folder
 
 # Bugs
 tasks that use dynamic wordlists do not update keyspace count (maybe we should just remove keyspace count all together)
@@ -164,5 +165,5 @@ Include upgrade instructions for agents
 when we upgrade agent the manifest files are overwitten
     - Move manifests to wordlist/rules folder?
 Documnent Invalid certificate error and how to fix them on wiki
-Remove .vscode from repo
 Prevent adding of task to new job when assigning a task group and there's already a duplicate task.
+Add support for $USER:$HASH

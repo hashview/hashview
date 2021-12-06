@@ -1,4 +1,4 @@
-# hashview-new
+# hashview
 
 # Hashview
 [![Build Status](https://travis-ci.org/hashview/hashview.svg?branch=master)](https://travis-ci.org/hashview/hashview)

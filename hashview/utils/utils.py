@@ -85,6 +85,9 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                     username = line.split('#')[1]
                 else:
                     username = None
+            if file_type == 'user_hash':
+                hash_id = import_hash_only(line=line.split(':',1)[1].rstrip(), hash_type=hash_type)
+                username = line.split(':')[0]
             elif file_type == 'shadow':
                 hash_id= import_hash_only(line=line.split(':')[1], hash_type=hash_type)
                 username = line.split(':')[0]
@@ -450,9 +453,6 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                         colon_cnt += 1
                 if colon_cnt < 5:
                     return 'Error line ' + str(line_number) + '. File does not appear to be be in a NetNTLM format.'    
-
-
-        # Check hash_types
 
     return False
 

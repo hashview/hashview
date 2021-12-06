@@ -9,7 +9,7 @@
 
 1. Python 3.7+ 
 2. Mysql DB installed with known username/password   
-3. Access to an SMTP email service (used for password resets and notifications)
+3. Access to a SMTP email service (used for password resets and notifications)
 
 ## Agent Requirements
 

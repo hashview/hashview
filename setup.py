@@ -32,8 +32,7 @@ while step_three_prompt != '1' and step_three_prompt != '2':
     step_three_prompt = input('Enter choice: ')
 
 if step_three_prompt == '1':
-    print("TODO")
-    print("Here are instructions on how to migrate")
+    print("See MIGRATION.md")
     exit()
 
 # Install dependencies

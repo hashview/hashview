@@ -45,12 +45,12 @@ with app.app_context():
         admin_firstname = input('Enter Administrator\'s first name: ')
         while len(admin_firstname) == 0:
             print('Error: Firstname must be at least 1 character long')
-            admin_password = input('Enter Administrator\'s first name: ')
+            admin_firstname = input('Enter Administrator\'s first name: ')
 
         admin_lastname = input('Enter Administrator\'s last name: ')
         while len(admin_lastname) == 0:
             print('Error: Firstname must be at least 1 character long')
-            admin_password = input('Enter Administrator\'s last name: ')    
+            admin_lastname = input('Enter Administrator\'s last name: ')    
 
         print('\nProvisioning account in database.')
         hashed_password = bcrypt.generate_password_hash(admin_password).decode('utf-8')

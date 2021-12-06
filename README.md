@@ -17,9 +17,9 @@
 2. Hashcat 6.2.x+
 
 ## Installation
+Follow these instructions to install Hashview Server on Ubuntu server. In theory Hashview should be able to run on any *nix system, but the dev's only installed/tested on Debian/Ubuntu.
 
-#### 1) Setup mysql. 
-These instructions are for Ubuntu, but in theory Hashview should be able to run on any *nix system.
+#### 1) Setup MySQL 
 
 ```
 sudo apt update
@@ -28,7 +28,8 @@ sudo mysql_secure_installation
 ```
 
 #### 2) Configure MySQL
-Log into your mysql server and create a dedicated user for hashview. Hashview can run as root, but doesnt need to. And since we practice what we preach. we should use a lower priv account for this. If you're installing hashview on a different server than the system where the mysql db is running on, adjust the account creation 
+Log into your mysql server and create a dedicated user for hashview. Hashview can run as root, but doesnt need to. And since we practice what we preach. we should use a lower priv account for this. If you're installing hashview on a different server than the system where the mysql db is running on, adjust the account creation.
+
 ```
 sudo mysql
 CREATE USER 'hashview'@'localhost' IDENTIFIED BY 'DoNotUseThisPassword123!';
@@ -38,9 +39,9 @@ create database hashview;
 exit
 ```
 
+#### 3) Install Hashview Server
+The following are to install hashview after the mysql db has been setup.
 
-#### 3) Install Hashview
-The following are to install hashview after the mysql db has been setup
 ```
 sudo apt-get install python3 python3-pip python3-flask
 git clone https://github.com/hashview/hashview/
@@ -50,6 +51,14 @@ pip3 install -r requirements.txt
 ./hashview.py # (note you can add a --debug if you are attempting to troubleshoot an issue)
 ```
 
+#### 4) Log into your hashview server
+Navigate to your server, default port is 8443. https://IP:8443
+
+(note)
+Because hashview is installed with a self signed certificate, you will be prompted about it being invalid. You're welcome to use properly signed certs by replacing the files under `hashview/hashview/control/ssl/`
+
+Once logged in, before you can start cracking hashes, you need to install a Hashview-Agent.
+
 ## Installing Hashview-Agent
 After you've installed hashview you will need to install a hashview-agent. The agent can run on the same system as hashview, but doesn't have to.
 
@@ -58,6 +67,7 @@ After you've installed hashview you will need to install a hashview-agent. The a
 #### 3) Click Download Agent to get a .tgz package of the hashview-agent
 #### 4) Move agent to the system you'd like to run it on
 #### 5) Install Agent
+
 You will need to decompress the package and run the `hashview-agent.py` script. Upon initial execution it will prompt you for information about your hashview server.
 ```
 tar -xzvf hashview-agent.<version>.tgz
@@ -78,5 +88,4 @@ If you have any problems, please consult [Issues](https://github.com/hashview/ha
 ### Authors
 
 Contact us on Twitter  
-@caseycammilleri  
 @jarsnah12

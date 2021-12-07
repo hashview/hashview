@@ -14,6 +14,8 @@ Analytics
     - Show instacrack rate
     - Top passwords across customers
     - Change download left/found list to be based on hashtype when user selects all hashfiles all customers
+    - Top X plaintext download dropdown menu
+    
 
 API
     - support VERSION info being sent from agents to server

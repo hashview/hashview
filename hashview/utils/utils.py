@@ -76,7 +76,7 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
 
     # for line in file, 
     for line in lines:
-        # TODO
+
         # If line is empty:
         if len(line) > 0:
             if file_type == 'hash_only':
@@ -273,6 +273,18 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
     lines = file.readlines()
     line_number = 0
 
+    # Do a whole file check if file_type is NetNTLM
+    # If duplicate usernames exists return error
+    if file_type == 'NetNTLM':
+        list_of_usernames = []
+        for line in lines:
+            username = line.split(':')[0].lower()
+            if username in list_of_usernames:
+                return 'Error: Duplicate usernames found in hashfiles (' + str(username) + '). Please only submit unique usernames.'
+            else:
+                list_of_usernames.append(username)
+
+    line_number = 0
     # for line in file, 
     for line in lines:
         line_number += 1

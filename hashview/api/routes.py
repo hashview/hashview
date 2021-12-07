@@ -352,7 +352,7 @@ def v1_api_put_jobtask_crackfile_upload(hash_type):
             elements.pop()
             ciphertext = ':'.join(elements)
       
-            print('Plaintext: ' + str(bytes.fromhex(plaintext).decode('latin-1')))
+            #print('Plaintext: ' + str(bytes.fromhex(plaintext).decode('latin-1')))
 
             record = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(ciphertext), cracked='0').first()
             if record:

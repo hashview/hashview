@@ -76,7 +76,6 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
 
     # for line in file, 
     for line in lines:
-
         # If line is empty:
         if len(line) > 0:
             if file_type == 'hash_only':
@@ -85,7 +84,7 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                     username = line.split('#')[1]
                 else:
                     username = None
-            if file_type == 'user_hash':
+            elif file_type == 'user_hash':
                 hash_id = import_hash_only(line=line.split(':',1)[1].rstrip(), hash_type=hash_type)
                 username = line.split(':')[0]
             elif file_type == 'shadow':
@@ -125,7 +124,7 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
             else:
                 return False
             if username == None:
-                hashfilehashes = HashfileHashes(hash_id=hash_id, username=None, hashfile_id=hashfile_id)
+                hashfilehashes = HashfileHashes(hash_id=hash_id, hashfile_id=hashfile_id)
             else:
                 hashfilehashes = HashfileHashes(hash_id=hash_id, username=username.encode('latin-1').hex(), hashfile_id=hashfile_id)
             db.session.add(hashfilehashes)

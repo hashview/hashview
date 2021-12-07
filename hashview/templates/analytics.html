@@ -367,4 +367,54 @@
           <br>
         </div>
     </div>
+    <div class="row">
+        <div class="col" align="center">
+            <div class="card">
+                <h5 class="card-header">Top 10 Masks</h5>
+                <div class="card-body">
+                    <table class="table">
+                        <tbody>
+                            <tr>
+                                <th scope="col">
+                                    Mask:
+                                </th>
+                                <th scope="col">
+                                    Total:
+                                </th>
+                                <th scope="col">
+                                    Percentage:
+                                </th>
+                            </tr>
+                            {% for entry in fig6_values %}
+                                <tr>
+                                    <td>
+                                        {{entry}}
+                                    </td>
+                                    <td>
+                                        {{fig6_values[entry]}}
+                                    </td>
+                                    <td>
+                                        {{ (fig6_values[entry] / fig6_total * 100) | round(2) }}%
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                      </table>
+                </div>
+              </div>
+
+        </div>
+    </div>
+    <div class="row">
+        <div class="col" align="center">
+          <br>
+          <br>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col" align="center">
+          <br>
+          <br>
+        </div>
+    </div>
 {% endblock content %}

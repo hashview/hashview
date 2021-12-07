@@ -1,10 +1,8 @@
 Analytics
-    - I think outerjoins should be .joins
     - Set color scheme to look good
     - download pngs
     - Total Hashes Cracked vs uncracked
     - Total unique cracked vs uncracked
-    - Top 10 masks
     - Top 20 users per single hash/password
     - All duplicates?
     - Both Bar graphs should render widths dynamically
@@ -15,7 +13,7 @@ Analytics
     - Top passwords across customers
     - Change download left/found list to be based on hashtype when user selects all hashfiles all customers
     - Top X plaintext download dropdown menu
-    
+
 
 API
     - support VERSION info being sent from agents to server

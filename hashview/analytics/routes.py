@@ -312,7 +312,7 @@ def get_analytics():
         tmp_plaintext = re.sub(r"S", '?s', tmp_plaintext)
 
         if tmp_plaintext not in fig6_data:
-            fig6_data[tmp_plaintext] = 0
+            fig6_data[tmp_plaintext] = 1
         else:
             fig6_data[tmp_plaintext] += 1
         fig6_total +=1

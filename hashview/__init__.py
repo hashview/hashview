@@ -7,11 +7,8 @@ from hashview.config import Config
 from flask_mail import Mail
 from flask_migrate import Migrate
 from flask_apscheduler import APScheduler
-#import hashview.scheduled_tasks.scheduled_tasks as s
-#import hashview.utils.foo as s
 
 db = SQLAlchemy()
-#s.db = SQLAlchemy()
 
 
 bcrypt = Bcrypt()
@@ -21,9 +18,6 @@ login_manager.login_message_category = 'info'
 mail = Mail()
 migrate = Migrate()
 scheduler = APScheduler()
-
-#import hashview.models as HM
-#s.settings = HM.Settings
 
 # Jinja2 Filter
 def jinja_hex_decode(text):

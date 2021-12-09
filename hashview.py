@@ -168,7 +168,6 @@ def data_retention_cleanup():
         from hashview.utils.utils import send_email
         from datetime import datetime, timedelta
         import time
-        import sys
         import os
         from hashview import db
 
@@ -183,7 +182,6 @@ def data_retention_cleanup():
         for job in jobs:
             # Send email saying we've deleted their job
             user = Users.query.get(job.owner_id)
-            #user = Users.query.get(2) # using my own email for testing
             subject = 'Hashview removed an old job: ' + str(job.name)
             message = 'Hello ' + str(user.first_name) + ', \n\n In accordance to the data retention policy of ' + str(retention_period) + ' days, your job "' + str(job.name) + '" was deleted.'
             send_email(user, subject, message)
@@ -205,7 +203,6 @@ def data_retention_cleanup():
             for job in jobs:
                 print("[DEBUG] Hashfile->jobs: Job Name: " +str(job.name))
                 user = Users.query.get(job.owner_id)
-                #user = Users.query.get(2) # using my own email for testing
                 subject = 'Hashview removed a job that was associated to an old hash file: ' + str(job.name)
                 message = 'Hello ' + str(user.first_name) + ', \n\n In accordance to the data retention policy of ' + str(retention_period) + ' days, your hashfile "' + str(hashfile.name) + '" was associated with a job "' + str(job.name) + '". This job was deleted.'
                 send_email(user, subject, message)
@@ -218,8 +215,8 @@ def data_retention_cleanup():
                 
             # Hashfiles, HashfileHashes and Hash notifications
             print('[DEBUG] Hashfile Name: ' + str(hashfile.name) + '    Owner ID: ' + str(hashfile.owner_id))
+            print('[DEBUG] Hashfile ID: ' + str(hashfile.id))
             user = Users.query.get(hashfile.owner_id)
-            #user = Users.query.get(2) # using my own email for testing
             subject = 'Hashview removed an old Hashfile: ' + str(hashfile.name)
             message = 'Hello ' + str(user.first_name) + ', \n\n In accordance to the data retention policy of ' + str(retention_period) + ' days, your hashfile "' + str(hashfile.name) + '" was removed.'
             send_email(user, subject, message)
@@ -254,7 +251,7 @@ with app.app_context():
     from hashview import scheduler
     scheduler.delete_all_jobs
     scheduler.add_job(id='DATA_RETENTION', func=data_retention_cleanup, trigger='cron', hour='1') #hour=1
-
+    #scheduler.add_job(id='DATA_RETENTION', func=data_retention_cleanup, trigger='cron', hour='*')
 
 if __name__ == '__main__':
     if args.debug:

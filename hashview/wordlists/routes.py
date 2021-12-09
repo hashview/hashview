@@ -1,10 +1,8 @@
-import os
-from flask import Blueprint, render_template, redirect, url_for, flash, current_app, abort
+from flask import Blueprint, render_template, redirect, url_for, flash
 from flask_login import login_required, current_user
 from hashview.wordlists.forms import WordlistsForm
 from hashview.models import Tasks, Wordlists, Users
 from hashview import db
-#from hashview.wordlists.utils import save_file, get_linecount, get_filehash # move to dedicated utils folder
 from hashview.utils.utils import save_file, get_linecount, get_filehash, update_dynamic_wordlist
 
 wordlists = Blueprint('wordlists', __name__)

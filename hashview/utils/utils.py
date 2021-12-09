@@ -1,16 +1,16 @@
 import os
 import secrets
 import hashlib
-import subprocess
 import hashlib
 import time
 import _md5
 from datetime import datetime
 from hashview import db, mail
-from hashview.models import Settings, Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs, JobTasks, JobNotifications, Users, Agents
+from hashview.models import Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs, JobTasks, JobNotifications, Users, Agents
 from flask_mail import Message
 from flask import current_app, url_for
 from pushover import Client
+
 
 def save_file(path, form_file):
     random_hex = secrets.token_hex(8)
@@ -150,6 +150,8 @@ def update_dynamic_wordlist(wordlist_id):
     wordlist.size = get_linecount(wordlist.path)
     # update file hash
     wordlist.checksum = get_filehash(wordlist.path)
+    # update last update
+    wordlist.last_updated = datetime.today()
     db.session.commit()
 
 def build_hashcat_command(job_id, task_id):

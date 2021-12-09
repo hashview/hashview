@@ -19,6 +19,7 @@ These are plaintext, newline delimited files that you can upload to hashview and
                     <th scope="col">Name</th>
                     <th scope="col">Size</th>
                     <th scope="col">Owner</th>
+                    <th scope="col">Last Updated</th>
                     <th scope="col">Control</th>
                 </tr>
                 </thead>
@@ -35,6 +36,9 @@ These are plaintext, newline delimited files that you can upload to hashview and
                                 {% endfor %}
                             </td>
                             <td>
+                                {{ wordlist.last_updated }}
+                            </td>
+                            <td>
                                 <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{wordlist.id}}" title=Info></button>
                                 <button type="button" class="fa fa-trash btn btn-danger" data-toggle="modal" data-target="#deleteModal{{wordlist.id}}" title=Delete></button>
                             </td>
@@ -48,6 +52,7 @@ These are plaintext, newline delimited files that you can upload to hashview and
                 <tr>
                     <th scope="col">Name</th>
                     <th scope="col">Size</th>
+                    <th scope="col">Last Updated</th>
                     <th scope="col">Control</th>
                 </tr>
                 </thead>
@@ -56,6 +61,9 @@ These are plaintext, newline delimited files that you can upload to hashview and
                         <tr>
                             <td>{{ wordlist.name }}</td>
                             <td>{{ wordlist.size }}</td>
+                            <td>
+                                {{ wordlist.last_updated }}
+                            </td>
                             <td>
                                 <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{wordlist.id}}" title=Info></button>
                                 <a class="fa fa-undo btn btn-warning" href="/wordlists/update/{{wordlist.id}}" role="button" title=Update></a>

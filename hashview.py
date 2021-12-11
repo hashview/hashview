@@ -55,7 +55,7 @@ with app.app_context():
         print('\nProvisioning account in database.')
         hashed_password = bcrypt.generate_password_hash(admin_password).decode('utf-8')
 
-        user = Users(first_name=admin_firstname, last_name=admin_password, email_address=admin_email, password=hashed_password, admin=True)
+        user = Users(first_name=admin_firstname, last_name=admin_lastname, email_address=admin_email, password=hashed_password, admin=True)
         db.session.add(user)
         db.session.commit()
 

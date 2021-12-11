@@ -26,11 +26,11 @@ if not os.path.exists('agent/config.conf'):
     print('\nInitial setup detected. Hashview Agent will now prompt you to setup the config fild ./agent/config/config.conf.\n')
     server = input('Enter IP address or FQDN of the hashview server: ')
     while len(server) == 0:
-        print('Error: Invalid email address. Try again: ')
+        print('Error: Value must be an IP address or FQDN. Can not be blank: ')
         server = input("Enter IP address or FQDN of the hashview server: ")
     port = input('Enter the port of the hashview server: ')
     while len(port) == 0:
-        print('Error: Invalid email address. Try again: ')
+        print('Error: You must provide a port. By default Hashview Server runs on 8443: ')
         port = input("Enter the port of the hashview server: ")
     use_tls = input('Does the Hashview server use SSL/TLS? [y/N]:')
     if use_tls == 'y' or use_tls == 'Y':

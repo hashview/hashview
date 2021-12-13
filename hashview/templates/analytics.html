@@ -28,6 +28,7 @@
         
         };
     }
+
     function chart_download(id) {       
             var chart = doughNut;
             document.getElementById(dict[id]).onclick = function () {
@@ -49,9 +50,11 @@
             chart.update();          
         };
     }
+
     function get_chart(id){
         document.getElementById(dict[id]).click();
     }
+    
     function chart_download_all(){
         if(confirm("This will download all charts on the page")){
             for(var i=1;i<6;i++){
@@ -59,6 +62,7 @@
             } 
         }   
     }
+
 </script>
 
 <!-- Doing menu buttons vs select forms because i dont know better.  Maybe the latter is the 'correct' way to do things?-->
@@ -67,23 +71,23 @@
         <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown"
             aria-haspopup="true" aria-expanded="false">
             {% if customer_id %}
-            {% for customer in customers %}
-            {% if customer.id|string() == customer_id|string() %}
-            {{ customer.name }}
-            {% endif %}
-            {% endfor %}
+                {% for customer in customers %}
+                    {% if customer.id|string() == customer_id|string() %}
+                        {{ customer.name }}
+                    {% endif %}
+                {% endfor %}
             {% else %}
-            All Customers
+                All Customers
             {% endif %}
         </button>
         <div class="dropdown-menu">
             {% if customer_id %}
-            <a class="dropdown-item" href="/analytics"> All Customers </a>
-            <div class="dropdown-divider"></div>
+                <a class="dropdown-item" href="/analytics"> All Customers </a>
+                <div class="dropdown-divider"></div>
             {% endif %}
 
             {% for customer in customers %}
-            <a class="dropdown-item" href="/analytics?customer_id={{customer.id}}"> {{customer.name}} </a>
+                <a class="dropdown-item" href="/analytics?customer_id={{customer.id}}"> {{customer.name}} </a>
             {% endfor %}
         </div>
     </div>
@@ -94,30 +98,28 @@
         <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown"
             aria-haspopup="true" aria-expanded="false">
             {% if hashfile_id %}
-            {% for hashfile in hashfiles %}
-            {% if hashfile.id|string() == hashfile_id|string() %}
-            {{ hashfile.name }}
-            {% endif %}
-            {% endfor %}
+                {% for hashfile in hashfiles %}
+                    {% if hashfile.id|string() == hashfile_id|string() %}
+                        {{ hashfile.name }}
+                    {% endif %}
+                {% endfor %}
             {% else %}
-            All Hashfiles
+                All Hashfiles
             {% endif %}
         </button>
         <div class="dropdown-menu">
             {% if hashfile_id %}
-            <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}"> All Hashfiles </a>
-            <div class="dropdown-divider"></div>
+                <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}"> All Hashfiles </a>
+                <div class="dropdown-divider"></div>
             {% endif %}
             {% for hashfile in hashfiles %}
-            {% if customer_id %}
-            {% if hashfile.customer_id|string() == customer_id|string() %}
-            <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}&hashfile_id={{hashfile.id}}">
-                {{hashfile.name}} </a>
-            {% endif %}
-            {% else %}
-            <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}&hashfile_id={{hashfile.id}}">
-                {{hashfile.name}} </a>
-            {% endif %}
+                {% if customer_id %}
+                    {% if hashfile.customer_id|string() == customer_id|string() %}
+                        <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}&hashfile_id={{hashfile.id}}"> {{hashfile.name}} </a>
+                    {% endif %}
+                {% else %}
+                    <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}&hashfile_id={{hashfile.id}}"> {{hashfile.name}} </a>
+                {% endif %}
             {% endfor %}
         </div>
     </div>
@@ -300,13 +302,14 @@
                                 </td>
                                 <td>
                                     {% if total_runtime > 604800 %}
-                                    {{ (total_runtime/604800)|round|int }} weeks<br>
+                                        {{ (total_runtime/604800)|round|int }} weeks<br>
                                     {% elif total_runtime > 3600 %}
-                                    {{ (total_runtime/3600)|round|int }} hours<br>
+                                        {{ (total_runtime/3600)|round|int }} hours<br>
                                     {% elif total_runtime > 60 %}
-                                    {{ (total_runtime/60)|round|int }} minutes<br>
-                                    {% elif total_runtime < 60 %} < 1 minute<br>
-                                        {% endif %}
+                                        {{ (total_runtime/60)|round|int }} minutes<br>
+                                    {% elif total_runtime < 60 %}
+                                        < 1 minute<br>                                        
+                                    {% endif %}
                                 </td>
                             </tr>
                             <tr>
@@ -315,18 +318,13 @@
                                 </td>
                                 <td>
                                     {% if customer_id %}
-                                    {% if hashfile_id %}
-                                    <a class="btn btn-primary btn-sm"
-                                        href="/analytics/download?type=found&customer_id={{customer_id}}&hashfile_id={{hashfile_id}}"
-                                        role="button">Cracked</a> <br>
+                                        {% if hashfile_id %}
+                                            <a class="btn btn-primary btn-sm" href="/analytics/download?type=found&customer_id={{customer_id}}&hashfile_id={{hashfile_id}}" role="button">Cracked</a> <br>
+                                        {% else %}
+                                            <a class="btn btn-primary btn-sm" href="/analytics/download?type=found&customer_id={{customer_id}}" role="button">Cracked</a> <br>
+                                        {% endif %}
                                     {% else %}
-                                    <a class="btn btn-primary btn-sm"
-                                        href="/analytics/download?type=found&customer_id={{customer_id}}"
-                                        role="button">Cracked</a> <br>
-                                    {% endif %}
-                                    {% else %}
-                                    <a class="btn btn-primary btn-sm" href="/analytics/download?type=found"
-                                        role="button">Cracked</a> <br>
+                                        <a class="btn btn-primary btn-sm" href="/analytics/download?type=found" role="button">Cracked</a> <br>
                                     {% endif %}
                                 </td>
                             </tr>
@@ -336,18 +334,13 @@
                                 </td>
                                 <td>
                                     {% if customer_id %}
-                                    {% if hashfile_id %}
-                                    <a class="btn btn-primary btn-sm"
-                                        href="/analytics/download?type=left&customer_id={{customer_id}}&hashfile_id={{hashfile_id}}"
-                                        role="button">Uncracked</a> <br>
+                                        {% if hashfile_id %}
+                                            <a class="btn btn-primary btn-sm" href="/analytics/download?type=left&customer_id={{customer_id}}&hashfile_id={{hashfile_id}}" role="button">Uncracked</a> <br>
+                                        {% else %}
+                                            <a class="btn btn-primary btn-sm" href="/analytics/download?type=left&customer_id={{customer_id}}" role="button">Uncracked</a> <br>
+                                        {% endif %}
                                     {% else %}
-                                    <a class="btn btn-primary btn-sm"
-                                        href="/analytics/download?type=left&customer_id={{customer_id}}"
-                                        role="button">Uncracked</a> <br>
-                                    {% endif %}
-                                    {% else %}
-                                    <a class="btn btn-primary btn-sm" href="/analytics/download?type=left"
-                                        role="button">Uncracked</a> <br>
+                                        <a class="btn btn-primary btn-sm" href="/analytics/download?type=left" role="button">Uncracked</a> <br>
                                     {% endif %}
                                 </td>
                             </tr>

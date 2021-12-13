@@ -50,6 +50,10 @@ def get_analytics():
 
     fig1_labels = [row[0] for row in fig1_data]
     fig1_values = [row[1] for row in fig1_data]
+    fig1_total = (fig1_cracked_cnt + fig1_uncracked_cnt)
+    
+    # Cracked Percent
+    fig1_percent = 0 if fig1_total is 0 else [str(round(((fig1_cracked_cnt / fig1_total)*100),1)) + '%'] 
 
     # Figure 2 (Cracked Complexity Breakdown)
     if customer_id:
@@ -329,6 +333,7 @@ def get_analytics():
                             title='analytics', 
                             fig1_labels=fig1_labels, 
                             fig1_values=fig1_values,
+                            fig1_percent=fig1_percent,
                             fig2_labels=fig2_labels,
                             fig2_values=fig2_values, 
                             fig3_labels=fig3_labels,

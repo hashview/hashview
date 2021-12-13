@@ -1,10 +1,75 @@
 {% extends "layout.html"%}
 {% block header %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@3.1.0/dist/chart.min.js"></script>
+<script>
+    var dict = { 1: "recovered_accounts", 2: "password_complexity", 3:"composition_makeup", 4:"passwords_count_len", 5:"top_10_passswords"};
+
+    extendChart();
+ 
+    function extendChart() { // add text to the middle of all doughnut charts
+        var originalDraw = Chart.controllers.doughnut.prototype.draw;
+        Chart.controllers.doughnut.prototype.draw = function (ease) {
+            originalDraw.call(this, ease);
+
+            const ctx = this.chart.ctx
+            const chartArea = this.chart.chartArea
+
+            //Font style
+            const fontStyle = 'bold'
+            const fontSize = chartArea.right / 15
+            ctx.font = `${fontStyle} ${fontSize}px ${this.chart.options.defaultFontFamily}`
+            ctx.fillStyle = 'rgba(0,0,0,0.6)' //Text color
+
+            //Center text
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+            var value = this.chart.options.percent ? this.chart.options.percent : "";             
+            ctx.fillText(value, (chartArea.right + chartArea.left) / 2, (chartArea.bottom + chartArea.top) / 2)
+        
+        };
+    }
+
+    function chart_download(id) {       
+            var chart = doughNut;
+            document.getElementById(dict[id]).onclick = function () {
+            //The title is not part of the graph canvas so it would not show up in the image download 
+            //So we add a hidden title, and only show it when downloading the image. 
+            chart.options.animation.duration = 0;
+            chart.options.plugins.title.display = true;
+            chart.update();    
+            //Create a download link
+            var a = document.createElement('a');
+            a.href = chart.toBase64Image();
+            a.download = dict[id] + '.png';
+            a.click();         
+            //Hide the title again
+            chart.options.plugins.title.display = false;
+            chart.update();
+            //Turn back on animations 
+            chart.options.animation.duration = 1000;
+            chart.update();          
+        };
+    }
+
+    function get_chart(id){
+        document.getElementById(dict[id]).click();
+    }
+    
+    function chart_download_all(){
+        if(confirm("This will download all charts on the page")){
+            for(var i=1;i<6;i++){
+                get_chart(i); 
+            } 
+        }   
+    }
+
+</script>
+
 <!-- Doing menu buttons vs select forms because i dont know better.  Maybe the latter is the 'correct' way to do things?-->
 <div class="content-section">
     <div class="dropdown">
-        <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+        <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown"
+            aria-haspopup="true" aria-expanded="false">
             {% if customer_id %}
                 {% for customer in customers %}
                     {% if customer.id|string() == customer_id|string() %}
@@ -30,7 +95,8 @@
 {% if customer_id is not none %}
 <div class="content-section">
     <div class="dropdown">
-        <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+        <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown"
+            aria-haspopup="true" aria-expanded="false">
             {% if hashfile_id %}
                 {% for hashfile in hashfiles %}
                     {% if hashfile.id|string() == hashfile_id|string() %}
@@ -42,23 +108,44 @@
             {% endif %}
         </button>
         <div class="dropdown-menu">
-                {% if hashfile_id %}
-                    <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}"> All Hashfiles </a>
-                    <div class="dropdown-divider"></div>
-                {% endif %}
-                {% for hashfile in hashfiles %}
-                    {% if customer_id %}
-                        {% if hashfile.customer_id|string() == customer_id|string() %}
-                            <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}&hashfile_id={{hashfile.id}}"> {{hashfile.name}} </a>
-                        {% endif %}
-                    {% else %}
+            {% if hashfile_id %}
+                <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}"> All Hashfiles </a>
+                <div class="dropdown-divider"></div>
+            {% endif %}
+            {% for hashfile in hashfiles %}
+                {% if customer_id %}
+                    {% if hashfile.customer_id|string() == customer_id|string() %}
                         <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}&hashfile_id={{hashfile.id}}"> {{hashfile.name}} </a>
                     {% endif %}
-                {% endfor %}
+                {% else %}
+                    <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}&hashfile_id={{hashfile.id}}"> {{hashfile.name}} </a>
+                {% endif %}
+            {% endfor %}
         </div>
     </div>
 </div>
 {% endif %}
+
+<div class="content-section" style="float: right; margin-right: 10px;">
+    <div class="dropdown" title="Clicking chart headers will download a single chart">
+        <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown"
+            aria-haspopup="true" aria-expanded="false">Download Charts</button>
+        <div class="dropdown-menu">         
+            <button class="dropdown-item" onclick="chart_download_all()">All Charts</button>
+            <div class="dropdown-divider"></div>           
+            <button class="dropdown-item" onclick=get_chart(1)>Recovered Accounts</button>
+            <div class="dropdown-divider"></div>
+            <button class="dropdown-item" onclick=get_chart(2)>Password Complexity</button>
+            <div class="dropdown-divider"></div>
+            <button class="dropdown-item" onclick=get_chart(3)>Composition Makeup</button>
+            <div class="dropdown-divider"></div>
+            <button class="dropdown-item" onclick=get_chart(4)>Passwords Count by Length</button>
+            <div class="dropdown-divider"></div>
+            <button class="dropdown-item" onclick=get_chart(5)>Top 10 Passswords</button>
+            <div class="dropdown-divider"></div>
+        </div>
+    </div>
+</div>
 
 {% endblock header %}
 {% block content %}
@@ -70,90 +157,120 @@
         <!-- spacer -->
     </div>
     <div class="row">
-      <div class="col"  align="center">
-        <div class="card">
-            <h5 class="card-header">Recovered Accounts</h5>
-            <div class="card-body">
-                <canvas id="TotalCrackedHashes" width="300" height="300">
-                    <script>
-                        var vis1 = document.getElementById("TotalCrackedHashes").getContext("2d");
-                        var doughNut = new Chart(vis1, {
-                            type: 'doughnut',
-                            data: {
-                                labels: {{ fig1_labels | safe }},
-                                datasets: [{
-                                    label: "my label",
-                                    data: {{ fig1_values | safe }},
-                                    backgroundColor: ['rgba(192, 0, 0, 0.5)', 'rgba(0, 128, 0, 0.5)']
+        <div class="col" align="center">
+            <div class="card">
+                <h5 id="recovered_accounts" class="card-header" role="button" title="Click to Download">Recovered
+                    Accounts</h5>
+                <div class="card-body">
+                    <canvas id="TotalCrackedHashes" width="300" height="300">
+                        <script>
+                            var vis1 = document.getElementById("TotalCrackedHashes").getContext("2d");
+                            var doughNut = new Chart(vis1, {
+                                type: 'doughnut',
+                                data: {
+                                    labels: {{ fig1_labels | safe }},
+                            datasets: [{
+                                label: "my label",
+                                data: {{ fig1_values | safe }},
+                                backgroundColor: ['rgba(192, 0, 0, 0.5)', 'rgba(0, 128, 0, 0.5)']
                                 }]
                             },
-                            options: {
+                            options: { 
+                                percent: {{fig1_percent | safe}}, // Custom variable to store the value in the middle of the chart
                                 responsive: false,
-                                plugins:{
+                                    plugins: {
+                                   
                                     legend: {
                                         position: 'bottom',
                                     },
+                                    title: {
+                                        display: false,
+                                            text: 'Recovered Accounts',
+                                                font: {
+                                            size: 18,
+                                                family: 'Arial'
+                                        },
+                                        padding: {
+                                            top: 10,
+                                            bottom: 20
+                                        }
+                                    }
                                 },
                                 elements: {
                                     center: {
                                         text: 'Red is 2/3 of the total numbers',
-                                        color: '#FF6384', // Default is #000000
-                                        fontStyle: 'Arial', // Default is Arial
-                                        sidePadding: 20, // Default is 20 (as a percentage)
-                                        minFontSize: 25, // Default is 20 (in px), set to false and text will not wrap.
-                                        lineHeight: 25 // Default is 25 (in px), used for when text wraps
+                                            color: '#FF6384', // Default is #000000
+                                                fontStyle: 'Arial', // Default is Arial
+                                                    sidePadding: 20, // Default is 20 (as a percentage)
+                                                        minFontSize: 25, // Default is 20 (in px), set to false and text will not wrap.
+                                                            lineHeight: 25 // Default is 25 (in px), used for when text wraps
                                     }
                                 }
                             }
                         });
-                    </script>
-              </canvas>
+                        chart_download(1);
+                        </script>
+                    </canvas>
+                </div>
             </div>
-        </div>
-          
 
-      </div>
-      <div class="col" align="center">
-        <div class="card">
-            <h5 class="card-header">Password Complexity</h5>
-            <div class="card-body">
-                <canvas id="Complexity" width="300" height="300">
-                    <script>
-                        var ctx = document.getElementById("Complexity").getContext("2d");
-                        var doughNut = new Chart(ctx, {
-                            type: 'doughnut',
-                            data: {
-                                labels: {{ fig2_labels | safe }},
-                                datasets: [{
-                                    label: "my label",
-                                    data: {{ fig2_values | safe }},
-                                    backgroundColor: ['rgba(192, 0, 0, 0.5)', 'rgba(227, 108, 10, 0.5)', 'rgba(0, 128, 0, 0.5)']
+
+        </div>
+        <div class="col" align="center">
+            <div class="card">
+                <h5 id="password_complexity" class="card-header" role="button" title="Click to Download">Password
+                    Complexity</h5>
+                <div class="card-body">
+                    <canvas id="Complexity" width="300" height="300">
+                        <script>
+                            var ctx = document.getElementById("Complexity").getContext("2d");
+                            var doughNut = new Chart(ctx, {
+                                type: 'doughnut',
+                                data: {
+                                    labels: {{ fig2_labels | safe }},
+                            datasets: [{
+                                label: "my label",
+                                data: {{ fig2_values | safe }},
+                                backgroundColor: ['rgba(192, 0, 0, 0.5)', 'rgba(227, 108, 10, 0.5)', 'rgba(0, 128, 0, 0.5)']
                                 }]
                             },
                             options: {
                                 responsive: false,
-                                plugins:{
+                                    plugins: {
                                     legend: {
                                         position: 'bottom',
                                     },
+                                    title: {
+                                        display: false,
+                                            text: 'Password Complexity',
+                                                font: {
+                                            size: 18,
+                                                family: 'Arial'
+                                        },
+                                        padding: {
+                                            top: 10,
+                                            bottom: 10
+                                        }
+                                    }
                                 }
                             }
                         });
-                    </script>
-                </canvas>
+                        chart_download(2);
+                        </script>
+                    </canvas>
+                </div>
             </div>
-          </div>
 
-      </div>
-    </div>
-    <div class="row">
-        <div class="col" align="center">
-          <br>
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
-          <br>
+            <br>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col" align="center">
+            <br>
         </div>
     </div>
     <div class="row">
@@ -195,7 +312,7 @@
                                     {% endif %}
                                 </td>
                             </tr>
-                            <tr>                                
+                            <tr>
                                 <td>
                                     Download Recovered:
                                 </td>
@@ -211,7 +328,7 @@
                                     {% endif %}
                                 </td>
                             </tr>
-                            <tr>                                
+                            <tr>
                                 <td>
                                     Download Unrecovered:
                                 </td>
@@ -228,13 +345,14 @@
                                 </td>
                             </tr>
                         </tbody>
-                      </table>
+                    </table>
                 </div>
-              </div>
+            </div>
         </div>
         <div class="col" align="center">
             <div class="card">
-                <h5 class="card-header">Composition Makeup</h5>
+                <h5 id="composition_makeup" class="card-header" role="button" title="Click to Download">Composition Makeup</h5>
+                
                 <div class="card-body">
                     <canvas id="CharSet" width="300" height="300">
                         <script>
@@ -243,45 +361,59 @@
                                 type: 'doughnut',
                                 data: {
                                     labels: {{ fig3_labels | safe }},
-                                    datasets: [{
-                                        label: "my label",
-                                        data: {{ fig3_values | safe }},
-                                        backgroundColor: [  'rgba(192, 0, 0, 0.5)', 
-                                                            'rgba(227, 108, 10, 0.5)', 
-                                                            'rgba(224, 202, 33, 0.5)', 
-                                                            'rgba(0, 128, 0, 0.5)',
-                                                            'rgba(128, 128, 128, 0.5)',]
+                            datasets: [{
+                                label: "my label",
+                                data: {{ fig3_values | safe }},
+                                backgroundColor: ['rgba(192, 0, 0, 0.5)',
+                                'rgba(227, 108, 10, 0.5)',
+                                'rgba(224, 202, 33, 0.5)',
+                                'rgba(0, 128, 0, 0.5)',
+                                'rgba(128, 128, 128, 0.5)',]
                                     }]
                                 },
-                                options: {
-                                    responsive: false,
-                                    plugins:{
-                                        legend: {
-                                            position: 'bottom',
+                            options: {
+                                responsive: false,
+                                    plugins: {
+                                    legend: {
+                                        position: 'bottom',
                                         },
+                                    title: {
+                                        display: false,
+                                            text: 'Composition Makeup',
+                                                font: {
+                                            size: 18,
+                                                family: 'Arial'
+                                        },
+                                        padding: {
+                                            top: 10,
+                                            bottom: 20
+                                        }
                                     }
                                 }
+                            }
                             });
+                            chart_download(3);
                         </script>
                     </canvas>
                 </div>
-              </div>
+            </div>
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
-          <br>
+            <br>
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
-          <br>
+            <br>
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
             <div class="card">
-                <h5 class="card-header">Passwords Count by Length</h5>
+                <h5 id="passwords_count_len" class="card-header" role="button" title="Click to Download">Passwords Count by Length</h5>
+                
                 <div class="card-body">
                     <canvas id="PasswordsCountByLength" width="1000" height="300">
                         <script>
@@ -290,41 +422,55 @@
                                 type: 'bar',
                                 data: {
                                     labels: {{ fig4_labels | safe }},
-                                    datasets: [{
-                                        label: "Password Counts by Lengths",
-                                        data: {{ fig4_values | safe }},
-                                        backgroundColor: ['rgba(0, 128, 0, 0.5)']
+                            datasets: [{
+                                label: "Password Counts by Lengths",
+                                data: {{ fig4_values | safe }},
+                                backgroundColor: ['rgba(0, 128, 0, 0.5)']
                                     }]
                                 },
-                                options: {
-                                    responsive: false,
-                                    plugins:{
-                                        legend: {
-                                            display: false,
+                            options: {
+                                responsive: false,
+                                    plugins: {
+                                    legend: {
+                                        display: false,
                                         },
+                                    title: {
+                                        display: false,
+                                            text: 'Passwords Count by Length',
+                                                font: {
+                                            size: 18,
+                                                family: 'Arial'
+                                        },
+                                        padding: {
+                                            top: 10,
+                                            bottom: 20
+                                        }
                                     }
                                 }
+                            }
                             });
+                            chart_download(4);
                         </script>
                     </canvas>
                 </div>
-              </div>
+            </div>
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
-          <br>
+            <br>
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
-          <br>
+            <br>
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
             <div class="card">
-                <h5 class="card-header">Top 10 Passwords</h5>
+                <h5 id="top_10_passswords" class="card-header" role="button" title="Click to Download">Top 10 Passwords</h5>
+               
                 <div class="card-body">
                     <canvas id="Top10Passwords" width="1000%" height="300">
                         <script>
@@ -333,38 +479,51 @@
                                 type: 'bar',
                                 data: {
                                     labels: {{ fig5_labels | safe }},
-                                    datasets: [{
-                                        label: "Top 10 Passwords",
-                                        data: {{ fig5_values | safe }},
-                                        backgroundColor: ['rgba(0, 128, 0, 0.5)']
+                            datasets: [{
+                                label: "Top 10 Passwords",
+                                data: {{ fig5_values | safe }},
+                                backgroundColor: ['rgba(0, 128, 0, 0.5)']
                                     }]
                                 },
-                                options: {
-                                    responsive: false,
-                                    plugins:{
-                                        legend: {
-                                            display: false,
+                            options: {
+                                responsive: false,
+                                    plugins: {
+                                    legend: {
+                                        display: false,
                                         },
+                                    title: {
+                                        display: false,
+                                            text: 'Top 10 Passwords',
+                                                font: {
+                                            size: 18,
+                                                family: 'Arial'
+                                        },
+                                        padding: {
+                                            top: 10,
+                                            bottom: 20
+                                        }
                                     }
                                 }
+                            }
                             });
+                            chart_download(5);
                         </script>
                     </canvas>
                 </div>
-              </div>
+            </div>
 
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
-          <br>
-          <br>
+            <br>
+            <br>
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
-          <br>
-          <br>
+            <br>
+            <br>
         </div>
     </div>
     <div class="row">
@@ -386,35 +545,35 @@
                                 </th>
                             </tr>
                             {% for entry in fig6_values %}
-                                <tr>
-                                    <td>
-                                        {{entry}}
-                                    </td>
-                                    <td>
-                                        {{fig6_values[entry]}}
-                                    </td>
-                                    <td>
-                                        {{ (fig6_values[entry] / fig6_total * 100) | round(2) }}%
-                                    </td>
-                                </tr>
+                            <tr>
+                                <td>
+                                    {{entry}}
+                                </td>
+                                <td>
+                                    {{fig6_values[entry]}}
+                                </td>
+                                <td>
+                                    {{ (fig6_values[entry] / fig6_total * 100) | round(2) }}%
+                                </td>
+                            </tr>
                             {% endfor %}
                         </tbody>
-                      </table>
+                    </table>
                 </div>
-              </div>
+            </div>
 
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
-          <br>
-          <br>
+            <br>
+            <br>
         </div>
     </div>
     <div class="row">
         <div class="col" align="center">
-          <br>
-          <br>
+            <br>
+            <br>
         </div>
     </div>
-{% endblock content %}
+    {% endblock content %}

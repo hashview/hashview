@@ -54,7 +54,6 @@ class Jobs(db.Model):
     ended_at = db.Column(db.DateTime, nullable=True)      # These defaults should be changed
     hashfile_id = db.Column(db.Integer, nullable=True)
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
-    notify_completed = db.Column(db.Boolean, nullable=False, default=False)
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
 
 class JobTasks(db.Model):

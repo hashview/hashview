@@ -6,7 +6,6 @@
 
     extendChart();
  
-
     function extendChart() { // add text to the middle of all doughnut charts
         var originalDraw = Chart.controllers.doughnut.prototype.draw;
         Chart.controllers.doughnut.prototype.draw = function (ease) {
@@ -29,7 +28,6 @@
         
         };
     }
-
     function chart_download(id) {       
             var chart = doughNut;
             document.getElementById(dict[id]).onclick = function () {
@@ -51,12 +49,8 @@
             chart.update();          
         };
     }
-
     function get_chart(id){
         document.getElementById(dict[id]).click();
-    }
-    function test(id){
-        return id;
     }
     function chart_download_all(){
         if(confirm("This will download all charts on the page")){
@@ -65,7 +59,6 @@
             } 
         }   
     }
-
 </script>
 
 <!-- Doing menu buttons vs select forms because i dont know better.  Maybe the latter is the 'correct' way to do things?-->

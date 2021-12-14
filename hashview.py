@@ -250,8 +250,8 @@ def data_retention_cleanup():
 with app.app_context():
     from hashview import scheduler
     scheduler.delete_all_jobs
-    scheduler.add_job(id='DATA_RETENTION', func=data_retention_cleanup, trigger='cron', hour='1') #hour=1
-    #scheduler.add_job(id='DATA_RETENTION', func=data_retention_cleanup, trigger='cron', hour='*')
+    #scheduler.add_job(id='DATA_RETENTION', func=data_retention_cleanup, trigger='cron', hour='1') #hour=1
+    scheduler.add_job(id='DATA_RETENTION', func=data_retention_cleanup, trigger='cron', hour='*')
 
 if __name__ == '__main__':
     if args.debug:

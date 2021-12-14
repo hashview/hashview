@@ -1,8 +1,10 @@
 Analytics
+    - For All Customers
+        - Remove Total Accounts
+        - Remove RunTime
+    - For dropdown customer select, remove any customer that has no hashfile
     - Set color scheme to look good
-    - download pngs
     - Total Hashes Cracked vs uncracked
-    - Total unique cracked vs uncracked
     - Top 20 users per single hash/password
     - All duplicates?
     - Both Bar graphs should render widths dynamically
@@ -10,10 +12,9 @@ Analytics
     - show users based on matching cracked passwords
     - Change to seperate json queries per portlet
     - Show instacrack rate
-    - Top passwords across customers
+    - Top passwords across customers (would only be valid for 30 days :())
     - Change download left/found list to be based on hashtype when user selects all hashfiles all customers
     - Top X plaintext download dropdown menu
-
 
 API
     - support VERSION info being sent from agents to server
@@ -74,6 +75,8 @@ Wiki Instructions
 
 Notifications
     - Include link with email/job notification
+    - Convert # of seconds to days/hours/minutes, etc.
+    - Maybe include percentage cracked?
 
 Settings
     - OPTIMIZE TABLE hashes;
@@ -161,7 +164,9 @@ Utils
     - Validate hash can be simplified. user:hash vs hash only, the hash_types code can be reused.
 
 # Bugs
-tasks that use dynamic wordlists do not update keyspace count (maybe we should just remove keyspace count all together)
+Cumlative crack time for all hashes will be inacurate as its value is dependent on existing hashfiles which get removed during retention period
+Force lowercase on user submitted NTLM hashes
+Prevent Job from being deleted when still running
 
 # Before Release
 Include upgrade instructions for agents

@@ -25,7 +25,11 @@
             ctx.textBaseline = 'middle'
             var value = this.chart.options.percent ? this.chart.options.percent : "";             
             ctx.fillText(value, (chartArea.right + chartArea.left) / 2, (chartArea.bottom + chartArea.top) / 2)
-        
+            
+            //Set chart background color to white
+            ctx.globalCompositeOperation = 'destination-over';
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, this.chart.width, this.chart.height);
         };
     }
 
@@ -184,6 +188,7 @@
                                         position: 'bottom',
                                     },
                                     title: {
+                                        color: 'rgba(0,0,0,0.6)', //Text color
                                         display: false,
                                             text: 'Recovered Accounts',
                                                 font: {
@@ -241,6 +246,7 @@
                                         position: 'bottom',
                                     },
                                     title: {
+                                        color: 'rgba(0,0,0,0.6)', //Text color
                                         display: false,
                                             text: 'Password Complexity',
                                                 font: {
@@ -378,6 +384,7 @@
                                         position: 'bottom',
                                         },
                                     title: {
+                                        color: 'rgba(0,0,0,0.6)', //Text color
                                         display: false,
                                             text: 'Composition Makeup',
                                                 font: {
@@ -427,7 +434,14 @@
                                 data: {{ fig4_values | safe }},
                                 backgroundColor: ['rgba(0, 128, 0, 0.5)']
                                     }]
-                                },
+                                },  
+                            plugins: [{
+                                beforeDraw: function(chart,args,options){
+                                        const c = chart.ctx
+                                        c.fillStyle = 'white';
+                                        c.fillRect(0, 0, chart.width, chart.height);                        
+                                   }
+                                }],
                             options: {
                                 responsive: false,
                                     plugins: {
@@ -435,6 +449,7 @@
                                         display: false,
                                         },
                                     title: {
+                                        color: 'rgba(0,0,0,0.6)', //Text color
                                         display: false,
                                             text: 'Passwords Count by Length',
                                                 font: {
@@ -484,7 +499,14 @@
                                 data: {{ fig5_values | safe }},
                                 backgroundColor: ['rgba(0, 128, 0, 0.5)']
                                     }]
-                                },
+                                }, 
+                            plugins: [{
+                                beforeDraw: function(chart,args,options){
+                                        const c = chart.ctx
+                                        c.fillStyle = 'white';
+                                        c.fillRect(0, 0, chart.width, chart.height);                        
+                                   }
+                                }],
                             options: {
                                 responsive: false,
                                     plugins: {
@@ -492,6 +514,7 @@
                                         display: false,
                                         },
                                     title: {
+                                        color: 'rgba(0,0,0,0.6)', //Text color
                                         display: false,
                                             text: 'Top 10 Passwords',
                                                 font: {

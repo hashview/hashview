@@ -126,5 +126,7 @@ def updateJobTask(job_task_id, task_status):
         print('Our agent version is older than the servers. You need to upgrade your agent before continuing.')
         exit()
     else:
-        print('we got an unexpected response type')
-        print(str(decoded_response['type']))
+        print('We got an unexpected response type or status code.')
+        print('Type: ' + str(decoded_response['type']))
+        print('Code: ' + str(decoded_response['status']))
+        return decoded_response

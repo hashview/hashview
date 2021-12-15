@@ -422,7 +422,6 @@ def v1_api_set_queue_jobtask_status():
     status_json = request.get_json()
 
     if (update_job_task_status(jobtask_id = status_json['job_task_id'], status = status_json['task_status'])):
-
         message = {
             'status': 200,
             'type': 'message',

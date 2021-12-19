@@ -86,6 +86,8 @@ The following are tasks that are assigned to the job. Each task is run once.
               </table>
         </div>
     </article>
-    <a class="btn btn-secondary" href="{{ url_for('jobs.jobs_assigned_hashfile', job_id=job.id) }}">Back</a>
-    <a class="btn btn-primary pull-right" href="/jobs/{{job.id}}/notifications" role="button">Next</a>
+    <!--<a class="btn btn-secondary" href="{{ url_for('jobs.jobs_assigned_hashfile', job_id=job.id) }}">Back</a>-->
+    <a class="btn btn-secondary" href="{{ url_for('jobs.jobs_assign_notifications', job_id = job.id) }}">Back</a>
+    <!--<a class="btn btn-primary pull-right" href="/jobs/{{job.id}}/notifications" role="button">Next</a>-->
+    <a class="btn btn-primary pull-right" href="/jobs/{{job.id}}/summary" role="button">Next</a>
 {% endblock content %}

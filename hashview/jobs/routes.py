@@ -134,7 +134,8 @@ def jobs_assigned_hashfile(job_id):
     elif request.method == 'POST' and request.form['hashfile_id']:
         job.hashfile_id = request.form['hashfile_id']
         db.session.commit()
-        return redirect("/jobs/" + str(job.id)+"/tasks")
+        #return redirect("/jobs/" + str(job.id)+"/tasks")
+        return redirect("/jobs/" + str(job.id)+"/notifications")
 
     else:
         for error in jobsNewHashFileForm.name.errors:
@@ -292,12 +293,7 @@ def jobs_assign_notifications(job_id):
     form = JobsNotificationsForm()
     job = Jobs.query.get(job_id)
 
-    # Check if job has any assigned tasks, and if not, send the user back to the task assigned page.
-    job_tasks = JobTasks.query.filter_by(job_id=job_id).count()
-    if job_tasks == 0:
-        flash('You must assign at least one task.', 'warning')
-        return redirect("/jobs/"+str(job_id)+"/tasks")
-
+    # Moving task check to /summary. Otherwise this will always skip /notifications now that notifications are before tasks
     # populate the forms dynamically with the choices in the database
     # form.hashes.choices = [(str(c[0].id), str(bytes.fromhex(c[1].username).decode('latin-1')) + ':' + c[0].ciphertext) for c in db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()]
     
@@ -314,7 +310,8 @@ def jobs_assign_notifications(job_id):
         if form.hash_completion.data == 'email' or form.hash_completion.data == 'push':
             return redirect("/jobs/"+str(job_id)+"/notifications/" + str(form.hash_completion.data)+ "/hashes")
         elif form.hash_completion.data == 'none':
-            return redirect("/jobs/" + str(job_id)+ "/summary")
+            #return redirect("/jobs/" + str(job_id)+ "/summary")
+            return redirect("/jobs/" + str(job_id)+ "/tasks")
         else:
             flash('Error. Invalid notification method', 'danger')
             return redirect("/jobs/" + str(job_id) + "/notifications")
@@ -342,7 +339,8 @@ def jobs_assign_notification_hashes(job_id, method):
                         db.session.commit()
         # Some for entry in request/post
         # add hash notification if not already set
-        return redirect("/jobs/"+str(job_id)+"/summary")
+        #return redirect("/jobs/"+str(job_id)+"/summary")
+        return redirect("/jobs/"+str(job_id)+"/tasks")
     else:
         return render_template('jobs_assigned_notifications_hashes.html', title='Assigned Hash Notifications', job=job, hashes=hashes, existing_hash_notifications=existing_hash_notifications)
 
@@ -367,9 +365,16 @@ def jobs_delete(job_id):
 @jobs.route("/jobs/<int:job_id>/summary", methods=['GET', 'POST'])
 @login_required
 def jobs_summary(job_id):
+    
+    # Check if job has any assigned tasks, and if not, send the user back to the task assigned page.  
+    job_tasks = JobTasks.query.filter_by(job_id=job_id).all()
+    if len(job_tasks) == 0:
+        flash('You must assign at least one task.', 'warning')
+        return redirect("/jobs/"+str(job_id)+"/tasks")
+
     job = Jobs.query.get(job_id)
     form = JobSummaryForm()
-    job_tasks = JobTasks.query.filter_by(job_id=job_id).all()
+   
     tasks = Tasks.query.all()
     hashfile = Hashfiles.query.get(job.hashfile_id)
     customer = Customers.query.get(job.customer_id)

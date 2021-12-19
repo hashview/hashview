@@ -26,8 +26,13 @@ def get_analytics():
     else:
         hashfile_id = None
 
-    customers = Customers.query.order_by(Customers.name).all()
-    hashfiles = Hashfiles.query.all()
+    hashfiles, customers = [], []
+    results =  db.session.query(Customers, Hashfiles).join(Hashfiles, Customers.id==Hashfiles.customer_id).order_by(Customers.name)
+
+    #Put all hashes in a list (hashfiles) and pull out all unique customers into a separate list (customers)
+    for rows in results:
+        customers.append(rows.Customers) if rows.Customers not in customers else customers
+        hashfiles.append(rows.Hashfiles)
 
     # Figure 1 (Cracked vs uncracked)
     if customer_id:
@@ -344,7 +349,7 @@ def get_analytics():
                             fig5_values=fig5_values,
                             fig6_values=fig6_values,
                             fig6_total=fig6_total,
-                            customers=customers, 
+                            customers=customers,
                             hashfiles=hashfiles, 
                             hashfile_id=hashfile_id, 
                             customer_id=customer_id,

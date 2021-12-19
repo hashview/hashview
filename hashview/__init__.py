@@ -21,7 +21,10 @@ scheduler = APScheduler()
 
 # Jinja2 Filter
 def jinja_hex_decode(text):
-    return bytes.fromhex(text).decode('latin-1')
+    if not text:
+        return text #if all hashes in a file are already cracked
+    else:
+        return bytes.fromhex(text).decode('latin-1')
 
 def create_app(config_class=Config):
 

@@ -56,7 +56,8 @@ If everything looks good, click complete below.
                     </tbody>
                 </table>
                 <div class="form-group">
-                    <a class="btn btn-secondary" href="{{ url_for('jobs.jobs_assign_notifications', job_id = job.id) }}">Back</a>
+                    <a class="btn btn-secondary" href="{{ url_for('jobs.jobs_list_tasks', job_id = job.id) }}">Back</a>
+                    <!--<a class="btn btn-secondary" href="{{ url_for('jobs.jobs_assign_notifications', job_id = job.id) }}">Back</a>-->
                     {{ form.submit(class="btn btn-primary pull-right")}}
                 </div>
             </form>

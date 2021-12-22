@@ -349,7 +349,7 @@ def get_analytics():
                             fig5_values=fig5_values,
                             fig6_values=fig6_values,
                             fig6_total=fig6_total,
-                            customers=customers,
+                            customers=customers, 
                             hashfiles=hashfiles, 
                             hashfile_id=hashfile_id, 
                             customer_id=customer_id,

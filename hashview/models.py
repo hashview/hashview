@@ -53,7 +53,6 @@ class Jobs(db.Model):
     started_at = db.Column(db.DateTime, nullable=True)    # These defaults should be changed
     ended_at = db.Column(db.DateTime, nullable=True)      # These defaults should be changed
     hashfile_id = db.Column(db.Integer, nullable=True)
-    notify_completed = db.Column(db.Boolean, nullable=False, default=False)
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
 

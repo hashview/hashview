@@ -1,5 +1,14 @@
 {% extends "layout.html"%}
 {% block header %}
+<style>
+    #remove_all{
+        min-width: 110px;
+        opacity: .5;
+    }
+    #remove_all:hover{
+        opacity: 1;
+    }
+</style>
 <br>
 <h1>Tasks</h1>
 <br>
@@ -79,6 +88,35 @@ The following are tasks that are assigned to the job. Each task is run once.
                                         {% endfor %}
                                     </div>
                                 </div>
+                                <div class="show pl-2">
+                                    <a id="remove_all" class="btn btn-danger" data-toggle="modal" 
+                                    data-target="#deleteModal" role="button" title="Remove all assigned tasks for this Job">Remove All</a>
+                                </div>
+
+                                 <!-- DeleteAllTaskModal -->
+                                <div class="modal fade" id="deleteModal" tabindex="-1" 
+                                aria-labelledby="deleteModalLabel" aria-hidden="true">
+                                    <div class="modal-dialog modal-dialog-centered">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                        <h5 class="modal-title" id="deleteModalLabel">Delete Tasks</h5>
+                                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                                            <span aria-hidden="true">&times;</span>
+                                        </button>
+                                        </div>
+                                        <div class="modal-body">
+                                        This will permanantly delete all assigned tasks for this job. Are you sure you want to continue?
+                                        </div>
+                                        <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
+                                        <form action="/jobs/{{job.id}}/remove_all_tasks" method="GET">
+                                            <input class="btn btn-danger" type="submit" value="Delete">
+                                        </form>
+                                        </div>
+                                    </div>
+                                    </div>
+                                </div>
+
                             </div>
                         </td>
                     </tr>

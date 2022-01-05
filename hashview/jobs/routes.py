@@ -287,6 +287,16 @@ def jobs_remove_task(job_id, task_id):
 
     return redirect("/jobs/"+str(job_id)+"/tasks")
 
+@jobs.route("/jobs/<int:job_id>/remove_all_tasks", methods=['GET'])
+@login_required
+def jobs_remove_all_tasks(job_id):
+    job_tasks = JobTasks.query.filter_by(job_id=job_id)
+    for tasks in job_tasks:
+        db.session.delete(tasks)
+    db.session.commit()
+    return redirect("/jobs/"+str(job_id)+"/tasks")
+
+    return redirect("/jobs/"+str(job_id)+"/tasks")
 @jobs.route("/jobs/<int:job_id>/notifications", methods=['GET', 'POST'])
 @login_required
 def jobs_assign_notifications(job_id):

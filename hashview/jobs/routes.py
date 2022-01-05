@@ -296,7 +296,6 @@ def jobs_remove_all_tasks(job_id):
     db.session.commit()
     return redirect("/jobs/"+str(job_id)+"/tasks")
 
-    return redirect("/jobs/"+str(job_id)+"/tasks")
 @jobs.route("/jobs/<int:job_id>/notifications", methods=['GET', 'POST'])
 @login_required
 def jobs_assign_notifications(job_id):

@@ -49,8 +49,8 @@ def get_analytics():
         fig1_uncracked_cnt = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='0').count()
     
     fig1_data = [
-        ("Recovered: " + str(fig1_cracked_cnt), fig1_cracked_cnt),
-        ("Unrecovered: " + str(fig1_uncracked_cnt), fig1_uncracked_cnt)
+        ("Recovered: " + str(formatDisplay(fig1_cracked_cnt)), fig1_cracked_cnt),
+        ("Unrecovered: " + str(formatDisplay(fig1_uncracked_cnt)), fig1_uncracked_cnt)
     ]
 
     fig1_labels = [row[0] for row in fig1_data]
@@ -96,9 +96,9 @@ def get_analytics():
             fig2_meets_complexity_cnt = fig2_meets_complexity_cnt + 1
     
     fig2_data = [
-        ("Fails Complexity: " + str(fig2_fails_complexity_cnt), fig2_fails_complexity_cnt),
-        ("Meets Complexity: " + str(fig2_meets_complexity_cnt), fig2_meets_complexity_cnt),
-        ("Unrecovered: " + str(fig2_uncracked_cnt), fig2_uncracked_cnt)
+        ("Fails Complexity: " + str(formatDisplay(fig2_fails_complexity_cnt)), fig2_fails_complexity_cnt),
+        ("Meets Complexity: " + str(formatDisplay(fig2_meets_complexity_cnt)), fig2_meets_complexity_cnt),
+        ("Unrecovered: " + str(formatDisplay(fig2_uncracked_cnt)), fig2_uncracked_cnt)
     ]
 
     fig2_labels = [row[0] for row in fig2_data]
@@ -129,6 +129,8 @@ def get_analytics():
         total_accounts = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).count()
         total_unique_hashes = db.session.query(Hashes).count()
 
+    total_accounts = formatDisplay(total_accounts)
+    total_unique_hashes = formatDisplay(total_unique_hashes)
 
     # Figure 3 (Charset Breakdown)
     # Reusing fig2_cracked_hashes data
@@ -203,21 +205,21 @@ def get_analytics():
     # We only want the top 4 with the 5th being other
     fig3_dict = {
         "Blank (unset): " + str(blank): blank,
-        "Numeric Only: " + str(numeric) : numeric, 
-        "LowerAlpha Only: " + str(loweralpha): loweralpha, 
-        "UpperAlpha Only: " + str(upperalpha): upperalpha, 
-        "Special Only: " + str(special): special, 
-        "MixedAlpha: " + str(mixedalpha): mixedalpha, 
-        "MixedAlphaNumeric: " +str(mixedalphanum): mixedalphanum,
-        "LowerAlphaNumeric: " + str(loweralphanum): loweralphanum, 
-        "LowerAlphaSpecial: " + str(loweralphaspecial): loweralphaspecial, 
-        "UpperAlphaSpecial: " + str(upperalphaspecial): upperalphaspecial, 
-        "SpecialNumeric: " + str(specialnum): specialnum, 
-        "MixedAlphaSpecial: " + str(mixedalphaspecial): mixedalphaspecial, 
-        "UpperAlphaSpecialNumeric: " + str(upperalphaspecialnum): upperalphaspecialnum, 
-        "LowerAlphaSpecialNumeric: " + str(loweralphaspecialnum): loweralphaspecialnum, 
-        "MixedAlphaSpecialNumeric: " + str(mixedalphaspecialnum): mixedalphaspecialnum,
-        "Other: " + str(other): other, 
+        "Numeric Only: " + str(formatDisplay(numeric)) : numeric, 
+        "LowerAlpha Only: " + str(formatDisplay(loweralpha)): loweralpha, 
+        "UpperAlpha Only: " + str(formatDisplay(upperalpha)): upperalpha, 
+        "Special Only: " + str(formatDisplay(special)): special, 
+        "MixedAlpha: " + str(formatDisplay(mixedalpha)): mixedalpha, 
+        "MixedAlphaNumeric: " +str(formatDisplay(mixedalphanum)): mixedalphanum,
+        "LowerAlphaNumeric: " + str(formatDisplay(loweralphanum)): loweralphanum, 
+        "LowerAlphaSpecial: " + str(formatDisplay(loweralphaspecial)): loweralphaspecial, 
+        "UpperAlphaSpecial: " + str(formatDisplay(upperalphaspecial)): upperalphaspecial, 
+        "SpecialNumeric: " + str(formatDisplay(specialnum)): specialnum, 
+        "MixedAlphaSpecial: " + str(formatDisplay(mixedalphaspecial)): mixedalphaspecial, 
+        "UpperAlphaSpecialNumeric: " + str(formatDisplay(upperalphaspecialnum)): upperalphaspecialnum, 
+        "LowerAlphaSpecialNumeric: " + str(formatDisplay(loweralphaspecialnum)): loweralphaspecialnum, 
+        "MixedAlphaSpecialNumeric: " + str(formatDisplay(mixedalphaspecialnum)): mixedalphaspecialnum,
+        "Other: " + str(formatDisplay(other)): other, 
         }
 
     fig3_array_sorted = dict(sorted(fig3_dict.items(), key=operator.itemgetter(1),reverse=True))
@@ -417,3 +419,7 @@ def analytics_download_hashes():
     
     outfile.close()
     return send_from_directory('control/tmp', filename, as_attachment=True)
+
+def formatDisplay(number): # add commas to the number after every thousand places
+    return "{:,}".format(number)
+

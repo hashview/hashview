@@ -391,11 +391,13 @@
                                 </td>
                                 <td>
                                     {% if total_runtime > 604800 %}
-                                        {{ (total_runtime/604800)|round|int }} weeks<br>
+                                        {{ (total_runtime/604800)|round|int }} week(s)<br>  
+                                    {% elif total_runtime > 86400 %}
+                                        {{ (total_runtime/86400)|round|int }} day(s)<br>    
                                     {% elif total_runtime > 3600 %}
-                                        {{ (total_runtime/3600)|round|int }} hours<br>
+                                        {{ (total_runtime/3600)|round|int }} hour(s)<br>
                                     {% elif total_runtime > 60 %}
-                                        {{ (total_runtime/60)|round|int }} minutes<br>
+                                        {{ (total_runtime/60)|round|int }} minute(s)<br>
                                     {% elif total_runtime < 60 %}
                                         < 1 minute<br>                                        
                                     {% endif %}

@@ -2,11 +2,7 @@
 {% block header %}
 <style>
     #remove_all{
-        min-width: 110px;
-        opacity: .5;
-    }
-    #remove_all:hover{
-        opacity: 1;
+        margin-left: 13px;       
     }
 </style>
 <br>
@@ -25,7 +21,12 @@ The following are tasks that are assigned to the job. Each task is run once.
                   <tr>
                     <th scope="col">Task Name</th>
                     <th scope="col">Type</th>
-                    <th scope="col">Control</th>
+                    <th scope="col">Control
+                        <!--Only show delete all if tasks have been added--> 
+                        {% if (job_tasks is defined) and job_tasks.count() > 0 %}   
+                            <a id="remove_all" class="fa fa-trash btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal" role="button" title="Remove all assigned tasks for this Job"></a>
+                        {% endif %}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -87,10 +88,6 @@ The following are tasks that are assigned to the job. Each task is run once.
                                             <a class="dropdown-item" href="/jobs/{{job.id}}/assign_task_group/{{task_group.id}}">{{task_group.name}}</a>
                                         {% endfor %}
                                     </div>
-                                </div>
-                                <div class="show pl-2">
-                                    <a id="remove_all" class="btn btn-danger" data-toggle="modal" 
-                                    data-target="#deleteModal" role="button" title="Remove all assigned tasks for this Job">Remove All</a>
                                 </div>
 
                                  <!-- DeleteAllTaskModal -->

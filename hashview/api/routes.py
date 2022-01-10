@@ -38,8 +38,9 @@ class AlchemyEncoder(json.JSONEncoder):
 
 def agentAuthorized(uuid):
     agent = Agents.query.filter_by(uuid=uuid).first()
-    if agent.status == 'Online' or agent.status == 'Working' or agent.status == 'Idle' or agent.status == 'Authorized':
-        return True
+    if agent:
+        if agent.status == 'Online' or agent.status == 'Working' or agent.status == 'Idle' or agent.status == 'Authorized':
+            return True
     return False
 
 def updateHeartbeat(uuid):
@@ -50,11 +51,14 @@ def updateHeartbeat(uuid):
         db.session.commit()
 
 def versionCheck(agent_version):
-    with open('VERSION.TXT', 'r') as f:
-        hashview_version = f.readline().strip('\n')
-    if version.parse(agent_version) < version.parse(hashview_version):
+    if agent_version:
+        with open('VERSION.TXT', 'r') as f:
+            hashview_version = f.readline().strip('\n')
+        if version.parse(agent_version) < version.parse(hashview_version):
+            return False
+        return True
+    else:
         return False
-    return True
 
 @api.route('/v1/not_authorized', methods=['GET', 'POST'])
 def v1_api_unauthorized():
@@ -78,7 +82,7 @@ def v1_api_upgrade_required():
 def v1_api_set_agent_heartbeat():
     # Get uuid
     uuid = request.cookies.get('uuid')
-    if not versionCheck(request.cookies.get('version')):
+    if not versionCheck(request.cookies.get('agent_version')):
         return redirect("/v1/upgrade_required")
 
     # Get agent from db
@@ -182,7 +186,7 @@ def v1_api_set_agent_heartbeat():
 
 @api.route('/v1/rules', methods=['GET'])
 def v1_api_get_rules():
-    if not versionCheck(request.cookies.get('version')):
+    if not versionCheck(request.cookies.get('agent_version')):
         return redirect("/v1/upgrade_required")
     if not agentAuthorized(request.cookies.get('uuid')):
         return redirect("/v1/not_authorized") 

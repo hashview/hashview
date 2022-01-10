@@ -335,7 +335,7 @@ def hashcatParser(filepath):
             gpu = item[0].replace('Speed.#', 'Speed #').replace('.', '').replace('*', '')
             gpu = re.sub('\d', '', gpu)
             #status[gpu] = line.split(' ')[1] + ' ' + line.split(' ')[2]
-            status[gpu] = re.search(r"\b\d+.*/s\b", line).group()
+            status[gpu] = re.search(r"\b\d+\.\d.*/s\b", line).group()
         elif line.startswith('HWMon.Dev.'):
             item = line.split('.: ')
             gpu = item[0].replace('HWMon.Dev.', 'HWMon Dev ').replace('.', '')

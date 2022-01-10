@@ -1,4 +1,3 @@
-from agent.api import api
 import argparse
 import os
 import socket
@@ -66,6 +65,8 @@ if not os.path.exists('agent/config.conf'):
 
     config.close()
 
+from agent.api import api    
+    
 def send_heartbeat(agent_status, hc_status):
     return api.heartbeat(agent_status, hc_status)
 

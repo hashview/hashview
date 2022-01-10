@@ -382,7 +382,7 @@ if __name__ == '__main__':
             # Send Heartbeat
             response = send_heartbeat(agent_status, '')
             if response['msg'] == 'Go Away':
-                print("[*] We're not wanted")
+                print("[*] Agent is unauthorized to connect to this server. Please contact Hashview Admin to grant its access.")
             if response['msg'] == 'START':
                 # We've been assigned a task
                 # First we'll sync our rules

@@ -1,5 +1,10 @@
 {% extends "layout.html"%}
 {% block header %}
+<style>
+    #remove_all{
+        margin-left: 13px;       
+    }
+</style>
 <br>
 <h1>Tasks</h1>
 <br>
@@ -16,7 +21,12 @@ The following are tasks that are assigned to the job. Each task is run once.
                   <tr>
                     <th scope="col">Task Name</th>
                     <th scope="col">Type</th>
-                    <th scope="col">Control</th>
+                    <th scope="col">Control
+                        <!--Only show delete all if tasks have been added--> 
+                        {% if (job_tasks is defined) and job_tasks.count() > 0 %}   
+                            <a id="remove_all" class="fa fa-trash btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal" role="button" title="Remove all assigned tasks for this Job"></a>
+                        {% endif %}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -79,6 +89,31 @@ The following are tasks that are assigned to the job. Each task is run once.
                                         {% endfor %}
                                     </div>
                                 </div>
+
+                                 <!-- DeleteAllTaskModal -->
+                                <div class="modal fade" id="deleteModal" tabindex="-1" 
+                                aria-labelledby="deleteModalLabel" aria-hidden="true">
+                                    <div class="modal-dialog modal-dialog-centered">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                        <h5 class="modal-title" id="deleteModalLabel">Delete Tasks</h5>
+                                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                                            <span aria-hidden="true">&times;</span>
+                                        </button>
+                                        </div>
+                                        <div class="modal-body">
+                                        This will permanantly delete all assigned tasks for this job. Are you sure you want to continue?
+                                        </div>
+                                        <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Back</button>
+                                        <form action="/jobs/{{job.id}}/remove_all_tasks" method="GET">
+                                            <input class="btn btn-danger" type="submit" value="Delete">
+                                        </form>
+                                        </div>
+                                    </div>
+                                    </div>
+                                </div>
+
                             </div>
                         </td>
                     </tr>
@@ -86,6 +121,8 @@ The following are tasks that are assigned to the job. Each task is run once.
               </table>
         </div>
     </article>
-    <a class="btn btn-secondary" href="{{ url_for('jobs.jobs_assigned_hashfile', job_id=job.id) }}">Back</a>
-    <a class="btn btn-primary pull-right" href="/jobs/{{job.id}}/notifications" role="button">Next</a>
+    <!--<a class="btn btn-secondary" href="{{ url_for('jobs.jobs_assigned_hashfile', job_id=job.id) }}">Back</a>-->
+    <a class="btn btn-secondary" href="{{ url_for('jobs.jobs_assign_notifications', job_id = job.id) }}">Back</a>
+    <!--<a class="btn btn-primary pull-right" href="/jobs/{{job.id}}/notifications" role="button">Next</a>-->
+    <a class="btn btn-primary pull-right" href="/jobs/{{job.id}}/summary" role="button">Next</a>
 {% endblock content %}

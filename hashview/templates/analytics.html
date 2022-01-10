@@ -1,11 +1,51 @@
 {% extends "layout.html"%}
 {% block header %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@3.1.0/dist/chart.min.js"></script>
+
+<style>
+    .download_btn{
+        float: right;
+        color: gray;
+    }
+    .download_btn:hover{
+        color: #007bff;
+    }   
+    #config_options .content-section{
+        margin-right: 20px;
+    }
+    #config_options .btn{
+        padding:2px 5px;
+    }
+    #config_options{
+        margin-bottom: 20px;
+    }
+    #config_options .input-group-text{
+        background-color: white;
+        border: none;      
+    }
+    #toggle_icons{
+        color: #007bff;
+        font-size: 22px;
+    }
+    /*Remove default blue border*/
+    #config_options button:focus
+    {
+        outline:0px !important;
+        -webkit-appearance:none;
+        box-shadow: none !important;
+    }
+    /*Limit how big the dropdown can get with large amounts of data*/
+    .dropdown-menu{
+        max-height: 350px;
+        overflow-y: auto;    
+    }
+</style>
+
 <script>
     var dict = { 1: "recovered_accounts", 2: "password_complexity", 3:"composition_makeup", 4:"passwords_count_len", 5:"top_10_passswords"};
-
+    var toggle = false;
     extendChart();
- 
+
     function extendChart() { // add text to the middle of all doughnut charts
         var originalDraw = Chart.controllers.doughnut.prototype.draw;
         Chart.controllers.doughnut.prototype.draw = function (ease) {
@@ -67,95 +107,135 @@
         }   
     }
 
+    function show_hide(){
+        if(toggle){
+            document.querySelectorAll('.download_btn').forEach(function(el) {
+                el.style.display = 'block';
+            });
+            document.getElementById("toggle_icons").style.color = "#007bff";         
+            toggle = false;
+        }
+        else{
+            document.querySelectorAll('.download_btn').forEach(function(el) {
+                el.style.display = 'none';
+            });
+            document.getElementById("toggle_icons").style.color = "gray";
+            toggle = true;
+        }
+    }
+
 </script>
-
-<!-- Doing menu buttons vs select forms because i dont know better.  Maybe the latter is the 'correct' way to do things?-->
-<div class="content-section">
-    <div class="dropdown">
-        <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown"
-            aria-haspopup="true" aria-expanded="false">
-            {% if customer_id %}
-                {% for customer in customers %}
-                    {% if customer.id|string() == customer_id|string() %}
-                        {{ customer.name }}
-                    {% endif %}
-                {% endfor %}
-            {% else %}
-                All Customers
-            {% endif %}
-        </button>
-        <div class="dropdown-menu">
-            {% if customer_id %}
-                <a class="dropdown-item" href="/analytics"> All Customers </a>
-                <div class="dropdown-divider"></div>
-            {% endif %}
-
-            {% for customer in customers %}
-                <a class="dropdown-item" href="/analytics?customer_id={{customer.id}}"> {{customer.name}} </a>
-            {% endfor %}
-        </div>
-    </div>
-</div>
-{% if customer_id is not none %}
-<div class="content-section">
-    <div class="dropdown">
-        <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown"
-            aria-haspopup="true" aria-expanded="false">
-            {% if hashfile_id %}
-                {% for hashfile in hashfiles %}
-                    {% if hashfile.id|string() == hashfile_id|string() %}
-                        {{ hashfile.name }}
-                    {% endif %}
-                {% endfor %}
-            {% else %}
-                All Hashfiles
-            {% endif %}
-        </button>
-        <div class="dropdown-menu">
-            {% if hashfile_id %}
-                <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}"> All Hashfiles </a>
-                <div class="dropdown-divider"></div>
-            {% endif %}
-            {% for hashfile in hashfiles %}
-                {% if customer_id %}
-                    {% if hashfile.customer_id|string() == customer_id|string() %}
-                        <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}&hashfile_id={{hashfile.id}}"> {{hashfile.name}} </a>
-                    {% endif %}
-                {% else %}
-                    <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}&hashfile_id={{hashfile.id}}"> {{hashfile.name}} </a>
-                {% endif %}
-            {% endfor %}
-        </div>
-    </div>
-</div>
-{% endif %}
-
-<div class="content-section" style="float: right; margin-right: 10px;">
-    <div class="dropdown" title="Clicking chart headers will download a single chart">
-        <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown"
-            aria-haspopup="true" aria-expanded="false">Download Charts</button>
-        <div class="dropdown-menu">         
-            <button class="dropdown-item" onclick="chart_download_all()">All Charts</button>
-            <div class="dropdown-divider"></div>           
-            <button class="dropdown-item" onclick=get_chart(1)>Recovered Accounts</button>
-            <div class="dropdown-divider"></div>
-            <button class="dropdown-item" onclick=get_chart(2)>Password Complexity</button>
-            <div class="dropdown-divider"></div>
-            <button class="dropdown-item" onclick=get_chart(3)>Composition Makeup</button>
-            <div class="dropdown-divider"></div>
-            <button class="dropdown-item" onclick=get_chart(4)>Passwords Count by Length</button>
-            <div class="dropdown-divider"></div>
-            <button class="dropdown-item" onclick=get_chart(5)>Top 10 Passswords</button>
-            <div class="dropdown-divider"></div>
-        </div>
-    </div>
-</div>
-
 {% endblock header %}
 {% block content %}
+
+<div id="config_options" class="form-row">
+    <div class="col-auto">
+        <span>Customers &nbsp;</h4>
+        <div class="content-section btn btn-outline-secondary">
+            <div class="dropdown">
+                <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown"
+                    aria-haspopup="true" aria-expanded="false">
+                    {% if customer_id %}
+                        {% for customer in customers %}
+                            {% if customer.id|string() == customer_id|string() %}
+                                {{ customer.name }}
+                            {% endif %}
+                        {% endfor %}
+                    {% else %}
+                        All Customers
+                    {% endif %}
+                </button>
+                <div class="dropdown-menu">
+                    {% if customer_id %}
+                        <a class="dropdown-item" href="/analytics"> All Customers </a>
+                        <div class="dropdown-divider"></div>
+                    {% endif %}
+        
+                    {% for customer in customers %}  
+                        <a class="dropdown-item" href="/analytics?customer_id={{customer.id}}"> {{customer.name}} </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-auto">
+        <span>HashFiles &nbsp;</h4>
+        {% if customer_id is not none %}
+        <div class="content-section btn btn-outline-secondary">
+            <div class="dropdown">
+                <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown"
+                    aria-haspopup="true" aria-expanded="false">
+                    {% if hashfile_id %}
+                        {% for hashfile in hashfiles %}
+                            {% if hashfile.id|string() == hashfile_id|string() %}
+                                {{ hashfile.name }}
+                            {% endif %}
+                        {% endfor %}
+                    {% else %}
+                        All Hashfiles
+                    {% endif %}
+                </button>
+                <div class="dropdown-menu">
+                    {% if hashfile_id %}
+                        <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}"> All Hashfiles </a>
+                        <div class="dropdown-divider"></div>
+                    {% endif %}
+                    {% for hashfile in hashfiles %}
+                        {% if customer_id %}
+                            {% if hashfile.customer_id|string() == customer_id|string() %}
+                                <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}&hashfile_id={{hashfile.id}}"> {{hashfile.name}} </a>
+                            {% endif %}
+                        {% else %}
+                            <a class="dropdown-item" href="/analytics?customer_id={{customer_id}}&hashfile_id={{hashfile.id}}"> {{hashfile.name}} </a>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="content-section btn btn-outline-secondary">
+            <div class="dropdown">
+                <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown"
+                aria-haspopup="true" aria-expanded="false">
+              N/A
+            </button>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+  
+    <div class="ml-auto mr-2">
+        <div class="input-group">
+           
+            <div class="dropdown btn btn-outline-secondary" aria-describedby="basic-addon1">
+                <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown"
+                    aria-haspopup="true" aria-expanded="false">Download Charts</button>
+                <div class="dropdown-menu">         
+                    <button class="dropdown-item" onclick="chart_download_all()">All Charts</button>
+                    <div class="dropdown-divider"></div>           
+                    <button class="dropdown-item" onclick=get_chart(1)>Recovered Accounts</button>
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item" onclick=get_chart(2)>Password Complexity</button>
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item" onclick=get_chart(3)>Composition Makeup</button>
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item" onclick=get_chart(4)>Passwords Count by Length</button>
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item" onclick=get_chart(5)>Top 10 Passswords</button>
+                </div>
+            </div> 
+            <div class="input-group-append">
+                <span class="input-group-text" id="basic-addon1">
+                    <i id="toggle_icons" class="fa fa-eye-slash" role="button" onclick="show_hide()" title="Show/Hide Icons"></i>
+                </span>
+              </div>    
+          </div>
+      </div>
+    </div>
+</div>
+
 <!-- this layout is so jank, someone please help me-->
-<br>
-<br>
+
 <div class="container">
     <div class="row">
         <!-- spacer -->
@@ -163,8 +243,10 @@
     <div class="row">
         <div class="col" align="center">
             <div class="card">
-                <h5 id="recovered_accounts" class="card-header" role="button" title="Click to Download">Recovered
-                    Accounts</h5>
+               
+                <h5 class="card-header">Recovered Accounts
+                    <a id="recovered_accounts" class="fa fa-download download_btn" role="button" title="Download Chart"></a>
+                </h5>
                 <div class="card-body">
                     <canvas id="TotalCrackedHashes" width="300" height="300">
                         <script>
@@ -223,8 +305,9 @@
         </div>
         <div class="col" align="center">
             <div class="card">
-                <h5 id="password_complexity" class="card-header" role="button" title="Click to Download">Password
-                    Complexity</h5>
+                <h5 class="card-header">Password Complexity
+                    <a id="password_complexity" class="fa fa-download download_btn" role="button" title="Download Chart"></a>
+                </h5>    
                 <div class="card-body">
                     <canvas id="Complexity" width="300" height="300">
                         <script>
@@ -308,11 +391,13 @@
                                 </td>
                                 <td>
                                     {% if total_runtime > 604800 %}
-                                        {{ (total_runtime/604800)|round|int }} weeks<br>
+                                        {{ (total_runtime/604800)|round|int }} week(s)<br>  
+                                    {% elif total_runtime > 86400 %}
+                                        {{ (total_runtime/86400)|round|int }} day(s)<br>    
                                     {% elif total_runtime > 3600 %}
-                                        {{ (total_runtime/3600)|round|int }} hours<br>
+                                        {{ (total_runtime/3600)|round|int }} hour(s)<br>
                                     {% elif total_runtime > 60 %}
-                                        {{ (total_runtime/60)|round|int }} minutes<br>
+                                        {{ (total_runtime/60)|round|int }} minute(s)<br>
                                     {% elif total_runtime < 60 %}
                                         < 1 minute<br>                                        
                                     {% endif %}
@@ -357,8 +442,9 @@
         </div>
         <div class="col" align="center">
             <div class="card">
-                <h5 id="composition_makeup" class="card-header" role="button" title="Click to Download">Composition Makeup</h5>
-                
+                <h5 class="card-header">Composition Makeup
+                    <a id="composition_makeup" class="fa fa-download download_btn" role="button" title="Download Chart"></a>
+                </h5> 
                 <div class="card-body">
                     <canvas id="CharSet" width="300" height="300">
                         <script>
@@ -419,8 +505,9 @@
     <div class="row">
         <div class="col" align="center">
             <div class="card">
-                <h5 id="passwords_count_len" class="card-header" role="button" title="Click to Download">Passwords Count by Length</h5>
-                
+                <h5 class="card-header">Passwords Count by Length
+                    <a id="passwords_count_len" class="fa fa-download download_btn" role="button" title="Download Chart"></a>
+                </h5> 
                 <div class="card-body">
                     <canvas id="PasswordsCountByLength" width="1000" height="300">
                         <script>
@@ -443,7 +530,7 @@
                                    }
                                 }],
                             options: {
-                                responsive: false,
+                                responsive: true, //Resizes the chart canvas when its container does 
                                     plugins: {
                                     legend: {
                                         display: false,
@@ -484,8 +571,9 @@
     <div class="row">
         <div class="col" align="center">
             <div class="card">
-                <h5 id="top_10_passswords" class="card-header" role="button" title="Click to Download">Top 10 Passwords</h5>
-               
+                <h5 class="card-header">Top 10 Passwords
+                    <a id="top_10_passswords" class="fa fa-download download_btn" role="button" title="Download Chart"></a>
+                </h5> 
                 <div class="card-body">
                     <canvas id="Top10Passwords" width="1000%" height="300">
                         <script>
@@ -508,7 +596,7 @@
                                    }
                                 }],
                             options: {
-                                responsive: false,
+                                responsive: true, //Resizes the chart canvas when its container does 
                                     plugins: {
                                     legend: {
                                         display: false,

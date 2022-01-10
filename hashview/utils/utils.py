@@ -45,6 +45,11 @@ def send_email(user, subject, message):
     msg.body = message
     mail.send(msg)
 
+def send_html_email(user, subject, message):
+    msg = Message(subject, recipients=[user.email_address])
+    msg.html = message
+    mail.send(msg)
+
 def send_pushover(user, subject, message):
     if user.pushover_user_key and user.pushover_app_id:
         client = Client(user.pushover_user_key, api_token=user.pushover_app_id)
@@ -255,7 +260,7 @@ def update_job_task_status(jobtask_id, status):
             cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==job.hashfile_id).count()
             uncracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).count()
             if job_notification.method == 'email':
-                send_email(user, 'Hashview Job: "' + job.name + '" Has Completed!', 'Your job has completed. It ran for a total of ' + str(durration) + ' seconds and resulted in a total of ' + str(cracked_cnt) + ' out of ' + str(cracked_cnt+uncracked_cnt) + ' hashes being recovered!')
+                send_html_email(user, 'Hashview Job: "' + job.name + '" Has Completed!', 'Your job has completed. It ran for ' + getTimeFormat(durration) + ' and resulted in a total of ' + str(cracked_cnt) + ' out of ' + str(cracked_cnt+uncracked_cnt) + ' hashes being recovered! <br /><br /> <a href="' + url_for('analytics.get_analytics',customer_id=job.customer_id,hashfile_id=job.hashfile_id, _external=True) + '">View Analytics</a>')
             elif job_notification.method == 'push':
                 if user.pushover_user_key and user.pushover_app_id:
                     send_pushover(user, 'Message from Hashview', 'Hashview Job: "' + job.name + '" Has Completed!')
@@ -468,6 +473,19 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                     return 'Error line ' + str(line_number) + '. File does not appear to be be in a NetNTLM format.'    
 
     return False
+
+def getTimeFormat(total_runtime): # Runtime in seconds
+    if total_runtime >= 604800:
+        return str(round(total_runtime/604800)) + " week(s)"
+    elif total_runtime >= 86400: 
+        return str(round(total_runtime/86400)) + " day(s)"
+    elif total_runtime >= 3600: 
+        return str(round(total_runtime/3600)) + " hour(s)"
+    elif total_runtime >= 60: 
+        return str(round(total_runtime/60)) + " minute(s)"
+    elif total_runtime < 60:
+         return "less then 1 minute"                                        
+                                      
 
 def getHashviewVersion():
     with open("VERSION.TXT") as f:

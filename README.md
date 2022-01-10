@@ -73,6 +73,7 @@ tar -xzvf hashview-agent.<version>.tgz
 cd install/
 cp -r hashview-agent ../
 cd ../hashview-agent
+pip3 install -r requirements.txt
 python3 ./hashview-agent.py
 ```
 

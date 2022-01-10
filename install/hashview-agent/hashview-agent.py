@@ -378,8 +378,6 @@ if __name__ == '__main__':
             if response['msg'] == 'Canceled':
                 print("[*] Looks like we've been canceled.")
         else:
-            sync_rules()
-            sync_wordlists()
             agent_status = 'Idle'
             # Send Heartbeat
             response = send_heartbeat(agent_status, '')
@@ -388,6 +386,9 @@ if __name__ == '__main__':
             if response['msg'] == 'START':
                 # We've been assigned a task
                 # First we'll sync our rules
+                sync_rules()
+                # And our wordlists
+                sync_wordlists()
                 print("[*] We've been assigned Task Id: " + str(response['job_task_id']))
                 job_task = jobTasks(response['job_task_id'])
 

@@ -28,7 +28,7 @@ def get(url):
     cookie = {
         'uuid': Config.UUID,
         'name': Config.NAME,
-        'version': version
+        'agent_version': version
     }
 
     path += Config.HASHVIEW_SERVER + ':' + Config.HASHVIEW_PORT + url
@@ -58,7 +58,7 @@ def post(url, data):
     cookie = {
         'uuid': Config.UUID,
         'name': Config.NAME,
-        'version': version
+        'agent_version': version
     }
 
     if builtins.state == 'debug':

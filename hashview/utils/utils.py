@@ -4,6 +4,7 @@ import hashlib
 import hashlib
 import time
 import _md5
+import re
 from datetime import datetime
 from hashview import db, mail
 from hashview.models import Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs, JobTasks, JobNotifications, Users, Agents

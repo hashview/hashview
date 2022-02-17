@@ -240,7 +240,9 @@ def data_retention_cleanup():
         # Clean temp folder of files older than RETENTION PERIOD
         for file in os.listdir('hashview/control/tmp'):
             print('[DEBUG] hashview.py->data_retention_cleanup() ' + file)
-            if os.stat('hashview/control/tmp/' + file).st_mtime < time.time() - retention_period * 86400:
+            if file == '.gitignore':
+                print('Found Git Ignore!')
+            if os.stat('hashview/control/tmp/' + file).st_mtime < time.time() - retention_period * 86400 and file != '.gitignore':
                 os.remove('hashview/control/tmp/' + file)
                 print('[DEBUG] hashview.py->data_retention_cleanup() Removed: hashview/control/tmp/' + file)
 
@@ -250,7 +252,7 @@ def data_retention_cleanup():
 with app.app_context():
     from hashview import scheduler
     scheduler.delete_all_jobs
-    #scheduler.add_job(id='DATA_RETENTION', func=data_retention_cleanup, trigger='cron', hour='1') #hour=1
+    #scheduler.add_job(id='DATA_RETENTION', func=data_retention_cleanup, trigger='cron', minute='*') #hour=1
     scheduler.add_job(id='DATA_RETENTION', func=data_retention_cleanup, trigger='cron', hour='*')
 
 if __name__ == '__main__':

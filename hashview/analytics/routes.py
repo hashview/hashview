@@ -204,7 +204,7 @@ def get_analytics():
 
     # We only want the top 4 with the 5th being other
     fig3_dict = {
-        "Blank (unset): " + str(blank): blank,
+        "Blank (unset): " + str(formatDisplay(blank)): blank,
         "Numeric Only: " + str(formatDisplay(numeric)) : numeric, 
         "LowerAlpha Only: " + str(formatDisplay(loweralpha)): loweralpha, 
         "UpperAlpha Only: " + str(formatDisplay(upperalpha)): upperalpha, 

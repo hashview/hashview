@@ -16,13 +16,14 @@
 2. Hashcat 6.2.x+
 
 ## Installation
-Follow these instructions to install Hashview Server on Ubuntu server. In theory Hashview should be able to run on any *nix system, but the dev's only installed/tested on Debian/Ubuntu.
+Follow these instructions to install Hashview Server on Ubuntu 20.04.3 LTS server. In theory Hashview should be able to run on any *nix system, but the dev's only installed/tested on Debian/Ubuntu.
 
 #### 1) Setup MySQL 
 
 ```
 sudo apt update
 sudo apt install mysql-server
+sudo service mysql start
 sudo mysql_secure_installation
 ```
 
@@ -43,7 +44,7 @@ The following are to install hashview after the mysql db has been setup.
 
 ```
 sudo apt-get install python3 python3-pip python3-flask
-git clone https://github.com/hashview/hashview/
+git clone https://github.com/hashview/hashview
 cd hashview
 pip3 install -r requirements.txt
 ./setup.py

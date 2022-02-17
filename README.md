@@ -86,6 +86,10 @@ python3 ./hashview-agent.py
 Please see the [Contribution Guide](https://github.com/hashview/hashview/wiki/Contributing) for how to develop and contribute.  
 If you have any problems, please consult [Issues](https://github.com/hashview/hashview/issues) page first. If you don't see a related issue, feel free to add one and we'll help.
 
+### Feature Requests
+
+We accept Pull Requests :). But if you'd like a feature without submitting code, first check the issues section to see if someone has already requested it. If so, go ahead an upvote that request. Otherwise feel free to create your own new feature request. No promises it'll get implemented, but it cant hurt to ask.
+
 ### Authors
 
 Contact us on Twitter  

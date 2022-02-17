@@ -29,7 +29,7 @@ def searches_list():
     else:
         customers = None
         results = None
-    if not results:
+    if not results and request.method == 'POST':
         flash('No results found', 'warning')
 
     return render_template('search.html', title='Search', searchForm=searchForm, customers=customers, results=results, hashfiles=hashfiles )

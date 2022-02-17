@@ -4,6 +4,6 @@ from wtforms.validators import DataRequired
 
 
 class SearchForm(FlaskForm):
-    search_type = SelectField('Search Type', choices=[('hash', 'hash'), ('user', 'user'), ('password', 'password')], validators=[DataRequired()])
+    search_type = SelectField('Search Type', choices=[('user', 'user'), ('hash', 'hash'), ('password', 'password')], validators=[DataRequired()])
     query = StringField('', validators=([DataRequired()]))
     submit = SubmitField('Search')  

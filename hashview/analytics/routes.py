@@ -79,15 +79,15 @@ def get_analytics():
 
     for entry in fig2_cracked_hashes:
         flags = 0
-        if len(bytes.fromhex(entry[0]).decode('latin-1')) < 9:
-            flags = 3
+        if len(bytes.fromhex(entry[0]).decode('latin-1')) < 8:
+            flags = -3 # set to negative 3 so that there's no way we can meet complexity
         if re.search(r"[a-z]", bytes.fromhex(entry[0]).decode('latin-1')):
             flags = flags + 1
         if re.search(r"[A-Z]", bytes.fromhex(entry[0]).decode('latin-1')):
             flags = flags + 1
         if re.search(r"[0-9]", bytes.fromhex(entry[0]).decode('latin-1')):
             flags = flags + 1
-        if not re.search(r"[^0-9A-Za-z]", bytes.fromhex(entry[0]).decode('latin-1')):
+        if re.search(r"[^0-9A-Za-z]", bytes.fromhex(entry[0]).decode('latin-1')):
             flags = flags + 1
         
         if flags < 3:

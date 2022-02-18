@@ -285,13 +285,13 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
     # Do a whole file check if file_type is NetNTLM
     # If duplicate usernames exists return error
     if file_type == 'NetNTLM':
-        list_of_usernames = []
+        list_of_username_and_computers = []
         for line in lines:
-            username = line.split(':')[0].lower()
-            if username in list_of_usernames:
-                return 'Error: Duplicate usernames found in hashfiles (' + str(username) + '). Please only submit unique usernames.'
+            username_computer = (line.split(':')[0] + ':' + line.split(':')[2]).lower()
+            if username_computer in list_of_username_and_computers:
+                return 'Error: Duplicate usernames / computer found in hashfiles (' + str(username_computer) + '). Please only submit unique usernames / computer.'
             else:
-                list_of_usernames.append(username)
+                list_of_username_and_computers.append(username_computer)
 
     line_number = 0
     # for line in file, 

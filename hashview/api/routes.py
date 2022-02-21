@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, redirect, request, send_from_directory, current_app, url_for
-from hashview.models import Agents, JobTasks, Tasks, Wordlists, Rules, Jobs, Hashes, HashfileHashes, Users, HashNotifications
+from hashview.models import Agents, JobTasks, Tasks, Wordlists, Rules, Jobs, Hashes, HashfileHashes, Users, HashNotifications, Settings
 from hashview.utils.utils import save_file, get_md5_hash, update_dynamic_wordlist, update_job_task_status, send_email, send_pushover
 from hashview import db
 from sqlalchemy.ext.declarative import DeclarativeMeta
@@ -52,9 +52,8 @@ def updateHeartbeat(uuid):
 
 def versionCheck(agent_version):
     if agent_version:
-        with open('VERSION.TXT', 'r') as f:
-            hashview_version = f.readline().strip('\n')
-        if version.parse(agent_version) < version.parse(hashview_version):
+        settings = Settings.query.first()
+        if version.parse(agent_version) < version.parse(settings.version):
             return False
         return True
     else:

@@ -491,5 +491,5 @@ def getTimeFormat(total_runtime): # Runtime in seconds
                                       
 
 def getHashviewVersion():
-    with open("VERSION.TXT") as f:
+    with open('VERSION.TXT') as f:
         return f.read().split('\n')[0]

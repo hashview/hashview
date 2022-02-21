@@ -20,6 +20,7 @@ with app.app_context():
     from hashview.utils.utils import get_filehash, get_linecount
     from hashview import db, bcrypt
     from getpass import getpass
+    from packaging import version
     import os
 
     users = Users.query.filter_by(admin='1').count()
@@ -66,8 +67,11 @@ with app.app_context():
         while int(retention_period) < 1 or int(retention_period) > 65535:
             print('Error: Retention must be between 1 day and 65535 days')
             retention_period = input("Enter how long data should be retained in DB in days. (note: cracked hashes->plaintext will be be safe from retention culling): ")
+        
+        with open('VERSION.TXT') as f:
+            version = f.readline().rstrip()
 
-        settings = Settings(retention_period = retention_period)
+        settings = Settings(retention_period = retention_period, version=version)
         db.session.add(settings)
         db.session.commit()
 
@@ -156,10 +160,27 @@ with app.app_context():
         db.session.add(task)
         db.session.commit() 
 
+    # Check if Version value in DB matches or is less than the version file on disk. This is our way of checking if the end user needs to run db flask upgrade or any other migration
+    settings = Settings.query.first()
+    with open('VERSION.TXT', 'r') as f:
+        hashview_version = f.readline().strip('\n')
 
+    if settings.version:
+        if version.parse(settings.version) < version.parse(hashview_version):
+            print('You need to upgrade your version of hashview in order to contine.')
+            print("Please run the following command before continuing \n\n export FLASK_APP=hashview.py; flask db upgrade \n\n.")
+            exit()
+        #if version.parse(settings.version) == version.parse(hashview_version):
+        #    print("Versions Match you're good to go!")
+        if version.parse(settings.version) > version.parse(hashview_version):
+            print('You shouldnt be able to reach this state.... ')
+            exit()
+    else:
+        print("Version not found in DB, updating.")
+        settings.version = hashview_version
+        db.session.commit()
 
     print('Done! Running Hashview! Enjoy.')
-
 
 # Launching our scheduler
 def data_retention_cleanup():

@@ -43,15 +43,16 @@ class Users(db.Model, UserMixin):
 class Settings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     retention_period = db.Column(db.Integer)
+    version = db.Column(db.String(10))
 
 class Jobs(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    status = db.Column(db.String(20), nullable=False)               # Running, Paused, Completed, Queued, Canceled, Ready, Incomplete
-    started_at = db.Column(db.DateTime, nullable=True)    # These defaults should be changed
-    ended_at = db.Column(db.DateTime, nullable=True)      # These defaults should be changed
+    status = db.Column(db.String(20), nullable=False)           # Running, Paused, Completed, Queued, Canceled, Ready, Incomplete
+    started_at = db.Column(db.DateTime, nullable=True)          # These defaults should be changed
+    ended_at = db.Column(db.DateTime, nullable=True)            # These defaults should be changed
     hashfile_id = db.Column(db.Integer, nullable=True)
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)

@@ -51,8 +51,6 @@ Jobs
             - pre select email & hash notificaitons if previously set
             - Check all / none hashes 
             - in table filter for user/hash
-        - Job Tasks
-            - Remove all tasks
         - Stop Job after X ammount of successfully cracked hashes
         - Stop Job after X ammount of time warning and preset
         - Stop Task after X ammont of time warnning and preset

@@ -85,7 +85,11 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
         # If line is empty:
         if len(line) > 0:
             if file_type == 'hash_only':
-                hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
+                # forcing lower casing of hash as hashcat will return lower cased version of the has and we want to match what we imported. 
+                if hash_type == '300':
+                    hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
+                else:
+                    hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
                 if hash_type == '2100':
                     username = line.split('#')[1]
                 else:

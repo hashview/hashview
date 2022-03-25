@@ -4,9 +4,15 @@
 <div id="accordion">
     <br>
     <br>
-    <br>
-    <h1>Agent Status</h1>
-    <table class="table">
+    <button href="#agents" class="btn btn-secondary home_status pull-right" data-toggle="collapse" title="View/Hide current agents">Agent Status</button>
+    {% if current_user.admin %}
+    <div id="agents" class="collapse show">
+    {% else %}
+    <div id="agents" class="collapse hide">
+    {% endif %}
+    
+    <h2 class="mt-2">Agent Status</h2>
+        <table class="table table-borderless" style="margin-bottom: 0px;">
         <tbody>
             <tr>
                 {% if agents %}
@@ -28,15 +34,30 @@
             </tr>
         </tbody>
     </table>
-    <br>
-    <br>
-    <br>
+    </div>
+    <br><br>
+    <h2 class="d-lg-inline" class="mt-2">Jobs</h1>
+    {% if jobs.count() < 1 %}
+        <p class="mt-3">No Current Jobs</p> 
+        <a class="btn btn-success btn-sm mt-1 mb-1" href="/jobs/add">Create a New Job</a>
+    {% endif %} 
+                             
     {% if jobs.count() > 0 %}
+    <button type="button" class="fa fa-minus btn btn-secondary btn-sm mb-2 ml-2" data-toggle="collapse" data-target=".multi-collapse" aria-expanded="true" aria-controls="{{collapse_all}}" title="Collapse all jobs"></button>
+    
         {% for job in jobs %}
-            <div class="card" style="width: 70rem;">
+            <div class="card" style="margin-bottom:5px;">
             <div class="card-header" id="headingOne">
                 <h5 class="mb-0">
                 <button class="btn btn-link" data-toggle="collapse" data-target="#collapse{{job.id}}" aria-expanded="true" aria-controls="collapse{{job.id}}">
+                    {% for job_task in job_tasks %}
+                        {% if job_task.job_id == job.id %}
+                            {% if job_task.status == 'Running' %}
+                                <span id="job_status" class="pull-right">Running</span>
+                            {% endif %} 
+                        {% endif %} 
+                    {% endfor %}
+
                     {% for customer in customers%} 
                         {% if customer.id == job.customer_id %}
                             {{ customer.name }}:
@@ -52,7 +73,7 @@
                 </h5>
             </div>
         
-            <div id="collapse{{job.id}}" class="collapse show" aria-labelledby="heading{{job.id}}" data-parent="#accordion">
+            <div id="collapse{{job.id}}" class="collapse multi-collapse show" aria-labelledby="heading{{job.id}}" data-parent="#accordion">
                 <div class="card-body">
                 {% set total = namespace(value=0) %}
                 {% set tasks_completed = namespace(value=0) %}

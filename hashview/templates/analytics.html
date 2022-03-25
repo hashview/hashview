@@ -55,9 +55,12 @@
             const chartArea = this.chart.chartArea
 
             //Font style
-            const fontStyle = 'bold'
+            const fontStyle = 'normal'
+            //matching chart headers
+            const fontFamily = `-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,
+            'Noto Sans',sans-serif,'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol','Noto Color Emoji'`
             const fontSize = chartArea.right / 15
-            ctx.font = `${fontStyle} ${fontSize}px ${this.chart.options.defaultFontFamily}`
+            ctx.font = `${fontStyle} ${fontSize}px ${fontFamily}`
             ctx.fillStyle = 'rgba(0,0,0,0.6)' //Text color
 
             //Center text
@@ -127,9 +130,10 @@
 </script>
 {% endblock header %}
 {% block content %}
-
+<br>
+<br>
 <div id="config_options" class="form-row">
-    <div class="col-auto">
+    <div class="col-auto mb-1"> 
         <span>Customers &nbsp;</h4>
         <div class="content-section btn btn-outline-secondary">
             <div class="dropdown">
@@ -158,7 +162,7 @@
             </div>
         </div>
     </div>
-    <div class="col-auto">
+    <div class="col-auto mb-1">
         <span>HashFiles &nbsp;</h4>
         {% if customer_id is not none %}
         <div class="content-section btn btn-outline-secondary">
@@ -369,6 +373,7 @@
                 <div class="card-body">
                     <table class="table">
                         <tbody>
+                            {% if customer_id %}
                             <tr>
                                 <td>
                                     Total Accounts:
@@ -377,6 +382,7 @@
                                     {{ total_accounts }}
                                 </td>
                             </tr>
+                            {% endif %}
                             <tr>
                                 <td>
                                     Total Unique Hashes:
@@ -385,6 +391,7 @@
                                     {{ total_unique_hashes }}
                                 </td>
                             </tr>
+                            {% if customer_id %}
                             <tr>
                                 <td>
                                     Total Runtime:
@@ -403,6 +410,7 @@
                                     {% endif %}
                                 </td>
                             </tr>
+                            {% endif %}
                             <tr>
                                 <td>
                                     Download Recovered:

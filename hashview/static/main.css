@@ -1,96 +1,26 @@
-body {
-    background: #fafafa;
-    color: #333333;
-    margin-top: 5rem;
-}
-  
-h1, h2, h3, h4, h5, h6 {
-    color: #444444;
+.modal-body .table tr:first-child td,.modal-body .table tr:first-child th{/*Removes double top border in information popups*/
+    border-top: none;
 }
 
-.bg-steel {
-    background-color: #5f788a;
+.media-body .table a,.media-body .table button{ /*Making the buttons the same size so that when the page is resized they all line up*/
+    min-width: 40px;
+    margin: 2px 0px;
 }
 
-.site-header .navbar-nav .nav-link {
-    color: #cbd5db;
+.modal-body{ /* Prevent long names from showing outside of popup modal */
+    overflow: auto;
 }
 
-.site-header .navbar-nav .nav-link:hover {
-    color: #ffffff;
+#job_status{
+    position: absolute; 
+    right:25px; 
+    color:#28a745;
 }
 
-.site-header .navbar-nav .nav-link.active {
-    font-weight: 500;
+#job_status:hover{
+    opacity: 1;
 }
 
-.content-section {
-    background: #ffffff;
-    padding: 10px 20px;
-    border: 1px solid #dddddd;
-    border-radius: 3px;
-    margin-bottom: 20px;
-}
-
-.article-title {
-    color: #444444;
-}
-
-a.article-title:hover {
-    color: #428bca;
-    text-decoration: none;
-}
-
-.article-content {
-    white-space: pre-line;
-}
-
-.article-img {
-    height: 65px;
-    width: 65px;
-    margin-right: 16px;
-}
-
-.article-metadata {
-    padding-bottom: 1px;
-    margin-bottom: 4px;
-    border-bottom: 1px solid #e3e3e3
-}
-
-.article-metadata a:hover {
-    color: #333;
-    text-decoration: none;
-}
-
-.article-svg {
-    width: 25px;
-    height: 25px;
-    vertical-align: middle;
-}
-
-.account-img {
-    height: 125px;
-    width: 125px;
-    margin-right: 20px;
-    margin-bottom: 16px;
-}
-
-.account-heading {
-    font-size: 2.5rem;
-}
-
-td {
-    text-align: center;
-    /* center checkbox horizontally */
-    vertical-align: middle;
-    /* center checkbox vertically */
-}
-  
-table {
-    border: 1px solid;
-    width: 200px;
-}
-  
-tr {
-    height: 80px;
+.home_status{
+    font-size: 18px;
 }

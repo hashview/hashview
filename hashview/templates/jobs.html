@@ -24,7 +24,51 @@ Jobs contain a series of tasks (hashcat commands). Jobs also have an associated 
                   </tr>
                 </thead>
                 <tbody>
-                    {% for job in jobs %}
+                    {% for job in jobs if (job.owner_id == current_user.id) %}
+                        <tr>
+                            <td>
+                                {% for customer in customers %}
+                                    {% if customer.id == job.customer_id %}
+                                        {{ customer.name }}
+                                    {% endif %}
+                                {% endfor %}
+                            </td>
+                            <td>{{ job.name }}</td>
+                            <td>
+                                {% for hashfile in hashfiles %}
+                                    {% if hashfile.id == job.hashfile_id %}
+                                        {{ hashfile.name }}
+                                    {% endif %}
+                                {% endfor %}
+                            </td>
+                            <td>{{ job.status }}</td>
+                            <td>
+                                {% for user in users %}
+                                    {% if user.id == job.owner_id %}
+                                        {{ user.first_name }} {{ user.last_name }}
+                                    {% endif %}
+                                {% endfor %}
+                            </td>
+                            <td>
+                                {% if job.status == 'Ready' %}
+                                    <a class="fa fa-play btn btn-success" href="/jobs/start/{{job.id}}" role="button" title=start></a>
+                                {% elif job.status == 'Queued' or job.status == 'Running' %}
+                                    <a class="fa fa-stop btn btn-secondary" href="/jobs/stop/{{job.id}}" role="button" title=stop></a>
+                                {% elif job.status == 'Completed' %}
+                                    <a class="fa fa-check btn btn-primary" href="#" role="button" title=Completed></a>
+                                {% elif job.status == 'Canceled' %}
+                                    <a class="fa fa-close btn btn-secondary" href="/jobs/start/{{job.id}}" role="button" title=Canceled></a>
+                                {% endif %}
+                                {% if job.status != 'Incomplete' %}
+                                    <a class="fa fa-pie-chart btn btn-warning" href="/analytics?customer_id={{job.customer_id}}&hashfile_id={{job.hashfile_id}}" role="button" title=Analytics></a>
+                                    <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{job.id}}" title=Info></button>
+                                {% endif %}
+                                <a class="fa fa-edit btn btn-warning" href="/jobs/{{job.id}}/assigned_hashfile/" role="button" title=Edit></a>
+                                <button type="button" class="fa fa-trash btn btn-danger" data-toggle="modal" data-target="#deleteModal{{job.id}}" title=Delete></button>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    {% for job in jobs if (job.owner_id != current_user.id) %}
                         <tr>
                             <td>
                                 {% for customer in customers %}

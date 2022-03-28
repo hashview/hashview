@@ -63,7 +63,7 @@ The following are tasks that are assigned to the job. Each task is run once.
                                     Add Task
                                     </a>
 
-                                    <div class="dropdown-menu" aria-labelledby="dropdownMenuLink">
+                                    <div class="dropdown-menu" aria-labelledby="dropdownMenuLink" style="max-height: 300px; overflow-y:auto;">
                                         {% for task in tasks %}
                                             {% set already_assigned = namespace(value=0) %}
                                             {% for job_task in job_tasks %}
@@ -83,7 +83,7 @@ The following are tasks that are assigned to the job. Each task is run once.
                                     Add Task Group
                                     </a>
 
-                                    <div class="dropdown-menu" aria-labelledby="dropdownMenuLink2">
+                                    <div class="dropdown-menu" aria-labelledby="dropdownMenuLink2" style="max-height: 300px; overflow-y:auto;">
                                         {% for task_group in task_groups %}
                                             <a class="dropdown-item" href="/jobs/{{job.id}}/assign_task_group/{{task_group.id}}">{{task_group.name}}</a>
                                         {% endfor %}

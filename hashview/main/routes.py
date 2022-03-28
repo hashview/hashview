@@ -32,7 +32,11 @@ def home():
     #fig1_cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).count()
     #fig1_uncracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==hashfile_id).count()
 
-    return render_template('home.html', jobs=jobs, users=users, customers=customers, job_tasks=job_tasks, tasks=tasks, agents=agents, recovered_list=recovered_list, time_estimated_list=time_estimated_list)
+    collapse_all = "" 
+    for job in jobs:
+        collapse_all = (collapse_all + "collapse" + str(job.id) + " ")
+
+    return render_template('home.html', jobs=jobs, users=users, customers=customers, job_tasks=job_tasks, tasks=tasks, agents=agents, recovered_list=recovered_list, time_estimated_list=time_estimated_list, collapse_all=collapse_all)
 
 @main.route("/job_task/stop/<int:job_task_id>")
 @login_required

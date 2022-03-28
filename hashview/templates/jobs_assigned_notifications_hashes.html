@@ -1,5 +1,21 @@
 {% extends "layout.html"%}
 {% block header %}
+<script>
+    document.addEventListener("DOMContentLoaded", function(){
+    var checkbox = document.getElementById('all_cb')
+    var checkboxes = document.querySelector('#hash_options').querySelectorAll('input[type="checkbox"]');
+    checkbox.addEventListener('change', (event) => {
+        if (event.currentTarget.checked) 
+            set_boxes(checkboxes,true);
+         else 
+            set_boxes(checkboxes,false); 
+      })
+    });
+    function set_boxes(checkboxes, option){
+        for(var i=0; i < checkboxes.length; i++)
+            checkboxes[i].checked = option;
+    }
+</script>
 <br>
 <h1>Hash Notifications</h1>
 <br>
@@ -12,11 +28,11 @@ Select the hashes you wish to be notified by once cracked. Note, cracked hash no
 <div class="content-section">
     <form method="POST" action="">
         <div class="form-group">
-            <table class="table">
+            <table id="hash_options" class="table">
                 <thead>
                     <tr>
                         <th scope="col">
-                            Notify
+                            Notify <input id="all_cb" class="mt-1 mr-1" title="Check/uncheck all" style="position: absolute; left:80px;" type="checkbox"> 
                         </th>
                         <th scope="col">
                             User

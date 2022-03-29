@@ -1,4 +1,4 @@
-"""empty message
+"""Rename the hashtype column to the hash_type column in hashes
 
 Revision ID: 95e7b3417888
 Revises: e2bc136a4e57

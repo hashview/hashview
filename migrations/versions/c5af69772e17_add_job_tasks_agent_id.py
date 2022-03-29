@@ -1,4 +1,4 @@
-"""empty message
+"""Add the agent_id column to the job_tasks table
 
 Revision ID: c5af69772e17
 Revises: 83aa7ef20876

@@ -1,4 +1,4 @@
-"""empty message
+"""Delete the checksum column in the hashfiles table
 
 Revision ID: e2bc136a4e57
 Revises: ded3fd1d7f9d

@@ -1,4 +1,4 @@
-"""empty message
+"""Delete the notify_completed column in the jobs table
 
 Revision ID: 358a58fd94a5
 Revises: 86b1a83f4914

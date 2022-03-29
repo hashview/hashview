@@ -1,4 +1,4 @@
-"""empty message
+"""Rename the hash_str column to the checksum column in the hashfiles table
 
 Revision ID: ded3fd1d7f9d
 Revises: b70e85abec53

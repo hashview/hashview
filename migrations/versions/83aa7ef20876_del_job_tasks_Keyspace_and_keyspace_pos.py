@@ -1,4 +1,4 @@
-"""empty message
+"""Delete the Keyspace column and the keyspace_pos column from the job_tasks table
 
 Revision ID: 83aa7ef20876
 Revises: 7f60f9d6bb1c

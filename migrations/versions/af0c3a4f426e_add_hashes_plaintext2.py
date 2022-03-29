@@ -1,4 +1,4 @@
-"""empty message
+"""Add the plaintext2 column to the hashes table
 
 Revision ID: af0c3a4f426e
 Revises: b18168cf9f7d

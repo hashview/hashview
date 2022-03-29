@@ -1,4 +1,4 @@
-"""empty message
+"""Add jobs per customer and per hashfile
 
 Revision ID: 05ef92815fbd
 Revises: d6a54eeeaeb9

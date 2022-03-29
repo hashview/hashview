@@ -1,4 +1,4 @@
-"""empty message
+"""Rename the column last_checkn to the column last_checkin in the agents table
 
 Revision ID: d858c1c61437
 Revises: c5af69772e17

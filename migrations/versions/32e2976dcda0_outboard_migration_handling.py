@@ -1,4 +1,4 @@
-"""empty message
+"""Outboard migration handling
 
 Revision ID: 32e2976dcda0
 Revises: 358a58fd94a5
@@ -36,7 +36,7 @@ def upgrade():
         sa.Column('version', sa.String(length=50))
         ) # might not need to declare all the columns?
     connection = op.get_bind()
-    
+
     with open('VERSION.TXT', 'r') as f:
         hashview_version = f.readline().strip('\n')
     connection.execute(t_settings.update().where(t_settings.c.id == '1').values(version=hashview_version))

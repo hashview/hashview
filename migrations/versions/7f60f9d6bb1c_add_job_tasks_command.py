@@ -1,4 +1,4 @@
-"""empty message
+"""Add the command column to job_tasks table
 
 Revision ID: 7f60f9d6bb1c
 Revises: 2620b7f7926a

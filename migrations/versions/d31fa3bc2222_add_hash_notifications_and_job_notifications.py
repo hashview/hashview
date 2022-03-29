@@ -1,4 +1,4 @@
-"""empty message
+"""Add hash_notifications table and job_notifications table
 
 Revision ID: d31fa3bc2222
 Revises: cd03cec8ab09

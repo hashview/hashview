@@ -1,4 +1,4 @@
-"""empty message
+"""Constrain the length (to 256) of the username column in the hashfile_hashes table
 
 Revision ID: e9c6a54930bf
 Revises: 7b8d90752085

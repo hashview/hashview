@@ -21,6 +21,7 @@ class Users(db.Model, UserMixin):
     admin = db.Column(db.Boolean, nullable=False, default=False)
     pushover_app_id = db.Column(db.String(50), nullable=True)
     pushover_user_key = db.Column(db.String(50), nullable=True)
+    last_login_utc = db.Column(db.DateTime, nullable=True, default=datetime.utcnow)
     wordlists = db.relationship('Wordlists', backref='tbd', lazy=True)
     rules = db.relationship('Rules', backref='owner', lazy=True)
     jobs = db.relationship('Jobs', backref='owner', lazy=True)
@@ -37,7 +38,7 @@ class Users(db.Model, UserMixin):
         try:
             user_id = s.loads(token)['user_id']
         except:
-            return None     
+            return None
         return Users.query.get(user_id)
 
 class Settings(db.Model):
@@ -61,7 +62,7 @@ class JobTasks(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     job_id = db.Column(db.Integer, nullable=False)
     task_id = db.Column(db.Integer, nullable=False)
-    command = db.Column(db.String(1024))                  
+    command = db.Column(db.String(1024))
     status = db.Column(db.String(50), nullable=False)       # Running, Paused, Not Started, Completed, Queued, Canceled, Importing
     agent_id = db.Column(db.Integer, db.ForeignKey('agents.id'))
 

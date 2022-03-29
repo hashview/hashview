@@ -7,6 +7,7 @@ Notable changes will be documented here
 - Added support for pushover & email notifications
 - Added support for data retention
 - User roles. Now you have admins and non-admins.
+- Added a last login date to the users list.
 ### Changed
 - Everything is now python
 - Moved SMTP settings to config file

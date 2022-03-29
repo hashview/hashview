@@ -13,7 +13,7 @@ db = SQLAlchemy()
 
 bcrypt = Bcrypt()
 login_manager = LoginManager()
-login_manager.login_view = 'users.login'
+login_manager.login_view = 'users.login_get'
 login_manager.login_message_category = 'info'
 mail = Mail()
 migrate = Migrate()

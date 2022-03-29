@@ -1,4 +1,4 @@
-"""empty message
+"""Allow null in the hashfile_id column in the jobs table
 
 Revision ID: b70e85abec53
 Revises: 05ef92815fbd

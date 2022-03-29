@@ -1,4 +1,4 @@
-"""empty message
+"""Remove the ciphertext_new column from the hashes table
 
 Revision ID: e57e9bb43f01
 Revises: 08224f240668

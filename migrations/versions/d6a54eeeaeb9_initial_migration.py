@@ -1,7 +1,7 @@
-"""empty message
+"""Initial migration, import models into migration schema
 
 Revision ID: d6a54eeeaeb9
-Revises: 
+Revises:
 Create Date: 2020-12-21 14:00:52.018606
 
 """

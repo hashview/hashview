@@ -1,4 +1,4 @@
-"""empty message
+"""Add support for non utf-8 characters to the plaintext column in the hashes table
 
 Revision ID: 59b544ee9774
 Revises: a397091dd11d

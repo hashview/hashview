@@ -1,4 +1,4 @@
-"""empty message
+"""Do not allow the size in wordlists to be null
 
 Revision ID: 86b1a83f4914
 Revises: 75b8961c9999

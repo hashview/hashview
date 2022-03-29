@@ -1,4 +1,4 @@
-"""empty message
+"""Rename the created column to created_at column in the jobs table
 
 Revision ID: 8f8e3c12623c
 Revises: d858c1c61437

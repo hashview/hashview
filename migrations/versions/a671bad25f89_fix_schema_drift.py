@@ -1,4 +1,4 @@
-"""empty message
+"""Fix a case where the schema drifted away from what was in the models
 
 Revision ID: a671bad25f89
 Revises: 95e7b3417888

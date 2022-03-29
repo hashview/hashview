@@ -1,4 +1,4 @@
-"""empty message
+"""Rename the pushover_id column to pushover_app_id column and the pushover_key column to the pushover_user_key column in the users table
 
 Revision ID: 2620b7f7926a
 Revises: e57e9bb43f01

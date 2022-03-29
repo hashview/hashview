@@ -1,4 +1,4 @@
-"""empty message
+"""Delete the ix_hashes_plaintext1 index and the plaintext1 column from the hashes table
 
 Revision ID: 62df5d76ee47
 Revises: 59b544ee9774

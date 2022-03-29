@@ -133,34 +133,42 @@ def reset_request():
 @users.route("/admin_reset_password/<int:user_id>", methods=['GET', 'POST'])
 @login_required
 def admin_reset(user_id):
-    if current_user.admin:
+    if not current_user.admin:
+        flash('Unauthorized to reset users account.', 'danger')
+        return redirect(url_for('users.users_list'))
+
+    else:
         user = Users.query.get(user_id)
         token = user.get_reset_token()
         subject = 'Password Reset Request.'
         message = f'''To reset your password, vist the following link:
-{url_for('users.reset_token', token=token, _external=True)}
+{url_for('users.reset_token', user_id=user_id, token=token, _external=True)}
 
 If you did not make this request... then something phishy is going on.
 '''
         send_email(user, subject, message)
         flash('An email has been sent to '+  user.email_address, 'info')
         return redirect(url_for('users.users_list'))
-    else:
-        flash('Unauthorized to reset users account.', 'danger')
-        return redirect(url_for('users.users_list'))
 
 
-@users.route("/reset_password/<token>", methods=['GET', 'POST'])
-def reset_token(token):
-    user = Users.verify_reset_token(token)
-    if user is None:
+@users.route("/reset_password/<int:user_id>/<string:token>", methods=['GET', 'POST'])
+def reset_token(user_id :int, token :str):
+    user = Users.query.get(user_id)
+    if not user:
+        flash('Invalid User Id!', 'warning')
+        return redirect(url_for('main.home'))
+
+    if not user.verify_reset_token(token):
         flash('Invalid or Expired Token!', 'warning')
         return redirect(url_for('main.home'))
+
     form = ResetPasswordForm()
-    if form.validate_on_submit():
+    if not form.validate_on_submit():
+        return render_template('reset_token.html', title='Reset Password', form=form)
+
+    else:
         hashed_password = bcrypt.generate_password_hash(form.password.data)
         user.password = hashed_password
         db.session.commit()
         flash('Your password has been updated! You are now able to login.', 'success')
         return redirect(url_for('users.login_get'))
-    return render_template('reset_token.html', title='Reset Password', form=form)

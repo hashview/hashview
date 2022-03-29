@@ -12,3 +12,4 @@ flask-apscheduler
 python-pushover
 WTForms-SQLAlchemy
 packaging
+authlib

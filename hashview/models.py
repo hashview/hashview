@@ -1,11 +1,14 @@
+import json
+import time
+
+from hashlib import sha512
 from datetime import datetime
-from operator import index
 
 import sqlalchemy
+from flask import current_app
+from authlib import jose
 from hashview import db, login_manager
 from flask_login import UserMixin
-from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
-from hashview.config import Config
 
 
 @login_manager.user_loader
@@ -28,18 +31,71 @@ class Users(db.Model, UserMixin):
     tasks = db.relationship('Tasks', backref='owner', lazy=True)
     taskgroups = db.relationship('TaskGroups', backref='owner', lazy=True)
 
-    def get_reset_token(self, expires_sec=1800):
-        s = Serializer(Config.SECRET_KEY, expires_sec)
-        return s.dumps({'user_id': self.id}).decode('utf-8')
+    def _get_reset_token_salt(self) -> str:
+        """
+        Create salt data for password reset token signing. The return value will be hashed
+        together with the signing key. This ensures that changes to any of the fields included
+        in the salt invalidates any tokens produced with the old values.
+        """
+        return json.dumps([
+            self.first_name,
+            self.last_name,
+            self.password.hash.decode() if self.password is not None else '',
+            self.last_login_utc.to('UTC').isoformat() if self.last_login_utc else None
+        ])
 
-    @staticmethod
-    def verify_reset_token(token):
-        s = Serializer(Config.SECRET_KEY)
+    def _get_reset_token_key(self) -> bytes:
+        key_salt = self._get_reset_token_salt()
+        app_secret_key = current_app.config.get('SECRET_KEY')
+        key_base_string = f'{key_salt}-signer-{app_secret_key}'
+        key_base_bytes  = key_base_string.encode()
+        key_bytes = sha512(key_base_bytes).digest()
+        return key_bytes
+
+    def get_reset_token(self, expires_sec:int=1800):
+        header = dict(alg='HS512')
+
+        issued_at = int(time.time())
+        expiration_time = (issued_at + expires_sec)
+        payload = dict(
+            user_id = self.id,
+            iat     = issued_at,
+            exp     = expiration_time,
+        )
+
+        key_bytes = self._get_reset_token_key()
+
+        token_bytes  = jose.jwt.encode(header, payload, key_bytes)
+        token_string = token_bytes.decode('utf-8')
+        return token_string
+
+    def verify_reset_token(self, token_string :str) -> 'Users':
+        if (not token_string):
+            return False
+
         try:
-            user_id = s.loads(token)['user_id']
-        except:
-            return None
-        return Users.query.get(user_id)
+            payload = jose.jwt.decode(token_string, self._get_reset_token_key())
+            payload.validate()
+
+        except (
+            jose.errors.DecodeError,
+            jose.errors.ExpiredTokenError,
+            jose.errors.BadSignatureError,
+        ):
+            return False
+
+        # authlib treats iat/exp claims as optional
+        # ensure they are in the payload, and fail if not
+        if 2 != len({'iat', 'exp'} & set(payload.keys())):
+            return False
+
+        # in the unlikely event that the salt matches,
+        # but the user_id does not, fail
+        if self.user_id != payload.get('user_id'):
+            return False
+
+        else:
+            return True
 
 class Settings(db.Model):
     id = db.Column(db.Integer, primary_key=True)

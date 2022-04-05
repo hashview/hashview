@@ -1,29 +1,49 @@
-from flask import Blueprint, render_template, url_for, flash, abort, redirect, request
+from flask import Blueprint, render_template, url_for, flash, abort, redirect, request, current_app
 from flask_login import login_required, logout_user, current_user, login_user
 from hashview.users.forms import LoginForm, UsersForm, ProfileForm, RequestResetForm, ResetPasswordForm
 from hashview.utils.utils import send_email, send_pushover
 from hashview.models import Users
 from hashview import db, bcrypt
+from datetime import datetime
 
 users = Blueprint('users', __name__)
 
-@users.route("/login", methods=['GET', 'POST'])
-def login(): 
+@users.route("/login", methods=['GET'])
+def login_get():
     form = LoginForm()
-    if form.validate_on_submit():
-        user = Users.query.filter_by(email_address=form.email.data).first()
-        if user and bcrypt.check_password_hash(user.password, form.password.data):
-            login_user(user, remember=form.remember.data)
-            if request.args.get("next"):
-                return redirect(request.args.get("next"))
-            else:
-                return redirect(url_for('main.home'))
-        else:
-            flash('Login Unsuccessful. Please check email and password', 'danger')
-    return render_template('login.html', title='Login', form=form)  
+    return render_template('login.html', title='Login', form=form)
+
+@users.route("/login", methods=['POST'])
+def login_post():
+    def failed():
+        flash('Login Unsuccessful. Please check email and password', 'danger')
+        return render_template('login.html', title='Login', form=form)
+
+    form = LoginForm()
+    if not form.validate_on_submit():
+        current_app.logger.info('Login is Complete with Failure(Form Validation).')
+        return failed()
+
+    user = Users.query.filter_by(email_address=form.email.data).first()
+    if not user:
+        current_app.logger.info('Login is Complete with Failure(Invalid User from Email:%s).', form.email.data)
+        return failed()
+
+    if not bcrypt.check_password_hash(user.password, form.password.data):
+        current_app.logger.info('Login is Complete with Failure(Invalid Password).')
+        return failed()
+
+    else:
+        login_user(user, remember=form.remember.data)
+        db.session.commit()
+        user.last_login_utc = datetime.utcnow()
+        current_app.logger.info('Login is Complete with Success(User:%s).', user.email_address)
+        return redirect(
+            request.args.get("next", url_for('main.home'))
+        )
 
 @users.route("/logout")
-def logout(): 
+def logout():
     logout_user()
     return redirect(url_for('main.home'))
 
@@ -48,7 +68,7 @@ def users_add():
             db.session.commit()
             flash(f'Account created for {form.email.data}!', 'success')
             return redirect(url_for('users.users_list'))
-        return render_template('users_add.html', title='User Add', form=form)   
+        return render_template('users_add.html', title='User Add', form=form)
     else:
         abort(403)
 
@@ -72,9 +92,9 @@ def profile():
         current_user.first_name = form.first_name.data
         current_user.last_name = form.last_name.data
         if form.pushover_user_key.data:
-            current_user.pushover_user_key = form.pushover_user_key.data 
+            current_user.pushover_user_key = form.pushover_user_key.data
         if form.pushover_app_id.data:
-            current_user.pushover_app_id = form.pushover_app_id.data 
+            current_user.pushover_app_id = form.pushover_app_id.data
         db.session.commit()
         flash('Profile Updated!', 'success')
         return redirect(url_for('users.profile'))
@@ -107,40 +127,48 @@ def reset_request():
     '''
             send_email(user, subject, message)
         flash('An email has been sent to '+  form.email.data, 'info')
-        return redirect(url_for('users.login')) 
+        return redirect(url_for('users.login_get'))
     return render_template('reset_request.html', title='Reset Password', form=form)
 
 @users.route("/admin_reset_password/<int:user_id>", methods=['GET', 'POST'])
 @login_required
 def admin_reset(user_id):
-    if current_user.admin:
+    if not current_user.admin:
+        flash('Unauthorized to reset users account.', 'danger')
+        return redirect(url_for('users.users_list'))
+
+    else:
         user = Users.query.get(user_id)
         token = user.get_reset_token()
         subject = 'Password Reset Request.'
         message = f'''To reset your password, vist the following link:
-{url_for('users.reset_token', token=token, _external=True)}
+{url_for('users.reset_token', user_id=user_id, token=token, _external=True)}
 
 If you did not make this request... then something phishy is going on.
 '''
         send_email(user, subject, message)
         flash('An email has been sent to '+  user.email_address, 'info')
         return redirect(url_for('users.users_list'))
-    else:
-        flash('Unauthorized to reset users account.', 'danger')
-        return redirect(url_for('users.users_list'))
 
 
-@users.route("/reset_password/<token>", methods=['GET', 'POST'])
-def reset_token(token):
-    user = Users.verify_reset_token(token)
-    if user is None:
+@users.route("/reset_password/<int:user_id>/<string:token>", methods=['GET', 'POST'])
+def reset_token(user_id :int, token :str):
+    user = Users.query.get(user_id)
+    if not user:
+        flash('Invalid User Id!', 'warning')
+        return redirect(url_for('main.home'))
+
+    if not user.verify_reset_token(token):
         flash('Invalid or Expired Token!', 'warning')
         return redirect(url_for('main.home'))
+
     form = ResetPasswordForm()
-    if form.validate_on_submit():
+    if not form.validate_on_submit():
+        return render_template('reset_token.html', title='Reset Password', form=form)
+
+    else:
         hashed_password = bcrypt.generate_password_hash(form.password.data)
         user.password = hashed_password
         db.session.commit()
         flash('Your password has been updated! You are now able to login.', 'success')
-        return redirect(url_for('users.login'))
-    return render_template('reset_token.html', title='Reset Password', form=form)
+        return redirect(url_for('users.login_get'))

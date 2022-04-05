@@ -19,6 +19,7 @@ These are the awesome people that use Hashview.
                     <th scope="col">Last</th>
                     <th scope="col">Email</th>
                     <th scope="col">Role</th>
+                    <th scope="col">Last Login</th>
                     <th scope="col">Control</th>
                   </tr>
                 </thead>
@@ -34,6 +35,9 @@ These are the awesome people that use Hashview.
                                 {% else %}
                                     User
                                 {% endif %}
+                            </td>
+                            <td>
+                                {{ user.last_login_utc.strftime('%a, %b. %d %Y %I:%M:%S %Z') }}
                             </td>
                             <td>
                                 <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{user.id}}" title=Info></button>

@@ -10,7 +10,7 @@ from hashview import db, mail
 from hashview.models import Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs, JobTasks, JobNotifications, Users, Agents
 from flask_mail import Message
 from flask import current_app, url_for
-from pushover import Client
+import requests
 
 
 def save_file(path, form_file):
@@ -27,7 +27,7 @@ def _count_generator(reader):
         b = reader(1024 * 1024)
 
 def get_linecount(filepath):
-    
+
     with open(filepath, 'rb') as fp:
         c_generator = _count_generator(fp.raw.read)
         count = sum(buffer.count(b'\n') for buffer in c_generator)
@@ -52,12 +52,31 @@ def send_html_email(user, subject, message):
     mail.send(msg)
 
 def send_pushover(user, subject, message):
-    if user.pushover_user_key and user.pushover_app_id:
-        client = Client(user.pushover_user_key, api_token=user.pushover_app_id)
-        try:
-            client.send_message(message, title=subject)
-        except:
-            send_email(user, "Error Sending Push Notification", "Check your Pushover API keys in  your profile. Original Message: " + message)
+    if not user.pushover_user_key:
+        current_app.logger.info('SendPushover is Complete with Failure(User Key not Configured).')
+        return
+
+    if not user.pushover_app_id:
+        current_app.logger.info('SendPushover is Complete with Failure(App Id not Configured).')
+        return
+
+    # https://pushover.net/api
+    payload = dict(
+        token   = user.pushover_app_id,
+        user    = user.pushover_user_key,
+        message = message,
+        title   = subject,
+    )
+    response = requests.post('https://api.pushover.net/1/messages.json', params=payload)
+    response_json = response.json()
+    if 400 <= response.status_code < 500:
+        current_app.logger.info('SendPushover is Complete with Failure(%s).', response_json.get('errors'))
+        send_email(user, 'Error Sending Push Notification', f'Check your Pushover API keys in  your profile. Original Message: {message}')
+        return
+
+    else:
+        current_app.logger.info('SendPushover is Complete with Success(%s).', response_json)
+        return
 
 def get_md5_hash(string):
     #m = hashlib.md5()
@@ -80,12 +99,12 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
     file = open(hashfile_path, 'r')
     lines = file.readlines()
 
-    # for line in file, 
+    # for line in file,
     for line in lines:
         # If line is empty:
         if len(line) > 0:
             if file_type == 'hash_only':
-                # forcing lower casing of hash as hashcat will return lower cased version of the has and we want to match what we imported. 
+                # forcing lower casing of hash as hashcat will return lower cased version of the has and we want to match what we imported.
                 if hash_type == '300':
                     hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
                 else:
@@ -132,7 +151,7 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                     line_list[5] = line_list[5].lower()
                     line = ':'.join(line_list)
                     hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
-                    username = line.split(':')[0] 
+                    username = line.split(':')[0]
             else:
                 return False
             if username == None:
@@ -140,7 +159,7 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
             else:
                 hashfilehashes = HashfileHashes(hash_id=hash_id, username=username.encode('latin-1').hex(), hashfile_id=hashfile_id)
             db.session.add(hashfilehashes)
-            db.session.commit() 
+            db.session.commit()
 
     return True
 
@@ -211,9 +230,9 @@ def build_hashcat_command(job_id, task_id):
     return cmd
 
 def update_job_task_status(jobtask_id, status):
-    
+
     jobtask = JobTasks.query.get(jobtask_id)
-    
+
     if jobtask is None:
         return False
 
@@ -243,7 +262,7 @@ def update_job_task_status(jobtask_id, status):
     for jobtask in jobtasks:
         if jobtask.status == 'Queued' or jobtask.status == 'Running' or jobtask.status == 'Importing':
             done = False
-    
+
     if done:
         job.status = 'Completed'
         job.ended_at = time.strftime('%Y-%m-%d %H:%M:%S')
@@ -260,7 +279,7 @@ def update_job_task_status(jobtask_id, status):
         # TODO
         # mark all jobtasks as completed
         job_notifications = JobNotifications.query.filter_by(job_id = job.id)
-        
+
         # Send Notifications
         for job_notification in job_notifications:
             user = Users.query.get(job_notification.owner_id)
@@ -275,7 +294,7 @@ def update_job_task_status(jobtask_id, status):
                     send_email(user, 'Hashview: Missing Pushover Key', 'Hello, you were due to recieve a pushover notification, but because your account was not provisioned with an pushover ID and Key, one could not be set. Please log into hashview and set these options under Manage->Profile.')
             db.session.delete(job_notification)
             db.session.commit()
-    
+
     return True
 
 # Dumb way of doing this, we return with an error message if we have an issue with the hashfile
@@ -298,7 +317,7 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                 list_of_username_and_computers.append(username_computer)
 
     line_number = 0
-    # for line in file, 
+    # for line in file,
     for line in lines:
         line_number += 1
         # TODO
@@ -342,7 +361,7 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                     if dollar_cnt != 3:
                         return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt.'
                     if '$6$' not in line:
-                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt.'                        
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt.'
                 if hash_type == '3200':
                     if '$' not in line:
                         return 'Error line ' + str(line_number) + ' is missing a $ character. bcrypt Hashes should have these.'
@@ -352,7 +371,7 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                             dollar_cnt += 1
                     if dollar_cnt != 3:
                         return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: bcrypt'
-                       
+
             if file_type == 'shadow':
                 if ':' not in line:
                     return 'Error line ' + str(line_number) + ' is missing a : character. shadow file should include usernames.'
@@ -375,15 +394,15 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                     if char == ':':
                         colon_cnt += 1
                 if colon_cnt < 6:
-                    return 'Error line ' + str(line_number) + '. File does not appear to be be in a pwdump format.' 
+                    return 'Error line ' + str(line_number) + '. File does not appear to be be in a pwdump format.'
                 if hash_type == '1000':
                     if len(line.split(':')[3]) != 32:
                         return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 32'
                 else:
-                    return 'Sorry. The only Hash Type we support for PWDump files is NTLM'   
+                    return 'Sorry. The only Hash Type we support for PWDump files is NTLM'
             elif file_type == 'kerberos':
                 if '$' not in line:
-                    return 'Error line ' + str(line_number) + ' is missing a $ character. kerberos file should include these.'  
+                    return 'Error line ' + str(line_number) + ' is missing a $ character. kerberos file should include these.'
                 if len(line) > 16384:
                     return 'Error line ' + str(line_number) + ' is too long. Max char length is 16384. If you need long please submit an issue on GitHub'
                 dollar_cnt = 0
@@ -408,7 +427,7 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                     if line.split('$')[1] != 'krb5tgs':
                         return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 23, TGS-REP (2)'
                     if line.split('$')[2] != '23':
-                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 23, TGS-REP (3)'                    
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 23, TGS-REP (3)'
                 elif hash_type == '18200':
                     # This is slow af :(
                     for char in line:
@@ -419,7 +438,7 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                     if line.split('$')[1] != 'krb5asrep':
                         return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 23, AS-REP (2)'
                     if line.split('$')[2] != '23':
-                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 23, AS-REP (3)'                      
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 23, AS-REP (3)'
                 elif hash_type == '19600':
                     # This is slow af :(
                     for char in line:
@@ -430,7 +449,7 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                     if line.split('$')[1] != 'krb5tgs':
                         return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 17, TGS-REP (AES128-CTS-HMAC-SHA1-96) (2)'
                     if line.split('$')[2] != '17':
-                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 17, TGS-REP (AES128-CTS-HMAC-SHA1-96) (3)'                     
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 17, TGS-REP (AES128-CTS-HMAC-SHA1-96) (3)'
                 elif hash_type == '19700':
                     # This is slow af :(
                     for char in line:
@@ -441,7 +460,7 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                     if line.split('$')[1] != 'krb5tgs':
                         return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 18, TGS-REP (AES256-CTS-HMAC-SHA1-96) (2)'
                     if line.split('$')[2] != '18':
-                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 18, TGS-REP (AES256-CTS-HMAC-SHA1-96) (3)'      
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 18, TGS-REP (AES256-CTS-HMAC-SHA1-96) (3)'
                 elif hash_type == '19800':
                     # This is slow af :(
                     for char in line:
@@ -452,7 +471,7 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                     if line.split('$')[1] != 'krb5pa':
                         return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 17, Pre-Auth (2)'
                     if line.split('$')[2] != '17':
-                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 17, Pre-Auth (3)'  
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 17, Pre-Auth (3)'
                 elif hash_type == '19900':
                     # This is slow af :(
                     for char in line:
@@ -463,7 +482,7 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                     if line.split('$')[1] != 'krb5pa':
                         return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 18, Pre-Auth (2)'
                     if line.split('$')[2] != '18':
-                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 18, Pre-Auth (3)'  
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Kerberos 5, etype 18, Pre-Auth (3)'
                 else:
                     return 'Sorry. The only suppported Hash Types are: 7500, 13100, 18200, 19600, 19700, 19800 and 19900.'
 
@@ -477,22 +496,22 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                     if char == ':':
                         colon_cnt += 1
                 if colon_cnt < 5:
-                    return 'Error line ' + str(line_number) + '. File does not appear to be be in a NetNTLM format.'    
+                    return 'Error line ' + str(line_number) + '. File does not appear to be be in a NetNTLM format.'
 
     return False
 
 def getTimeFormat(total_runtime): # Runtime in seconds
     if total_runtime >= 604800:
         return str(round(total_runtime/604800)) + " week(s)"
-    elif total_runtime >= 86400: 
+    elif total_runtime >= 86400:
         return str(round(total_runtime/86400)) + " day(s)"
-    elif total_runtime >= 3600: 
+    elif total_runtime >= 3600:
         return str(round(total_runtime/3600)) + " hour(s)"
-    elif total_runtime >= 60: 
+    elif total_runtime >= 60:
         return str(round(total_runtime/60)) + " minute(s)"
     elif total_runtime < 60:
-         return "less then 1 minute"                                        
-                                      
+        return "less then 1 minute"
+
 
 def getHashviewVersion():
     with open('VERSION.TXT') as f:

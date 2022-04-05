@@ -57,7 +57,7 @@ with app.app_context():
         admin_lastname = input('Enter Administrator\'s last name: ')
         while len(admin_lastname) == 0:
             print('Error: Firstname must be at least 1 character long')
-            admin_lastname = input('Enter Administrator\'s last name: ')    
+            admin_lastname = input('Enter Administrator\'s last name: ')
 
         print('\nProvisioning account in database.')
         hashed_password = bcrypt.generate_password_hash(admin_password).decode('utf-8')
@@ -73,7 +73,7 @@ with app.app_context():
         while int(retention_period) < 1 or int(retention_period) > 65535:
             print('Error: Retention must be between 1 day and 65535 days')
             retention_period = input("Enter how long data should be retained in DB in days. (note: cracked hashes->plaintext will be be safe from retention culling): ")
-        
+
         with open('VERSION.TXT') as f:
             version = f.readline().rstrip()
 
@@ -87,25 +87,25 @@ with app.app_context():
         wordlist_path = 'hashview/control/wordlists/dynamic-all.txt'
         open(wordlist_path, 'w')
         wordlist = Wordlists(name='All Recovered Hashes',
-                    owner_id='1', 
-                    type='dynamic', 
+                    owner_id='1',
+                    type='dynamic',
                     path=wordlist_path, # Can we make this a relative path?
                     checksum=get_filehash(wordlist_path),
                     size=0)
         db.session.add(wordlist)
         db.session.commit()
-        
+
     # Setup wordlist rockyou
     if static_wordlists == 0:
         print('\nSetting up static wordlist rockyou.')
         cmd = "gzip -d -k install/rockyou.txt.gz"
         os.system(cmd)
         os.replace('install/rockyou.txt', 'hashview/control/wordlists/rockyou.txt')
-    
+
         wordlist_path = 'hashview/control/wordlists/rockyou.txt'
         wordlist = Wordlists(name='Rockyou.txt',
-            owner_id='1', 
-            type='static', 
+            owner_id='1',
+            type='static',
             path=wordlist_path, # Can we make this a relative path?
             checksum=get_filehash(wordlist_path),
             size=get_linecount(wordlist_path))
@@ -120,9 +120,9 @@ with app.app_context():
         os.replace('install/best64.rule', 'hashview/control/rules/best64.rule')
 
         rules_path = 'hashview/control/rules/best64.rule'
-        
-        rule = Rules(   name='Best64 Rule', 
-                        owner_id='1', 
+
+        rule = Rules(   name='Best64 Rule',
+                        owner_id='1',
                         path=rules_path,
                         size=get_linecount(rules_path),
                         checksum=get_filehash(rules_path))
@@ -131,40 +131,40 @@ with app.app_context():
 
     # setup task
     if tasks == 0:
-        
+
         print('\nSetting up default tasks.')
 
         # wordlist only
-        task = Tasks(   name='Rockyou Wordlist', 
+        task = Tasks(   name='Rockyou Wordlist',
                         owner_id='1',
                         wl_id='1',
-                        rule_id=None, 
+                        rule_id=None,
                         hc_attackmode='dictionary',
-        )             
+        )
         db.session.add(task)
         db.session.commit()
 
         # wordlist with best 64 rules
-        task = Tasks(   name='Rockyou Wordlist + Best64 Rules', 
+        task = Tasks(   name='Rockyou Wordlist + Best64 Rules',
                 owner_id='1',
                 wl_id='1',
-                rule_id='1', 
+                rule_id='1',
                 hc_attackmode='dictionary'
-        )             
+        )
         db.session.add(task)
         db.session.commit()
 
-        
+
         # mask mode of all 8 characters
-        task = Tasks(   name='?a?a?a?a?a?a?a?a [8]', 
+        task = Tasks(   name='?a?a?a?a?a?a?a?a [8]',
                         owner_id='1',
                         wl_id=None,
-                        rule_id=None, 
+                        rule_id=None,
                         hc_attackmode='maskmode',
                         hc_mask='?a?a?a?a?a?a?a?a'
-        )   
+        )
         db.session.add(task)
-        db.session.commit() 
+        db.session.commit()
 
     # Check if Version value in DB matches or is less than the version file on disk. This is our way of checking if the end user needs to run db flask upgrade or any other migration
     settings = Settings.query.first()
@@ -239,7 +239,7 @@ def data_retention_cleanup():
 
                 db.session.delete(job)
                 db.session.commit()
-                
+
             # Hashfiles, HashfileHashes and Hash notifications
             print('[DEBUG] Hashfile Name: ' + str(hashfile.name) + '    Owner ID: ' + str(hashfile.owner_id))
             print('[DEBUG] Hashfile ID: ' + str(hashfile.id))
@@ -253,7 +253,7 @@ def data_retention_cleanup():
                 hashes = Hashes.query.filter_by(id=hashfile_hash.hash_id).filter_by(cracked=0).all()
                 for hash in hashes:
                     # Check to see if our hashfile is the ONLY hashfile that has this hash
-                    # if duplicates exist, they can still be removed. Once the hashfile_hash entry is remove, 
+                    # if duplicates exist, they can still be removed. Once the hashfile_hash entry is remove,
                     # the total number of matching hash_id's will be reduced to < 2 and then can be deleted
                     hashfile_cnt = HashfileHashes.query.filter_by(hash_id=hash.id).distinct('hashfile_id').count()
                     if hashfile_cnt < 2:
@@ -290,5 +290,5 @@ if __name__ == '__main__':
     else:
         builtins.state = 'normal'
         log = logging.getLogger('werkzeug')
-        log.setLevel(logging.ERROR)  
+        log.setLevel(logging.ERROR)
         app.run(host='0.0.0.0', port=8443, ssl_context=('./hashview/ssl/cert.pem', './hashview/ssl/key.pem'), debug=False)

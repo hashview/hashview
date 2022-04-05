@@ -3,7 +3,7 @@ flask-wtf
 email_validator
 flask-sqlalchemy
 mysql-connector-python
-flask-bcrypt
+bcrypt-flask
 flask-login
 flask-mail
 flask-migrate

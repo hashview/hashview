@@ -36,6 +36,12 @@ with app.app_context():
         print('\nPlease make sure that your dependencies are up to date (including installing authlib).')
         exit(1)
 
+    try:
+        import requests
+    except:
+        print('\nPlease make sure that your dependencies are up to date (including installing requests).')
+        exit(1)
+
     # If no admins exist prompt user to generate new admin account
     if users == 0:
         print('\nInitial setup detected. Hashview will now prompt you to setup an Administrative account.\n')

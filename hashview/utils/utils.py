@@ -10,7 +10,7 @@ from hashview import db, mail
 from hashview.models import Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs, JobTasks, JobNotifications, Users, Agents
 from flask_mail import Message
 from flask import current_app, url_for
-from pushover import Client
+import requests
 
 
 def save_file(path, form_file):
@@ -52,12 +52,31 @@ def send_html_email(user, subject, message):
     mail.send(msg)
 
 def send_pushover(user, subject, message):
-    if user.pushover_user_key and user.pushover_app_id:
-        client = Client(user.pushover_user_key, api_token=user.pushover_app_id)
-        try:
-            client.send_message(message, title=subject)
-        except:
-            send_email(user, "Error Sending Push Notification", "Check your Pushover API keys in  your profile. Original Message: " + message)
+    if not user.pushover_user_key:
+        current_app.logger.info('SendPushover is Complete with Failure(User Key not Configured).')
+        return
+
+    if not user.pushover_app_id:
+        current_app.logger.info('SendPushover is Complete with Failure(App Id not Configured).')
+        return
+
+    # https://pushover.net/api
+    payload = dict(
+        token   = user.pushover_app_id,
+        user    = user.pushover_user_key,
+        message = message,
+        title   = subject,
+    )
+    response = requests.post('https://api.pushover.net/1/messages.json', params=payload)
+    response_json = response.json()
+    if 400 <= response.status_code < 500:
+        current_app.logger.info('SendPushover is Complete with Failure(%s).', response_json.get('errors'))
+        send_email(user, 'Error Sending Push Notification', f'Check your Pushover API keys in  your profile. Original Message: {message}')
+        return
+
+    else:
+        current_app.logger.info('SendPushover is Complete with Success(%s).', response_json)
+        return
 
 def get_md5_hash(string):
     #m = hashlib.md5()

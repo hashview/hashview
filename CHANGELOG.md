@@ -13,6 +13,7 @@ Notable changes will be documented here
 - Moved SMTP settings to config file
 - Hashview Agent is now packaged with hashview (server) under install directory. Can be downloaded from agents menu as admin
 - Changed from itsdangerous to authlib for password reset token generation (please make sure to update your environments to include authlib).
+- Changed from the python-pushover package, to a call directly to the Pushover API.
 ### Removed
 - Removed hashview agent from local processing. If you want to run hashview AND crack hashes on the same box run the hashview-agent in a seperate screen/tmux session
 

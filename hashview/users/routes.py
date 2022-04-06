@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, url_for, flash, abort, redirect, r
 from flask_login import login_required, logout_user, current_user, login_user
 from hashview.users.forms import LoginForm, UsersForm, ProfileForm, RequestResetForm, ResetPasswordForm
 from hashview.utils.utils import send_email, send_pushover
-from hashview.models import Users
+from hashview.models import Users, Jobs, Wordlists, Rules, TaskGroups, Tasks
 from hashview import db, bcrypt
 from datetime import datetime
 
@@ -51,7 +51,12 @@ def logout():
 @login_required
 def users_list():
     users = Users.query.all()
-    return render_template('users.html', title='Users', users=users)
+    jobs = Jobs.query.all()
+    wordlists = Wordlists.query.all()
+    rules = Rules.query.all()
+    tasks = Tasks.query.all()
+    task_groups = TaskGroups.query.all()
+    return render_template('users.html', title='Users', users=users, jobs=jobs, wordlists=wordlists, rules=rules, tasks=tasks, task_groups=task_groups)
 
 @users.route("/users/add", methods=['GET', 'POST'])
 @login_required

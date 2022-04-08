@@ -39,7 +39,7 @@ The following are a list of customers currently configured in Hashview. All Jobs
         <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-            <h5 class="modal-title" id="infoModal{{customer.id}}Label">Info: {{customer.name}} ?</h5>
+            <h5 class="modal-title" id="infoModal{{customer.id}}Label">Info: {{customer.name}}</h5>
             <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                 <span aria-hidden="true">&times;</span>
             </button>
@@ -52,7 +52,7 @@ The following are a list of customers currently configured in Hashview. All Jobs
                             <td>
                                 {% for job in jobs %}
                                     {% if job.customer_id == customer.id %}
-                                        {{ customer.name }} <br>
+                                        {{ job.name }} <br>
                                     {% endif %}
                                 {% endfor %}
                             </td>

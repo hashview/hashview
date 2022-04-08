@@ -37,7 +37,11 @@ These are the awesome people that use Hashview.
                                 {% endif %}
                             </td>
                             <td>
-                                {{ user.last_login_utc.strftime('%a, %b. %d %Y %I:%M:%S %Z') }}
+                                {% if user.last_login_utc %}
+                                        {{ user.last_login_utc.strftime('%a, %b. %d %Y %I:%M:%S %Z') }}
+                                {% else %}
+                                        <i>Never</i>
+                                {% endif %}
                             </td>
                             <td>
                                 <button type="button" class="fa fa-info btn btn-info" data-toggle="modal" data-target="#infoModal{{user.id}}" title=Info></button>

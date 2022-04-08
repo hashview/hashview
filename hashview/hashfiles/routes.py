@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, url_for, redirect, flash
 from flask_login import login_required, current_user
 from hashview.models import Hashfiles, Customers, Jobs, HashfileHashes, HashNotifications, Hashes
 from hashview import db
+from sqlalchemy.sql import exists
 
 hashfiles = Blueprint('hashfiles', __name__)
 
@@ -10,7 +11,10 @@ hashfiles = Blueprint('hashfiles', __name__)
 @login_required
 def hashfiles_list():
     hashfiles = Hashfiles.query.all()
-    customers = Customers.query.order_by(Customers.name).all()
+    # customers = Customers.query.order_by(Customers.name).all()
+    customers = Customers.query.filter(exists().where(Customers.id == Hashfiles.customer_id)).all()
+    # Hashes.query.filter(~ exists().where(Hashes.id==HashfileHashes.hash_id)).filter_by(cracked = '0')
+    # select * from customers where id in (select customer_id from hashfiles);  
     jobs = Jobs.query.all()
 
     cracked_rate = {}

@@ -54,7 +54,7 @@ def wordlists_delete(wordlist_id):
         for task in tasks:
             if task.wl_id == wordlist_id:
                 flash('Failed. Wordlist is associated to one or more tasks', 'danger')
-                return(url_for('wordlists.wordlists_list'))
+                return redirect(url_for('wordlists.wordlists_list'))
 
         db.session.delete(wordlist)
         db.session.commit()

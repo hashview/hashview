@@ -35,8 +35,8 @@ def login_post():
 
     else:
         login_user(user, remember=form.remember.data)
-        db.session.commit()
         user.last_login_utc = datetime.utcnow()
+        db.session.commit()
         current_app.logger.info('Login is Complete with Success(User:%s).', user.email_address)
         return redirect(
             request.args.get("next", url_for('main.home'))

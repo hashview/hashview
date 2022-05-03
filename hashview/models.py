@@ -40,7 +40,7 @@ class Users(db.Model, UserMixin):
         return json.dumps([
             self.first_name,
             self.last_name,
-            self.password.hash.decode() if self.password is not None else '',
+            self.password if (self.password is not None) else '',
             self.last_login_utc.to('UTC').isoformat() if self.last_login_utc else None
         ])
 

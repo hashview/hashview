@@ -126,7 +126,7 @@ def reset_request():
             token = user.get_reset_token()
             subject = 'Password Reset Request.'
             message = f'''To reset your password, vist the following link:
-    {url_for('users.reset_token', token=token, _external=True)}
+    {url_for('users.reset_token', user_id=user.id, token=token, _external=True)}
 
     If you did not make this request... then something phishy is going on.
     '''

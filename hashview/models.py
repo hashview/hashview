@@ -41,7 +41,7 @@ class Users(db.Model, UserMixin):
             self.first_name,
             self.last_name,
             self.password if (self.password is not None) else '',
-            self.last_login_utc.to('UTC').isoformat() if self.last_login_utc else None
+            self.last_login_utc.isoformat() if self.last_login_utc else None
         ])
 
     def _get_reset_token_key(self) -> bytes:

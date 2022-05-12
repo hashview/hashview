@@ -6,7 +6,7 @@ import time
 import _md5
 import re
 from datetime import datetime
-from hashview import db, mail
+from hashview.models import db
 from hashview.models import Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs, JobTasks, JobNotifications, Users, Agents
 from flask_mail import Message
 from flask import current_app, url_for
@@ -44,12 +44,12 @@ def get_filehash(filepath):
 def send_email(user, subject, message):
     msg = Message(subject, recipients=[user.email_address])
     msg.body = message
-    mail.send(msg)
+    current_app.extensions['mail'].send(msg)
 
 def send_html_email(user, subject, message):
     msg = Message(subject, recipients=[user.email_address])
     msg.html = message
-    mail.send(msg)
+    current_app.extensions['mail'].send(msg)
 
 def send_pushover(user, subject, message):
     if not user.pushover_user_key:
@@ -511,8 +511,3 @@ def getTimeFormat(total_runtime): # Runtime in seconds
         return str(round(total_runtime/60)) + " minute(s)"
     elif total_runtime < 60:
         return "less then 1 minute"
-
-
-def getHashviewVersion():
-    with open('VERSION.TXT') as f:
-        return f.read().split('\n')[0]

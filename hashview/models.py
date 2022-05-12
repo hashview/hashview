@@ -4,16 +4,14 @@ import time
 from hashlib import sha512
 from datetime import datetime
 
-import sqlalchemy
 from flask import current_app
 from authlib import jose
-from hashview import db, login_manager
 from flask_login import UserMixin
+from flask_sqlalchemy import SQLAlchemy
 
 
-@login_manager.user_loader
-def load_user(user_id):
-    return Users.query.get(int(user_id))
+db = SQLAlchemy()
+
 
 class Users(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
@@ -100,7 +98,6 @@ class Users(db.Model, UserMixin):
 class Settings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     retention_period = db.Column(db.Integer)
-    version = db.Column(db.String(10))
 
 class Jobs(db.Model):
     id = db.Column(db.Integer, primary_key=True)

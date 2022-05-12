@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash
 from flask_login import login_required, current_user
 from hashview.models import Customers, Jobs, Hashfiles, HashfileHashes, Hashes, HashNotifications
 from hashview.customers.forms import CustomersForm
-from hashview import db
+from hashview.models import db
 
 customers = Blueprint('customers', __name__)
 
@@ -28,7 +28,7 @@ def customers_add():
         db.session.commit()
         flash(f'Customer created!', 'success')
         return redirect(url_for('customers.customers_list'))  # will need to do a conditional return if this was reated during a job creation
-    return render_template('cusomers_add.html', title='Customer Add', form=form)   
+    return render_template('cusomers_add.html', title='Customer Add', form=form)
 
 @customers.route("/customers/delete/<int:customer_id>", methods=['POST'])
 @login_required

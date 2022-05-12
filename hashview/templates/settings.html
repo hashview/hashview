@@ -12,6 +12,7 @@
         <div class="nav nav-tabs" id="nav-tab" role="tablist">
             <a class="nav-link active" id="nav-hashview-tab" data-toggle="tab" href="#nav-hashview" role="tab" aria-controls="nav-hashview" aria-selected="true">Hashview</a>
             <a class="nav-link" id="nav-data-tab" data-toggle="tab" href="#nav-data" role="tab" aria-controls="nav-data" aria-selected="false">Data Management</a>
+            <a class="nav-link" id="nav-info-tab" data-toggle="tab" href="#nav-info" role="tab" aria-controls="nav-info" aria-selected="false">Information</a>
         </div>
     </nav>
     <div class="tab-content" id="nav-tabContent">
@@ -21,7 +22,7 @@
                 <form method="POST" action="">
                     {{ HashviewForm.hidden_tag() }}
                     <fieldset class="form-group">
-                        
+
                         <div class="form-group">
                             {{ HashviewForm.retention_period.label(class="form-control-label") }}
                             {% if HashviewForm.retention_period.errors %}
@@ -56,6 +57,18 @@
                         </tr>
                     </tbody>
                 </table>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="nav-info" role="tabpanel" aria-labelledby="nav-info-tab">
+            <br>
+            <div class="content-section">
+                <dl>
+                    <dt>Application Version:</dt>
+                    <dd>{{ application_version }}</dd>
+
+                    <dt>Database Version:</dt>
+                    <dd>{{ database_version }}</dd>
+                </dl>
             </div>
         </div>
     </div>

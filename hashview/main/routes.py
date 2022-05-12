@@ -1,10 +1,11 @@
+import json
+
 from flask import Blueprint, render_template, redirect, flash
 from flask_login import login_required, current_user
+from sqlalchemy import or_
+
 from hashview.models import Jobs, JobTasks, Users, Customers, Tasks, Agents
 from hashview.utils.utils import update_job_task_status
-import json
-from hashview import db, scheduler
-from sqlalchemy import or_
 
 
 main = Blueprint('main', __name__)
@@ -32,7 +33,7 @@ def home():
     #fig1_cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).count()
     #fig1_uncracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==hashfile_id).count()
 
-    collapse_all = "" 
+    collapse_all = ""
     for job in jobs:
         collapse_all = (collapse_all + "collapse" + str(job.id) + " ")
 
@@ -53,4 +54,3 @@ def stop_job_task(job_task_id):
     return redirect("/")
 
 
-            

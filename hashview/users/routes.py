@@ -1,12 +1,31 @@
-from flask import Blueprint, render_template, url_for, flash, abort, redirect, request, current_app
-from flask_login import login_required, logout_user, current_user, login_user
-from hashview.users.forms import LoginForm, UsersForm, ProfileForm, RequestResetForm, ResetPasswordForm
-from hashview.utils.utils import send_email, send_pushover
-from hashview.models import Users, Jobs, Wordlists, Rules, TaskGroups, Tasks
-from hashview import db, bcrypt
+from textwrap import dedent
 from datetime import datetime
 
+from flask import Blueprint, render_template, url_for, flash, abort, redirect, request, current_app
+from flask_login import login_required, logout_user, current_user, login_user
+from flask_login import LoginManager
+from flask_bcrypt import Bcrypt
+
+from hashview.models import db
+from hashview.models import Users, Jobs, Wordlists, Rules, TaskGroups, Tasks
+from hashview.users.forms import LoginForm, UsersForm, ProfileForm, RequestResetForm, ResetPasswordForm
+from hashview.utils.utils import send_email, send_pushover
+
+
+bcrypt = Bcrypt()
+
+
+login_manager = LoginManager()
+login_manager.login_view = 'users.login_get'
+login_manager.login_message_category = 'info'
+
+@login_manager.user_loader
+def load_user(user_id):
+    return Users.query.get(int(user_id))
+
+
 users = Blueprint('users', __name__)
+
 
 @users.route("/login", methods=['GET'])
 def login_get():
@@ -146,11 +165,12 @@ def admin_reset(user_id):
         user = Users.query.get(user_id)
         token = user.get_reset_token()
         subject = 'Password Reset Request.'
-        message = f'''To reset your password, vist the following link:
-{url_for('users.reset_token', user_id=user_id, token=token, _external=True)}
+        message = dedent(f'''\
+            To reset your password, vist the following link:
+            {url_for('users.reset_token', user_id=user_id, token=token, _external=True)}
 
-If you did not make this request... then something phishy is going on.
-'''
+            If you did not make this request... then something phishy is going on.
+            ''')
         send_email(user, subject, message)
         flash('An email has been sent to '+  user.email_address, 'info')
         return redirect(url_for('users.users_list'))

@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, url_for, redirect, flash
 from flask_login import login_required, current_user
 from hashview.models import Hashfiles, Customers, Jobs, HashfileHashes, HashNotifications, Hashes
-from hashview import db
+from hashview.models import db
 from sqlalchemy.sql import exists
 
 hashfiles = Blueprint('hashfiles', __name__)
@@ -14,7 +14,7 @@ def hashfiles_list():
     # customers = Customers.query.order_by(Customers.name).all()
     customers = Customers.query.filter(exists().where(Customers.id == Hashfiles.customer_id)).all()
     # Hashes.query.filter(~ exists().where(Hashes.id==HashfileHashes.hash_id)).filter_by(cracked = '0')
-    # select * from customers where id in (select customer_id from hashfiles);  
+    # select * from customers where id in (select customer_id from hashfiles);
     jobs = Jobs.query.all()
 
     cracked_rate = {}
@@ -45,7 +45,7 @@ def hashfiles_delete(hashfile_id):
                     hashes = Hashes.query.filter_by(id=hashfile_hash.hash_id).filter_by(cracked=0)
                     for hash in hashes:
                         # Check to see if our hashfile is the ONLY hashfile that has this hash
-                        # if duplicates exist, they can still be removed. Once the hashfile_hash entry is remove, 
+                        # if duplicates exist, they can still be removed. Once the hashfile_hash entry is remove,
                         # the total number of matching hash_id's will be reduced to < 2 and then can be deleted
                         hashfile_cnt = HashfileHashes.query.filter_by(hash_id=hash.id).distinct('hashfile_id').count()
                         if hashfile_cnt < 2:

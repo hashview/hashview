@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, render_template, request, redirect, send_from_directory
 from flask_login import login_required
 from hashview.models import Customers, HashfileHashes, Hashes, Hashfiles
-from hashview import db
+from hashview.models import db
 import re
 import operator
 
@@ -47,7 +47,7 @@ def get_analytics():
     else:
         fig1_cracked_cnt = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').count()
         fig1_uncracked_cnt = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='0').count()
-    
+
     fig1_data = [
         ("Recovered: " + str(formatDisplay(fig1_cracked_cnt)), fig1_cracked_cnt),
         ("Unrecovered: " + str(formatDisplay(fig1_uncracked_cnt)), fig1_uncracked_cnt)
@@ -56,9 +56,9 @@ def get_analytics():
     fig1_labels = [row[0] for row in fig1_data]
     fig1_values = [row[1] for row in fig1_data]
     fig1_total = (fig1_cracked_cnt + fig1_uncracked_cnt)
-    
+
     # Cracked Percent
-    fig1_percent = 0 if fig1_total is 0 else [str(round(((fig1_cracked_cnt / fig1_total)*100),1)) + '%'] 
+    fig1_percent = 0 if fig1_total is 0 else [str(round(((fig1_cracked_cnt / fig1_total)*100),1)) + '%']
 
     # Figure 2 (Cracked Complexity Breakdown)
     if customer_id:
@@ -73,7 +73,7 @@ def get_analytics():
     else:
         fig2_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').with_entities(Hashes.plaintext).all()
         fig2_uncracked_cnt = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='0').count()
-    
+
     fig2_fails_complexity_cnt = 0
     fig2_meets_complexity_cnt = 0
 
@@ -89,12 +89,12 @@ def get_analytics():
             flags = flags + 1
         if re.search(r"[^0-9A-Za-z]", bytes.fromhex(entry[0]).decode('latin-1')):
             flags = flags + 1
-        
+
         if flags < 3:
             fig2_fails_complexity_cnt = fig2_fails_complexity_cnt + 1
         else:
             fig2_meets_complexity_cnt = fig2_meets_complexity_cnt + 1
-    
+
     fig2_data = [
         ("Fails Complexity: " + str(formatDisplay(fig2_fails_complexity_cnt)), fig2_fails_complexity_cnt),
         ("Meets Complexity: " + str(formatDisplay(fig2_meets_complexity_cnt)), fig2_meets_complexity_cnt),
@@ -173,7 +173,7 @@ def get_analytics():
         elif re.search("U", tmp_plaintext) and not re.search("L", tmp_plaintext) and not re.search("D", tmp_plaintext) and not re.search("S", tmp_plaintext):
             upperalpha += 1
         elif not re.search("U", tmp_plaintext) and not re.search("L", tmp_plaintext) and not re.search("D", tmp_plaintext) and re.search("S", tmp_plaintext):
-            special += 1 
+            special += 1
         elif re.search("U", tmp_plaintext) and re.search("L", tmp_plaintext) and not re.search("D", tmp_plaintext) and not re.search("S", tmp_plaintext):
             mixedalpha += 1
         elif re.search("U", tmp_plaintext) and re.search("L", tmp_plaintext) and re.search("D", tmp_plaintext) and not re.search("S", tmp_plaintext):
@@ -205,21 +205,21 @@ def get_analytics():
     # We only want the top 4 with the 5th being other
     fig3_dict = {
         "Blank (unset): " + str(formatDisplay(blank)): blank,
-        "Numeric Only: " + str(formatDisplay(numeric)) : numeric, 
-        "LowerAlpha Only: " + str(formatDisplay(loweralpha)): loweralpha, 
-        "UpperAlpha Only: " + str(formatDisplay(upperalpha)): upperalpha, 
-        "Special Only: " + str(formatDisplay(special)): special, 
-        "MixedAlpha: " + str(formatDisplay(mixedalpha)): mixedalpha, 
+        "Numeric Only: " + str(formatDisplay(numeric)) : numeric,
+        "LowerAlpha Only: " + str(formatDisplay(loweralpha)): loweralpha,
+        "UpperAlpha Only: " + str(formatDisplay(upperalpha)): upperalpha,
+        "Special Only: " + str(formatDisplay(special)): special,
+        "MixedAlpha: " + str(formatDisplay(mixedalpha)): mixedalpha,
         "MixedAlphaNumeric: " +str(formatDisplay(mixedalphanum)): mixedalphanum,
-        "LowerAlphaNumeric: " + str(formatDisplay(loweralphanum)): loweralphanum, 
-        "LowerAlphaSpecial: " + str(formatDisplay(loweralphaspecial)): loweralphaspecial, 
-        "UpperAlphaSpecial: " + str(formatDisplay(upperalphaspecial)): upperalphaspecial, 
-        "SpecialNumeric: " + str(formatDisplay(specialnum)): specialnum, 
-        "MixedAlphaSpecial: " + str(formatDisplay(mixedalphaspecial)): mixedalphaspecial, 
-        "UpperAlphaSpecialNumeric: " + str(formatDisplay(upperalphaspecialnum)): upperalphaspecialnum, 
-        "LowerAlphaSpecialNumeric: " + str(formatDisplay(loweralphaspecialnum)): loweralphaspecialnum, 
+        "LowerAlphaNumeric: " + str(formatDisplay(loweralphanum)): loweralphanum,
+        "LowerAlphaSpecial: " + str(formatDisplay(loweralphaspecial)): loweralphaspecial,
+        "UpperAlphaSpecial: " + str(formatDisplay(upperalphaspecial)): upperalphaspecial,
+        "SpecialNumeric: " + str(formatDisplay(specialnum)): specialnum,
+        "MixedAlphaSpecial: " + str(formatDisplay(mixedalphaspecial)): mixedalphaspecial,
+        "UpperAlphaSpecialNumeric: " + str(formatDisplay(upperalphaspecialnum)): upperalphaspecialnum,
+        "LowerAlphaSpecialNumeric: " + str(formatDisplay(loweralphaspecialnum)): loweralphaspecialnum,
         "MixedAlphaSpecialNumeric: " + str(formatDisplay(mixedalphaspecialnum)): mixedalphaspecialnum,
-        "Other: " + str(formatDisplay(other)): other, 
+        "Other: " + str(formatDisplay(other)): other,
         }
 
     fig3_array_sorted = dict(sorted(fig3_dict.items(), key=operator.itemgetter(1),reverse=True))
@@ -246,7 +246,7 @@ def get_analytics():
             # just a customer, no specific hashfile
             fig4_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).join(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').with_entities(Hashes.plaintext).all()
     else:
-        fig4_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').with_entities(Hashes.plaintext).all() 
+        fig4_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').with_entities(Hashes.plaintext).all()
 
     fig4_data = {}
 
@@ -336,13 +336,13 @@ def get_analytics():
             break
 
 
-    return render_template('analytics.html', 
-                            title='analytics', 
-                            fig1_labels=fig1_labels, 
+    return render_template('analytics.html',
+                            title='analytics',
+                            fig1_labels=fig1_labels,
                             fig1_values=fig1_values,
                             fig1_percent=fig1_percent,
                             fig2_labels=fig2_labels,
-                            fig2_values=fig2_values, 
+                            fig2_values=fig2_values,
                             fig3_labels=fig3_labels,
                             fig3_values=fig3_values,
                             fig4_labels=fig4_labels,
@@ -351,9 +351,9 @@ def get_analytics():
                             fig5_values=fig5_values,
                             fig6_values=fig6_values,
                             fig6_total=fig6_total,
-                            customers=customers, 
-                            hashfiles=hashfiles, 
-                            hashfile_id=hashfile_id, 
+                            customers=customers,
+                            hashfiles=hashfiles,
+                            hashfile_id=hashfile_id,
                             customer_id=customer_id,
                             total_runtime=total_runtime,
                             total_accounts=total_accounts,
@@ -384,7 +384,7 @@ def analytics_download_hashes():
     else:
         hashfile_id = None
         filename += '_all'
-    
+
     filename += '.txt'
 
     if customer_id:
@@ -416,7 +416,7 @@ def analytics_download_hashes():
             else:
                 outfile.write(str(entry[0].ciphertext) + "\n")
 
-    
+
     outfile.close()
     return send_from_directory('control/tmp', filename, as_attachment=True)
 

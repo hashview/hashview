@@ -1,23 +1,6 @@
-
 from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
-from flask_bcrypt import Bcrypt
-from flask_login import LoginManager
-from hashview.config import Config
-from flask_mail import Mail
-from flask_migrate import Migrate
-from flask_apscheduler import APScheduler
 
-db = SQLAlchemy()
-
-
-bcrypt = Bcrypt()
-login_manager = LoginManager()
-login_manager.login_view = 'users.login_get'
-login_manager.login_message_category = 'info'
-mail = Mail()
-migrate = Migrate()
-scheduler = APScheduler()
+__version__ = '0.8.0'
 
 # Jinja2 Filter
 def jinja_hex_decode(text):
@@ -26,16 +9,32 @@ def jinja_hex_decode(text):
     else:
         return bytes.fromhex(text).decode('latin-1')
 
-def create_app(config_class=Config):
 
+def create_app():
     app = Flask(__name__)
+
+    from hashview.config import Config
     app.config.from_object(Config)
 
+    from hashview.models import db
     db.init_app(app)
+
+    from hashview.users.routes import bcrypt
     bcrypt.init_app(app)
+
+    from hashview.users.routes import login_manager
     login_manager.init_app(app)
+
+    from flask_mail import Mail
+    mail = Mail()
     mail.init_app(app)
+
+    from flask_migrate import Migrate
+    migrate = Migrate()
     migrate.init_app(app, db)
+
+    from flask_apscheduler import APScheduler
+    scheduler = APScheduler()
     scheduler.init_app(app)
     scheduler.start()
 
@@ -73,5 +72,4 @@ def create_app(config_class=Config):
 
     # Add custom Jinja2 Filters
     app.add_template_filter(jinja_hex_decode)
-
     return app

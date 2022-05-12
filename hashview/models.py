@@ -91,7 +91,7 @@ class Users(db.Model, UserMixin):
 
         # in the unlikely event that the salt matches,
         # but the user_id does not, fail
-        if self.user_id != payload.get('user_id'):
+        if self.id != payload.get('user_id'):
             return False
 
         else:

@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, redirect, request, send_from_directory, current_app, url_for
 from hashview.models import Agents, JobTasks, Tasks, Wordlists, Rules, Jobs, Hashes, HashfileHashes, Users, HashNotifications, Settings
 from hashview.utils.utils import save_file, get_md5_hash, update_dynamic_wordlist, update_job_task_status, send_email, send_pushover
-from hashview import db
+from hashview.models import db
 from sqlalchemy.ext.declarative import DeclarativeMeta
 from packaging import version
 import time
@@ -13,7 +13,7 @@ import secrets
 api = Blueprint('api', __name__)
 
 #
-# Yeah, i know its bad and should be converted to a legit REST API. 
+# Yeah, i know its bad and should be converted to a legit REST API.
 # This code should be considered tempoary as we work over the port.
 # Ideally this will get replaced (along with the agent code) some time later
 #
@@ -112,8 +112,8 @@ def v1_api_set_agent_heartbeat():
                 'type': 'message',
                 'msg': 'Go Away'
             }
-            return jsonify(message)            
-        else: 
+            return jsonify(message)
+        else:
             # check if job_task
             agent_data = request.get_json()
 
@@ -132,12 +132,12 @@ def v1_api_set_agent_heartbeat():
 
                 if agent_data['hc_status']:
                     agent.hc_status = agent_data['agent_status']
-                    hc_status = str(agent_data['hc_status']).replace("\'", "\"")             
+                    hc_status = str(agent_data['hc_status']).replace("\'", "\"")
                     json_response = json.loads(hc_status)
                     agent.benchmark = json_response['Speed #']
-                    agent.hc_status = str(agent_data['hc_status']).replace("\'", "\"")                       
+                    agent.hc_status = str(agent_data['hc_status']).replace("\'", "\"")
 
-                db.session.commit()                
+                db.session.commit()
 
             if agent_data['agent_status'] == 'Idle':
                 # Clear hc_status if we're idle
@@ -188,7 +188,7 @@ def v1_api_get_rules():
     if not versionCheck(request.cookies.get('agent_version')):
         return redirect("/v1/upgrade_required")
     if not agentAuthorized(request.cookies.get('uuid')):
-        return redirect("/v1/not_authorized") 
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
     rules = Rules.query.all()
@@ -202,7 +202,7 @@ def v1_api_get_rules():
 @api.route('/v1/rules/<int:rules_id>', methods=['GET'])
 def v1_api_get_rules_download(rules_id):
     if not agentAuthorized(request.cookies.get('uuid')):
-        return redirect("/v1/not_authorized") 
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
     rules = Rules.query.get(rules_id)
@@ -212,13 +212,13 @@ def v1_api_get_rules_download(rules_id):
     # What command injection?!
     # TODO
     os.system(cmd)
-    return send_from_directory('control/tmp', rules_name + '.gz', mimetype = 'application/octet-stream')    
+    return send_from_directory('control/tmp', rules_name + '.gz', mimetype = 'application/octet-stream')
 
 # Provide wordlist info (really should be plural)
 @api.route('/v1/wordlists', methods=['GET'])
 def v1_api_get_wordlist():
     if not agentAuthorized(request.cookies.get('uuid')):
-        return redirect("/v1/not_authorized") 
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
     wordlists = Wordlists.query.all()
@@ -232,7 +232,7 @@ def v1_api_get_wordlist():
 @api.route('/v1/wordlists/<int:wordlist_id>', methods=['GET'])
 def v1_api_get_wordlist_download(wordlist_id):
     if not agentAuthorized(request.cookies.get('uuid')):
-        return redirect("/v1/not_authorized") 
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
     wordlist = Wordlists.query.get(wordlist_id)
@@ -248,7 +248,7 @@ def v1_api_get_wordlist_download(wordlist_id):
 @api.route('/v1/updateWordlist/<int:wordlist_id>', methods=['GET'])
 def v1_api_get_update_wordlist(wordlist_id):
     if not agentAuthorized(request.cookies.get('uuid')):
-        return redirect("/v1/not_authorized") 
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
     update_dynamic_wordlist(wordlist_id)
@@ -257,7 +257,7 @@ def v1_api_get_update_wordlist(wordlist_id):
         'type': 'message',
         'msg': 'OK'
     }
-    return jsonify(message)    
+    return jsonify(message)
 
 # force or restart a queue item
 # used when agent goes offline and comes back online
@@ -265,7 +265,7 @@ def v1_api_get_update_wordlist(wordlist_id):
 @api.route('/v1/jobTasks/<int:job_task_id>', methods=['GET'])
 def v1_api_get_queue_assignment(job_task_id):
     if not agentAuthorized(request.cookies.get('uuid')):
-        return redirect("/v1/not_authorized") 
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
 
@@ -279,11 +279,11 @@ def v1_api_get_queue_assignment(job_task_id):
     }
     return jsonify(message)
 
-# Provide job info 
+# Provide job info
 @api.route('/v1/jobs/<int:job_id>', methods=['GET'])
 def v1_api_get_job(job_id):
     if not agentAuthorized(request.cookies.get('uuid')):
-        return redirect("/v1/not_authorized") 
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
     job = Jobs.query.get(job_id)
@@ -294,11 +294,11 @@ def v1_api_get_job(job_id):
     }
     return jsonify(message)
 
-# Provide task info 
+# Provide task info
 @api.route('/v1/tasks/<int:task_id>', methods=['GET'])
 def v1_api_get_task(task_id):
     if not agentAuthorized(request.cookies.get('uuid')):
-        return redirect("/v1/not_authorized") 
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
 
@@ -314,10 +314,10 @@ def v1_api_get_task(task_id):
 @api.route('/v1/hashfiles/<int:hashfile_id>', methods=['GET'])
 def v1_api_get_hashfile(hashfile_id):
     if not agentAuthorized(request.cookies.get('uuid')):
-        return redirect("/v1/not_authorized") 
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
-    
+
     # we need the jobtask info to make the hashfile path
     #jobtask = JobTasks.query.get(jobtask_id)
 
@@ -325,7 +325,7 @@ def v1_api_get_hashfile(hashfile_id):
     random_hex = secrets.token_hex(8)
     file_object = open('hashview/control/tmp/' + random_hex, 'w')
 
-    # do a left join select to get our ciphertext hashes 
+    # do a left join select to get our ciphertext hashes
     dbresults = db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==hashfile_id).all()
     for result in dbresults:
         file_object.write(result[0].ciphertext + '\n')
@@ -337,11 +337,11 @@ def v1_api_get_hashfile(hashfile_id):
 @api.route('/v1/uploadCrackFile/<int:hash_type>', methods=['POST'])
 def v1_api_put_jobtask_crackfile_upload(hash_type):
     if not agentAuthorized(request.cookies.get('uuid')):
-        return redirect("/v1/not_authorized") 
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
 
-    # save to file    
+    # save to file
     file_contents = request.get_json()
 
     #for entry in lines:
@@ -354,7 +354,7 @@ def v1_api_put_jobtask_crackfile_upload(hash_type):
             # Remove cracked hash
             elements.pop()
             ciphertext = ':'.join(elements)
-      
+
             #print('Plaintext: ' + str(bytes.fromhex(plaintext).decode('latin-1')))
 
             record = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(ciphertext), cracked='0').first()
@@ -372,7 +372,7 @@ def v1_api_put_jobtask_crackfile_upload(hash_type):
     for hash_notification in hash_notifications:
         user = Users.query.get(hash_notification.owner_id)
         message = "Congratulations, a hash has been recovered!: \n\n"
-        
+
         # Check if hash is cracked
         hash = Hashes.query.get(hash_notification.hash_id)
         if hash.cracked:
@@ -400,7 +400,7 @@ def v1_api_put_jobtask_crackfile_upload(hash_type):
 @api.route('/v1/getHashType/<int:hashfile_id>', methods=['GET'])
 def v1_api_getHashType(hashfile_id):
     if not agentAuthorized(request.cookies.get('uuid')):
-        return redirect("/v1/not_authorized") 
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
     hashfile_hash = HashfileHashes.query.filter_by(hashfile_id = hashfile_id).first()
@@ -418,7 +418,7 @@ def v1_api_getHashType(hashfile_id):
 @api.route('/v1/jobtask/status', methods=['POST'])
 def v1_api_set_queue_jobtask_status():
     if not agentAuthorized(request.cookies.get('uuid')):
-        return redirect("/v1/not_authorized") 
+        return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
 

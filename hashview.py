@@ -1,57 +1,57 @@
 #!/usr/bin/python3
-import argparse
+import os
+import sys
 import logging
+import argparse
 import builtins
+import traceback
+
+from typing import Optional
+from functools import partial
+
 from hashview import create_app
 
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--debug", action="store_true", help="increase output verbosity")
-args = parser.parse_args()
-
-
-app = create_app()
-
-# There's probaby a better way to do this
-# We needed some code to execute on app launch to check for whether or not this is a fresh install
-# and if it was a fresh install to prompt the user for key information, populate the data base, and continue execution
-with app.app_context():
-    from hashview.models import Users, Wordlists, Rules, Tasks, Settings
-    from hashview.utils.utils import get_filehash, get_linecount
-    from hashview import db, bcrypt
-    from getpass import getpass
-    from packaging import version
-    import os
-
-    users = Users.query.filter_by(admin='1').count()
-    dynamic_wordlists = Wordlists.query.filter_by(type='dynamic').filter_by(name='All Recovered Hashes').count()
-    static_wordlists = Wordlists.query.filter_by(type='static').count()
-    rules = Rules.query.count()
-    tasks = Tasks.query.count()
-    settings = Settings.query.first()
-
+def ensure_authlib():
     try:
         from authlib import jose
     except:
         print('\nPlease make sure that your dependencies are up to date (including installing authlib).')
         exit(1)
 
+
+def ensure_requests():
     try:
         import requests
     except:
         print('\nPlease make sure that your dependencies are up to date (including installing requests).')
         exit(1)
 
+
+def ensure_flask_bcrypt():
     try:
         import flask_bcrypt
-        if ('1.0.1' < flask_bcrypt.__version__):
+        if ('1.0.1' >=flask_bcrypt.__version__):
             raise Exception('old version')
     except:
         print('\nPlease make sure that your dependencies are up to date (including replacing Flask-Bcrypt with Bcrypt-Flask).')
         exit(1)
 
-    # If no admins exist prompt user to generate new admin account
-    if users == 0:
+
+def ensure_admin_account(db, bcrypt):
+    '''
+    If no admins exist prompt user to generate new admin account
+    '''
+    from getpass import getpass
+
+    from hashview.models import Users
+
+    admin_user_count = Users.query.filter_by(admin='1').count()
+    if (0 < admin_user_count):
+        print('✓ Admin user exists in database.')
+        return
+
+    else:
         print('\nInitial setup detected. Hashview will now prompt you to setup an Administrative account.\n')
         admin_email = input('Enter Email address for the Administrator account. You will use this to log into the app: ')
         while len(admin_email) == 0:
@@ -80,137 +80,170 @@ with app.app_context():
         db.session.add(user)
         db.session.commit()
 
-    # Setting hashcat bin path
-    if not settings:
 
-        retention_period = input('Enter how long data should be retained in DB in days. (note: cracked hashes->plaintext will be be safe from retention culling): ')
-        while int(retention_period) < 1 or int(retention_period) > 65535:
-            print('Error: Retention must be between 1 day and 65535 days')
-            retention_period = input("Enter how long data should be retained in DB in days. (note: cracked hashes->plaintext will be be safe from retention culling): ")
+def ensure_settings(db):
+    from hashview.models import Settings
 
-        with open('VERSION.TXT') as f:
-            version = f.readline().rstrip()
+    if Settings.query.first():
+        print('✓ Settings exist in database.')
+        return
 
-        settings = Settings(retention_period = retention_period, version=version)
+    else:
+        retention_period_int :int = 0
+        retention_period_raw :Optional[str] = None
+        while (1 > retention_period_int > 65535):
+            if retention_period_raw:
+                print('Error: Retention must be between 1 day and 65535 days')
+            retention_period_raw = input("Enter how long data should be retained in DB in days. (note: cracked hashes->plaintext will be be safe from retention culling): ")
+            retention_period_int = int(retention_period_raw)
+
+        settings = Settings(
+            retention_period = retention_period_int,
+        )
         db.session.add(settings)
         db.session.commit()
 
-    # Setup dynamic wordlist
-    if dynamic_wordlists == 0:
+
+def ensure_dynamic_wordlist(db):
+    from hashview.models import Wordlists
+    from hashview.utils.utils import get_filehash
+
+    dynamic_wordlist_count = Wordlists.query.filter_by(type='dynamic').filter_by(name='All Recovered Hashes').count()
+    if (0 < dynamic_wordlist_count):
+        print(f'✓ Dynamic Wordlist exist in database. Count({dynamic_wordlist_count})')
+        return
+
+    else:
         print('\nSetting up dynamic wordlist.')
         wordlist_path = 'hashview/control/wordlists/dynamic-all.txt'
-        open(wordlist_path, 'w')
-        wordlist = Wordlists(name='All Recovered Hashes',
-                    owner_id='1',
-                    type='dynamic',
-                    path=wordlist_path, # Can we make this a relative path?
-                    checksum=get_filehash(wordlist_path),
-                    size=0)
+        with open(wordlist_path, 'w'):
+            # 'w' => open for writing, truncating the file first
+            pass
+        wordlist = Wordlists(
+            name     = 'All Recovered Hashes',
+            owner_id = '1',
+            type     = 'dynamic',
+            path     = wordlist_path,               # Can we make this a relative path?
+            checksum = get_filehash(wordlist_path),
+            size     = 0,
+        )
         db.session.add(wordlist)
         db.session.commit()
 
-    # Setup wordlist rockyou
-    if static_wordlists == 0:
+
+def ensure_static_wordlist(db):
+    from hashview.models import Wordlists
+    from hashview.utils.utils import get_filehash
+    from hashview.utils.utils import get_linecount
+
+    static_wordlist_count = Wordlists.query.filter_by(type='static').count()
+    if (0 < static_wordlist_count):
+        print(f'✓ Static Wordlist exist in database. Count({static_wordlist_count})')
+        return
+
+    else:
         print('\nSetting up static wordlist rockyou.')
-        cmd = "gzip -d -k install/rockyou.txt.gz"
-        os.system(cmd)
-        os.replace('install/rockyou.txt', 'hashview/control/wordlists/rockyou.txt')
-
+        os.system("gzip -d -k install/rockyou.txt.gz")
         wordlist_path = 'hashview/control/wordlists/rockyou.txt'
-        wordlist = Wordlists(name='Rockyou.txt',
-            owner_id='1',
-            type='static',
-            path=wordlist_path, # Can we make this a relative path?
-            checksum=get_filehash(wordlist_path),
-            size=get_linecount(wordlist_path))
+        os.replace('install/rockyou.txt', wordlist_path)
+        wordlist = Wordlists(
+            name     = 'Rockyou.txt',
+            owner_id = '1',
+            type     = 'static',
+            path     = wordlist_path,                # Can we make this a relative path?
+            checksum = get_filehash(wordlist_path),
+            size     = get_linecount(wordlist_path),
+        )
         db.session.add(wordlist)
         db.session.commit()
 
-    # setup rules best64
-    if rules == 0:
+
+def ensure_rules(db):
+    from hashview.models import Rules
+    from hashview.utils.utils import get_filehash
+    from hashview.utils.utils import get_linecount
+
+    rule_count = Rules.query.count()
+    if (0 < rule_count):
+        print(f'✓ Rules exist in database. Count({rule_count})')
+        return
+
+    else:
         print('\nSetting up best64.rules')
-        cmd = "gzip -d -k install/best64.rule.gz"
-        os.system(cmd)
-        os.replace('install/best64.rule', 'hashview/control/rules/best64.rule')
-
+        os.system("gzip -d -k install/best64.rule.gz")
         rules_path = 'hashview/control/rules/best64.rule'
-
-        rule = Rules(   name='Best64 Rule',
-                        owner_id='1',
-                        path=rules_path,
-                        size=get_linecount(rules_path),
-                        checksum=get_filehash(rules_path))
+        os.replace('install/best64.rule', rules_path)
+        rule = Rules(
+            name     = 'Best64 Rule',
+            owner_id = '1',
+            path     = rules_path,
+            checksum = get_filehash(rules_path),
+            size     = get_linecount(rules_path),
+        )
         db.session.add(rule)
         db.session.commit()
 
-    # setup task
-    if tasks == 0:
 
+def ensure_tasks(db):
+    from hashview.models import Tasks
+
+    task_count = Tasks.query.count()
+    if (0 < task_count):
+        print(f'✓ Tasks exist in database. Count({task_count})')
+        return
+
+    else:
         print('\nSetting up default tasks.')
 
-        # wordlist only
-        task = Tasks(   name='Rockyou Wordlist',
-                        owner_id='1',
-                        wl_id='1',
-                        rule_id=None,
-                        hc_attackmode='dictionary',
+        task = Tasks(
+            name          = 'Rockyou Wordlist',
+            owner_id      = '1',
+            wl_id         = '1',
+            rule_id       = None,
+            hc_attackmode = 'dictionary',
         )
         db.session.add(task)
-        db.session.commit()
 
-        # wordlist with best 64 rules
-        task = Tasks(   name='Rockyou Wordlist + Best64 Rules',
-                owner_id='1',
-                wl_id='1',
-                rule_id='1',
-                hc_attackmode='dictionary'
+        task = Tasks(
+            name          = 'Rockyou Wordlist + Best64 Rules',
+            owner_id      = '1',
+            wl_id         = '1',
+            rule_id       = '1',
+            hc_attackmode = 'dictionary',
         )
         db.session.add(task)
-        db.session.commit()
-
 
         # mask mode of all 8 characters
-        task = Tasks(   name='?a?a?a?a?a?a?a?a [8]',
-                        owner_id='1',
-                        wl_id=None,
-                        rule_id=None,
-                        hc_attackmode='maskmode',
-                        hc_mask='?a?a?a?a?a?a?a?a'
+        task = Tasks(
+            name          = '?a?a?a?a?a?a?a?a [8]',
+            owner_id      = '1',
+            wl_id         = None,
+            rule_id       = None,
+            hc_attackmode = 'maskmode',
+            hc_mask       = '?a?a?a?a?a?a?a?a',
         )
         db.session.add(task)
+
         db.session.commit()
 
-    # Check if Version value in DB matches or is less than the version file on disk. This is our way of checking if the end user needs to run db flask upgrade or any other migration
-    settings = Settings.query.first()
-    with open('VERSION.TXT', 'r') as f:
-        hashview_version = f.readline().strip('\n')
 
-    if settings.version:
-        if version.parse(settings.version) < version.parse(hashview_version):
-            print('You need to upgrade your version of hashview in order to contine.')
-            print("Please run the following command before continuing \n\n export FLASK_APP=hashview.py; flask db upgrade \n\n.")
-            exit()
-        #if version.parse(settings.version) == version.parse(hashview_version):
-        #    print("Versions Match you're good to go!")
-        if version.parse(settings.version) > version.parse(hashview_version):
-            print('You shouldnt be able to reach this state.... ')
-            exit()
-    else:
-        print("Version not found in DB, updating.")
-        settings.version = hashview_version
-        db.session.commit()
+def ensure_version_alignment():
+    from flask_migrate import upgrade
+    upgrade()
 
-    print('Done! Running Hashview! Enjoy.')
 
-# Launching our scheduler
-def data_retention_cleanup():
+def data_retention_cleanup(app):
     with app.app_context():
-        from hashview.models import Settings, Jobs, JobTasks, JobNotifications, HashfileHashes, HashNotifications, Hashes, Hashfiles
-        from hashview.utils.utils import send_email
-        from datetime import datetime, timedelta
-        import time
         import os
-        from hashview import db
+        import time
+
+        from datetime import datetime, timedelta
+
+        from hashview.models import db
+        db.init_app(app)
+
+        from hashview.models import Users, Settings, Jobs, JobTasks, JobNotifications, HashfileHashes, HashNotifications, Hashes, Hashfiles
+        from hashview.utils.utils import send_email
 
         print('[DEBUG] Im retaining all the data: ' + str(datetime.now()))
 
@@ -289,20 +322,64 @@ def data_retention_cleanup():
 
         print('[DEBUG] ==============')
 
-# This shows up twice... i dont know why
-with app.app_context():
-    from hashview import scheduler
-    scheduler.delete_all_jobs
-    #scheduler.add_job(id='DATA_RETENTION', func=data_retention_cleanup, trigger='cron', minute='*') #hour=1
-    scheduler.add_job(id='DATA_RETENTION', func=data_retention_cleanup, trigger='cron', hour='*')
 
-if __name__ == '__main__':
-    if args.debug:
-        builtins.state = 'debug'
-        app.run(host='0.0.0.0', port=8443, ssl_context=('./hashview/ssl/cert.pem', './hashview/ssl/key.pem'), debug=True)
+def cli(args) -> int:
+    try:
+        if (__file__ == args[0]):
+            args = args[1:]
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--debug", action="store_true", help="increase output verbosity")
+        parser.add_argument("--no-ssl", action="store_true", help="disable use of ssl")
+        args = parser.parse_args(args)
+
+        ensure_authlib()
+        ensure_requests()
+        ensure_flask_bcrypt()
+
+        app = create_app()
+
+        with app.app_context():
+            ensure_version_alignment()
+
+            from hashview.models import db
+            from hashview.users.routes import bcrypt
+
+            ensure_admin_account(db, bcrypt)
+            ensure_settings(db)
+            ensure_dynamic_wordlist(db)
+            ensure_static_wordlist(db)
+            ensure_rules(db)
+            ensure_tasks(db)
+
+            print('Done! Running Hashview! Enjoy.')
+
+            scheduler = app.apscheduler
+            scheduler.delete_all_jobs()
+            #scheduler.add_job(id='DATA_RETENTION', func=partial(data_retention_cleanup, app), trigger='cron', minute='*') #hour=1
+            scheduler.add_job(id='DATA_RETENTION', func=partial(data_retention_cleanup, app), trigger='cron', hour='*')
+
+        if args.debug:
+            builtins.state = 'debug'
+
+        else:
+            builtins.state = 'normal'
+            log = logging.getLogger('werkzeug')
+            log.setLevel(logging.ERROR)
+
+        if args.no_ssl:
+            app.run(debug=args.debug)
+
+        else:
+            app.run(host='0.0.0.0', port=8443, ssl_context=('./hashview/ssl/cert.pem', './hashview/ssl/key.pem'), debug=args.debug)
+
+    except:
+        print('Exception!:')
+        traceback.print_exc()
+        return 1
 
     else:
-        builtins.state = 'normal'
-        log = logging.getLogger('werkzeug')
-        log.setLevel(logging.ERROR)
-        app.run(host='0.0.0.0', port=8443, ssl_context=('./hashview/ssl/cert.pem', './hashview/ssl/key.pem'), debug=False)
+        return 0
+
+
+if __name__ == '__main__':
+    exit(cli(sys.argv))

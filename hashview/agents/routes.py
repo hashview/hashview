@@ -1,9 +1,9 @@
+import hashview
 from flask import Blueprint, render_template, abort, flash, redirect, url_for, send_from_directory
 from flask_login import login_required, current_user
 from hashview.agents.forms import AgentsForm
 from hashview.models import Agents, JobTasks
-from hashview.utils.utils import getHashviewVersion
-from hashview import db
+from hashview.models import db
 import os
 
 agents = Blueprint('agents', __name__)
@@ -82,7 +82,7 @@ def agents_deauthorize(agent_id):
         flash('Agent Deauthorized', 'success')
         return redirect(url_for('agents.agents_list'))
     else:
-        abort(403)        
+        abort(403)
 
 
 @agents.route("/agents/delete/<int:agent_id>", methods=['GET', 'POST'])
@@ -104,7 +104,7 @@ def agents_delete(agent_id):
 @agents.route("/agents/download", methods=['GET'])
 @login_required
 def agents_download():
-    version = getHashviewVersion()
+    version = hashview.__version__
     filename = 'hashview-agent.' + version + '.tgz'
     cmd = 'tar -czf hashview/control/tmp/' + filename + ' install/hashview-agent/*'
     os.system(cmd)

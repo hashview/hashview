@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, abort
 from flask_login import login_required, current_user
 from hashview.task_groups.forms import TaskGroupsForm
 from hashview.models import Tasks, TaskGroups, Users
-from hashview import db
+from hashview.models import db
 import json
 
 task_groups = Blueprint('task_groups', __name__)
@@ -14,7 +14,7 @@ def task_groups_list():
     tasks = Tasks.query.all()
     users = Users.query.all()
 
-    return render_template('task_groups.html', title='Task Groups', task_groups=task_groups, users=users, tasks=tasks) 
+    return render_template('task_groups.html', title='Task Groups', task_groups=task_groups, users=users, tasks=tasks)
 
 @task_groups.route("/task_groups/add", methods=['GET', 'POST'])
 @login_required
@@ -26,11 +26,11 @@ def task_groups_add():
         task_group = TaskGroups(name=taskGroupsForm.name.data, owner_id=current_user.id, tasks=str(emptyList))
         db.session.add(task_group)
         db.session.commit()
-        flash(f'Task {taskGroupsForm.name.data} created!', 'success')           
+        flash(f'Task {taskGroupsForm.name.data} created!', 'success')
         # TODO change this redirect to use a url_for
-        #return redirect(url_for('taskgroups.taskgroups_assigntask', taskgroup_id=taskgroup.id))  
+        #return redirect(url_for('taskgroups.taskgroups_assigntask', taskgroup_id=taskgroup.id))
         return redirect("assigned_tasks/"+str(task_group.id))
-    return render_template('task_groups_add.html', title='Tasks Add', tasks=tasks, taskGroupsForm=taskGroupsForm)   
+    return render_template('task_groups_add.html', title='Tasks Add', tasks=tasks, taskGroupsForm=taskGroupsForm)
 
 @task_groups.route("/task_groups/assigned_tasks/<int:task_group_id>", methods=['GET', 'POST'])
 @login_required

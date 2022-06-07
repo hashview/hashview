@@ -9,6 +9,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from requests.packages.urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 
+import agent
+
 retries = Retry(total=100, backoff_factor=1)
 adapter = HTTPAdapter(max_retries=retries)
 http = requests.Session()
@@ -22,8 +24,7 @@ def get(url):
     else:
         path += 'http://'
 
-    with open('VERSION.TXT', 'r') as f:
-        version = f.readline().strip('\n')
+    version = agent.__version__
 
     cookie = {
         'uuid': Config.UUID,
@@ -50,9 +51,8 @@ def post(url, data):
     else:
         path += 'http://'
 
-    with open('VERSION.TXT', 'r') as f:
-        version = f.readline().strip('\n')
-    
+    version = hashview.__version__
+
     path += Config.HASHVIEW_SERVER + ':' + Config.HASHVIEW_PORT + url
     headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
     cookie = {

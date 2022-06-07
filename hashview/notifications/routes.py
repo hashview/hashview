@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, redirect, flash, url_for
 from flask_login import login_required, current_user
 from hashview.models import JobNotifications, HashNotifications, Jobs, Hashes, Hashfiles
-from hashview import db
+from hashview.models import db
 
 
 notifications = Blueprint('notifications', __name__)

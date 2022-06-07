@@ -1,8 +1,9 @@
-from flask import Blueprint, render_template, abort, url_for, flash, request, redirect
+from flask import Blueprint, current_app, render_template, abort, url_for, flash, request, redirect
 from flask_login import login_required, current_user
+import hashview
 from hashview.settings.forms import HashviewSettingsForm
 from hashview.models import Settings
-from hashview import db
+from hashview.models import db
 import os
 
 settings = Blueprint('settings', __name__)
@@ -31,7 +32,15 @@ def settings_list():
         elif request.method == 'GET':
             HashviewForm.retention_period.data = settings.retention_period
 
-        return render_template('settings.html', title='settings', settings=settings, HashviewForm=HashviewForm, tmp_folder_size=tmp_folder_size)
+        return render_template(
+            'settings.html',
+            title               = 'settings',
+            settings            = settings,
+            HashviewForm        = HashviewForm,
+            tmp_folder_size     = tmp_folder_size,
+            application_version = hashview.__version__,
+            database_version    = db.get_engine(current_app).execute('SELECT version_num FROM alembic_version LIMIT 1;').fetchone()[0],
+        )
     else:
         abort(403)
 

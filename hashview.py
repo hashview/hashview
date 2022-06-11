@@ -325,12 +325,13 @@ def data_retention_cleanup(app):
 
 def cli(args) -> int:
     try:
-        if (__file__ == args[0]):
-            args = args[1:]
+        #if (__file__ == args[0]):
+        #    args = args[1:]
         parser = argparse.ArgumentParser()
         parser.add_argument("--debug", action="store_true", help="increase output verbosity")
         parser.add_argument("--no-ssl", action="store_true", help="disable use of ssl")
-        args = parser.parse_args(args)
+        args = parser.parse_args()
+        #args = parser.parse_args(args)
 
         ensure_authlib()
         ensure_requests()

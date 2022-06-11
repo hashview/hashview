@@ -2,7 +2,7 @@
 Notable changes will be documented here
 
 ## Current Release
-## [v0.8.0-Beta] - XXXX-XX-XX
+## [v0.8.0-Beta] - 2022-06-11
 ### Added
 - Added support for pushover & email notifications
 - Added support for data retention

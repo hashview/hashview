@@ -4,6 +4,7 @@ from hashview.utils.utils import save_file, get_md5_hash, update_dynamic_wordlis
 from hashview.models import db
 from sqlalchemy.ext.declarative import DeclarativeMeta
 from packaging import version
+import hashview
 import time
 import os
 import json
@@ -52,8 +53,7 @@ def updateHeartbeat(uuid):
 
 def versionCheck(agent_version):
     if agent_version:
-        settings = Settings.query.first()
-        if version.parse(agent_version) < version.parse(settings.version):
+        if version.parse(agent_version) < version.parse(hashview.__version__):
             return False
         return True
     else:

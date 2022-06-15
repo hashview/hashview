@@ -51,7 +51,7 @@ def post(url, data):
     else:
         path += 'http://'
 
-    version = hashview.__version__
+    version = agent.__version__
 
     path += Config.HASHVIEW_SERVER + ':' + Config.HASHVIEW_PORT + url
     headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}

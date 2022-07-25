@@ -1,5 +1,6 @@
 import argparse
 import os
+import subprocess
 import socket
 import uuid
 import time
@@ -303,12 +304,16 @@ def download_hashfile(job_id, jobtask_id, hashfile_id):
     hashfile.write(hashfile_content)
     hashfile.close()
 
+#### This can be removed - unless used elsewhere
 def replaceHashcatBinPath(cmd):
     from agent.config import Config
     return cmd.replace('@HASHCATBINPATH@', Config.HC_BIN_PATH)
-
+####
 def run_hashcat(cmd):
-    os.system(cmd)
+    from agent.config import Config
+    log = open('control/outfiles/hcoutput_'+str(job['id'])+'_'+str(job_task['id'])+'.txt', "w")
+    proc1 = subprocess.run([Config.HC_BIN_PATH,*cmd], stdout=log, shell=False)
+
 
 def hashcatParser(filepath):
     status = {}
@@ -418,13 +423,13 @@ if __name__ == '__main__':
                 # Download our hashfile. File name will be generated to match that of whats expected by the jobtask cmd.
                 download_hashfile(job['id'], job_task['task_id'], job['hashfile_id'])
 
-                cmd = replaceHashcatBinPath(job_task['command']) + ' | tee control/outfiles/hcoutput_' + str(job['id']) + '_' + str(job_task['id']) + '.txt'
-                print(cmd)
+                cmd = job_task['command'].split('\n')
+                print(str(cmd))
 
                 # run in thread
                 thread = Thread(target=run_hashcat, args=(cmd,))
                 thread.start()
-                
+
                 while thread.is_alive():
                     # we sleep 15 seconds because by default, the build crack cmd on hashview server tells hashcat to display output every 15 seconds.
                     time.sleep(15)

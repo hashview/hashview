@@ -216,16 +216,21 @@ def build_hashcat_command(job_id, task_id):
     session = secrets.token_hex(4)
 
     if attackmode == 'bruteforce':
-        cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -a 3 ' + target_file
+        cmd = ['-O','-w','3','--session',session,'-m',str(hash_type),'--potfile-disable','--status','--status-timer=15','--outfile-format','1,3','--outfile',crack_file,'-a','3',target_file]
+        #cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -a 3 ' + target_file
     elif attackmode == 'maskmode':
-        cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -a 3 ' + target_file + ' ' + mask
+        cmd = ['-O','-w','3','--session',session,'-m',str(hash_type),'--potfile-disable','--status','--status-timer=15','--outfile-format','1,3','--outfile',crack_file,'-a','3',target_file,mask]
+        #cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -a 3 ' + target_file + ' ' + mask
     elif attackmode == 'dictionary':
         if isinstance(task.rule_id, int):
-            cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -r ' + relative_rules_path + ' ' + target_file + ' ' + relative_wordlist_path
+            cmd = ['-O','-w','3','--session',session,'-m',str(hash_type),'--potfile-disable','--status','--status-timer=15','--outfile-format','1,3','--outfile',crack_file,'-r',relative_rules_path,target_file,relative_wordlist_path]
+            #cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -r ' + relative_rules_path + ' ' + target_file + ' ' + relative_wordlist_path
         else:
-            cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + target_file + ' ' + relative_wordlist_path
+            cmd =['-O','-w','3','--session',session,'-m',str(hash_type),'--potfile-disable','--status','--status-timer=15','--outfile-format','1,3','--outfile',crack_file,target_file,relative_wordlist_path]
+            #cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + target_file + ' ' + relative_wordlist_path
     elif attackmode == 'combinator':
-      cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -a 1 ' + target_file + ' ' + wordlist_one.path + ' ' + ' ' + wordlist_two.path + ' ' + relative_rules_path
+      cmd = ['-O','-w','3','--session',session,'-m',str(hash_type),'--potfile-disable','--status','--status-timer=15','--outfile-format','1,3','--outfile',crack_file,'-a','1',target_file,wordlist_one.path, wordlist_two.path,relative_rules_path]
+      #cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -a 1 ' + target_file + ' ' + wordlist_one.path + ' ' + ' ' + wordlist_two.path + ' ' + relative_rules_path
 
     return cmd
 

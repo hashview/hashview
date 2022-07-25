@@ -420,7 +420,7 @@ def jobs_start(job_id):
             job.status = 'Queued'
             for job_task in job_tasks:
                 job_task.status = 'Queued'
-                job_task.command = build_hashcat_command(job.id, job_task.task_id)
+                job_task.command = '\n'.join(build_hashcat_command(job.id, job_task.task_id))
                 job_task.key_pos = 0
 
             db.session.commit()

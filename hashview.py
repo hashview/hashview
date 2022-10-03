@@ -97,8 +97,13 @@ def ensure_settings(db):
             retention_period_raw = input("Enter how long data should be retained in DB in days. (note: cracked hashes->plaintext will be be safe from retention culling): ")
             retention_period_int = int(retention_period_raw)
 
+        max_runtime_tasks_int :int = 0
+        max_runtime_jobs_int :int = 0
+
         settings = Settings(
             retention_period = retention_period_int,
+            max_runtime_tasks = max_runtime_tasks_int,
+            max_runtime_jobs = max_runtime_jobs_int
         )
         db.session.add(settings)
         db.session.commit()
@@ -235,7 +240,6 @@ def ensure_version_alignment():
 def data_retention_cleanup(app):
     with app.app_context():
         import os
-        import time
 
         from datetime import datetime, timedelta
 

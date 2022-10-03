@@ -1,5 +1,4 @@
 import json
-import time
 
 from hashlib import sha512
 from datetime import datetime
@@ -98,6 +97,8 @@ class Users(db.Model, UserMixin):
 class Settings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     retention_period = db.Column(db.Integer)
+    max_runtime_jobs = db.Column(db.Integer)                    # Time will be measured in hours
+    max_runtime_tasks = db.Column(db.Integer)                   # Time will be measured in hours
 
 class Jobs(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -117,6 +118,7 @@ class JobTasks(db.Model):
     task_id = db.Column(db.Integer, nullable=False)
     command = db.Column(db.String(1024))
     status = db.Column(db.String(50), nullable=False)       # Running, Paused, Not Started, Completed, Queued, Canceled, Importing
+    started_at = db.Column(db.DateTime, nullable=True)      # These defaults should be changed
     agent_id = db.Column(db.Integer, db.ForeignKey('agents.id'))
 
 class Customers(db.Model):

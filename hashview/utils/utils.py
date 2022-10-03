@@ -2,7 +2,6 @@ import os
 import secrets
 import hashlib
 import hashlib
-import time
 import _md5
 import re
 from datetime import datetime
@@ -251,7 +250,7 @@ def update_job_task_status(jobtask_id, status):
     job = Jobs.query.get(jobtask.job_id)
     if job.status == 'Queued':
         job.status = 'Running'
-        job.started_at = time.strftime('%Y-%m-%d %H:%M:%S')
+        job.started_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         db.session.commit()
 
     # TODO
@@ -265,7 +264,7 @@ def update_job_task_status(jobtask_id, status):
 
     if done:
         job.status = 'Completed'
-        job.ended_at = time.strftime('%Y-%m-%d %H:%M:%S')
+        job.ended_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         db.session.commit()
 
         start_time = datetime.strptime(str(job.started_at), '%Y-%m-%d %H:%M:%S')

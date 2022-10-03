@@ -3,7 +3,11 @@ Notable changes will be documented here
 
 ## Current Release
 ## [v0.8.1-Beta] - 2022-10-XX
-
+### Added
+- Added support for max runtimes both for Jobs and Tasks. Admins can set the value (in hours) with = 0 being indefinate. 
+- Added _some_ sanity checks for new hashes. Probably need to go back and update the rest.
+### Changed
+- Swapped instances of `time` for `datetime`
 
 ## [v0.8.0-Beta] - 2022-06-11
 ### Added

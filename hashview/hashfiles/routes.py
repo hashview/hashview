@@ -6,11 +6,11 @@ from sqlalchemy.sql import exists
 
 hashfiles = Blueprint('hashfiles', __name__)
 
-
 @hashfiles.route("/hashfiles", methods=['GET', 'POST'])
 @login_required
+
 def hashfiles_list():
-    hashfiles = Hashfiles.query.all()
+    hashfiles = Hashfiles.query.order_by(Hashfiles.uploaded_at.desc()).all()
     # customers = Customers.query.order_by(Customers.name).all()
     customers = Customers.query.filter(exists().where(Customers.id == Hashfiles.customer_id)).all()
     # Hashes.query.filter(~ exists().where(Hashes.id==HashfileHashes.hash_id)).filter_by(cracked = '0')

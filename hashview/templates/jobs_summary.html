@@ -18,7 +18,7 @@ If everything looks good, click complete below.
                             <tr>
                                 <td>Job Name:</td>
                                 <td>{{ job.name }}</td>
-                            </tr>
+                            </tr>                          
                             <tr>
                                 <td>Customer:</td>
                                 <td>{{ customer.name }}</td>
@@ -37,6 +37,23 @@ If everything looks good, click complete below.
                                             {% endif %}
                                         {% endfor %}
                                     {% endfor %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Runtimes:</td>
+                                <td>
+                                    {% if settings.max_runtime_jobs == 0 %}
+                                        Job will run until completed or canceled
+                                    {% else %}
+                                        Job will run for a maximum of {{ settings.max_runtime_jobs }} hour(s).
+                                    {% endif %}
+                                    <br>
+                                    {% if settings.max_runtime_tasks == 0 %}
+                                        Tasks will run until completed or canceled
+                                    {% else %}
+                                        Each Tasks will run for a maximum of {{ settings.max_runtime_jobs }} hour(s).
+                                    {% endif %}
+
                                 </td>
                             </tr>
                             <tr>

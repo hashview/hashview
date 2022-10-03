@@ -4,6 +4,7 @@ from hashview.utils.utils import save_file, get_md5_hash, update_dynamic_wordlis
 from hashview.models import db
 from sqlalchemy.ext.declarative import DeclarativeMeta
 from packaging import version
+from datetime import datetime, timedelta
 import hashview
 import time
 import os
@@ -84,6 +85,8 @@ def v1_api_set_agent_heartbeat():
     if not versionCheck(request.cookies.get('agent_version')):
         return redirect("/v1/upgrade_required")
 
+    settings = Settings.query.first()
+
     # Get agent from db
     agent = Agents.query.filter_by(uuid=uuid).first()
     if not agent:
@@ -120,9 +123,38 @@ def v1_api_set_agent_heartbeat():
             # Check authorization cookies
             if agent_data['agent_status'] == 'Working':
                 agent.status = 'Working'
-                # Check to see if task was canceled
-                jobtask = JobTasks.query.filter_by(agent_id = agent.id).first()
-                if not jobtask or jobtask.status == 'Canceled':
+
+                # Check if task has exceeded maximum runtime
+                job_task = JobTasks.query.filter_by(agent_id = agent.id).first()
+
+                if settings.max_runtime_tasks > 0 and datetime.strptime(str(job_task.started_at), '%Y-%m-%d %H:%M:%S') + timedelta(hours=settings.max_runtime_tasks) < datetime.now():
+                    update_job_task_status(job_task.id, 'Canceled')
+                    message = {
+                        'status': 200,
+                        'type': 'message',
+                        'msg': 'Canceled',
+                    }
+                    return jsonify(message)
+
+                # check if job has exceeded maximum runtime
+                job = Jobs.query.get(job_task.job_id)
+                job_tasks = JobTasks.query.filter_by(job_id = job.id).all()
+                if settings.max_runtime_jobs > 0 and datetime.strptime(str(job.started_at), '%Y-%m-%d %H:%M:%S') + timedelta(hours=settings.max_runtime_tasks) < datetime.now():
+                    job.status = 'Canceled'
+                    job.ended_at = datetime.strftime('%Y-%m-%d %H:%M:%S')
+
+                    for job_task in job_tasks:
+                        job_task.status = 'Canceled'
+                        job_task.agent_id = None
+                    db.session.commit()
+                    message = {
+                        'status': 200,
+                        'type': 'message',
+                        'msg': 'Canceled',
+                    }
+                    return jsonify(message)
+                
+                if not job_task or job_task.status == 'Canceled':
                     message = {
                         'status': 200,
                         'type': 'message',
@@ -159,6 +191,7 @@ def v1_api_set_agent_heartbeat():
                     if job_task_entry:
                         job_task_entry.agent_id = agent.id
                         job_task_entry.status = 'Running'
+                        job_task_entry.started_at = time.strftime('%Y-%m-%d %H:%M:%S')
                         db.session.commit()
                         message = {
                             'status': 200,

@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, redirect, abort, flash, url_for, c
 from flask_login import login_required, current_user
 from sqlalchemy.sql.elements import Null
 from hashview.jobs.forms import JobsForm, JobsNewHashFileForm, JobsNotificationsForm, JobSummaryForm
-from hashview.models import HashNotifications, JobNotifications, Jobs, Customers, Hashfiles, Users, HashfileHashes, Hashes, JobTasks, Tasks, TaskGroups
+from hashview.models import HashNotifications, JobNotifications, Jobs, Customers, Hashfiles, Users, HashfileHashes, Hashes, JobTasks, Tasks, TaskGroups, Settings
 from hashview.utils.utils import save_file, get_filehash, import_hashfilehashes, build_hashcat_command, validate_hashfile
 from hashview.models import db
 import os
@@ -353,7 +353,6 @@ def jobs_assign_notification_hashes(job_id, method):
     else:
         return render_template('jobs_assigned_notifications_hashes.html', title='Assigned Hash Notifications', job=job, hashes=hashes, existing_hash_notifications=existing_hash_notifications)
 
-
 @jobs.route("/jobs/delete/<int:job_id>", methods=['GET', 'POST'])
 @login_required
 def jobs_delete(job_id):
@@ -370,7 +369,6 @@ def jobs_delete(job_id):
         flash('You do not have rights to delete this job!', 'danger')
         return redirect(url_for('jobs.jobs_list'))
 
-
 @jobs.route("/jobs/<int:job_id>/summary", methods=['GET', 'POST'])
 @login_required
 def jobs_summary(job_id):
@@ -384,6 +382,7 @@ def jobs_summary(job_id):
     job = Jobs.query.get(job_id)
     form = JobSummaryForm()
 
+    settings = Settings.query.first()
     tasks = Tasks.query.all()
     hashfile = Hashfiles.query.get(job.hashfile_id)
     customer = Customers.query.get(job.customer_id)
@@ -407,7 +406,7 @@ def jobs_summary(job_id):
 
         return redirect(url_for('jobs.jobs_list'))
     else:
-        return render_template('jobs_summary.html', title='Job Summary', job=job, form=form, job_notification=job_notification, cracked_rate=cracked_rate, job_tasks=job_tasks, hash_notification_cnt=hash_notification_cnt, customer=customer, hashfile=hashfile, tasks=tasks, hash_notification=hash_notification)
+        return render_template('jobs_summary.html', title='Job Summary', job=job, form=form, job_notification=job_notification, cracked_rate=cracked_rate, job_tasks=job_tasks, hash_notification_cnt=hash_notification_cnt, customer=customer, hashfile=hashfile, tasks=tasks, hash_notification=hash_notification, settings=settings)
 
 @jobs.route("/jobs/start/<int:job_id>", methods=['GET'])
 @login_required
@@ -446,7 +445,6 @@ def jobs_stop(job_id):
                 job.ended_at = time.strftime('%Y-%m-%d %H:%M:%S')
 
                 for job_task in job_tasks:
-                    if job_task.status == 'Queued' or job_task.status == 'Running':
                         job_task.status = 'Canceled'
                         job_task.agent_id = None
                 db.session.commit()

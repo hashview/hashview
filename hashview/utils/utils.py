@@ -330,18 +330,33 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
             if file_type == 'hash_only':
                 if ':' in line:
                     return 'Error line ' + str(line_number) + ' contains a : character. File should be hashes only. No usernames'
-                if hash_type == '0' or hash_type == '1000':
+                if hash_type == '0' or hash_type == '22' or hash_type == '1000':
                     if len(line.rstrip()) != 32:
                         return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 32'
+                if hash_type == '122':
+                    if len(line.rstrip()) != 50:
+                        return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 50'
                 if hash_type == '300':
                     if len(line.rstrip()) != 40:
                         return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 40'
                 if hash_type == '500':
                     if '$1$' not in line:
-                        return 'Error line ' + str(line_number) + ' appears to not be a valid md5Crypt hash'
+                        return 'Error line ' + str(line_number) + ' is not a valid md5Crypt, MD5 (Unix) or Cisco-IOS $1$ (MD5) hash'
+                if hash_type == '1100':
+                    if ':' not in line:
+                        return 'Error line ' + str(line_number) + ' is missing a : character. Domain Cached Credentials (DCC), MS Cache hashes should have one'
+                if hash_type == '1800':
+                    dollar_cnt = 0
+                    for char in line:
+                        if char == '$':
+                            dollar_cnt+=1
+                    if dollar_cnt != 3:
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt.'
+                    if '$6$' not in line:
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt.'                        
                 if hash_type == '2100':
                     if '$' not in line:
-                        return 'Error line ' + str(line_number) + ' is missing a $ character. DCC2 Hashes should have these.'
+                        return 'Error line ' + str(line_number) + ' is missing a $ character. DCC2 Hashes should have these'
                     dollar_cnt = 0
                     hash_cnt = 0
                     for char in line:
@@ -353,15 +368,12 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                         return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: DCC2 MS Cache'
                     if hash_cnt != 2:
                         return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: DCC2 MS Cache'
-                if hash_type == '1800':
-                    dollar_cnt = 0
-                    for char in line:
-                        if char == '$':
-                            dollar_cnt+=1
-                    if dollar_cnt != 3:
-                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt.'
-                    if '$6$' not in line:
-                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt.'
+                if hash_type == '2400':
+                    if len(line.rstrip()) != 18:
+                        return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 18'  
+                if hash_type == '2410':
+                    if ':' not in line:
+                        return 'Error line ' + str(line_number) + ' is missing a : character. Cisco-ASA Hashes should have these.'                                              
                 if hash_type == '3200':
                     if '$' not in line:
                         return 'Error line ' + str(line_number) + ' is missing a $ character. bcrypt Hashes should have these.'
@@ -371,6 +383,18 @@ def validate_hashfile(hashfile_path, file_type, hash_type):
                             dollar_cnt += 1
                     if dollar_cnt != 3:
                         return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: bcrypt'
+                if hash_type == '5700':
+                    if len(line.rstrip()) != 45:
+                        return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 45'   
+                if hash_type == '7100':
+                    if '$' not in line:
+                        return 'Error line ' + str(line_number) + ' is missing a $ character. Mac OSX 10.8+ ($ml$) hashes should have these.'
+                    dollar_cnt = 0
+                    for char in line:
+                        if char == '$':
+                            dollar_cnt += 1
+                    if dollar_cnt != 2:
+                        return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Mac OSX 10.8+ ($ml$)'                
 
             if file_type == 'shadow':
                 if ':' not in line:

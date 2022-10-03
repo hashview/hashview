@@ -6,7 +6,6 @@ from sqlalchemy.ext.declarative import DeclarativeMeta
 from packaging import version
 from datetime import datetime, timedelta
 import hashview
-import time
 import os
 import json
 import codecs
@@ -49,7 +48,7 @@ def updateHeartbeat(uuid):
     agent = Agents.query.filter_by(uuid=uuid).first()
     if agent:
         agent.src_ip = request.remote_addr
-        agent.last_checkin = time.strftime('%Y-%m-%d %H:%M:%S')
+        agent.last_checkin = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         db.session.commit()
 
 def versionCheck(agent_version):
@@ -95,7 +94,7 @@ def v1_api_set_agent_heartbeat():
                         src_ip = request.remote_addr,
                         uuid = uuid,
                         status = 'Pending',
-                        last_checkin = time.strftime('%Y-%m-%d %H:%M:%S'))
+                        last_checkin = datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         db.session.add(new_agent)
         db.session.commit()
         message = {
@@ -139,9 +138,9 @@ def v1_api_set_agent_heartbeat():
                 # check if job has exceeded maximum runtime
                 job = Jobs.query.get(job_task.job_id)
                 job_tasks = JobTasks.query.filter_by(job_id = job.id).all()
-                if settings.max_runtime_jobs > 0 and datetime.strptime(str(job.started_at), '%Y-%m-%d %H:%M:%S') + timedelta(hours=settings.max_runtime_tasks) < datetime.now():
+                if settings.max_runtime_jobs > 0 and datetime.strptime(str(job.started_at), '%Y-%m-%d %H:%M:%S') + timedelta(hours=settings.max_runtime_jobs) < datetime.now():
                     job.status = 'Canceled'
-                    job.ended_at = datetime.strftime('%Y-%m-%d %H:%M:%S')
+                    job.ended_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
                     for job_task in job_tasks:
                         job_task.status = 'Canceled'
@@ -191,7 +190,7 @@ def v1_api_set_agent_heartbeat():
                     if job_task_entry:
                         job_task_entry.agent_id = agent.id
                         job_task_entry.status = 'Running'
-                        job_task_entry.started_at = time.strftime('%Y-%m-%d %H:%M:%S')
+                        job_task_entry.started_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         db.session.commit()
                         message = {
                             'status': 200,

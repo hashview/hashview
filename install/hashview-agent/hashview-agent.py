@@ -2,7 +2,6 @@ import argparse
 import os
 import socket
 import uuid
-import time
 import json
 import secrets
 import hashlib

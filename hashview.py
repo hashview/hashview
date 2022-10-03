@@ -240,7 +240,6 @@ def ensure_version_alignment():
 def data_retention_cleanup(app):
     with app.app_context():
         import os
-        import time
 
         from datetime import datetime, timedelta
 

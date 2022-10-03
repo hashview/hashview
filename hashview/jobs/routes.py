@@ -5,8 +5,8 @@ from hashview.jobs.forms import JobsForm, JobsNewHashFileForm, JobsNotifications
 from hashview.models import HashNotifications, JobNotifications, Jobs, Customers, Hashfiles, Users, HashfileHashes, Hashes, JobTasks, Tasks, TaskGroups, Settings
 from hashview.utils.utils import save_file, get_filehash, import_hashfilehashes, build_hashcat_command, validate_hashfile
 from hashview.models import db
+from datetime import datetime
 import os
-import time
 import secrets
 import json
 
@@ -442,7 +442,7 @@ def jobs_stop(job_id):
         if current_user.admin or job.owner_id == current_user.id:
             if job.status == 'Running' or job.status == 'Queued':
                 job.status = 'Canceled'
-                job.ended_at = time.strftime('%Y-%m-%d %H:%M:%S')
+                job.ended_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
                 for job_task in job_tasks:
                         job_task.status = 'Canceled'

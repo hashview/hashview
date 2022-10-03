@@ -1,5 +1,4 @@
 import json
-import time
 
 from hashlib import sha512
 from datetime import datetime

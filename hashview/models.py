@@ -99,10 +99,12 @@ class Settings(db.Model):
     retention_period = db.Column(db.Integer)
     max_runtime_jobs = db.Column(db.Integer)                    # Time will be measured in hours
     max_runtime_tasks = db.Column(db.Integer)                   # Time will be measured in hours
+    enabled_job_weights = db.Column(db.Boolean, nullable=False, default=False)
 
 class Jobs(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
+    priority = db.Column(db.Integer, nullable=False, default=3) # 5 = highest priority. 1 = lowest priority
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     status = db.Column(db.String(20), nullable=False)           # Running, Paused, Completed, Queued, Canceled, Ready, Incomplete
@@ -116,6 +118,7 @@ class JobTasks(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     job_id = db.Column(db.Integer, nullable=False)
     task_id = db.Column(db.Integer, nullable=False)
+    priority = db.Column(db.Integer, nullable=False, default=3)
     command = db.Column(db.String(1024))
     status = db.Column(db.String(50), nullable=False)       # Running, Paused, Not Started, Completed, Queued, Canceled, Importing
     started_at = db.Column(db.DateTime, nullable=True)      # These defaults should be changed

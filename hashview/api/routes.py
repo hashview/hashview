@@ -125,6 +125,13 @@ def v1_api_set_agent_heartbeat():
 
                 # Check if task has exceeded maximum runtime
                 job_task = JobTasks.query.filter_by(agent_id = agent.id).first()
+                if not job_task or job_task.status == 'Canceled':
+                    message = {
+                        'status': 200,
+                        'type': 'message',
+                        'msg': 'Canceled',
+                    }
+                    return jsonify(message)
 
                 if settings.max_runtime_tasks > 0 and datetime.strptime(str(job_task.started_at), '%Y-%m-%d %H:%M:%S') + timedelta(hours=settings.max_runtime_tasks) < datetime.now():
                     update_job_task_status(job_task.id, 'Canceled')
@@ -153,14 +160,6 @@ def v1_api_set_agent_heartbeat():
                     }
                     return jsonify(message)
                 
-                if not job_task or job_task.status == 'Canceled':
-                    message = {
-                        'status': 200,
-                        'type': 'message',
-                        'msg': 'Canceled',
-                    }
-                    return jsonify(message)
-
                 if agent_data['hc_status']:
                     agent.hc_status = agent_data['agent_status']
                     hc_status = str(agent_data['hc_status']).replace("\'", "\"")
@@ -186,7 +185,7 @@ def v1_api_set_agent_heartbeat():
                     return jsonify(message)
                 else:
                     # Get first unassigned jobtask and 'assign' it to this agent
-                    job_task_entry = JobTasks.query.filter_by(status = 'Queued').order_by(JobTasks.id).first()
+                    job_task_entry = JobTasks.query.filter_by(status = 'Queued').order_by(JobTasks.priority.desc(), JobTasks.id).first()
                     if job_task_entry:
                         job_task_entry.agent_id = agent.id
                         job_task_entry.status = 'Running'

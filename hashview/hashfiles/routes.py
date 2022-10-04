@@ -43,16 +43,8 @@ def hashfiles_delete(hashfile_id):
             else:
                 HashfileHashes.query.filter_by(hashfile_id = hashfile_id).delete()
                 Hashfiles.query.filter_by(id = hashfile_id).delete()
-
-                #Hashes.query.filter(~exists().where(Hashes.id == HashfileHashes.hash_id), Hashes.cracked==0).delete()
                 Hashes.query.filter().where(~exists().where(Hashes.id == HashfileHashes.hash_id)).where(Hashes.cracked == 0).delete(synchronize_session='fetch')
-                #db.session.delete(hashes)
-                #for singlehash in hashes:
-                #    print('To Be Delete: ' + str(singlehash.id))
-                #    db.session.delete(singlehash)
-                #    db.session.commit()
                 HashNotifications.query.filter(~exists().where(HashNotifications.hash_id == HashfileHashes.hash_id)).filter(Hashes.cracked == 0).delete(synchronize_session='fetch')
-                #db.session.delete(notifications)
                 db.session.commit()
                 flash('Hashfile has been deleted!', 'success')
                 return redirect(url_for('hashfiles.hashfiles_list'))

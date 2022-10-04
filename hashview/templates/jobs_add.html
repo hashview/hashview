@@ -41,6 +41,21 @@ Provide the Name of the Job and the Customer it is for.
                     {{ jobsForm.name(class="form-control form-control-lg") }}
                 {% endif %}
             </div> 
+            {% if settings.enabled_job_weights %}
+                <div class="form-group">
+                    {{ jobsForm.priority.label(class="form-control-label") }}
+                    {% if jobsForm.priority.errors %}
+                        {{ jobsForm.priority(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in jobsForm.priority.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ jobsForm.priority(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div> 
+            {% endif %}
             <div class="form-group">
                 <label class="form-control-label" for="customer">Customer</label>
                 <select class="form-control form-control-lg" id="customer_id" name="customer_id" onchange="showDiv()" required>

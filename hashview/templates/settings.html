@@ -60,7 +60,20 @@
                             {% else %}
                                 {{ HashviewForm.max_runtime_tasks(class="form-control form-control-lg") }}
                             {% endif %}
-                        </div>                        
+                        </div>
+                        <div class="form-group float-sm-left">
+                            {{ HashviewForm.enabled_job_weights.label(class="form-control-label") }}
+                            {% if HashviewForm.enabled_job_weights.errors %}
+                                {{ HashviewForm.enabled_job_weights(class="form-control form-control-md is-invalid") }}
+                                <div class="invalid-feedback">
+                                    {% for error in HashviewForm.enabled_job_weights.errors %}
+                                        <span>{{ error }}</span>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                {{ HashviewForm.enabled_job_weights(class="form-control form-control-md ") }}
+                            {% endif %}
+                        </div>                             
                     </fieldset>
                     <div class="form-group">
                         {{ HashviewForm.submit(class="btn btn-primary pull-right") }}

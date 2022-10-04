@@ -5,15 +5,20 @@ from hashview.models import Jobs
 
 
 class JobsForm(FlaskForm):
-    name = StringField('Job Name', validators=[DataRequired()])
-    customer_id = StringField('Customer ID (unused)', validators=[DataRequired()])
-    customer_name = StringField('Customer Name (unused)')
-    submit = SubmitField('Next')
+	name = StringField('Job Name', validators=[DataRequired()])
+	priority = SelectField('Job Priority', choices=[('5', '5 - highest'),
+													('4', '4 - higher'),
+													('3', '3 - normal'),
+													('2', '2 - lower'),
+													('1', '1 - lowest')], validators=[DataRequired()])
+	customer_id = StringField('Customer ID (unused)', validators=[DataRequired()])
+	customer_name = StringField('Customer Name (unused)')
+	submit = SubmitField('Next')
 
-    def validate_job(self, name):
-        job = Jobs.query.filter_by(name = name.data).first()
-        if job:
-            raise ValidationError('That job name is taken. Please choose a different one.')
+	def validate_job(self, name):
+		job = Jobs.query.filter_by(name = name.data).first()
+		if job:
+			raise ValidationError('That job name is taken. Please choose a different one.')
 
 class JobsNewHashFileForm(FlaskForm):
     name = StringField('Hashfile Name') # While required we may dynamically create this based on file upload

@@ -29,6 +29,7 @@ def jobs_add():
     jobs = Jobs.query.all()
     customers = Customers.query.order_by(Customers.name).all()
     jobsForm = JobsForm()
+    settings = Settings.query.first()
     if jobsForm.validate_on_submit():
         customer_id = jobsForm.customer_id.data
         if jobsForm.customer_id.data == 'add_new':
@@ -37,14 +38,23 @@ def jobs_add():
             db.session.commit()
             customer_id = customer.id
 
+        if settings.enabled_job_weights:
+            if int(jobsForm.priority.data) >= 1 and int(jobsForm.priority.data) <=5:
+                job_priority = jobsForm.priority.data
+            else:
+                job_priority = 3
+        else:
+            job_priority = 3
+
         job = Jobs( name = jobsForm.name.data,
+                    priority = job_priority,
                     status = 'Incomplete',
                     customer_id = customer_id,
                     owner_id = current_user.id)
         db.session.add(job)
         db.session.commit()
         return redirect(str(job.id)+"/assigned_hashfile/")
-    return render_template('jobs_add.html', title='Jobs', jobs=jobs, customers=customers, jobsForm=jobsForm)
+    return render_template('jobs_add.html', title='Jobs', jobs=jobs, customers=customers, jobsForm=jobsForm, settings=settings)
 
 @jobs.route("/jobs/<int:job_id>/assigned_hashfile/", methods=['GET', 'POST'])
 @login_required
@@ -419,8 +429,8 @@ def jobs_start(job_id):
             job.status = 'Queued'
             for job_task in job_tasks:
                 job_task.status = 'Queued'
+                job_task.priority = job.priority
                 job_task.command = build_hashcat_command(job.id, job_task.task_id)
-                job_task.key_pos = 0
 
             db.session.commit()
             flash('Job has been Started!', 'success')

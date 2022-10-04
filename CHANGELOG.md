@@ -8,6 +8,7 @@ Notable changes will be documented here
 - Added _some_ sanity checks for new hashes. Probably need to go back and update the rest.
 ### Changed
 - Swapped instances of `time` for `datetime`
+- Improved performance when deleting hashfiles. Its much much quicker now
 
 ## [v0.8.0-Beta] - 2022-06-11
 ### Added

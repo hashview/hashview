@@ -23,6 +23,22 @@ If everything looks good, click complete below.
                                 <td>Customer:</td>
                                 <td>{{ customer.name }}</td>
                             </tr>
+                            {% if settings.enabled_job_weights %}
+                                <tr>
+                                    <td>Job Priority:</td>
+                                    {% if job.priority == 5 %}
+                                        <td>{{ job.priority }} - highest</td>
+                                    {% elif job.priority == 4 %}
+                                        <td>{{ job.priority }} - higher</td>
+                                    {% elif job.priority == 3 %}
+                                        <td>{{ job.priority }} - normal</td>
+                                    {% elif job.priority == 2 %}
+                                        <td>{{ job.priority }} - lower</td>
+                                    {% elif job.priority == 1 %}
+                                        <td>{{ job.priority }} - lowest</td>
+                                    {% endif %}
+                                </tr>
+                            {% endif %}
                             <tr>
                                 <td>Hashfile:</td>
                                 <td>{{ hashfile.name }} ({{ cracked_rate }})</td>

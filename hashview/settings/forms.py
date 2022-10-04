@@ -8,6 +8,7 @@ class HashviewSettingsForm(FlaskForm):
     retention_period = StringField('Retention Period (in days)', validators=[DataRequired()])
     max_runtime_jobs = StringField('Maximum runtime per Job in hours. (0 = infinate)', validators=[DataRequired()])
     max_runtime_tasks = StringField('Maximum runtime per Task in hours. (0 = infinate)', validators=[DataRequired()])
+    enabled_job_weights = BooleanField('Allow users to set job priority during job creations.')
     submit = SubmitField('Update')
 
     def validate_rention_period(self, retention_period):

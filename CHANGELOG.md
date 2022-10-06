@@ -11,6 +11,7 @@ Notable changes will be documented here
 ### Changed
 - Swapped instances of `time` for `datetime`
 - Improved performance when deleting hashfiles. Its much much quicker now
+- Changed homepage display to split queued jobs and running jobs. Order is now based on queued_at time and priority
 
 ## [v0.8.0-Beta] - 2022-06-11
 ### Added

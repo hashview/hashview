@@ -62,8 +62,11 @@ def jobs_assigned_hashfile(job_id):
     job = Jobs.query.get(job_id)
     hashfiles = Hashfiles.query.filter_by(customer_id=job.customer_id)
     jobsNewHashFileForm = JobsNewHashFileForm()
-
     hashfile_cracked_rate = {}
+
+    if job.status == 'Running' or job.status == 'Queued':
+        flash('You can not edit a running or queued job. First stop and remove job from queue before editing.', 'danger')
+        return redirect(url_for('jobs.list', job_id=job_id))
 
     for hashfile in hashfiles:
         cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).count()

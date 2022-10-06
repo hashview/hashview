@@ -21,17 +21,31 @@ def tasks_list():
 @login_required
 def tasks_add():
     tasksForm = TasksForm()
+
+    # clear select field for wordlists and rules
+    tasksForm.rule_id.choices = []
+    tasksForm.wl_id.choices = []
+
+    wordlists = Wordlists.query.all()
+    rules = Rules.query.all()
+
+    for wordlist in wordlists:
+        tasksForm.wl_id.choices += [(wordlist.id, wordlist.name)]
+
+    for rule in rules:
+        tasksForm.rule_id.choices += [(rule.id, rule.name)]
+
     if tasksForm.validate_on_submit():
-        wordlist_id = tasksForm.wl_id.data.id
+
         if tasksForm.rule_id.data == None:
             rule_id = None
         else:
-            rule_id = tasksForm.rule_id.data.id
+            rule_id = tasksForm.rule_id.data
 
         if tasksForm.hc_attackmode.data == 'dictionary':
             task = Tasks(   name=tasksForm.name.data,
                             owner_id=current_user.id,
-                            wl_id=wordlist_id,
+                            wl_id=tasksForm.wl_id.data,
                             rule_id=rule_id,
                             hc_attackmode=tasksForm.hc_attackmode.data
             )
@@ -54,6 +68,78 @@ def tasks_add():
         return redirect(url_for('tasks.tasks_list'))
     return render_template('tasks_add.html', title='Tasks Add', tasksForm=tasksForm)
 
+@tasks.route("/tasks/edit/<int:task_id>", methods=['GET', 'POST'])
+@login_required
+def task_edit(task_id):
+    task = Tasks.query.get(task_id)
+    wordlists = Wordlists.query.all()
+    rules = Rules.query.all()
+
+    # Check if task is currently assigned to a job. 
+    # We probably dont care if its assigned to a task group though
+    affected_jobs = JobTasks.query.filter_by(task_id=task_id).all()
+    if affected_jobs:
+        flash('Can not edit this task. It is currently associated to one or more jobs.', 'danger')
+        return redirect(url_for('tasks.tasks_list'))
+
+    if current_user.admin or task.owner_id == current_user.id:
+        tasksForm = TasksForm()
+
+        # clear select field for wordlists and rules
+        tasksForm.rule_id.choices = []
+        tasksForm.wl_id.choices = []
+
+        wordlists = Wordlists.query.all()
+        rules = Rules.query.all()
+
+        for wordlist in wordlists:
+            tasksForm.wl_id.choices += [(wordlist.id, wordlist.name)]
+
+        for rule in rules:
+            tasksForm.rule_id.choices += [(rule.id, rule.name)]
+        
+        tasksForm.submit.label.text = 'Update'
+
+        if tasksForm.validate_on_submit():
+            wordlist_id = tasksForm.wl_id.data
+            rule_id = tasksForm.rule_id.data
+
+            if tasksForm.hc_attackmode.data == 'dictionary':
+                task.name = tasksForm.name.data
+                task.wl_id = tasksForm.wl_id.data
+                task.rul_id = rule_id
+                task.hc_attackmode = tasksForm.hc_attackmode.data
+                hc_mask = None
+
+                db.session.add(task)
+                db.session.commit()
+                flash(f'Task {tasksForm.name.data} updated!', 'success')
+            elif tasksForm.hc_attackmode.data == 'maskmode':
+
+                task.name = tasksForm.name.data
+                task.wl_id = None
+                task.rul_id = None
+                task.hc_attackmode = tasksForm.hc_attackmode.data
+                hc_mask = tasksForm.mask.data
+
+                db.session.add(task)
+                db.session.commit()
+                flash(f'Task {tasksForm.name.data} updated!', 'success')
+            else:
+                flash('Attack Mode not supported... yet...', 'danger')
+            return redirect(url_for('tasks.tasks_list'))
+        else:
+            tasksForm.name.data = task.name
+            tasksForm.hc_attackmode.data = task.hc_attackmode
+            tasksForm.wl_id.data = (task.wl_id, 'Rockyou.txt')
+            tasksForm.rule_id.data = (task.rule_id, 'bar')
+            tasksForm.mask.data = task.hc_mask
+
+        return render_template('tasks_edit.html', title='Tasks Edit', tasksForm=tasksForm, task=task, wordlists=wordlists, rules=rules)
+    else:
+        flash('You are unauthorized to edit this task.', 'danger')
+        return redirect(url_for('tasks.tasks_list'))
+    
 @tasks.route("/tasks/delete/<int:task_id>", methods=['POST'])
 @login_required
 def tasks_delete(task_id):
@@ -79,4 +165,5 @@ def tasks_delete(task_id):
         flash('Task has been deleted!', 'success')
         return redirect(url_for('tasks.tasks_list'))
     else:
-        abort(403)
+        flash('You are unauthorized to delete this task.', 'danger')
+        return redirect(url_for('tasks.tasks_list'))

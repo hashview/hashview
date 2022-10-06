@@ -7,6 +7,7 @@ Notable changes will be documented here
 - Added support for max runtimes both for Jobs and Tasks. Admins can set the value (in hours) with = 0 being indefinate. 
 - Added _some_ sanity checks for new hashes. Probably need to go back and update the rest.
 - Added job priority levels. If enabled by the administrator in the settings pane, users can select the priority in which their job gets handled by agents. If disabled. all jobs are treated as first started, first processed.
+- Added ability to Edit existing Tasks
 ### Changed
 - Swapped instances of `time` for `datetime`
 - Improved performance when deleting hashfiles. Its much much quicker now

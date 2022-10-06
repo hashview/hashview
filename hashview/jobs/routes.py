@@ -410,6 +410,7 @@ def jobs_summary(job_id):
             job_task.status = 'Ready'
 
         job.status = 'Ready'
+        job.updated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         db.session.commit()
 
         flash('Job successfully created', 'sucess')
@@ -427,6 +428,7 @@ def jobs_start(job_id):
     if job and job_tasks:
         if current_user.admin or job.owner_id == current_user.id:
             job.status = 'Queued'
+            job.queued_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             for job_task in job_tasks:
                 job_task.status = 'Queued'
                 job_task.priority = job.priority

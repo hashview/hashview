@@ -107,6 +107,7 @@ class Jobs(db.Model):
     priority = db.Column(db.Integer, nullable=False, default=3) # 5 = highest priority. 1 = lowest priority
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    queued_at = db.Column(db.DateTime, nullable=True)
     status = db.Column(db.String(20), nullable=False)           # Running, Paused, Completed, Queued, Canceled, Ready, Incomplete
     started_at = db.Column(db.DateTime, nullable=True)          # These defaults should be changed
     ended_at = db.Column(db.DateTime, nullable=True)            # These defaults should be changed

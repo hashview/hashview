@@ -22,13 +22,13 @@ class JobsForm(FlaskForm):
 
 class JobsNewHashFileForm(FlaskForm):
     name = StringField('Hashfile Name') # While required we may dynamically create this based on file upload
-    file_type = SelectField('Hash Format', choices=[('', '--SELECT--'),
-													('hash_only', '$hash'), 
-													('user_hash', '$user:$hash'), 
-													('shadow', 'Linux/Unix Shadow File'),
+    file_type = SelectField('Hash File Format', choices=[('', '--SELECT--'),
 													('pwdump', 'pwdump()'), 
 													('NetNTLM', 'NetNTLMv1, NetNTLMv1+ESS or NetNTLMv2'), 
-													('kerberos', 'Kerberos')], validators=[DataRequired()])
+													('kerberos', 'Kerberos'),
+													('shadow', 'Linux / Unix Shadow File'),
+													('user_hash', '$user:$hash'),
+													('hash_only', '$hash')], validators=[DataRequired()])
 													
     hash_type = SelectField('Hash Type', choices=[  ('', '------SELECT------'),
     						    					('', 'O P E R A T I N G   S Y S T E M'),
@@ -37,7 +37,6 @@ class JobsNewHashFileForm(FlaskForm):
 						    						('122', '(122) Mac OSX (from 10.4 to 10.7)'),
 													('500', '(500) Cisco-IOS $1$'),
 													('500', '(500) md5crypt / Unix $1$'),
-													('1000', '(1000) NTLM'),
 						    						('1100', '(1100) MSCache / DomainCachedCredentials'),
 													('1500', '(1500) descrypt / DES Unix'),	
 													('1800', '(1800) sha512crypt / Unix $6$'),																									
@@ -119,20 +118,11 @@ class JobsNewHashFileForm(FlaskForm):
 													('4800', '(4800) iSCSI CHAP auth, MD5(CHAP) (hash:salt:id)'),
 													('5300', '(5300) IKE-PSK MD5'),
 													('5400', '(5400) IKE-PSK SHA1'),													
-													('5500', '(5500)  NetNTLM v1 / NetNTLMv1+ESS'),
-													('5600', '(5600) NetNTLM v2'),
 													('7300', '(7300) IPMI2 RAKP HMAC-SHA1'),													
-													('7500', '(7500) Kerberos 5, etype 23, AS-REQ Pre-Auth ($krb5pa)'),
 													('8300', '(8300) DNSSEC (NSEC3)'),
 													('16100', '(16100) TACACS+'),
 													('16500', '(16500) JWT (JSON Web Token)'),													
 													('16800', '(16800) WPA PMKID (mode 16800)'),
-													('13100', '(13100) Kerberos 5, etype 23, TGS-REP ($krb5tgs)'),
-													('18200', '(18200) Kerberos 5, etype 23, AS-REP ($krb5asrep)'),
-													('19600', '(19600) Kerberos 5 TGS-REP etype 17 (AES128-CTS-HMAC-SHA1-96)'),
-													('19700', '(19700) Kerberos 5 TGS-REP etype 18 (AES256-CTS-HMAC-SHA1-96)'),
-													('19800', '(19800) Kerberos 5, etype 17, Pre-Auth'),
-													('19900', '(19900) Kerberos 5, etype 18, Pre-Auth'),
 													('22000', '(22000) WPA PMKID+EAPOL (WPA*01/2)'),
 
 													('', ''), # Spacer for better visibility
@@ -190,7 +180,32 @@ class JobsNewHashFileForm(FlaskForm):
 													('', 'E N T E R P R I S E   S O F T W A R E'),
 													('133', '(133) Oracle PeopleSoft'),
 													('16900', '(16900) Ansible Vault'),
-													('15000', '(15000) FileZilla Server (hash:salt)'),], validators=[DataRequired()])
+													('15000', '(15000) FileZilla Server (hash:salt)'),])
+
+    shadow_hash_type = SelectField('Hash Type', choices=[  ('', '------SELECT------'),
+													('500', '(500) md5crypt / Unix $1$'),
+													('1500', '(1500) descrypt / DES Unix'),	
+													('1800', '(1800) sha512crypt / Unix $6$'),																									
+													('3200', '(3200) bcrypt / Blowfish Unix $2*$')])
+
+    pwdump_hash_type = SelectField('Hash Type', choices=[  ('', '------SELECT------'),
+													('1000', '(1000) NTLM')])
+
+    netntlm_hash_type = SelectField('Hash Type', choices=[  ('', '------SELECT------'),												
+													('5500', '(5500) NetNTLM v1 / NetNTLMv1+ESS'),
+													('5600', '(5600) NetNTLM v2'),
+													('27000', '(27000) NetNTLMv1 / NetNTLMv1+ESS (NT)'),
+													('27100', '(27100) NetNTLMv2 (NT)')])
+
+    kerberos_hash_type = SelectField('Hash Type', choices=[  ('', '------SELECT------'),			
+													('7500', '(7500) Kerberos 5, etype 23, AS-REQ Pre-Auth ($krb5pa)'),
+													('13100', '(13100) Kerberos 5, etype 23, TGS-REP ($krb5tgs)'),
+													('18200', '(18200) Kerberos 5, etype 23, AS-REP ($krb5asrep)'),
+													('19600', '(19600) Kerberos 5 TGS-REP etype 17 (AES128-CTS-HMAC-SHA1-96)'),
+													('19700', '(19700) Kerberos 5 TGS-REP etype 18 (AES256-CTS-HMAC-SHA1-96)'),
+													('19800', '(19800) Kerberos 5, etype 17, Pre-Auth'),
+													('19900', '(19900) Kerberos 5, etype 18, Pre-Auth')])													
+
     hashfilehashes = TextAreaField('Hashes')
     hashfile = FileField('Upload Hashfile')
     submit = SubmitField('Next')

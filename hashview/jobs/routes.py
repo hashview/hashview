@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from sqlalchemy.sql.elements import Null
 from hashview.jobs.forms import JobsForm, JobsNewHashFileForm, JobsNotificationsForm, JobSummaryForm
 from hashview.models import HashNotifications, JobNotifications, Jobs, Customers, Hashfiles, Users, HashfileHashes, Hashes, JobTasks, Tasks, TaskGroups, Settings
-from hashview.utils.utils import save_file, get_filehash, import_hashfilehashes, build_hashcat_command, validate_hashfile
+from hashview.utils.utils import save_file, get_filehash, import_hashfilehashes, build_hashcat_command, validate_pwdump_hashfile, validate_netntlm_hashfile, validate_kerberos_hashfile, validate_shadow_hashfile, validate_user_hash_hashfile, validate_hash_only_hashfile
 from hashview.models import db
 from datetime import datetime
 import os
@@ -75,12 +75,45 @@ def jobs_assigned_hashfile(job_id):
 
     if jobsNewHashFileForm.validate_on_submit():
 
+        hashfile_path = ""
         if jobsNewHashFileForm.hashfile.data:
-
             # User submitted a file upload
             hashfile_path = os.path.join(current_app.root_path, save_file('control/tmp', jobsNewHashFileForm.hashfile.data))
+        elif jobsNewHashFileForm.hashfilehashes.data:
+            # User submitted copied/pasted hashes
+            # Going to have to save a file manually instead of using save_file since save_file requires form data to be passed and we're not collecting that object for this tab
 
-            has_problem = validate_hashfile(hashfile_path, jobsNewHashFileForm.file_type.data, jobsNewHashFileForm.hash_type.data)
+            if len(jobsNewHashFileForm.name.data) == 0:
+                flash('You must assign a name to the hashfile', 'danger')
+                return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
+
+            random_hex = secrets.token_hex(8)
+            hashfile_path = 'hashview/control/tmp/' + random_hex
+            hashfilehashes_file = open(hashfile_path, 'w+')
+            hashfilehashes_file.write(jobsNewHashFileForm.hashfilehashes.data)
+            hashfilehashes_file.close()
+
+        if len(hashfile_path) > 0:
+            if jobsNewHashFileForm.file_type.data == 'pwdump':
+                has_problem = validate_pwdump_hashfile(hashfile_path, jobsNewHashFileForm.pwdump_hash_type.data)
+                hash_type = jobsNewHashFileForm.pwdump_hash_type.data
+            elif jobsNewHashFileForm.file_type.data == 'NetNTLM':
+                has_problem = validate_netntlm_hashfile(hashfile_path, jobsNewHashFileForm.netntlm_hash_type.data)
+                hash_type = jobsNewHashFileForm.netntlm_hash_type.data
+            elif jobsNewHashFileForm.file_type.data == 'kerberos':
+                has_problem = validate_kerberos_hashfile(hashfile_path, jobsNewHashFileForm.kerberos_hash_type.data) 
+                hash_type = jobsNewHashFileForm.kerberos_hash_type.data
+            elif jobsNewHashFileForm.file_type.data == 'shadow':
+                has_problem = validate_shadow_hashfile(hashfile_path, jobsNewHashFileForm.shadow_hash_type.data)
+                hash_type = jobsNewHashFileForm.shadow_hash_type.data
+            elif jobsNewHashFileForm.file_type.data == 'user_hash':
+                has_problem = validate_user_hash_hashfile(hashfile_path, jobsNewHashFileForm.hash_type.data)
+                hash_type = jobsNewHashFileForm.hash_type.data
+            elif jobsNewHashFileForm.file_type.data == 'hash_only':
+                has_problem = validate_hash_only_hashfile(hashfile_path, jobsNewHashFileForm.hash_type.data) 
+                hash_type = jobsNewHashFileForm.hash_type.data                                         
+            else:
+                has_problem = 'Invalid File Format'
 
             if has_problem:
                 flash(has_problem, 'danger')
@@ -94,9 +127,9 @@ def jobs_assigned_hashfile(job_id):
                 if not import_hashfilehashes(   hashfile_id=hashfile.id,
                                                 hashfile_path=hashfile_path,
                                                 file_type=jobsNewHashFileForm.file_type.data,
-                                                hash_type=jobsNewHashFileForm.hash_type.data
+                                                hash_type=hash_type
                                                 ):
-                    return ('Something went wrong')
+                    return ('Something went wrong. Check the filetype / hashtype and try again.')
 
                 # Delete hashfile file on disk
                 # TODO
@@ -105,49 +138,10 @@ def jobs_assigned_hashfile(job_id):
 
             return redirect(str(hashfile.id))
 
-        elif jobsNewHashFileForm.hashfilehashes.data:
-            # User submitted copied/pasted hashes
-            # Going to have to save a file manually instead of using save_file since save_file requires form data to be passed and we're not collecting that object for this tab
-
-            if len(jobsNewHashFileForm.name.data) == 0:
-                flash('You must assign a name to the hashfile', 'danger')
-                return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
-
-            random_hex = secrets.token_hex(8)
-            hashfile_path = 'hashview/control/tmp/' + random_hex
-
-            hashfilehashes_file = open(hashfile_path, 'w+')
-
-            hashfilehashes_file.write(jobsNewHashFileForm.hashfilehashes.data)
-            hashfilehashes_file.close()
-
-            has_problem = validate_hashfile(hashfile_path, jobsNewHashFileForm.file_type.data, jobsNewHashFileForm.hash_type.data)
-
-            if has_problem:
-                flash(has_problem, 'danger')
-                return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
-            else:
-                hashfile = Hashfiles(name=jobsNewHashFileForm.name.data, customer_id=job.customer_id, owner_id=current_user.id)
-                db.session.add(hashfile)
-                db.session.commit()
-
-
-                if not import_hashfilehashes(   hashfile_id=hashfile.id,
-                                                hashfile_path=hashfile_path,
-                                                file_type=jobsNewHashFileForm.file_type.data,
-                                                hash_type=jobsNewHashFileForm.hash_type.data
-                                                ):
-                    return ('Something went wrong')
-
-                job.hashfile_id = hashfile.id
-                db.session.commit()
-
-                return redirect(str(hashfile.id))
-
     elif request.method == 'POST' and request.form['hashfile_id']:
+        # User selected an existing hashfile
         job.hashfile_id = request.form['hashfile_id']
         db.session.commit()
-        #return redirect("/jobs/" + str(job.id)+"/tasks")
         return redirect("/jobs/" + str(job.id)+"/notifications")
 
     else:

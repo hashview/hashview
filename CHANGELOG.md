@@ -13,6 +13,9 @@ Notable changes will be documented here
 - Swapped instances of `time` for `datetime`
 - Improved performance when deleting hashfiles. Its much much quicker now
 - Changed homepage display to split queued jobs and running jobs. Order is now based on queued_at time and priority
+- Refactored the Selection, Parsing, validation and assignment of hashfiles, and their types. Should _hopefully_ be clearer
+### Fixed
+- Fixed issue where listing hashfiles w/o a valid hash_type resulted in an error preventing access to the page
 
 ## [v0.8.0-Beta] - 2022-06-11
 ### Added

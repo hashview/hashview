@@ -13,6 +13,7 @@ Notable changes will be documented here
 - Added new search API
 - Added Test Email button to users profile
 - Added Test Email button to settings page as well
+- Added Analytic Table to display accounts where user:password are the same
 ### Changed
 - Swapped instances of `time` for `datetime`
 - Improved performance when deleting hashfiles. Its much much quicker now

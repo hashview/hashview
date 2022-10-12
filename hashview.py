@@ -59,9 +59,15 @@ def ensure_admin_account(db, bcrypt):
             admin_email = input("Invalid email address. Try again: ")
 
         admin_password = getpass('Enter a password for the Administrator account: ')
-        while len(admin_password) < 14:
-            print('Error: Password must be more than 14 characters.')
+        admin_password_verify = getpass('Re-Enter the password for the Administrator account: ')
+
+        while len(admin_password) < 14 or admin_password != admin_password_verify:
+            if len(admin_password) < 14:
+                print('Error: Password must be more than 14 characters.')
+            else:
+                print('Error: Passwords do not match.')
             admin_password = getpass('Enter a password for the Administrator account: ')
+            admin_password_verify = getpass('Re-Enter the password for the Administrator account: ')
 
         admin_firstname = input('Enter Administrator\'s first name: ')
         while len(admin_firstname) == 0:

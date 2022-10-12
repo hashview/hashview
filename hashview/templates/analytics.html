@@ -695,4 +695,43 @@
             <br>
         </div>
     </div>
+    <div class="row">
+        <div class="col" align="center">
+            <div class="card">
+                <h5 class="card-header">Accounts Where The Password is The Same As The Username</h5>
+                <div class="card-body">
+                    <table class="table">
+                        <tbody>
+                            <tr>
+                            {% set pos = namespace(value=0) %}                         
+                            {% for entry in fig7_table %}
+                                {% set pos.value = pos.value + 1 %}
+                                <td>
+                                    {{entry}}
+                                </td>
+                                {% if pos.value % 3 == 0%}
+                                    </tr>
+                                    <tr>
+                                {% endif %}
+                            {% endfor %}      
+                            </tr>                    
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>    
+    <div class="row">
+        <div class="col" align="center">
+            <br>
+            <br>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col" align="center">
+            <br>
+            <br>
+        </div>
+    </div>
     {% endblock content %}

@@ -2,18 +2,21 @@
 Notable changes will be documented here
 
 ## Current Release
-## [v0.8.1-Beta] - 2022-10-XX
+## [v0.8.1-Beta] - 2022-10-28
 ### Added
 - Added support for max runtimes both for Jobs and Tasks. Admins can set the value (in hours) with = 0 being indefinate. 
 - Added _some_ sanity checks for new hashes. Probably need to go back and update the rest.
 - Added job priority levels. If enabled by the administrator in the settings pane, users can select the priority in which their job gets handled by agents. If disabled. all jobs are treated as first started, first processed.
 - Added ability to Edit existing Tasks
 - Added protections to prevent users from editing a job while its currently running
+- Added ability for users to generate user API key to interface with the hashview server api
+- Added new search API
 ### Changed
 - Swapped instances of `time` for `datetime`
 - Improved performance when deleting hashfiles. Its much much quicker now
 - Changed homepage display to split queued jobs and running jobs. Order is now based on queued_at time and priority
 - Refactored the Selection, Parsing, validation and assignment of hashfiles, and their types. Should _hopefully_ be clearer
+- Modifed API authentication to allow for user and agent auth
 ### Fixed
 - Fixed issue where listing hashfiles w/o a valid hash_type resulted in an error preventing access to the page
 

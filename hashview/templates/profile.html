@@ -43,6 +43,24 @@ Edit your profile.
                     {% endif %}
                 </div>
                 <div class="form-group">
+                    <div class="form-outline">
+                        <label for="usr">User API Key:</label> 
+                        <div class="form-outline mb-3" style="width: 22rem">
+                            <div class="input-group"> 
+                                {% if current_user.api_key %}
+                                    <input class="form-control" id="formControlReadonly" type="text" value={{current_user.api_key}} aria-label="readonly input example" readonly/>
+                                {% else %}
+                                    <input class="form-control" id="formControlReadonly" type="text" value="No key set" aria-label="readonly input example" readonly/>
+                                {% endif %}
+                                <label class="form-label" for="formControlReadonly"></label>    
+                                <div class="input-group-append">
+                                    <a class="fa fa-refresh btn btn-warning fa-1x" href="/profile/generate_api_key" role="button" title=start></a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>                
+                <div class="form-group">
                     {{ form.pushover_user_key.label(class="form-control-label") }}
                     {% if form.pushover_user_key.errors %}
                         {{ form.pushover_user_key(class="form-control form-control-lg is-invalid") }}

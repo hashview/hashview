@@ -11,6 +11,7 @@ from hashview.models import Users, Jobs, Wordlists, Rules, TaskGroups, Tasks
 from hashview.users.forms import LoginForm, UsersForm, ProfileForm, RequestResetForm, ResetPasswordForm
 from hashview.utils.utils import send_email, send_pushover
 
+import uuid
 
 bcrypt = Bcrypt()
 
@@ -133,6 +134,15 @@ def send_test_pushover():
     user = Users.query.get(current_user.id)
     send_pushover(user, 'Test Message From Hashview', 'This is a test pushover message from hashview')
     flash('Pushover Sent', 'success')
+    return redirect(url_for('users.profile'))
+
+@users.route("/profile/generate_api_key", methods=['GET'])
+@login_required
+def generate_api_key():
+    user = Users.query.get(current_user.id)
+    user.api_key = str(uuid.uuid4())
+    db.session.commit()
+    flash('New API Key Set', 'success')
     return redirect(url_for('users.profile'))
 
 @users.route("/reset_password", methods=['GET', 'POST'])

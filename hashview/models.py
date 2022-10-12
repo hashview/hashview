@@ -22,6 +22,7 @@ class Users(db.Model, UserMixin):
     pushover_app_id = db.Column(db.String(50), nullable=True)
     pushover_user_key = db.Column(db.String(50), nullable=True)
     last_login_utc = db.Column(db.DateTime, nullable=True, default=datetime.utcnow)
+    api_key = db.Column(db.String(60), nullable=True)
     wordlists = db.relationship('Wordlists', backref='tbd', lazy=True)
     rules = db.relationship('Rules', backref='owner', lazy=True)
     jobs = db.relationship('Jobs', backref='owner', lazy=True)

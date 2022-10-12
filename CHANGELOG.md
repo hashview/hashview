@@ -38,7 +38,6 @@ Notable changes will be documented here
 ### Removed
 - Removed hashview agent from local processing. If you want to run hashview AND crack hashes on the same box run the hashview-agent in a seperate screen/tmux session
 
-## Current Release
 ## [v0.7.4-beta] - 2018-11-20
 ### Added
 - Added new Analytics portlet "charset breakdown"

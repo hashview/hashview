@@ -336,6 +336,61 @@ def get_analytics():
             break
 
 
+    # Figure 5 (Top 10 Passwords)
+    if customer_id:
+        # we have a customer
+        if hashfile_id:
+            fig5_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).with_entities(Hashes.plaintext).all()
+        else:
+            # just a customer, no specific hashfile
+            fig5_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).join(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').with_entities(Hashes.plaintext).all()
+    else:
+        fig5_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').with_entities(Hashes.plaintext).all()
+
+    fig5_data = {}
+
+    blank_label = 'Blank (unset)'
+    for entry in fig5_cracked_hashes:
+        if len(bytes.fromhex(entry[0]).decode('latin-1')) > 0:
+            if bytes.fromhex(entry[0]).decode('latin-1') in fig5_data:
+                fig5_data[bytes.fromhex(entry[0]).decode('latin-1')] += 1
+            else:
+                fig5_data[bytes.fromhex(entry[0]).decode('latin-1')] = 1
+        else:
+            if blank_label in fig5_data:
+                fig5_data[blank_label] += 1
+            else:
+                fig5_data[blank_label] = 1
+
+    fig5_labels = []
+    fig5_values = []
+
+    # Sort by Highest and Limit to 10
+    for entry in sorted(fig5_data, key=fig5_data.__getitem__, reverse=True):
+        if len (fig5_labels) < 10:
+            fig5_labels.append(entry)
+            fig5_values.append(fig5_data[entry])
+        else:
+            break
+
+    # Figure 7 (Users where Passwords are the same as the username)
+
+    if customer_id:
+        # we have a customer
+        if hashfile_id:
+            fig7_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).with_entities(Hashes.plaintext, HashfileHashes.username).all()
+        else:
+            # just a customer, no specific hashfile
+            fig7_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).join(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').with_entities(Hashes.plaintext, HashfileHashes.username).all()
+    else:
+        fig7_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').with_entities(Hashes.plaintext, HashfileHashes.username).all()
+
+    fig7_table = []
+    for entry in fig7_cracked_hashes:
+        if bytes.fromhex(entry[0]).decode('latin-1') == bytes.fromhex(entry[1]).decode('latin-1'):
+            fig7_table.append(bytes.fromhex(entry[0]).decode('latin-1'))
+    print(fig7_table)
+
     return render_template('analytics.html',
                             title='analytics',
                             fig1_labels=fig1_labels,
@@ -351,6 +406,7 @@ def get_analytics():
                             fig5_values=fig5_values,
                             fig6_values=fig6_values,
                             fig6_total=fig6_total,
+                            fig7_table=fig7_table,
                             customers=customers,
                             hashfiles=hashfiles,
                             hashfile_id=hashfile_id,
@@ -415,7 +471,6 @@ def analytics_download_hashes():
                 outfile.write(str(bytes.fromhex(entry[1].username).decode('latin-1')) + ":" + str(entry[0].ciphertext) + "\n")
             else:
                 outfile.write(str(entry[0].ciphertext) + "\n")
-
 
     outfile.close()
     return send_from_directory('control/tmp', filename, as_attachment=True)

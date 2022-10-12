@@ -11,6 +11,8 @@ Notable changes will be documented here
 - Added protections to prevent users from editing a job while its currently running
 - Added ability for users to generate user API key to interface with the hashview server api
 - Added new search API
+- Added Test Email button to users profile
+- Added Test Email button to settings page as well
 ### Changed
 - Swapped instances of `time` for `datetime`
 - Improved performance when deleting hashfiles. Its much much quicker now

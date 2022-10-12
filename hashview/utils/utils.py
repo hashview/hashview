@@ -1,7 +1,6 @@
 import os
 import secrets
 import hashlib
-import hashlib
 import _md5
 import re
 from datetime import datetime
@@ -43,7 +42,11 @@ def get_filehash(filepath):
 def send_email(user, subject, message):
     msg = Message(subject, recipients=[user.email_address])
     msg.body = message
-    current_app.extensions['mail'].send(msg)
+    try:
+        current_app.extensions['mail'].send(msg)
+        return True
+    except:
+        return False
 
 def send_html_email(user, subject, message):
     msg = Message(subject, recipients=[user.email_address])

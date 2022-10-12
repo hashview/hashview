@@ -136,6 +136,16 @@ def send_test_pushover():
     flash('Pushover Sent', 'success')
     return redirect(url_for('users.profile'))
 
+@users.route("/profile/send_test_email", methods=['GET'])
+@login_required
+def send_test_email():
+    user = Users.query.get(current_user.id)
+    if send_email(user, 'Test Message From Hashview', 'This is a test email message from hashview'):
+        flash('Email Sent', 'success')
+    else:
+        flash('Email Failure. Check SMTP settings.', 'danger')
+    return redirect(url_for('users.profile'))    
+
 @users.route("/profile/generate_api_key", methods=['GET'])
 @login_required
 def generate_api_key():

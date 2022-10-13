@@ -32,6 +32,12 @@ def settings_list():
         elif request.method == 'GET':
             HashviewForm.retention_period.data = settings.retention_period
 
+        try:
+            database_version = db.session.execute('SELECT version_num FROM alembic_version LIMIT 1;').scalar()
+        except:
+            database_version = 'error'
+
+
         return render_template(
             'settings.html',
             title               = 'settings',
@@ -39,7 +45,7 @@ def settings_list():
             HashviewForm        = HashviewForm,
             tmp_folder_size     = tmp_folder_size,
             application_version = hashview.__version__,
-            database_version    = db.get_engine(current_app).execute('SELECT version_num FROM alembic_version LIMIT 1;').fetchone()[0],
+            database_version    = database_version,
         )
     else:
         abort(403)

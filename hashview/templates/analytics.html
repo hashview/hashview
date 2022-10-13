@@ -221,11 +221,13 @@
                     <div class="dropdown-divider"></div>
                     <button class="dropdown-item" onclick=get_chart(2)>Password Complexity</button>
                     <div class="dropdown-divider"></div>
-                    <button class="dropdown-item" onclick=get_chart(3)>Composition Makeup</button>
+                    <button class="dropdown-item" onclick=get_chart(3)>Recovered Hashes</button>                    
                     <div class="dropdown-divider"></div>
-                    <button class="dropdown-item" onclick=get_chart(4)>Passwords Count by Length</button>
+                    <button class="dropdown-item" onclick=get_chart(4)>Composition Makeup</button>
                     <div class="dropdown-divider"></div>
-                    <button class="dropdown-item" onclick=get_chart(5)>Top 10 Passswords</button>
+                    <button class="dropdown-item" onclick=get_chart(5)>Passwords Count by Length</button>
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item" onclick=get_chart(6)>Top 10 Passswords</button>
                 </div>
             </div> 
             <div class="input-group-append">
@@ -252,9 +254,9 @@
                     <a id="recovered_accounts" class="fa fa-download download_btn" role="button" title="Download Chart"></a>
                 </h5>
                 <div class="card-body">
-                    <canvas id="TotalCrackedHashes" width="300" height="300">
+                    <canvas id="TotalCrackedAccountHashes" width="300" height="300">
                         <script>
-                            var vis1 = document.getElementById("TotalCrackedHashes").getContext("2d");
+                            var vis1 = document.getElementById("TotalCrackedAccountHashes").getContext("2d");
                             var doughNut = new Chart(vis1, {
                                 type: 'doughnut',
                                 data: {
@@ -304,8 +306,6 @@
                     </canvas>
                 </div>
             </div>
-
-
         </div>
         <div class="col" align="center">
             <div class="card">
@@ -363,9 +363,121 @@
     </div>
     <div class="row">
         <div class="col" align="center">
-            <br>
+            <div class="card">
+                <h5 class="card-header">Recovered Hashes
+                    <a id="recovered_hashes" class="fa fa-download download_btn" role="button" title="Download Chart"></a>
+                </h5>
+                <div class="card-body">
+                    <canvas id="TotalCrackedHashes2" width="300" height="300">
+                        <script>
+                            var vis3 = document.getElementById("TotalCrackedHashes2").getContext("2d");
+                            var doughNut = new Chart(vis3, {
+                                type: 'doughnut',
+                                data: {
+                                    labels: {{ fig3_labels | safe }},
+                            datasets: [{
+                                label: "my label",
+                                data: {{ fig3_values | safe }},
+                                backgroundColor: ['rgba(192, 0, 0, 0.5)', 'rgba(0, 128, 0, 0.5)']
+                                }]
+                            },
+                            options: { 
+                                percent: {{fig3_percent | safe}}, // Custom variable to store the value in the middle of the chart
+                                responsive: false,
+                                    plugins: {
+                                   
+                                    legend: {
+                                        position: 'bottom',
+                                    },
+                                    title: {
+                                        color: 'rgba(0,0,0,0.6)', //Text color
+                                        display: false,
+                                            text: 'Recovered Accounts',
+                                                font: {
+                                            size: 18,
+                                                family: 'Arial'
+                                        },
+                                        padding: {
+                                            top: 10,
+                                            bottom: 20
+                                        }
+                                    }
+                                },
+                                elements: {
+                                    center: {
+                                        text: 'Red is 2/3 of the total numbers',
+                                            color: '#FF6384', // Default is #000000
+                                                fontStyle: 'Arial', // Default is Arial
+                                                    sidePadding: 20, // Default is 20 (as a percentage)
+                                                        minFontSize: 25, // Default is 20 (in px), set to false and text will not wrap.
+                                                            lineHeight: 25 // Default is 25 (in px), used for when text wraps
+                                    }
+                                }
+                            }
+                        });
+                        chart_download(3);
+                        </script>
+                    </canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col" align="center">
+            <div class="card">
+                <h5 class="card-header">Composition Makeup
+                    <a id="composition_makeup" class="fa fa-download download_btn" role="button" title="Download Chart"></a>
+                </h5> 
+                <div class="card-body">
+                    <canvas id="CharSet" width="300" height="300">
+                        <script>
+                            var ctx = document.getElementById("CharSet").getContext("2d");
+                            var doughNut = new Chart(ctx, {
+                                type: 'doughnut',
+                                data: {
+                                    labels: {{ fig4_labels | safe }},
+                            datasets: [{
+                                label: "my label",
+                                data: {{ fig4_values | safe }},
+                                backgroundColor: ['rgba(192, 0, 0, 0.5)',
+                                'rgba(227, 108, 10, 0.5)',
+                                'rgba(224, 202, 33, 0.5)',
+                                'rgba(0, 128, 0, 0.5)',
+                                'rgba(128, 128, 128, 0.5)',]
+                                    }]
+                                },
+                            options: {
+                                responsive: false,
+                                    plugins: {
+                                    legend: {
+                                        position: 'bottom',
+                                        },
+                                    title: {
+                                        color: 'rgba(0,0,0,0.6)', //Text color
+                                        display: false,
+                                            text: 'Composition Makeup',
+                                                font: {
+                                            size: 18,
+                                                family: 'Arial'
+                                        },
+                                        padding: {
+                                            top: 10,
+                                            bottom: 20
+                                        }
+                                    }
+                                }
+                            }
+                            });
+                            chart_download(3);
+                        </script>
+                    </canvas>
+                </div>
+            </div>
         </div>
     </div>
+    <div class="row">
+        <div class="col" align="center">
+            <br>
+        </div>
+    </div>    
     <div class="row">
         <div class="col" align="center">
             <div class="card">
@@ -448,62 +560,6 @@
                 </div>
             </div>
         </div>
-        <div class="col" align="center">
-            <div class="card">
-                <h5 class="card-header">Composition Makeup
-                    <a id="composition_makeup" class="fa fa-download download_btn" role="button" title="Download Chart"></a>
-                </h5> 
-                <div class="card-body">
-                    <canvas id="CharSet" width="300" height="300">
-                        <script>
-                            var ctx = document.getElementById("CharSet").getContext("2d");
-                            var doughNut = new Chart(ctx, {
-                                type: 'doughnut',
-                                data: {
-                                    labels: {{ fig3_labels | safe }},
-                            datasets: [{
-                                label: "my label",
-                                data: {{ fig3_values | safe }},
-                                backgroundColor: ['rgba(192, 0, 0, 0.5)',
-                                'rgba(227, 108, 10, 0.5)',
-                                'rgba(224, 202, 33, 0.5)',
-                                'rgba(0, 128, 0, 0.5)',
-                                'rgba(128, 128, 128, 0.5)',]
-                                    }]
-                                },
-                            options: {
-                                responsive: false,
-                                    plugins: {
-                                    legend: {
-                                        position: 'bottom',
-                                        },
-                                    title: {
-                                        color: 'rgba(0,0,0,0.6)', //Text color
-                                        display: false,
-                                            text: 'Composition Makeup',
-                                                font: {
-                                            size: 18,
-                                                family: 'Arial'
-                                        },
-                                        padding: {
-                                            top: 10,
-                                            bottom: 20
-                                        }
-                                    }
-                                }
-                            }
-                            });
-                            chart_download(3);
-                        </script>
-                    </canvas>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="row">
-        <div class="col" align="center">
-            <br>
-        </div>
     </div>
     <div class="row">
         <div class="col" align="center">
@@ -523,10 +579,10 @@
                             var doughNut = new Chart(ctx, {
                                 type: 'bar',
                                 data: {
-                                    labels: {{ fig4_labels | safe }},
+                                    labels: {{ fig5_labels | safe }},
                             datasets: [{
                                 label: "Password Counts by Lengths",
-                                data: {{ fig4_values | safe }},
+                                data: {{ fig5_values | safe }},
                                 backgroundColor: ['rgba(0, 128, 0, 0.5)']
                                     }]
                                 },  
@@ -573,11 +629,6 @@
     </div>
     <div class="row">
         <div class="col" align="center">
-            <br>
-        </div>
-    </div>
-    <div class="row">
-        <div class="col" align="center">
             <div class="card">
                 <h5 class="card-header">Top 10 Passwords
                     <a id="top_10_passswords" class="fa fa-download download_btn" role="button" title="Download Chart"></a>
@@ -589,10 +640,10 @@
                             var doughNut = new Chart(ctx, {
                                 type: 'bar',
                                 data: {
-                                    labels: {{ fig5_labels | safe }},
+                                    labels: {{ fig6_labels | safe }},
                             datasets: [{
                                 label: "Top 10 Passwords",
-                                data: {{ fig5_values | safe }},
+                                data: {{ fig6_values | safe }},
                                 backgroundColor: ['rgba(0, 128, 0, 0.5)']
                                     }]
                                 }, 
@@ -641,12 +692,6 @@
     </div>
     <div class="row">
         <div class="col" align="center">
-            <br>
-            <br>
-        </div>
-    </div>
-    <div class="row">
-        <div class="col" align="center">
             <div class="card">
                 <h5 class="card-header">Top 10 Masks</h5>
                 <div class="card-body">
@@ -663,16 +708,16 @@
                                     Percentage:
                                 </th>
                             </tr>
-                            {% for entry in fig6_values %}
+                            {% for entry in fig7_values %}
                             <tr>
                                 <td>
                                     {{entry}}
                                 </td>
                                 <td>
-                                    {{fig6_values[entry]}}
+                                    {{fig7_values[entry]}}
                                 </td>
                                 <td>
-                                    {{ (fig6_values[entry] / fig6_total * 100) | round(2) }}%
+                                    {{ (fig7_values[entry] / fig7_total * 100) | round(2) }}%
                                 </td>
                             </tr>
                             {% endfor %}
@@ -691,12 +736,6 @@
     </div>
     <div class="row">
         <div class="col" align="center">
-            <br>
-            <br>
-        </div>
-    </div>
-    <div class="row">
-        <div class="col" align="center">
             <div class="card">
                 <h5 class="card-header">Accounts Where The Password is The Same As The Username</h5>
                 <div class="card-body">
@@ -704,7 +743,7 @@
                         <tbody>
                             <tr>
                             {% set pos = namespace(value=0) %}                         
-                            {% for entry in fig7_table %}
+                            {% for entry in fig8_table %}
                                 {% set pos.value = pos.value + 1 %}
                                 <td>
                                     {{entry}}
@@ -722,12 +761,6 @@
 
         </div>
     </div>    
-    <div class="row">
-        <div class="col" align="center">
-            <br>
-            <br>
-        </div>
-    </div>
     <div class="row">
         <div class="col" align="center">
             <br>

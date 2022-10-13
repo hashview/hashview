@@ -104,6 +104,32 @@ def get_analytics():
     fig2_labels = [row[0] for row in fig2_data]
     fig2_values = [row[1] for row in fig2_data]
 
+    # Figure 3 Recovered Hashes
+    if customer_id:
+        # we have a customer
+        if hashfile_id: # with a hashfile
+            fig3_cracked_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).distinct(Hashes.plaintext).count()
+            fig3_uncracked_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==hashfile_id).distinct(Hashes.ciphertext).count()
+        else:
+            # just a customer, no specific hashfile
+            fig3_cracked_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).join(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').distinct(Hashes.plaintext).count()
+            fig3_uncracked_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).join(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '0').distinct(Hashes.ciphertext).count()
+    else:
+        fig3_cracked_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').distinct(Hashes.plaintext).count()
+        fig3_uncracked_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='0').distinct(Hashes.ciphertext).count()
+
+    fig3_data = [
+        ("Recovered: " + str(formatDisplay(fig3_cracked_cnt)), fig3_cracked_cnt),
+        ("Unrecovered: " + str(formatDisplay(fig3_uncracked_cnt)), fig3_uncracked_cnt)
+    ]
+
+    fig3_labels = [row[0] for row in fig3_data]
+    fig3_values = [row[1] for row in fig3_data]
+    fig3_total = (fig3_cracked_cnt + fig3_uncracked_cnt)
+
+    # Cracked Percent
+    fig3_percent = 0 if fig3_total is 0 else [str(round(((fig3_cracked_cnt / fig3_total)*100),1)) + '%']    
+
     # General Stats Table
     total_runtime = 0
     total_accounts = 0
@@ -132,7 +158,7 @@ def get_analytics():
     total_accounts = formatDisplay(total_accounts)
     total_unique_hashes = formatDisplay(total_unique_hashes)
 
-    # Figure 3 (Charset Breakdown)
+    # Figure 4 (Charset Breakdown)
     # Reusing fig2_cracked_hashes data
 
     blank = 0
@@ -199,11 +225,11 @@ def get_analytics():
         else:
             other += 1
 
-    fig3_labels = []
-    fig3_values = []
+    fig4_labels = []
+    fig4_values = []
 
     # We only want the top 4 with the 5th being other
-    fig3_dict = {
+    fig4_dict = {
         "Blank (unset): " + str(formatDisplay(blank)): blank,
         "Numeric Only: " + str(formatDisplay(numeric)) : numeric,
         "LowerAlpha Only: " + str(formatDisplay(loweralpha)): loweralpha,
@@ -222,53 +248,22 @@ def get_analytics():
         "Other: " + str(formatDisplay(other)): other,
         }
 
-    fig3_array_sorted = dict(sorted(fig3_dict.items(), key=operator.itemgetter(1),reverse=True))
+    fig4_array_sorted = dict(sorted(fig4_dict.items(), key=operator.itemgetter(1),reverse=True))
 
     limit = 0
-    fig3_other = 0
-    for key in fig3_array_sorted:
+    fig4_other = 0
+    for key in fig4_array_sorted:
         if limit <= 3:
-            fig3_labels.append(key)
-            fig3_values.append(fig3_array_sorted[key])
+            fig4_labels.append(key)
+            fig4_values.append(fig4_array_sorted[key])
             limit += 1
         else:
-            fig3_other += fig3_array_sorted[key]
+            fig4_other += fig4_array_sorted[key]
 
-    fig3_labels.append('Other: ' + str(fig3_other))
-    fig3_values.append(fig3_other)
+    fig4_labels.append('Other: ' + str(fig4_other))
+    fig4_values.append(fig4_other)
 
     # Figure 4 (Passwords by Length)
-    if customer_id:
-        # we have a customer
-        if hashfile_id:
-            fig4_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).with_entities(Hashes.plaintext).all()
-        else:
-            # just a customer, no specific hashfile
-            fig4_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).join(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').with_entities(Hashes.plaintext).all()
-    else:
-        fig4_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').with_entities(Hashes.plaintext).all()
-
-    fig4_data = {}
-
-    for entry in fig4_cracked_hashes:
-        #print(str(entry))
-        if len(bytes.fromhex(entry[0]).decode('latin-1')) in fig4_data:
-            fig4_data[len(bytes.fromhex(entry[0]).decode('latin-1'))] += 1
-        else:
-            fig4_data[len(bytes.fromhex(entry[0]).decode('latin-1'))] = 1
-
-    fig4_labels =[]
-    fig4_values = []
-
-    # Sort by length and limit to 20
-    for entry in sorted(fig4_data):
-        if len(fig4_labels) < 20:
-            fig4_labels.append(entry)
-            fig4_values.append(fig4_data[entry])
-        else:
-            break
-
-    # Figure 5 (Top 10 Passwords)
     if customer_id:
         # we have a customer
         if hashfile_id:
@@ -281,36 +276,66 @@ def get_analytics():
 
     fig5_data = {}
 
-    blank_label = 'Blank (unset)'
     for entry in fig5_cracked_hashes:
-        if len(bytes.fromhex(entry[0]).decode('latin-1')) > 0:
-            if bytes.fromhex(entry[0]).decode('latin-1') in fig5_data:
-                fig5_data[bytes.fromhex(entry[0]).decode('latin-1')] += 1
-            else:
-                fig5_data[bytes.fromhex(entry[0]).decode('latin-1')] = 1
+        if len(bytes.fromhex(entry[0]).decode('latin-1')) in fig5_data:
+            fig5_data[len(bytes.fromhex(entry[0]).decode('latin-1'))] += 1
         else:
-            if blank_label in fig5_data:
-                fig5_data[blank_label] += 1
-            else:
-                fig5_data[blank_label] = 1
+            fig5_data[len(bytes.fromhex(entry[0]).decode('latin-1'))] = 1
 
-    fig5_labels = []
+    fig5_labels =[]
     fig5_values = []
 
-    # Sort by Highest and Limit to 10
-    for entry in sorted(fig5_data, key=fig5_data.__getitem__, reverse=True):
-        if len (fig5_labels) < 10:
+    # Sort by length and limit to 20
+    for entry in sorted(fig5_data):
+        if len(fig5_labels) < 20:
             fig5_labels.append(entry)
             fig5_values.append(fig5_data[entry])
         else:
             break
 
+    # Figure 5 (Top 10 Passwords)
+    if customer_id:
+        # we have a customer
+        if hashfile_id:
+            fig6_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).with_entities(Hashes.plaintext).all()
+        else:
+            # just a customer, no specific hashfile
+            fig6_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).join(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').with_entities(Hashes.plaintext).all()
+    else:
+        fig6_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').with_entities(Hashes.plaintext).all()
+
+    fig6_data = {}
+
+    blank_label = 'Blank (unset)'
+    for entry in fig6_cracked_hashes:
+        if len(bytes.fromhex(entry[0]).decode('latin-1')) > 0:
+            if bytes.fromhex(entry[0]).decode('latin-1') in fig6_data:
+                fig6_data[bytes.fromhex(entry[0]).decode('latin-1')] += 1
+            else:
+                fig6_data[bytes.fromhex(entry[0]).decode('latin-1')] = 1
+        else:
+            if blank_label in fig6_data:
+                fig6_data[blank_label] += 1
+            else:
+                fig6_data[blank_label] = 1
+
+    fig6_labels = []
+    fig6_values = []
+
+    # Sort by Highest and Limit to 10
+    for entry in sorted(fig6_data, key=fig6_data.__getitem__, reverse=True):
+        if len (fig6_labels) < 10:
+            fig6_labels.append(entry)
+            fig6_values.append(fig6_data[entry])
+        else:
+            break
+
     # Figure 6 (Top 10 Masks)
     # Using Fig 5 data for this
-    fig6_values = {}
-    fig6_data = {}
-    fig6_total = 0
-    for entry in fig5_cracked_hashes:
+    fig7_values = {}
+    fig7_data = {}
+    fig7_total = 0
+    for entry in fig6_cracked_hashes:
         tmp_plaintext = bytes.fromhex(entry[0]).decode('latin-1')
         tmp_plaintext = re.sub(r"[A-Z]", 'U', tmp_plaintext)
         tmp_plaintext = re.sub(r"[a-z]", 'L', tmp_plaintext)
@@ -322,74 +347,35 @@ def get_analytics():
         tmp_plaintext = re.sub(r"D", '?d', tmp_plaintext)
         tmp_plaintext = re.sub(r"S", '?s', tmp_plaintext)
 
-        if tmp_plaintext not in fig6_data:
-            fig6_data[tmp_plaintext] = 1
+        if tmp_plaintext not in fig7_data:
+            fig7_data[tmp_plaintext] = 1
         else:
-            fig6_data[tmp_plaintext] += 1
-        fig6_total +=1
-
-            # Sort by Highest and Limit to 10
-    for entry in sorted(fig6_data, key=fig6_data.__getitem__, reverse=True):
-        if len (fig6_values) < 10:
-            fig6_values[entry] = fig6_data[entry]
-        else:
-            break
-
-
-    # Figure 5 (Top 10 Passwords)
-    if customer_id:
-        # we have a customer
-        if hashfile_id:
-            fig5_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).with_entities(Hashes.plaintext).all()
-        else:
-            # just a customer, no specific hashfile
-            fig5_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).join(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').with_entities(Hashes.plaintext).all()
-    else:
-        fig5_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').with_entities(Hashes.plaintext).all()
-
-    fig5_data = {}
-
-    blank_label = 'Blank (unset)'
-    for entry in fig5_cracked_hashes:
-        if len(bytes.fromhex(entry[0]).decode('latin-1')) > 0:
-            if bytes.fromhex(entry[0]).decode('latin-1') in fig5_data:
-                fig5_data[bytes.fromhex(entry[0]).decode('latin-1')] += 1
-            else:
-                fig5_data[bytes.fromhex(entry[0]).decode('latin-1')] = 1
-        else:
-            if blank_label in fig5_data:
-                fig5_data[blank_label] += 1
-            else:
-                fig5_data[blank_label] = 1
-
-    fig5_labels = []
-    fig5_values = []
+            fig7_data[tmp_plaintext] += 1
+        fig7_total +=1
 
     # Sort by Highest and Limit to 10
-    for entry in sorted(fig5_data, key=fig5_data.__getitem__, reverse=True):
-        if len (fig5_labels) < 10:
-            fig5_labels.append(entry)
-            fig5_values.append(fig5_data[entry])
+    for entry in sorted(fig7_data, key=fig7_data.__getitem__, reverse=True):
+        if len (fig7_values) < 10:
+            fig7_values[entry] = fig7_data[entry]
         else:
             break
 
-    # Figure 7 (Users where Passwords are the same as the username)
+    # Figure 8 (Users where Passwords are the same as the username)
 
     if customer_id:
         # we have a customer
         if hashfile_id:
-            fig7_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).with_entities(Hashes.plaintext, HashfileHashes.username).all()
+            fig8_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).with_entities(Hashes.plaintext, HashfileHashes.username).all()
         else:
             # just a customer, no specific hashfile
-            fig7_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).join(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').with_entities(Hashes.plaintext, HashfileHashes.username).all()
+            fig8_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).join(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').with_entities(Hashes.plaintext, HashfileHashes.username).all()
     else:
-        fig7_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').with_entities(Hashes.plaintext, HashfileHashes.username).all()
+        fig8_cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').with_entities(Hashes.plaintext, HashfileHashes.username).all()
 
-    fig7_table = []
-    for entry in fig7_cracked_hashes:
+    fig8_table = []
+    for entry in fig8_cracked_hashes:
         if bytes.fromhex(entry[0]).decode('latin-1') == bytes.fromhex(entry[1]).decode('latin-1'):
-            fig7_table.append(bytes.fromhex(entry[0]).decode('latin-1'))
-    print(fig7_table)
+            fig8_table.append(bytes.fromhex(entry[0]).decode('latin-1'))
 
     return render_template('analytics.html',
                             title='analytics',
@@ -399,14 +385,17 @@ def get_analytics():
                             fig2_labels=fig2_labels,
                             fig2_values=fig2_values,
                             fig3_labels=fig3_labels,
-                            fig3_values=fig3_values,
+                            fig3_values=fig3_values, 
+                            fig3_percent=fig3_percent,                           
                             fig4_labels=fig4_labels,
                             fig4_values=fig4_values,
                             fig5_labels=fig5_labels,
                             fig5_values=fig5_values,
+                            fig6_labels=fig6_labels,
                             fig6_values=fig6_values,
-                            fig6_total=fig6_total,
-                            fig7_table=fig7_table,
+                            fig7_values=fig7_values,
+                            fig7_total=fig7_total,
+                            fig8_table=fig8_table,
                             customers=customers,
                             hashfiles=hashfiles,
                             hashfile_id=hashfile_id,

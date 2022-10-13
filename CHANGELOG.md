@@ -13,7 +13,8 @@ Notable changes will be documented here
 - Added new search API
 - Added Test Email button to users profile
 - Added Test Email button to settings page as well
-- Added Analytic Table to display accounts where user:password are the same
+- Added Analytics Table to display accounts where user:password are the same
+- Added Analytics Table to display Recovered Hashes rate (as opposed to recovered accounts)
 ### Changed
 - Swapped instances of `time` for `datetime`
 - Improved performance when deleting hashfiles. Its much much quicker now

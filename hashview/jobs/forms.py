@@ -10,7 +10,7 @@ class JobsForm(FlaskForm):
 													('4', '4 - higher'),
 													('3', '3 - normal'),
 													('2', '2 - lower'),
-													('1', '1 - lowest')], validators=[DataRequired()])
+													('1', '1 - lowest')], default=3, validators=[DataRequired()])
 	customer_id = StringField('Customer ID (unused)', validators=[DataRequired()])
 	customer_name = StringField('Customer Name (unused)')
 	submit = SubmitField('Next')

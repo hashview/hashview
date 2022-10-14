@@ -374,8 +374,9 @@ def get_analytics():
 
     fig8_table = []
     for entry in fig8_cracked_hashes:
-        if bytes.fromhex(entry[0]).decode('latin-1') == bytes.fromhex(entry[1]).decode('latin-1'):
-            fig8_table.append(bytes.fromhex(entry[0]).decode('latin-1'))
+        if entry[1] and entry[0]:
+            if bytes.fromhex(entry[0]).decode('latin-1') == bytes.fromhex(entry[1]).decode('latin-1'):
+                fig8_table.append(bytes.fromhex(entry[0]).decode('latin-1'))
 
     return render_template('analytics.html',
                             title='analytics',

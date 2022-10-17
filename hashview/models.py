@@ -53,7 +53,7 @@ class Users(db.Model, UserMixin):
     def get_reset_token(self, expires_sec:int=1800):
         header = dict(alg='HS512')
 
-        issued_at = int(time.time())
+        issued_at = int(datetime.today().timestamp())
         expiration_time = (issued_at + expires_sec)
         payload = dict(
             user_id = self.id,

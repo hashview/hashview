@@ -118,15 +118,18 @@ def updateJobTask(job_task_id, task_status):
         'job_task_id': job_task_id
     }
 
-    response = http.post('/v1/jobtask/status', json.loads(json.dumps(message)))
-    decoded_response = json.loads(response)
-    if decoded_response['type'] == 'message' and decoded_response['status'] == 200:
-        return decoded_response
-    elif decoded_response['type'] == 'message' and decoded_response['status'] == 426:
-        print('Our agent version is older than the servers. You need to upgrade your agent before continuing.')
-        exit()
-    else:
-        print('We got an unexpected response type or status code.')
-        print('Type: ' + str(decoded_response['type']))
-        print('Code: ' + str(decoded_response['status']))
-        return decoded_response
+    try:
+        response = http.post('/v1/jobtask/status', json.loads(json.dumps(message)))
+        decoded_response = json.loads(response)
+        if decoded_response['type'] == 'message' and decoded_response['status'] == 200:
+            return decoded_response
+        elif decoded_response['type'] == 'message' and decoded_response['status'] == 426:
+            print('Our agent version is older than the servers. You need to upgrade your agent before continuing.')
+            exit()
+
+        with suppress(TypeError):
+            # suppress NoneType error, so the status can be completed even if it fails.
+            print("Program returned None.")
+    except Exception as e:
+        print(e)
+        return

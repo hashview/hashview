@@ -2,8 +2,14 @@ from flask import Flask
 
 __version__ = '0.8.1'
 
-# Jinja2 Filter
+
+def get_application_version() -> str:
+    """ jinja2 function to get the application version from within a template """
+    return __version__
+
+
 def jinja_hex_decode(text):
+    """ jinja2 filter to convert hex to bytes """
     if not text:
         return text #if all hashes in a file are already cracked
     else:
@@ -70,6 +76,6 @@ def create_app():
     app.register_blueprint(notifications)
     app.register_blueprint(searches)
 
-    # Add custom Jinja2 Filters
     app.add_template_filter(jinja_hex_decode)
+    app.add_template_global(get_application_version, get_application_version.__name__)
     return app

@@ -144,7 +144,7 @@ def send_test_email():
         flash('Email Sent', 'success')
     else:
         flash('Email Failure. Check SMTP settings.', 'danger')
-    return redirect(url_for('users.profile'))    
+    return redirect(url_for('users.profile'))
 
 @users.route("/profile/generate_api_key", methods=['GET'])
 @login_required
@@ -157,18 +157,19 @@ def generate_api_key():
 
 @users.route("/reset_password", methods=['GET', 'POST'])
 def reset_request():
-
     form = RequestResetForm()
     if form.validate_on_submit():
         user = Users.query.filter_by(email_address=form.email.data).first()
         if user:
             token = user.get_reset_token()
             subject = 'Password Reset Request.'
-            message = f'''To reset your password, vist the following link:
-    {url_for('users.reset_token', user_id=user.id, token=token, _external=True)}
+            message = dedent(f'''\
+                To reset your password, vist the following link:
 
-    If you did not make this request... then something phishy is going on.
-    '''
+                {url_for('users.reset_token', user_id=user.id, token=token, _external=True)}
+
+                If you did not make this request... then something phishy is going on.
+            ''')
             send_email(user, subject, message)
         flash('An email has been sent to '+  form.email.data, 'info')
         return redirect(url_for('users.login_get'))
@@ -190,7 +191,7 @@ def admin_reset(user_id):
             {url_for('users.reset_token', user_id=user_id, token=token, _external=True)}
 
             If you did not make this request... then something phishy is going on.
-            ''')
+        ''')
         send_email(user, subject, message)
         flash('An email has been sent to '+  user.email_address, 'info')
         return redirect(url_for('users.users_list'))

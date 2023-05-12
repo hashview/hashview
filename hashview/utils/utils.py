@@ -109,16 +109,28 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                 # forcing lower casing of hash as hashcat will return lower cased version of the has and we want to match what we imported.
                 if hash_type == '300':
                     hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
+                elif hash_type == '2100':
+                    line = line.lower().rstrip()
+                    line = line.replace('$dcc2$', '$DCC2$')
+                    hash_id = import_hash_only(line, hash_type)
                 else:
                     hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
+                # extract username from dcc2 hash
                 if hash_type == '2100':
                     username = line.split('#')[1]
                 else:
                     username = None
             elif file_type == 'user_hash':
                 if ':' in line:
-                    hash_id = import_hash_only(line=line.split(':',1)[1].rstrip(), hash_type=hash_type)
-                    username = line.split(':')[0]
+                    if hash_type == '2100':
+                        line = line.split(':',1)[1].rstrip()
+                        line = line.lower()
+                        line = line.replace('$dcc2$', '$DCC2$')
+                        hash_id = import_hash_only(line, hash_type)
+                        username = line.split(':')[0]
+                    else:
+                        hash_id = import_hash_only(line=line.split(':',1)[1].rstrip(), hash_type=hash_type)
+                        username = line.split(':')[0]
                 else:
                     return False
             elif file_type == 'shadow':

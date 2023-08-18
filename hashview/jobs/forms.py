@@ -70,7 +70,7 @@ class JobsNewHashFileForm(FlaskForm):
 													('6000', '(6000) RIPEMD-160'),
 													('10100', '(10100) SipHash'),
 													('14000', '(14000) DES (PT = $salt, key = $pass)'),
-													('14101', '(410) SHA-256 + salt ($pass.$salt)'),
+													('1410', '(1410) SHA-256 + salt ($pass.$salt)'),
 													('18000', '(18000) Keccak-512'),
 
 													('', ''), # Spacer for better visibility
@@ -101,6 +101,7 @@ class JobsNewHashFileForm(FlaskForm):
 													('112', '(112) Oracle 11+'),	
 													('131', '(131) Microsoft MSSQL (all versions)'),												
 													('300', '(300) MySQL (all versions)'),
+													('1731', '(1731) MSSQL (2012, 2014)'),
 													
 													('', ''), # Spacer for better visibility
 													('', 'M O B I L E'),

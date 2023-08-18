@@ -3,6 +3,7 @@ from flask_login import login_required, current_user
 from hashview.models import Hashfiles, Customers, Jobs, HashfileHashes, HashNotifications, Hashes
 from hashview.models import db
 from sqlalchemy.sql import exists
+from sqlalchemy import delete
 
 hashfiles = Blueprint('hashfiles', __name__)
 
@@ -24,7 +25,11 @@ def hashfiles_list():
         cracked_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).count()
         hash_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id==hashfile.id).count()
         cracked_rate[hashfile.id] = "(" + str(cracked_cnt) + "/" + str(hash_cnt) + ")"
-        hash_type_dict[hashfile.id] = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id==hashfile.id).first().hash_type
+        if db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id==hashfile.id).first():
+            hash_type_dict[hashfile.id] = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id==hashfile.id).first().hash_type
+        else:
+            hash_type_dict[hashfile.id] = 'UNKNOWN'
+            
 
     return render_template('hashfiles.html', title='Hashfiles', hashfiles=hashfiles, customers=customers, cracked_rate=cracked_rate, jobs=jobs, hash_type_dict=hash_type_dict)
 
@@ -40,21 +45,10 @@ def hashfiles_delete(hashfile_id):
                 flash('Error: Hashfile currently associated with a job.', 'danger')
                 return redirect(url_for('hashfiles.hashfiles_list'))
             else:
-                hashfile_hashes = HashfileHashes.query.filter_by(hashfile_id = hashfile_id).all()
-                for hashfile_hash in hashfile_hashes:
-                    hashes = Hashes.query.filter_by(id=hashfile_hash.hash_id).filter_by(cracked=0)
-                    for hash in hashes:
-                        # Check to see if our hashfile is the ONLY hashfile that has this hash
-                        # if duplicates exist, they can still be removed. Once the hashfile_hash entry is remove,
-                        # the total number of matching hash_id's will be reduced to < 2 and then can be deleted
-                        hashfile_cnt = HashfileHashes.query.filter_by(hash_id=hash.id).distinct('hashfile_id').count()
-                        if hashfile_cnt < 2:
-                            db.session.delete(hash)
-                            db.session.commit()
-                        HashNotifications.query.filter_by(hash_id=hashfile_hash.hash_id).delete()
-                    #db.session.delete(hashes)
-                    db.session.delete(hashfile_hash)
-                db.session.delete(hashfile)
+                HashfileHashes.query.filter_by(hashfile_id = hashfile_id).delete()
+                Hashfiles.query.filter_by(id = hashfile_id).delete()
+                Hashes.query.filter().where(~exists().where(Hashes.id == HashfileHashes.hash_id)).where(Hashes.cracked == 0).delete(synchronize_session='fetch')
+                HashNotifications.query.filter(~exists().where(HashNotifications.hash_id == HashfileHashes.hash_id)).filter(Hashes.cracked == 0).delete(synchronize_session='fetch')
                 db.session.commit()
                 flash('Hashfile has been deleted!', 'success')
                 return redirect(url_for('hashfiles.hashfiles_list'))

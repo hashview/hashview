@@ -59,9 +59,15 @@ def ensure_admin_account(db, bcrypt):
             admin_email = input("Invalid email address. Try again: ")
 
         admin_password = getpass('Enter a password for the Administrator account: ')
-        while len(admin_password) < 14:
-            print('Error: Password must be more than 14 characters.')
+        admin_password_verify = getpass('Re-Enter the password for the Administrator account: ')
+
+        while len(admin_password) < 14 or admin_password != admin_password_verify:
+            if len(admin_password) < 14:
+                print('Error: Password must be more than 14 characters.')
+            else:
+                print('Error: Passwords do not match.')
             admin_password = getpass('Enter a password for the Administrator account: ')
+            admin_password_verify = getpass('Re-Enter the password for the Administrator account: ')
 
         admin_firstname = input('Enter Administrator\'s first name: ')
         while len(admin_firstname) == 0:
@@ -97,8 +103,13 @@ def ensure_settings(db):
             retention_period_raw = input("Enter how long data should be retained in DB in days. (note: cracked hashes->plaintext will be be safe from retention culling): ")
             retention_period_int = int(retention_period_raw)
 
+        max_runtime_tasks_int :int = 0
+        max_runtime_jobs_int :int = 0
+
         settings = Settings(
             retention_period = retention_period_int,
+            max_runtime_tasks = max_runtime_tasks_int,
+            max_runtime_jobs = max_runtime_jobs_int
         )
         db.session.add(settings)
         db.session.commit()
@@ -235,7 +246,6 @@ def ensure_version_alignment():
 def data_retention_cleanup(app):
     with app.app_context():
         import os
-        import time
 
         from datetime import datetime, timedelta
 

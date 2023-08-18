@@ -14,6 +14,8 @@ main = Blueprint('main', __name__)
 @login_required
 def home():
     jobs = Jobs.query.filter(or_((Jobs.status.like('Running')),(Jobs.status.like('Queued'))))
+    running_jobs = Jobs.query.filter_by(status = 'Running').order_by(Jobs.priority.desc(), Jobs.queued_at.asc()).all()
+    queued_jobs = Jobs.query.filter_by(status = 'Queued').order_by(Jobs.priority.desc(), Jobs.queued_at.asc()).all()
     users = Users.query.all()
     customers = Customers.query.all()
     job_tasks = JobTasks.query.all()
@@ -29,15 +31,11 @@ def home():
             recovered_list[agent.id] = json.loads(agent.hc_status)['Recovered']
             time_estimated_list[agent.id] = json.loads(agent.hc_status)['Time_Estimated']
 
-    # These are going to have to be put into an array :(
-    #fig1_cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).count()
-    #fig1_uncracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==hashfile_id).count()
-
     collapse_all = ""
     for job in jobs:
         collapse_all = (collapse_all + "collapse" + str(job.id) + " ")
 
-    return render_template('home.html', jobs=jobs, users=users, customers=customers, job_tasks=job_tasks, tasks=tasks, agents=agents, recovered_list=recovered_list, time_estimated_list=time_estimated_list, collapse_all=collapse_all)
+    return render_template('home.html', jobs=jobs, running_jobs=running_jobs, queued_jobs=queued_jobs, users=users, customers=customers, job_tasks=job_tasks, tasks=tasks, agents=agents, recovered_list=recovered_list, time_estimated_list=time_estimated_list, collapse_all=collapse_all)
 
 @main.route("/job_task/stop/<int:job_task_id>")
 @login_required

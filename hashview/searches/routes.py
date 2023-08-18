@@ -52,7 +52,7 @@ def export_results(customers, results, hashfiles, separator):
     byteIO.write(strIO.getvalue().encode())
     byteIO.seek(0)
     strIO.close()
-    return send_file(byteIO, attachment_filename="search.txt", as_attachment=True)
+    return send_file(byteIO, download_name="search.txt", as_attachment=True)
 
 #If this logic changes on in the html (search.html) it will need to change here as well
 def get_rows(strIO, customers, results, hashfiles, separator):

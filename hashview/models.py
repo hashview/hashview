@@ -1,5 +1,4 @@
 import json
-import time
 
 from hashlib import sha512
 from datetime import datetime
@@ -23,6 +22,7 @@ class Users(db.Model, UserMixin):
     pushover_app_id = db.Column(db.String(50), nullable=True)
     pushover_user_key = db.Column(db.String(50), nullable=True)
     last_login_utc = db.Column(db.DateTime, nullable=True, default=datetime.utcnow)
+    api_key = db.Column(db.String(60), nullable=True)
     wordlists = db.relationship('Wordlists', backref='tbd', lazy=True)
     rules = db.relationship('Rules', backref='owner', lazy=True)
     jobs = db.relationship('Jobs', backref='owner', lazy=True)
@@ -53,7 +53,7 @@ class Users(db.Model, UserMixin):
     def get_reset_token(self, expires_sec:int=1800):
         header = dict(alg='HS512')
 
-        issued_at = int(time.time())
+        issued_at = int(datetime.today().timestamp())
         expiration_time = (issued_at + expires_sec)
         payload = dict(
             user_id = self.id,
@@ -98,12 +98,17 @@ class Users(db.Model, UserMixin):
 class Settings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     retention_period = db.Column(db.Integer)
+    max_runtime_jobs = db.Column(db.Integer)                    # Time will be measured in hours
+    max_runtime_tasks = db.Column(db.Integer)                   # Time will be measured in hours
+    enabled_job_weights = db.Column(db.Boolean, nullable=False, default=False)
 
 class Jobs(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
+    priority = db.Column(db.Integer, nullable=False, default=3) # 5 = highest priority. 1 = lowest priority
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    queued_at = db.Column(db.DateTime, nullable=True)
     status = db.Column(db.String(20), nullable=False)           # Running, Paused, Completed, Queued, Canceled, Ready, Incomplete
     started_at = db.Column(db.DateTime, nullable=True)          # These defaults should be changed
     ended_at = db.Column(db.DateTime, nullable=True)            # These defaults should be changed
@@ -115,8 +120,10 @@ class JobTasks(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     job_id = db.Column(db.Integer, nullable=False)
     task_id = db.Column(db.Integer, nullable=False)
+    priority = db.Column(db.Integer, nullable=False, default=3)
     command = db.Column(db.String(1024))
     status = db.Column(db.String(50), nullable=False)       # Running, Paused, Not Started, Completed, Queued, Canceled, Importing
+    started_at = db.Column(db.DateTime, nullable=True)      # These defaults should be changed
     agent_id = db.Column(db.Integer, db.ForeignKey('agents.id'))
 
 class Customers(db.Model):

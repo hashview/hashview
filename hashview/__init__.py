@@ -1,6 +1,6 @@
 from flask import Flask
 
-__version__ = '0.8.0'
+__version__ = '0.8.1'
 
 # Jinja2 Filter
 def jinja_hex_decode(text):

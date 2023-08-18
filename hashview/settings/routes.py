@@ -26,11 +26,17 @@ def settings_list():
 
         if HashviewForm.validate_on_submit():
             settings.retention_period = HashviewForm.retention_period.data
+            settings.max_runtime_jobs = HashviewForm.max_runtime_jobs.data
+            settings.max_runtime_tasks = HashviewForm.max_runtime_tasks.data
+            settings.enabled_job_weights = HashviewForm.enabled_job_weights.data
             db.session.commit()
             flash('Updated Hashview settings!', 'success')
             return redirect(url_for('settings.settings_list'))
         elif request.method == 'GET':
             HashviewForm.retention_period.data = settings.retention_period
+            HashviewForm.max_runtime_jobs.data = settings.max_runtime_jobs
+            HashviewForm.max_runtime_tasks.data = settings.max_runtime_tasks
+            HashviewForm.enabled_job_weights.data = settings.enabled_job_weights
 
         try:
             database_version = db.session.execute('SELECT version_num FROM alembic_version LIMIT 1;').scalar()

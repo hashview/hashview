@@ -10,12 +10,51 @@ Apply hashes to be cracked. You can either copy/paste the desired hashes below, 
 {% endblock header %}
 {% block content %}
 <script>
-    function showHashTypeSelect(){
-        document.getElementById('hash_type_div').style.display = 'inline';
+    function showHashTypeSelected(selectedObject){
+        if (selectedObject.value == 'pwdump'){
+            document.getElementById('pwdump_hash_type_div').style.display = 'inline';
+            document.getElementById('netntlm_hash_type_div').style.display = 'none';
+            document.getElementById('kerberos_hash_type_div').style.display = 'none';
+            document.getElementById('shadow_hash_type_div').style.display = 'none';
+            document.getElementById('hash_type_div').style.display = 'none';
+            document.getElementById('hashfile_div').style.display = 'none';
+        }
+        if (selectedObject.value == 'NetNTLM'){
+            document.getElementById('pwdump_hash_type_div').style.display = 'none';
+            document.getElementById('netntlm_hash_type_div').style.display = 'inline';
+            document.getElementById('kerberos_hash_type_div').style.display = 'none';
+            document.getElementById('shadow_hash_type_div').style.display = 'none';
+            document.getElementById('hash_type_div').style.display = 'none';
+            document.getElementById('hashfile_div').style.display = 'none';
+        }
+        if (selectedObject.value == 'kerberos'){
+            document.getElementById('pwdump_hash_type_div').style.display = 'none';
+            document.getElementById('netntlm_hash_type_div').style.display = 'none';
+            document.getElementById('kerberos_hash_type_div').style.display = 'inline';
+            document.getElementById('shadow_hash_type_div').style.display = 'none';
+            document.getElementById('hash_type_div').style.display = 'none';
+            document.getElementById('hashfile_div').style.display = 'none';
+        }
+        if (selectedObject.value == 'shadow'){
+            document.getElementById('pwdump_hash_type_div').style.display = 'none';
+            document.getElementById('netntlm_hash_type_div').style.display = 'none';
+            document.getElementById('kerberos_hash_type_div').style.display = 'none';
+            document.getElementById('shadow_hash_type_div').style.display = 'inline';
+            document.getElementById('hash_type_div').style.display = 'none';
+            document.getElementById('hashfile_div').style.display = 'none';
+        }
+        if (selectedObject.value == 'user_hash' || selectedObject.value == 'hash_only'){
+            document.getElementById('pwdump_hash_type_div').style.display = 'none';
+            document.getElementById('netntlm_hash_type_div').style.display = 'none';
+            document.getElementById('kerberos_hash_type_div').style.display = 'none';
+            document.getElementById('shadow_hash_type_div').style.display = 'none';
+            document.getElementById('hash_type_div').style.display = 'inline';
+            document.getElementById('hashfile_div').style.display = 'none';
+        }                                       
     }
     function showHashFileSubmit(){
         document.getElementById('hashfile_div').style.display = 'inline';
-    }
+    }   
 </script>
 <nav>
     <div class="nav nav-tabs" id="nav-tab" role="tablist">
@@ -50,9 +89,69 @@ Apply hashes to be cracked. You can either copy/paste the desired hashes below, 
                                 {% endfor %}
                             </div>
                         {% else %}
-                            {{ jobsNewHashFileForm.file_type(class="form-control form-control-lg", onchange="showHashTypeSelect()") }}
+                            {{ jobsNewHashFileForm.file_type(class="form-control form-control-lg", onchange="showHashTypeSelected(this)") }}
                         {% endif %}
                     </div> 
+                    <!-- PwDump Hash Type-->
+                    <div class="form-group" style=display:none id="pwdump_hash_type_div">
+                        {{ jobsNewHashFileForm.pwdump_hash_type.label(class="form-control-label") }}
+
+                        {% if jobsNewHashFileForm.pwdump_hash_type.errors %}
+                            {{ jobsNewHashFileForm.pwdump_hash_type(class="form-control form-control-lg is-invalid") }}
+                            <div class="invalid-feedback">
+                                {% for error in jobsNewHashFileForm.pwdump_hash_type.errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ jobsNewHashFileForm.pwdump_hash_type(class="form-control form-control-lg", onchange="showHashFileSubmit()") }}
+                        {% endif %}
+                    </div>
+                    <!-- Net NTLM Hash Type-->
+                    <div class="form-group" style=display:none id="netntlm_hash_type_div">
+                        {{ jobsNewHashFileForm.netntlm_hash_type.label(class="form-control-label") }}
+
+                        {% if jobsNewHashFileForm.netntlm_hash_type.errors %}
+                            {{ jobsNewHashFileForm.netntlm_hash_type(class="form-control form-control-lg is-invalid") }}
+                            <div class="invalid-feedback">
+                                {% for error in jobsNewHashFileForm.netntlm_hash_type.errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ jobsNewHashFileForm.netntlm_hash_type(class="form-control form-control-lg", onchange="showHashFileSubmit()") }}
+                        {% endif %}
+                    </div>
+                    <!-- Kerberos Hash Type-->
+                    <div class="form-group" style=display:none id="kerberos_hash_type_div">
+                        {{ jobsNewHashFileForm.kerberos_hash_type.label(class="form-control-label") }}
+
+                        {% if jobsNewHashFileForm.kerberos_hash_type.errors %}
+                            {{ jobsNewHashFileForm.kerberos_hash_type(class="form-control form-control-lg is-invalid") }}
+                            <div class="invalid-feedback">
+                                {% for error in jobsNewHashFileForm.kerberos_hash_type.errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ jobsNewHashFileForm.kerberos_hash_type(class="form-control form-control-lg", onchange="showHashFileSubmit()") }}
+                        {% endif %}
+                    </div>
+                    <!-- Shadow Hash Type-->
+                    <div class="form-group" style=display:none id="shadow_hash_type_div">
+                        {{ jobsNewHashFileForm.shadow_hash_type.label(class="form-control-label") }}
+
+                        {% if jobsNewHashFileForm.shadow_hash_type.errors %}
+                            {{ jobsNewHashFileForm.shadow_hash_type(class="form-control form-control-lg is-invalid") }}
+                            <div class="invalid-feedback">
+                                {% for error in jobsNewHashFileForm.shadow_hash_type.errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ jobsNewHashFileForm.shadow_hash_type(class="form-control form-control-lg", onchange="showHashFileSubmit()") }}
+                        {% endif %}
+                    </div>                                                            
                     <!-- Hash Type-->
                     <div class="form-group" style=display:none id="hash_type_div">
                         {{ jobsNewHashFileForm.hash_type.label(class="form-control-label") }}
@@ -67,7 +166,7 @@ Apply hashes to be cracked. You can either copy/paste the desired hashes below, 
                         {% else %}
                             {{ jobsNewHashFileForm.hash_type(class="form-control form-control-lg", onchange="showHashFileSubmit()") }}
                         {% endif %}
-                    </div>
+                    </div>                    
                     <!-- Hashfile Content -->
                     <div class="form-group" style=display:none id="hashfile_div">
                         <br>

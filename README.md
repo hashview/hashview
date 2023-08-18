@@ -1,8 +1,8 @@
-# Hashview v0.8.0
+# Hashview v0.8.1
 
 >**Hashview** is a tool for security professionals to help organize and automate the repetitious tasks related to password cracking. It is broken into two compoents, the Hashview Server, and Hashview Agent. The Hashview Server is a web application that manages one or more agents, deployed by you on dedicated hardware. (note you can run the server and agent on the same machine). Hashview strives to bring constiency in your hashcat tasks while delivering analytics with pretty pictures ready for ctrl+c, ctrl+v into your reports.
 
-## !!! If you have v0.7.4 (or older) of hashview currently installed, please read MIGRATION.md first before cloning this repo !!!
+## Note: If you are running version v0.8.0 and want to upgrade. All you need to do is git pull on main and start hashview.py, this should automatically upgrade your instance to the latest version.
 
 ## Server Requirements
 

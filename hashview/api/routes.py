@@ -4,8 +4,8 @@ from hashview.utils.utils import save_file, get_md5_hash, update_dynamic_wordlis
 from hashview.models import db
 from sqlalchemy.ext.declarative import DeclarativeMeta
 from packaging import version
+from datetime import datetime, timedelta
 import hashview
-import time
 import os
 import json
 import codecs
@@ -37,6 +37,23 @@ class AlchemyEncoder(json.JSONEncoder):
 
         return json.JSONEncoder.default(self, obj)
 
+def isAuthorized(user, agent, request):
+    isUser = False
+    if request.cookies:
+        if userAuthorized(request.cookies.get('uuid')):
+            return True
+        if isUser == False:
+            if agentAuthorized(request.cookies.get('uuid')):
+                return True
+    else:
+        return False
+
+def userAuthorized(uuid):
+    user = Users.query.filter_by(api_key=uuid).first()
+    if user:
+        return True
+    return False
+
 def agentAuthorized(uuid):
     agent = Agents.query.filter_by(uuid=uuid).first()
     if agent:
@@ -48,7 +65,7 @@ def updateHeartbeat(uuid):
     agent = Agents.query.filter_by(uuid=uuid).first()
     if agent:
         agent.src_ip = request.remote_addr
-        agent.last_checkin = time.strftime('%Y-%m-%d %H:%M:%S')
+        agent.last_checkin = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         db.session.commit()
 
 def versionCheck(agent_version):
@@ -84,6 +101,8 @@ def v1_api_set_agent_heartbeat():
     if not versionCheck(request.cookies.get('agent_version')):
         return redirect("/v1/upgrade_required")
 
+    settings = Settings.query.first()
+
     # Get agent from db
     agent = Agents.query.filter_by(uuid=uuid).first()
     if not agent:
@@ -92,7 +111,7 @@ def v1_api_set_agent_heartbeat():
                         src_ip = request.remote_addr,
                         uuid = uuid,
                         status = 'Pending',
-                        last_checkin = time.strftime('%Y-%m-%d %H:%M:%S'))
+                        last_checkin = datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         db.session.add(new_agent)
         db.session.commit()
         message = {
@@ -120,9 +139,10 @@ def v1_api_set_agent_heartbeat():
             # Check authorization cookies
             if agent_data['agent_status'] == 'Working':
                 agent.status = 'Working'
-                # Check to see if task was canceled
-                jobtask = JobTasks.query.filter_by(agent_id = agent.id).first()
-                if not jobtask or jobtask.status == 'Canceled':
+
+                # Check if task has exceeded maximum runtime
+                job_task = JobTasks.query.filter_by(agent_id = agent.id).first()
+                if not job_task or job_task.status == 'Canceled':
                     message = {
                         'status': 200,
                         'type': 'message',
@@ -130,6 +150,33 @@ def v1_api_set_agent_heartbeat():
                     }
                     return jsonify(message)
 
+                if settings.max_runtime_tasks > 0 and datetime.strptime(str(job_task.started_at), '%Y-%m-%d %H:%M:%S') + timedelta(hours=settings.max_runtime_tasks) < datetime.now():
+                    update_job_task_status(job_task.id, 'Canceled')
+                    message = {
+                        'status': 200,
+                        'type': 'message',
+                        'msg': 'Canceled',
+                    }
+                    return jsonify(message)
+
+                # check if job has exceeded maximum runtime
+                job = Jobs.query.get(job_task.job_id)
+                job_tasks = JobTasks.query.filter_by(job_id = job.id).all()
+                if settings.max_runtime_jobs > 0 and datetime.strptime(str(job.started_at), '%Y-%m-%d %H:%M:%S') + timedelta(hours=settings.max_runtime_jobs) < datetime.now():
+                    job.status = 'Canceled'
+                    job.ended_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+                    for job_task in job_tasks:
+                        job_task.status = 'Canceled'
+                        job_task.agent_id = None
+                    db.session.commit()
+                    message = {
+                        'status': 200,
+                        'type': 'message',
+                        'msg': 'Canceled',
+                    }
+                    return jsonify(message)
+                
                 if agent_data['hc_status']:
                     agent.hc_status = agent_data['agent_status']
                     hc_status = str(agent_data['hc_status']).replace("\'", "\"")
@@ -155,10 +202,11 @@ def v1_api_set_agent_heartbeat():
                     return jsonify(message)
                 else:
                     # Get first unassigned jobtask and 'assign' it to this agent
-                    job_task_entry = JobTasks.query.filter_by(status = 'Queued').order_by(JobTasks.id).first()
+                    job_task_entry = JobTasks.query.filter_by(status = 'Queued').order_by(JobTasks.priority.desc(), JobTasks.id).first()
                     if job_task_entry:
                         job_task_entry.agent_id = agent.id
                         job_task_entry.status = 'Running'
+                        job_task_entry.started_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         db.session.commit()
                         message = {
                             'status': 200,
@@ -185,9 +233,7 @@ def v1_api_set_agent_heartbeat():
 
 @api.route('/v1/rules', methods=['GET'])
 def v1_api_get_rules():
-    if not versionCheck(request.cookies.get('agent_version')):
-        return redirect("/v1/upgrade_required")
-    if not agentAuthorized(request.cookies.get('uuid')):
+    if not isAuthorized(user=True, agent=True, request=request):
         return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
@@ -201,7 +247,7 @@ def v1_api_get_rules():
 # serve a rules file
 @api.route('/v1/rules/<int:rules_id>', methods=['GET'])
 def v1_api_get_rules_download(rules_id):
-    if not agentAuthorized(request.cookies.get('uuid')):
+    if not isAuthorized(user=True, agent=True, request=request):
         return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
@@ -217,7 +263,7 @@ def v1_api_get_rules_download(rules_id):
 # Provide wordlist info (really should be plural)
 @api.route('/v1/wordlists', methods=['GET'])
 def v1_api_get_wordlist():
-    if not agentAuthorized(request.cookies.get('uuid')):
+    if not isAuthorized(user=True, agent=True, request=request):
         return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
@@ -231,7 +277,7 @@ def v1_api_get_wordlist():
 # serve a wordlist
 @api.route('/v1/wordlists/<int:wordlist_id>', methods=['GET'])
 def v1_api_get_wordlist_download(wordlist_id):
-    if not agentAuthorized(request.cookies.get('uuid')):
+    if not isAuthorized(user=True, agent=True, request=request):
         return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
@@ -247,7 +293,8 @@ def v1_api_get_wordlist_download(wordlist_id):
 # Update Dynamic Wordlist
 @api.route('/v1/updateWordlist/<int:wordlist_id>', methods=['GET'])
 def v1_api_get_update_wordlist(wordlist_id):
-    if not agentAuthorized(request.cookies.get('uuid')):
+    isUser = False
+    if not isAuthorized(user=True, agent=True, request=request):
         return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
@@ -264,7 +311,7 @@ def v1_api_get_update_wordlist(wordlist_id):
 # without a running hashcat cmd while task still assigned to them
 @api.route('/v1/jobTasks/<int:job_task_id>', methods=['GET'])
 def v1_api_get_queue_assignment(job_task_id):
-    if not agentAuthorized(request.cookies.get('uuid')):
+    if not isAuthorized(user=True, agent=True, request=request):
         return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
@@ -282,7 +329,7 @@ def v1_api_get_queue_assignment(job_task_id):
 # Provide job info
 @api.route('/v1/jobs/<int:job_id>', methods=['GET'])
 def v1_api_get_job(job_id):
-    if not agentAuthorized(request.cookies.get('uuid')):
+    if not isAuthorized(user=True, agent=True, request=request):
         return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
@@ -297,13 +344,11 @@ def v1_api_get_job(job_id):
 # Provide task info
 @api.route('/v1/tasks/<int:task_id>', methods=['GET'])
 def v1_api_get_task(task_id):
-    if not agentAuthorized(request.cookies.get('uuid')):
+    if not isAuthorized(user=True, agent=True, request=request):
         return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
-
     task = Tasks.query.get(task_id)
-
     message = {
         'status': 200,
         'task': json.dumps(task, cls=AlchemyEncoder)
@@ -313,15 +358,10 @@ def v1_api_get_task(task_id):
 # generate and serve hashfile
 @api.route('/v1/hashfiles/<int:hashfile_id>', methods=['GET'])
 def v1_api_get_hashfile(hashfile_id):
-    if not agentAuthorized(request.cookies.get('uuid')):
+    if not isAuthorized(user=True, agent=True, request=request):
         return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
-
-    # we need the jobtask info to make the hashfile path
-    #jobtask = JobTasks.query.get(jobtask_id)
-
-    #hash_file = 'control/hashes/hashfile_' + str(jobtask.job_id) + '_' + str(jobtask.task_id) + '.txt'
     random_hex = secrets.token_hex(8)
     file_object = open('hashview/control/tmp/' + random_hex, 'w')
 
@@ -336,7 +376,7 @@ def v1_api_get_hashfile(hashfile_id):
 # Upload Cracked Hashes
 @api.route('/v1/uploadCrackFile/<int:hash_type>', methods=['POST'])
 def v1_api_put_jobtask_crackfile_upload(hash_type):
-    if not agentAuthorized(request.cookies.get('uuid')):
+    if not isAuthorized(user=False, agent=True, request=request):
         return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
@@ -399,7 +439,7 @@ def v1_api_put_jobtask_crackfile_upload(hash_type):
 # Get Hashtype
 @api.route('/v1/getHashType/<int:hashfile_id>', methods=['GET'])
 def v1_api_getHashType(hashfile_id):
-    if not agentAuthorized(request.cookies.get('uuid')):
+    if not isAuthorized(user=True, agent=True, request=request):
         return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
@@ -417,7 +457,7 @@ def v1_api_getHashType(hashfile_id):
 # Update JobTask status
 @api.route('/v1/jobtask/status', methods=['POST'])
 def v1_api_set_queue_jobtask_status():
-    if not agentAuthorized(request.cookies.get('uuid')):
+    if not isAuthorized(user=False, agent=True, request=request):
         return redirect("/v1/not_authorized")
 
     updateHeartbeat(request.cookies.get('uuid'))
@@ -436,4 +476,48 @@ def v1_api_set_queue_jobtask_status():
             'type': 'message',
             'msg': 'Error setting jobtask status. Detail: job_task_id='+str(status_json['job_task_id'])+' status='+str(status_json['task_status'])
         }
+    return jsonify(message)
+
+# Search
+@api.route('/v1/search', methods=['POST'])
+def v1_api_search():
+    if not isAuthorized(user=True, agent=False, request=request):
+        return redirect("/v1/not_authorized")
+    
+    search_json = request.get_json()
+    if search_json:
+        # Right now we're only asking hash, in the future we may get requests to search by user or by plaintext
+        if search_json['hash']:
+            # we could search by subciphertext instead of ciphertext if things get slow.
+            # subcipher text is indexed whereas ciphertext is not
+            cracked_hash = Hashes.query.filter_by(cracked=True).filter_by(ciphertext=search_json['hash']).first()
+            if cracked_hash:
+                msg = {
+                    'hash_type': cracked_hash.hash_type,
+                    'hash': search_json['hash'],
+                    'plaintext': bytes.fromhex(cracked_hash.plaintext).decode('latin-1')
+                }
+                message = {
+                    'status': 200,
+                    'type': 'message',
+                    'msg': msg
+                }            
+            else:
+                message = {
+                    'status': 200,
+                    'type': 'message',
+                    'msg': 'Search complete. No Results Found.'
+                }            
+        else:
+            message = {
+                'status': 500,
+                'type': 'message',
+                'msg': 'Invalid Search'
+            }
+    else:
+        message = {
+            'status': 500,
+            'type': 'message',
+            'msg': 'Invalid Search'
+        }            
     return jsonify(message)

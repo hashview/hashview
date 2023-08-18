@@ -18,11 +18,27 @@ If everything looks good, click complete below.
                             <tr>
                                 <td>Job Name:</td>
                                 <td>{{ job.name }}</td>
-                            </tr>
+                            </tr>                          
                             <tr>
                                 <td>Customer:</td>
                                 <td>{{ customer.name }}</td>
                             </tr>
+                            {% if settings.enabled_job_weights %}
+                                <tr>
+                                    <td>Job Priority:</td>
+                                    {% if job.priority == 5 %}
+                                        <td>{{ job.priority }} - highest</td>
+                                    {% elif job.priority == 4 %}
+                                        <td>{{ job.priority }} - higher</td>
+                                    {% elif job.priority == 3 %}
+                                        <td>{{ job.priority }} - normal</td>
+                                    {% elif job.priority == 2 %}
+                                        <td>{{ job.priority }} - lower</td>
+                                    {% elif job.priority == 1 %}
+                                        <td>{{ job.priority }} - lowest</td>
+                                    {% endif %}
+                                </tr>
+                            {% endif %}
                             <tr>
                                 <td>Hashfile:</td>
                                 <td>{{ hashfile.name }} ({{ cracked_rate }})</td>
@@ -37,6 +53,23 @@ If everything looks good, click complete below.
                                             {% endif %}
                                         {% endfor %}
                                     {% endfor %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Runtimes:</td>
+                                <td>
+                                    {% if settings.max_runtime_jobs == 0 %}
+                                        Job will run until completed or canceled
+                                    {% else %}
+                                        Job will run for a maximum of {{ settings.max_runtime_jobs }} hour(s).
+                                    {% endif %}
+                                    <br>
+                                    {% if settings.max_runtime_tasks == 0 %}
+                                        Tasks will run until completed or canceled
+                                    {% else %}
+                                        Each Tasks will run for a maximum of {{ settings.max_runtime_tasks }} hour(s).
+                                    {% endif %}
+
                                 </td>
                             </tr>
                             <tr>

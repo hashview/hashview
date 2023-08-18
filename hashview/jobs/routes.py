@@ -2,11 +2,11 @@ from flask import Blueprint, render_template, redirect, abort, flash, url_for, c
 from flask_login import login_required, current_user
 from sqlalchemy.sql.elements import Null
 from hashview.jobs.forms import JobsForm, JobsNewHashFileForm, JobsNotificationsForm, JobSummaryForm
-from hashview.models import HashNotifications, JobNotifications, Jobs, Customers, Hashfiles, Users, HashfileHashes, Hashes, JobTasks, Tasks, TaskGroups
-from hashview.utils.utils import save_file, get_filehash, import_hashfilehashes, build_hashcat_command, validate_hashfile
+from hashview.models import HashNotifications, JobNotifications, Jobs, Customers, Hashfiles, Users, HashfileHashes, Hashes, JobTasks, Tasks, TaskGroups, Settings
+from hashview.utils.utils import save_file, get_filehash, import_hashfilehashes, build_hashcat_command, validate_pwdump_hashfile, validate_netntlm_hashfile, validate_kerberos_hashfile, validate_shadow_hashfile, validate_user_hash_hashfile, validate_hash_only_hashfile
 from hashview.models import db
+from datetime import datetime
 import os
-import time
 import secrets
 import json
 
@@ -29,6 +29,7 @@ def jobs_add():
     jobs = Jobs.query.all()
     customers = Customers.query.order_by(Customers.name).all()
     jobsForm = JobsForm()
+    settings = Settings.query.first()
     if jobsForm.validate_on_submit():
         customer_id = jobsForm.customer_id.data
         if jobsForm.customer_id.data == 'add_new':
@@ -37,14 +38,23 @@ def jobs_add():
             db.session.commit()
             customer_id = customer.id
 
+        if settings.enabled_job_weights:
+            if int(jobsForm.priority.data) >= 1 and int(jobsForm.priority.data) <=5:
+                job_priority = jobsForm.priority.data
+            else:
+                job_priority = 3
+        else:
+            job_priority = 3
+
         job = Jobs( name = jobsForm.name.data,
+                    priority = job_priority,
                     status = 'Incomplete',
                     customer_id = customer_id,
                     owner_id = current_user.id)
         db.session.add(job)
         db.session.commit()
         return redirect(str(job.id)+"/assigned_hashfile/")
-    return render_template('jobs_add.html', title='Jobs', jobs=jobs, customers=customers, jobsForm=jobsForm)
+    return render_template('jobs_add.html', title='Jobs', jobs=jobs, customers=customers, jobsForm=jobsForm, settings=settings)
 
 @jobs.route("/jobs/<int:job_id>/assigned_hashfile/", methods=['GET', 'POST'])
 @login_required
@@ -52,8 +62,11 @@ def jobs_assigned_hashfile(job_id):
     job = Jobs.query.get(job_id)
     hashfiles = Hashfiles.query.filter_by(customer_id=job.customer_id)
     jobsNewHashFileForm = JobsNewHashFileForm()
-
     hashfile_cracked_rate = {}
+
+    if job.status == 'Running' or job.status == 'Queued':
+        flash('You can not edit a running or queued job. First stop and remove job from queue before editing.', 'danger')
+        return redirect(url_for('jobs.list', job_id=job_id))
 
     for hashfile in hashfiles:
         cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).count()
@@ -62,12 +75,45 @@ def jobs_assigned_hashfile(job_id):
 
     if jobsNewHashFileForm.validate_on_submit():
 
+        hashfile_path = ""
         if jobsNewHashFileForm.hashfile.data:
-
             # User submitted a file upload
             hashfile_path = os.path.join(current_app.root_path, save_file('control/tmp', jobsNewHashFileForm.hashfile.data))
+        elif jobsNewHashFileForm.hashfilehashes.data:
+            # User submitted copied/pasted hashes
+            # Going to have to save a file manually instead of using save_file since save_file requires form data to be passed and we're not collecting that object for this tab
 
-            has_problem = validate_hashfile(hashfile_path, jobsNewHashFileForm.file_type.data, jobsNewHashFileForm.hash_type.data)
+            if len(jobsNewHashFileForm.name.data) == 0:
+                flash('You must assign a name to the hashfile', 'danger')
+                return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
+
+            random_hex = secrets.token_hex(8)
+            hashfile_path = 'hashview/control/tmp/' + random_hex
+            hashfilehashes_file = open(hashfile_path, 'w+')
+            hashfilehashes_file.write(jobsNewHashFileForm.hashfilehashes.data)
+            hashfilehashes_file.close()
+
+        if len(hashfile_path) > 0:
+            if jobsNewHashFileForm.file_type.data == 'pwdump':
+                has_problem = validate_pwdump_hashfile(hashfile_path, jobsNewHashFileForm.pwdump_hash_type.data)
+                hash_type = jobsNewHashFileForm.pwdump_hash_type.data
+            elif jobsNewHashFileForm.file_type.data == 'NetNTLM':
+                has_problem = validate_netntlm_hashfile(hashfile_path, jobsNewHashFileForm.netntlm_hash_type.data)
+                hash_type = jobsNewHashFileForm.netntlm_hash_type.data
+            elif jobsNewHashFileForm.file_type.data == 'kerberos':
+                has_problem = validate_kerberos_hashfile(hashfile_path, jobsNewHashFileForm.kerberos_hash_type.data) 
+                hash_type = jobsNewHashFileForm.kerberos_hash_type.data
+            elif jobsNewHashFileForm.file_type.data == 'shadow':
+                has_problem = validate_shadow_hashfile(hashfile_path, jobsNewHashFileForm.shadow_hash_type.data)
+                hash_type = jobsNewHashFileForm.shadow_hash_type.data
+            elif jobsNewHashFileForm.file_type.data == 'user_hash':
+                has_problem = validate_user_hash_hashfile(hashfile_path, jobsNewHashFileForm.hash_type.data)
+                hash_type = jobsNewHashFileForm.hash_type.data
+            elif jobsNewHashFileForm.file_type.data == 'hash_only':
+                has_problem = validate_hash_only_hashfile(hashfile_path, jobsNewHashFileForm.hash_type.data) 
+                hash_type = jobsNewHashFileForm.hash_type.data                                         
+            else:
+                has_problem = 'Invalid File Format'
 
             if has_problem:
                 flash(has_problem, 'danger')
@@ -81,9 +127,9 @@ def jobs_assigned_hashfile(job_id):
                 if not import_hashfilehashes(   hashfile_id=hashfile.id,
                                                 hashfile_path=hashfile_path,
                                                 file_type=jobsNewHashFileForm.file_type.data,
-                                                hash_type=jobsNewHashFileForm.hash_type.data
+                                                hash_type=hash_type
                                                 ):
-                    return ('Something went wrong')
+                    return ('Something went wrong. Check the filetype / hashtype and try again.')
 
                 # Delete hashfile file on disk
                 # TODO
@@ -92,49 +138,10 @@ def jobs_assigned_hashfile(job_id):
 
             return redirect(str(hashfile.id))
 
-        elif jobsNewHashFileForm.hashfilehashes.data:
-            # User submitted copied/pasted hashes
-            # Going to have to save a file manually instead of using save_file since save_file requires form data to be passed and we're not collecting that object for this tab
-
-            if len(jobsNewHashFileForm.name.data) == 0:
-                flash('You must assign a name to the hashfile', 'danger')
-                return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
-
-            random_hex = secrets.token_hex(8)
-            hashfile_path = 'hashview/control/tmp/' + random_hex
-
-            hashfilehashes_file = open(hashfile_path, 'w+')
-
-            hashfilehashes_file.write(jobsNewHashFileForm.hashfilehashes.data)
-            hashfilehashes_file.close()
-
-            has_problem = validate_hashfile(hashfile_path, jobsNewHashFileForm.file_type.data, jobsNewHashFileForm.hash_type.data)
-
-            if has_problem:
-                flash(has_problem, 'danger')
-                return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
-            else:
-                hashfile = Hashfiles(name=jobsNewHashFileForm.name.data, customer_id=job.customer_id, owner_id=current_user.id)
-                db.session.add(hashfile)
-                db.session.commit()
-
-
-                if not import_hashfilehashes(   hashfile_id=hashfile.id,
-                                                hashfile_path=hashfile_path,
-                                                file_type=jobsNewHashFileForm.file_type.data,
-                                                hash_type=jobsNewHashFileForm.hash_type.data
-                                                ):
-                    return ('Something went wrong')
-
-                job.hashfile_id = hashfile.id
-                db.session.commit()
-
-                return redirect(str(hashfile.id))
-
     elif request.method == 'POST' and request.form['hashfile_id']:
+        # User selected an existing hashfile
         job.hashfile_id = request.form['hashfile_id']
         db.session.commit()
-        #return redirect("/jobs/" + str(job.id)+"/tasks")
         return redirect("/jobs/" + str(job.id)+"/notifications")
 
     else:
@@ -353,7 +360,6 @@ def jobs_assign_notification_hashes(job_id, method):
     else:
         return render_template('jobs_assigned_notifications_hashes.html', title='Assigned Hash Notifications', job=job, hashes=hashes, existing_hash_notifications=existing_hash_notifications)
 
-
 @jobs.route("/jobs/delete/<int:job_id>", methods=['GET', 'POST'])
 @login_required
 def jobs_delete(job_id):
@@ -370,7 +376,6 @@ def jobs_delete(job_id):
         flash('You do not have rights to delete this job!', 'danger')
         return redirect(url_for('jobs.jobs_list'))
 
-
 @jobs.route("/jobs/<int:job_id>/summary", methods=['GET', 'POST'])
 @login_required
 def jobs_summary(job_id):
@@ -384,6 +389,7 @@ def jobs_summary(job_id):
     job = Jobs.query.get(job_id)
     form = JobSummaryForm()
 
+    settings = Settings.query.first()
     tasks = Tasks.query.all()
     hashfile = Hashfiles.query.get(job.hashfile_id)
     customer = Customers.query.get(job.customer_id)
@@ -401,13 +407,14 @@ def jobs_summary(job_id):
             job_task.status = 'Ready'
 
         job.status = 'Ready'
+        job.updated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         db.session.commit()
 
         flash('Job successfully created', 'sucess')
 
         return redirect(url_for('jobs.jobs_list'))
     else:
-        return render_template('jobs_summary.html', title='Job Summary', job=job, form=form, job_notification=job_notification, cracked_rate=cracked_rate, job_tasks=job_tasks, hash_notification_cnt=hash_notification_cnt, customer=customer, hashfile=hashfile, tasks=tasks, hash_notification=hash_notification)
+        return render_template('jobs_summary.html', title='Job Summary', job=job, form=form, job_notification=job_notification, cracked_rate=cracked_rate, job_tasks=job_tasks, hash_notification_cnt=hash_notification_cnt, customer=customer, hashfile=hashfile, tasks=tasks, hash_notification=hash_notification, settings=settings)
 
 @jobs.route("/jobs/start/<int:job_id>", methods=['GET'])
 @login_required
@@ -418,10 +425,11 @@ def jobs_start(job_id):
     if job and job_tasks:
         if current_user.admin or job.owner_id == current_user.id:
             job.status = 'Queued'
+            job.queued_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             for job_task in job_tasks:
                 job_task.status = 'Queued'
+                job_task.priority = job.priority
                 job_task.command = build_hashcat_command(job.id, job_task.task_id)
-                job_task.key_pos = 0
 
             db.session.commit()
             flash('Job has been Started!', 'success')
@@ -443,10 +451,9 @@ def jobs_stop(job_id):
         if current_user.admin or job.owner_id == current_user.id:
             if job.status == 'Running' or job.status == 'Queued':
                 job.status = 'Canceled'
-                job.ended_at = time.strftime('%Y-%m-%d %H:%M:%S')
+                job.ended_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
                 for job_task in job_tasks:
-                    if job_task.status == 'Queued' or job_task.status == 'Running':
                         job_task.status = 'Canceled'
                         job_task.agent_id = None
                 db.session.commit()

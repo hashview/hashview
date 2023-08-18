@@ -47,7 +47,7 @@ def hashfiles_delete(hashfile_id):
             else:
                 HashfileHashes.query.filter_by(hashfile_id = hashfile_id).delete()
                 Hashfiles.query.filter_by(id = hashfile_id).delete()
-                Hashes.query.filter(~exists().where(Hashes.id == HashfileHashes.hash_id)).where(Hashes.cracked == 0).delete(synchronize_session='fetch')
+                Hashes.query.filter().where(~exists().where(Hashes.id == HashfileHashes.hash_id)).where(Hashes.cracked == 0).delete(synchronize_session='fetch')
                 HashNotifications.query.filter(~exists().where(HashNotifications.hash_id == HashfileHashes.hash_id)).filter(Hashes.cracked == 0).delete(synchronize_session='fetch')
                 db.session.commit()
                 flash('Hashfile has been deleted!', 'success')

@@ -375,8 +375,17 @@ def get_analytics():
     fig8_table = []
     for entry in fig8_cracked_hashes:
         if entry[1] and entry[0]:
-            if bytes.fromhex(entry[0]).decode('latin-1') == bytes.fromhex(entry[1]).decode('latin-1'):
+            # check if username has domain in it
+            if '\\' in bytes.fromhex(entry[1]).decode('latin-1'):
+                username = bytes.fromhex(entry[1]).decode('latin-1').split('\\')[1]
+            # check if username has astrix in it (found with some kerb tickets)
+            elif '*' in  bytes.fromhex(entry[1]).decode('latin-1'):
+                username = bytes.fromhex(entry[1]).decode('latin-1').split('*')[1]
+            else:
+                username = bytes.fromhex(entry[1]).decode('latin-1')
+            if bytes.fromhex(entry[0]).decode('latin-1') == username:
                 fig8_table.append(bytes.fromhex(entry[0]).decode('latin-1'))
+
 
     return render_template('analytics.html',
                             title='analytics',

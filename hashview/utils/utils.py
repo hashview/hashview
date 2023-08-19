@@ -107,7 +107,7 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
         if len(line) > 0:
             if file_type == 'hash_only':
                 # forcing lower casing of hash as hashcat will return lower cased version of the has and we want to match what we imported.
-                if hash_type == '300' or hash_type == '1731
+                if hash_type == '300' or hash_type == '1731:
                     hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
                 elif hash_type == '2100':
                     line = line.lower().rstrip()

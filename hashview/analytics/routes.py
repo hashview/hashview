@@ -58,7 +58,7 @@ def get_analytics():
     fig1_total = (fig1_cracked_cnt + fig1_uncracked_cnt)
 
     # Cracked Percent
-    fig1_percent = 0 if fig1_total is 0 else [str(round(((fig1_cracked_cnt / fig1_total)*100),1)) + '%']
+    fig1_percent = 0 if (0 == fig1_total) else [str(round(((fig1_cracked_cnt / fig1_total)*100),1)) + '%']
 
     # Figure 2 (Cracked Complexity Breakdown)
     if customer_id:
@@ -128,7 +128,7 @@ def get_analytics():
     fig3_total = (fig3_cracked_cnt + fig3_uncracked_cnt)
 
     # Cracked Percent
-    fig3_percent = 0 if fig3_total is 0 else [str(round(((fig3_cracked_cnt / fig3_total)*100),1)) + '%']    
+    fig3_percent = 0 if (0 == fig3_total) else [str(round(((fig3_cracked_cnt / fig3_total)*100),1)) + '%']
 
     # General Stats Table
     total_runtime = 0
@@ -395,8 +395,8 @@ def get_analytics():
                             fig2_labels=fig2_labels,
                             fig2_values=fig2_values,
                             fig3_labels=fig3_labels,
-                            fig3_values=fig3_values, 
-                            fig3_percent=fig3_percent,                           
+                            fig3_values=fig3_values,
+                            fig3_percent=fig3_percent,
                             fig4_labels=fig4_labels,
                             fig4_values=fig4_values,
                             fig5_labels=fig5_labels,

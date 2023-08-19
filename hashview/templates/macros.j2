@@ -1,0 +1,16 @@
+{% macro make_form_group(attr_name) -%}
+<div class="form-group">
+    {{ form[attr_name].label(class="form-control-label") }}
+
+    {% if form[attr_name].errors %}
+        {{ form[attr_name](class="form-control form-control-lg is-invalid") }}
+        <div class="invalid-feedback">
+            {% for error in form[attr_name].errors %}
+                <span>{{ error }}</span>
+            {% endfor %}
+        </div>
+    {% else %}
+        {{ form[attr_name](class="form-control form-control-lg") }}
+    {% endif %}
+</div>
+{%- endmacro %}

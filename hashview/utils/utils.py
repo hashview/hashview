@@ -107,7 +107,7 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
         if len(line) > 0:
             if file_type == 'hash_only':
                 # forcing lower casing of hash as hashcat will return lower cased version of the has and we want to match what we imported.
-                if hash_type == '300' or hash_type == '1731:
+                if hash_type == '300' or hash_type == '1731':
                     hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
                 elif hash_type == '2100':
                     line = line.lower().rstrip()
@@ -327,7 +327,7 @@ def validate_pwdump_hashfile(hashfile_path, hash_type):
         # Skip entries that are just newlines
         if len(line) > 50000:
             return 'Error line ' + str(line_number) + ' is too long. Line length: ' + str(len(line)) + '. Max length is 50,000 chars.'
-        if len(line) > 0:  
+        if len(line) > 0:
             if ':' not in line:
                 return 'Error line ' + str(line_number) + ' is missing a : character. Pwdump file should include usernames.'
             # This is slow af :(
@@ -367,7 +367,7 @@ def validate_netntlm_hashfile(hashfile_path, hash_type):
         # Skip entries that are just newlines
         if len(line) > 50000:
             return 'Error line ' + str(line_number) + ' is too long. Line length: ' + str(len(line)) + '. Max length is 50,000 chars.'
-        if len(line) > 0:  
+        if len(line) > 0:
             if ':' not in line:
                 return 'Error line ' + str(line_number) + ' is missing a : character. NetNTLM file should include usernames.'
             # This is slow af :(
@@ -376,7 +376,7 @@ def validate_netntlm_hashfile(hashfile_path, hash_type):
                 if char == ':':
                     colon_cnt += 1
             if colon_cnt < 5:
-                return 'Error line ' + str(line_number) + '. File does not appear to be be in a NetNTLM format.' 
+                return 'Error line ' + str(line_number) + '. File does not appear to be be in a NetNTLM format.'
     return False
 
 def validate_kerberos_hashfile(hashfile_path, hash_type):
@@ -390,7 +390,7 @@ def validate_kerberos_hashfile(hashfile_path, hash_type):
         # Skip entries that are just newlines
         if len(line) > 50000:
             return 'Error line ' + str(line_number) + ' is too long. Line length: ' + str(len(line)) + '. Max length is 50,000 chars.'
-        if len(line) > 0:  
+        if len(line) > 0:
             if '$' not in line:
                 return 'Error line ' + str(line_number) + ' is missing a $ character. kerberos file should include these.'
             dollar_cnt = 0
@@ -463,7 +463,7 @@ def validate_shadow_hashfile(hashfile_path, hash_type):
         # Skip entries that are just newlines
         if len(line) > 50000:
             return 'Error line ' + str(line_number) + ' is too long. Line length: ' + str(len(line)) + '. Max length is 50,000 chars.'
-        if len(line) > 0:  
+        if len(line) > 0:
             if ':' not in line:
                 return 'Error line ' + str(line_number) + ' is missing a : character. shadow file should include usernames.'
             if hash_type == '1800':
@@ -474,7 +474,7 @@ def validate_shadow_hashfile(hashfile_path, hash_type):
                 if dollar_cnt != 3:
                     return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt from a shadow file.'
                 if '$6$' not in line:
-                    return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt from a shadow file.'  
+                    return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt from a shadow file.'
     return False
 
 def validate_user_hash_hashfile(hashfile_path, hash_type):
@@ -488,11 +488,11 @@ def validate_user_hash_hashfile(hashfile_path, hash_type):
         # Skip entries that are just newlines
         if len(line) > 50000:
             return 'Error line ' + str(line_number) + ' is too long. Line length: ' + str(len(line)) + '. Max length is 50,000 chars.'
-        if len(line) > 0:  
+        if len(line) > 0:
             if ':' not in line:
                 return 'Error line ' + str(line_number) + ' is missing a : character. user:hash file should have just ONE of these'
 
-    return 
+    return
 
 # Dumb way of doing this, we return with an error message if we have an issue with the hashfile
 # and return false if hashfile is okay. :/ Should be the otherway around :shrug emoji:
@@ -535,7 +535,7 @@ def validate_hash_only_hashfile(hashfile_path, hash_type):
                 if dollar_cnt != 3:
                     return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt.'
                 if '$6$' not in line:
-                    return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt.'                        
+                    return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt.'
             if hash_type == '2100':
                 if '$' not in line:
                     return 'Error line ' + str(line_number) + ' is missing a $ character. DCC2 Hashes should have these'
@@ -552,10 +552,10 @@ def validate_hash_only_hashfile(hashfile_path, hash_type):
                     return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: DCC2 MS Cache'
             if hash_type == '2400':
                 if len(line.rstrip()) != 18:
-                    return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 18'  
+                    return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 18'
             if hash_type == '2410':
                 if ':' not in line:
-                    return 'Error line ' + str(line_number) + ' is missing a : character. Cisco-ASA Hashes should have these.'                                              
+                    return 'Error line ' + str(line_number) + ' is missing a : character. Cisco-ASA Hashes should have these.'
             if hash_type == '3200':
                 if '$' not in line:
                     return 'Error line ' + str(line_number) + ' is missing a $ character. bcrypt Hashes should have these.'
@@ -567,7 +567,7 @@ def validate_hash_only_hashfile(hashfile_path, hash_type):
                     return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: bcrypt'
             if hash_type == '5700':
                 if len(line.rstrip()) != 45:
-                    return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 45'   
+                    return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 45'
             if hash_type == '7100':
                 if '$' not in line:
                     return 'Error line ' + str(line_number) + ' is missing a $ character. Mac OSX 10.8+ ($ml$) hashes should have these.'

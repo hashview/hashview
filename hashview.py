@@ -365,7 +365,7 @@ def cli(args) -> int:
             print('Done! Running Hashview! Enjoy.')
 
             scheduler = app.apscheduler
-            scheduler.delete_all_jobs()
+            scheduler.remove_all_jobs()
             #scheduler.add_job(id='DATA_RETENTION', func=partial(data_retention_cleanup, app), trigger='cron', minute='*') #hour=1
             scheduler.add_job(id='DATA_RETENTION', func=partial(data_retention_cleanup, app), trigger='cron', hour='*')
 

@@ -31,13 +31,14 @@ def tasks_add():
 
     for wordlist in wordlists:
         tasksForm.wl_id.choices += [(wordlist.id, wordlist.name)]
-
+    
+    tasksForm.rule_id.choices = [('None', 'None')]
     for rule in rules:
         tasksForm.rule_id.choices += [(rule.id, rule.name)]
 
     if tasksForm.validate_on_submit():
 
-        if tasksForm.rule_id.data == None:
+        if tasksForm.rule_id.data == 'None':
             rule_id = None
         else:
             rule_id = tasksForm.rule_id.data
@@ -72,8 +73,6 @@ def tasks_add():
 @login_required
 def task_edit(task_id):
     task = Tasks.query.get(task_id)
-    wordlists = Wordlists.query.all()
-    rules = Rules.query.all()
 
     # Check if task is currently assigned to a job. 
     # We probably dont care if its assigned to a task group though
@@ -90,13 +89,26 @@ def task_edit(task_id):
         tasksForm.wl_id.choices = []
 
         wordlists = Wordlists.query.all()
+        # Add the current value for wordlist.
+        edit_task_wl = Wordlists.query.get(task.wl_id)
+        if edit_task_wl:
+            tasksForm.wl_id.choices.append((edit_task_wl.id, edit_task_wl.name))
         rules = Rules.query.all()
+        # Check if the current value for rule is an integer.
+        if isinstance(task.rule_id, int):
+            edit_task_rl = Rules.query.get(task.rule_id)
+            if edit_task_rl:
+                tasksForm.rule_id.choices.append((edit_task_rl.id, edit_task_rl.name))
+                tasksForm.rule_id.choices.append(('None', 'None'))
+        else:
+            # If it's not an integer, set rule_id and rule_name to 'None'.
+            tasksForm.rule_id.choices.append(('None', 'None'))
 
-        for wordlist in wordlists:
-            tasksForm.wl_id.choices += [(wordlist.id, wordlist.name)]
-
-        for rule in rules:
-            tasksForm.rule_id.choices += [(rule.id, rule.name)]
+        # Populate the choices for wordlists excluding the current value.
+        tasksForm.wl_id.choices += [(wordlist.id, wordlist.name) for wordlist in wordlists if wordlist.id != task.wl_id]
+        
+        # Populate the choices for rules excluding the current value.
+        tasksForm.rule_id.choices += [(rule.id, rule.name) for rule in rules if rule.id != task.rule_id]
         
         tasksForm.submit.label.text = 'Update'
 
@@ -104,10 +116,13 @@ def task_edit(task_id):
             wordlist_id = tasksForm.wl_id.data
             rule_id = tasksForm.rule_id.data
 
+            if tasksForm.rule_id.data == 'None':
+                tasksForm.rule_id.data = None
+
             if tasksForm.hc_attackmode.data == 'dictionary':
                 task.name = tasksForm.name.data
                 task.wl_id = tasksForm.wl_id.data
-                task.rul_id = rule_id
+                task.rule_id = tasksForm.rule_id.data
                 task.hc_attackmode = tasksForm.hc_attackmode.data
                 hc_mask = None
 
@@ -118,7 +133,7 @@ def task_edit(task_id):
 
                 task.name = tasksForm.name.data
                 task.wl_id = None
-                task.rul_id = None
+                task.rule_id = None
                 task.hc_attackmode = tasksForm.hc_attackmode.data
                 hc_mask = tasksForm.mask.data
 

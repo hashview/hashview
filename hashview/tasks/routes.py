@@ -59,7 +59,7 @@ def tasks_add():
                             wl_id=None,
                             rule_id=None,
                             hc_attackmode=tasksForm.hc_attackmode.data,
-                            hc_mask=tasksForm.mask.data,
+                            hc_mask=tasksForm.mask.data
             )
             db.session.add(task)
             db.session.commit()
@@ -90,9 +90,10 @@ def task_edit(task_id):
 
         wordlists = Wordlists.query.all()
         # Add the current value for wordlist.
-        edit_task_wl = Wordlists.query.get(task.wl_id)
-        if edit_task_wl:
-            tasksForm.wl_id.choices.append((edit_task_wl.id, edit_task_wl.name))
+        if task.hc_attackmode == 'dictionary':
+            edit_task_wl = Wordlists.query.get(task.wl_id)
+            if edit_task_wl:
+                tasksForm.wl_id.choices.append((edit_task_wl.id, edit_task_wl.name))
         rules = Rules.query.all()
         # Check if the current value for rule is an integer.
         if isinstance(task.rule_id, int):
@@ -135,7 +136,7 @@ def task_edit(task_id):
                 task.wl_id = None
                 task.rule_id = None
                 task.hc_attackmode = tasksForm.hc_attackmode.data
-                hc_mask = tasksForm.mask.data
+                task.hc_mask = tasksForm.mask.data
 
                 db.session.add(task)
                 db.session.commit()

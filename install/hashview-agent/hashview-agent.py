@@ -464,8 +464,13 @@ if __name__ == '__main__':
 
                 # Set status to complete
                 updateJobTaskResponse = updateJobTask(job_task['id'], 'Completed')
-                if updateJobTaskResponse['msg'] == 'OK':
-                    print('[*] Task Successfully Set to Completed')
+                try:
+                    if updateJobTaskResponse['msg'] == 'OK':
+                        print('[*] Task Successfully Set to Completed')
+                    with suppress(Exception):
+                        pass
+                finally:
+                    pass
 
         print('[*] Sleeping')
         time.sleep(10)

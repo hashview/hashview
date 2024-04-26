@@ -18,6 +18,15 @@
 ## Installation
 Follow these instructions to install Hashview Server on Ubuntu 20.04.3 LTS server. In theory Hashview should be able to run on any *nix system, but the dev's only installed/tested on Debian/Ubuntu.
 
+### NEW ⭐ Docker Install
+We now have a docker image available for Hashview. This is the easiest way to get Hashview up and running. 
+
+1. Copy and update the .env.example file to .env
+2. Run `docker-compose up` / `docker-compose up -d` to start the Hashview server
+3. Navigate to https://localhost:8443
+4. Login with your specified credentials
+
+
 #### 1) Setup MySQL 
 
 ```

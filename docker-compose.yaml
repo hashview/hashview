@@ -1,0 +1,52 @@
+services:
+  hashview:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DB_SERVER: ${DB_SERVER}
+        DB_USERNAME: ${DB_USERNAME}
+        DB_PASSWORD: ${DB_PASSWORD}
+        SMTP_SERVER: ${SMTP_SERVER}
+        SMTP_SENDER_ADDRESS: ${SMTP_SENDER_ADDRESS}
+        SMTP_USERNAME: ${SMTP_USERNAME}
+        SMTP_PASSWORD: ${SMTP_PASSWORD}
+        SMTP_TLS: ${SMTP_TLS}
+        CERT_SUBJECT: ${CERT_SUBJECT}
+    container_name: hashview
+    working_dir: /app
+    ports:
+      - "8443:8443"
+    depends_on:
+      - db
+    env_file:
+      - .env
+    networks:
+      - hashview-network
+
+  db:
+    image: mysql:5.7
+    container_name: hashview_db
+    platform: linux/amd64
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: hashview
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    expose:
+      - "3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    env_file:
+      - .env
+    networks:
+      - hashview-network
+
+volumes:
+  db_data:
+
+networks:
+  hashview-network:
+    name: hashview-network
+    driver: bridge

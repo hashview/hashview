@@ -50,6 +50,24 @@ def ensure_admin_account(db, bcrypt):
     if (0 < admin_user_count):
         print('✓ Admin user exists in database.')
         return
+    
+
+    
+    # Check if we have environment variables for the admin account
+    admin_email, admin_password, admin_firstname, admin_lastname = (
+        os.environ.get('ADMIN_EMAIL'),
+        os.environ.get('ADMIN_PASSWORD'),
+        os.environ.get('ADMIN_FIRSTNAME'),
+        os.environ.get('ADMIN_LASTNAME'),
+    )
+    if admin_email and admin_password and admin_firstname and admin_lastname:
+        print('\nInitial setup detected. Hashview will now provision an Administrative account using environment variables.\n')
+        print('Provisioning account in database.')
+        hashed_password = bcrypt.generate_password_hash(admin_password).decode('utf-8')
+
+        user = Users(first_name=admin_firstname, last_name=admin_lastname, email_address=admin_email, password=hashed_password, admin=True)
+        db.session.add(user)
+        db.session.commit()
 
     else:
         print('\nInitial setup detected. Hashview will now prompt you to setup an Administrative account.\n')

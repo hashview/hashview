@@ -16,6 +16,10 @@ services:
         CERT_SUBJECT: ${CERT_SUBJECT}
     container_name: hashview
     working_dir: /app
+    # ADD THIS IF YOU WANT TO UPLOAD THINGS FROM DISK #
+    # volumes:
+    #   - /tmp/hashview/rules:/app/hashview/control/rules/auto_upload
+    #   - /tmp/hashview/wordlists:/app/hashview/control/wordlists/auto_upload
     ports:
       - "8443:8443"
     depends_on:

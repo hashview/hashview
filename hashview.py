@@ -1,15 +1,19 @@
 #!/usr/bin/python3
-import os
-import sys
-import logging
 import argparse
 import builtins
+import logging
+import os
+import sys
 import traceback
-
-from typing import Optional
 from functools import partial
+from threading import Thread
+from typing import Optional
+
+from flask_apscheduler import APScheduler
 
 from hashview import create_app
+
+# from hashview.utils.wordlist_watcher import check_and_upload_wordlists
 
 
 def ensure_authlib():
@@ -162,8 +166,7 @@ def ensure_dynamic_wordlist(db):
 
 def ensure_static_wordlist(db):
     from hashview.models import Wordlists
-    from hashview.utils.utils import get_filehash
-    from hashview.utils.utils import get_linecount
+    from hashview.utils.utils import get_filehash, get_linecount
 
     static_wordlist_count = Wordlists.query.filter_by(type='static').count()
     if (0 < static_wordlist_count):
@@ -189,8 +192,7 @@ def ensure_static_wordlist(db):
 
 def ensure_rules(db):
     from hashview.models import Rules
-    from hashview.utils.utils import get_filehash
-    from hashview.utils.utils import get_linecount
+    from hashview.utils.utils import get_filehash, get_linecount
 
     rule_count = Rules.query.count()
     if (0 < rule_count):
@@ -260,17 +262,88 @@ def ensure_version_alignment():
     from flask_migrate import upgrade
     upgrade()
 
+def upload_static_wordlists(app):
+    with app.app_context():
+        DIRECTORY_TO_WATCH = "/app/hashview/control/wordlists/auto_upload/"
+        # Assuming owner_id '1' is used for demonstration; adjust as necessary
+        owner_id = '1'
+        wordlist_type = 'static'  # Assuming all wordlists in this directory are of type 'static'
+
+        from hashview.models import Wordlists, db
+        from hashview.utils.utils import get_filehash, get_linecount
+
+        for filename in os.listdir(DIRECTORY_TO_WATCH):
+            file_path = os.path.join(DIRECTORY_TO_WATCH, filename)
+            if os.path.isfile(file_path):
+
+                print(f"Uploading new static wordlist: {filename}")
+                wordlist_size = get_linecount(file_path)
+                wordlist_checksum = get_filehash(file_path)
+                # Check if wordlist already exists by name or checksum
+                existing_wordlist = Wordlists.query.filter((Wordlists.name == filename) | (Wordlists.checksum == wordlist_checksum)).first()
+                if existing_wordlist is None:
+                    wordlist = Wordlists(
+                        name=filename,
+                        owner_id=1,
+                        type="static",
+                        path=file_path,  # Adjust if you need to move the file or change its path
+                        checksum=wordlist_checksum,
+                        size=wordlist_size,
+                    )
+                    db.session.add(wordlist)
+                    db.session.commit()
+                    print(f"Uploaded {filename} to database.")
+
+def upload_static_rules(app):
+    with app.app_context():
+        DIRECTORY_TO_WATCH = "/app/hashview/control/rules/auto_upload/"
+        # Assuming owner_id '1' is used for demonstration; adjust as necessary
+        owner_id = '1'
+        rule_type = 'static'
+
+        from hashview.models import Rules, db
+        from hashview.utils.utils import get_filehash, get_linecount
+
+        for filename in os.listdir(DIRECTORY_TO_WATCH):
+            file_path = os.path.join(DIRECTORY_TO_WATCH, filename)
+            if os.path.isfile(file_path):
+
+                print(f"Uploading new static rule: {filename}")
+                rule_size = get_linecount(file_path)
+                rule_checksum = get_filehash(file_path)
+                # Check if rule already exists by name or checksum
+                existing_rule = Rules.query.filter((Rules.name == filename) | (Rules.checksum == rule_checksum)).first()
+                if existing_rule is None:
+                    rule = Rules(
+                        name=filename,
+                        owner_id=1,
+                        path=file_path,  # Adjust if you need to move the file or change its path
+                        checksum=rule_checksum,
+                        size=rule_size,
+                    )
+                    db.session.add(rule)
+                    db.session.commit()
+                    print(f"Uploaded {filename} to database.")
 
 def data_retention_cleanup(app):
     with app.app_context():
         import os
-
         from datetime import datetime, timedelta
 
         from hashview.models import db
         db.init_app(app)
 
-        from hashview.models import Users, Settings, Jobs, JobTasks, JobNotifications, HashfileHashes, HashNotifications, Hashes, Hashfiles
+        from hashview.models import (
+            Hashes,
+            HashfileHashes,
+            Hashfiles,
+            HashNotifications,
+            JobNotifications,
+            Jobs,
+            JobTasks,
+            Settings,
+            Users,
+        )
         from hashview.utils.utils import send_email
 
         print('[DEBUG] Im retaining all the data: ' + str(datetime.now()))
@@ -370,6 +443,8 @@ def cli(args) -> int:
         with app.app_context():
             ensure_version_alignment()
 
+
+
             from hashview.models import db
             from hashview.users.routes import bcrypt
 
@@ -385,7 +460,10 @@ def cli(args) -> int:
             scheduler = app.apscheduler
             scheduler.remove_all_jobs()
             #scheduler.add_job(id='DATA_RETENTION', func=partial(data_retention_cleanup, app), trigger='cron', minute='*') #hour=1
+            scheduler.add_job(id='UPLOAD_STATIC_WORDLISTS', func=partial(upload_static_wordlists, app), trigger='interval', minutes=1)
+            scheduler.add_job(id='UPLOAD_STATIC_RULES', func=partial(upload_static_rules, app), trigger='interval', minutes=1)
             scheduler.add_job(id='DATA_RETENTION', func=partial(data_retention_cleanup, app), trigger='cron', hour='*')
+
 
         if args.debug:
             builtins.state = 'debug'

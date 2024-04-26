@@ -3,7 +3,7 @@ services:
     platform: linux/amd64
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: docker/Dockerfile
       args:
         DB_SERVER: ${DB_SERVER}
         DB_USERNAME: ${DB_USERNAME}

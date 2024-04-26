@@ -24,14 +24,17 @@ ENV DB_SERVER=${DB_SERVER} \
     SMTP_TLS=${SMTP_TLS} \
     CERT_SUBJECT=${CERT_SUBJECT}
  
-COPY . /app
+COPY ../ /app
+COPY ../docker/waitfor.sh /app
+COPY ../docker/setup-docker.py /app
 
-# # Install any needed packages specified in requirements.txt
+# Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt 
+
+# Install netcat to wait for the database to be ready
 RUN apt-get update && apt-get install -y netcat-traditional 
 
-# Read ENV from .env file and pass it to the container so setup.py can read it
-RUN python3 setup.py
-
+# Run the setup script
+RUN python3 setup-docker.py
 
 ENTRYPOINT ["sh", "-c", "./waitfor.sh db && python3 hashview.py"]

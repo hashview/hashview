@@ -566,8 +566,8 @@ def validate_hash_only_hashfile(hashfile_path, hash_type):
                 if dollar_cnt != 3:
                     return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: bcrypt'
             if hash_type == '5700':
-                if len(line.rstrip()) != 45:
-                    return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 45'
+                if len(line.rstrip()) != 43:
+                    return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 43'
             if hash_type == '7100':
                 if '$' not in line:
                     return 'Error line ' + str(line_number) + ' is missing a $ character. Mac OSX 10.8+ ($ml$) hashes should have these.'
@@ -577,6 +577,17 @@ def validate_hash_only_hashfile(hashfile_path, hash_type):
                         dollar_cnt += 1
                 if dollar_cnt != 2:
                     return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Mac OSX 10.8+ ($ml$)'
+            if hash_type == '9400' or hash_type == '9500' or hash_type == '9600':
+                if '$' not in line:
+                    return 'Error line ' + str(line_number) + ' is missing a $ character. Office hashes require 2.'
+                if '*' not in line:
+                    return 'Error line ' + str(line_number) + ' is missing a * character. Office hashes require 6.'
+                star_cnt = 0
+                for char in line:
+                    if char == '*':
+                        star_cnt +=1
+                if star_cnt != 7:
+                    return 'Error line ' + str(line_number) + '. Does not appear to be of the type office.'              
 
     return False
 

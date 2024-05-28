@@ -1,14 +1,10 @@
-from flask import Blueprint, jsonify, render_template, request, redirect, send_from_directory
+"""Flask routes to handle Analytics"""
+import operator
+import re
+from flask import Blueprint, render_template, request, redirect, send_from_directory
 from flask_login import login_required
 from hashview.models import Customers, HashfileHashes, Hashes, Hashfiles
 from hashview.models import db
-import re
-import operator
-
-# TODO
-# This whole things is a mess
-# Each graph should be its own route
-
 
 analytics = Blueprint('analytics', __name__)
 
@@ -16,6 +12,7 @@ analytics = Blueprint('analytics', __name__)
 @analytics.route('/analytics', methods=['GET'])
 @login_required
 def get_analytics():
+    """Function to list Analytics Page"""
 
     if request.args.get("customer_id"):
         customer_id = request.args["customer_id"]
@@ -49,13 +46,13 @@ def get_analytics():
         fig1_uncracked_cnt = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='0').count()
 
     fig1_data = [
-        ("Recovered: " + str(formatDisplay(fig1_cracked_cnt)), fig1_cracked_cnt),
-        ("Unrecovered: " + str(formatDisplay(fig1_uncracked_cnt)), fig1_uncracked_cnt)
+        ("Recovered: " + str(format_display(fig1_cracked_cnt)), fig1_cracked_cnt),
+        ("Unrecovered: " + str(format_display(fig1_uncracked_cnt)), fig1_uncracked_cnt)
     ]
 
     fig1_labels = [row[0] for row in fig1_data]
     fig1_values = [row[1] for row in fig1_data]
-    fig1_total = (fig1_cracked_cnt + fig1_uncracked_cnt)
+    fig1_total = fig1_cracked_cnt + fig1_uncracked_cnt
 
     # Cracked Percent
     fig1_percent = 0 if (0 == fig1_total) else [str(round(((fig1_cracked_cnt / fig1_total)*100),1)) + '%']
@@ -96,9 +93,9 @@ def get_analytics():
             fig2_meets_complexity_cnt = fig2_meets_complexity_cnt + 1
 
     fig2_data = [
-        ("Fails Complexity: " + str(formatDisplay(fig2_fails_complexity_cnt)), fig2_fails_complexity_cnt),
-        ("Meets Complexity: " + str(formatDisplay(fig2_meets_complexity_cnt)), fig2_meets_complexity_cnt),
-        ("Unrecovered: " + str(formatDisplay(fig2_uncracked_cnt)), fig2_uncracked_cnt)
+        ("Fails Complexity: " + str(format_display(fig2_fails_complexity_cnt)), fig2_fails_complexity_cnt),
+        ("Meets Complexity: " + str(format_display(fig2_meets_complexity_cnt)), fig2_meets_complexity_cnt),
+        ("Unrecovered: " + str(format_display(fig2_uncracked_cnt)), fig2_uncracked_cnt)
     ]
 
     fig2_labels = [row[0] for row in fig2_data]
@@ -119,13 +116,13 @@ def get_analytics():
         fig3_uncracked_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='0').distinct(Hashes.ciphertext).count()
 
     fig3_data = [
-        ("Recovered: " + str(formatDisplay(fig3_cracked_cnt)), fig3_cracked_cnt),
-        ("Unrecovered: " + str(formatDisplay(fig3_uncracked_cnt)), fig3_uncracked_cnt)
+        ("Recovered: " + str(format_display(fig3_cracked_cnt)), fig3_cracked_cnt),
+        ("Unrecovered: " + str(format_display(fig3_uncracked_cnt)), fig3_uncracked_cnt)
     ]
 
     fig3_labels = [row[0] for row in fig3_data]
     fig3_values = [row[1] for row in fig3_data]
-    fig3_total = (fig3_cracked_cnt + fig3_uncracked_cnt)
+    fig3_total = fig3_cracked_cnt + fig3_uncracked_cnt
 
     # Cracked Percent
     fig3_percent = 0 if (0 == fig3_total) else [str(round(((fig3_cracked_cnt / fig3_total)*100),1)) + '%']
@@ -155,8 +152,8 @@ def get_analytics():
         total_accounts = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).count()
         total_unique_hashes = db.session.query(Hashes).count()
 
-    total_accounts = formatDisplay(total_accounts)
-    total_unique_hashes = formatDisplay(total_unique_hashes)
+    total_accounts = format_display(total_accounts)
+    total_unique_hashes = format_display(total_unique_hashes)
 
     # Figure 4 (Charset Breakdown)
     # Reusing fig2_cracked_hashes data
@@ -230,22 +227,22 @@ def get_analytics():
 
     # We only want the top 4 with the 5th being other
     fig4_dict = {
-        "Blank (unset): " + str(formatDisplay(blank)): blank,
-        "Numeric Only: " + str(formatDisplay(numeric)) : numeric,
-        "LowerAlpha Only: " + str(formatDisplay(loweralpha)): loweralpha,
-        "UpperAlpha Only: " + str(formatDisplay(upperalpha)): upperalpha,
-        "Special Only: " + str(formatDisplay(special)): special,
-        "MixedAlpha: " + str(formatDisplay(mixedalpha)): mixedalpha,
-        "MixedAlphaNumeric: " +str(formatDisplay(mixedalphanum)): mixedalphanum,
-        "LowerAlphaNumeric: " + str(formatDisplay(loweralphanum)): loweralphanum,
-        "LowerAlphaSpecial: " + str(formatDisplay(loweralphaspecial)): loweralphaspecial,
-        "UpperAlphaSpecial: " + str(formatDisplay(upperalphaspecial)): upperalphaspecial,
-        "SpecialNumeric: " + str(formatDisplay(specialnum)): specialnum,
-        "MixedAlphaSpecial: " + str(formatDisplay(mixedalphaspecial)): mixedalphaspecial,
-        "UpperAlphaSpecialNumeric: " + str(formatDisplay(upperalphaspecialnum)): upperalphaspecialnum,
-        "LowerAlphaSpecialNumeric: " + str(formatDisplay(loweralphaspecialnum)): loweralphaspecialnum,
-        "MixedAlphaSpecialNumeric: " + str(formatDisplay(mixedalphaspecialnum)): mixedalphaspecialnum,
-        "Other: " + str(formatDisplay(other)): other,
+        "Blank (unset): " + str(format_display(blank)): blank,
+        "Numeric Only: " + str(format_display(numeric)) : numeric,
+        "LowerAlpha Only: " + str(format_display(loweralpha)): loweralpha,
+        "UpperAlpha Only: " + str(format_display(upperalpha)): upperalpha,
+        "Special Only: " + str(format_display(special)): special,
+        "MixedAlpha: " + str(format_display(mixedalpha)): mixedalpha,
+        "MixedAlphaNumeric: " +str(format_display(mixedalphanum)): mixedalphanum,
+        "LowerAlphaNumeric: " + str(format_display(loweralphanum)): loweralphanum,
+        "LowerAlphaSpecial: " + str(format_display(loweralphaspecial)): loweralphaspecial,
+        "UpperAlphaSpecial: " + str(format_display(upperalphaspecial)): upperalphaspecial,
+        "SpecialNumeric: " + str(format_display(specialnum)): specialnum,
+        "MixedAlphaSpecial: " + str(format_display(mixedalphaspecial)): mixedalphaspecial,
+        "UpperAlphaSpecialNumeric: " + str(format_display(upperalphaspecialnum)): upperalphaspecialnum,
+        "LowerAlphaSpecialNumeric: " + str(format_display(loweralphaspecialnum)): loweralphaspecialnum,
+        "MixedAlphaSpecialNumeric: " + str(format_display(mixedalphaspecialnum)): mixedalphaspecialnum,
+        "Other: " + str(format_display(other)): other,
         }
 
     fig4_array_sorted = dict(sorted(fig4_dict.items(), key=operator.itemgetter(1),reverse=True))
@@ -418,6 +415,7 @@ def get_analytics():
 @analytics.route('/analytics/download', methods=['GET'])
 @login_required
 def analytics_download_hashes():
+    """Function to download hashes"""
 
     filename = ''
 
@@ -474,6 +472,6 @@ def analytics_download_hashes():
     outfile.close()
     return send_from_directory('control/tmp', filename, as_attachment=True)
 
-def formatDisplay(number): # add commas to the number after every thousand places
+def format_display(number):
+    """Function to commas to the number after every thousand places"""
     return "{:,}".format(number)
-

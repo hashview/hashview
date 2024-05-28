@@ -31,7 +31,7 @@ def ensure_requests():
 def ensure_flask_bcrypt():
     try:
         import flask_bcrypt
-        if ('1.0.1' >=flask_bcrypt.__version__):
+        if '1.0.1' >=flask_bcrypt.__version__:
             raise Exception('old version')
     except:
         print('\nPlease make sure that your dependencies are up to date (including replacing Flask-Bcrypt with Bcrypt-Flask).')
@@ -98,7 +98,7 @@ def ensure_settings_cli(db):
     else:
         retention_period_int :int = 0
         retention_period_raw :Optional[str] = None
-        while (1 > retention_period_int > 65535):
+        while 1 > retention_period_int > 65535:
             if retention_period_raw:
                 print('Error: Retention must be between 1 day and 65535 days')
             retention_period_raw = input("Enter how long data should be retained in DB in days. (note: cracked hashes->plaintext will be be safe from retention culling): ")
@@ -124,7 +124,7 @@ def cli(args) -> int:
     try:
         # sometimes when called, the first argument is the name of the script,
         # this does not need to be parsed, and should be removed from the args
-        if (Path(__file__).resolve() == Path(args[0]).resolve()):
+        if Path(__file__).resolve() == Path(args[0]).resolve():
             args = args[1:]
 
         parser = argparse.ArgumentParser()
@@ -176,4 +176,4 @@ def cli(args) -> int:
 
 
 if __name__ == '__main__':
-    exit(cli(sys.argv))
+    sys.exit(cli(sys.argv))

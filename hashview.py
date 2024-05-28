@@ -6,6 +6,7 @@ import argparse
 import builtins
 import traceback
 
+from pathlib import Path
 from typing import Optional
 from functools import partial
 
@@ -124,7 +125,7 @@ def cli(args) -> int:
     try:
         # sometimes when called, the first argument is the name of the script,
         # this does not need to be parsed, and should be removed from the args
-        if (__file__ == args[0]):
+        if (Path(__file__).resolve() == Path(args[0]).resolve()):
             args = args[1:]
 
         parser = argparse.ArgumentParser()

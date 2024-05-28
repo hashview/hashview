@@ -2,3 +2,7 @@
 *
 # Except this file
 !.gitignore
+
+# Except directories containing .gitkeep files
+!*/
+!.gitkeep

@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-import sys
 import os
+import sys
 from getpass import getpass
 
 # Step 1

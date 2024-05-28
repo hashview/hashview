@@ -1,9 +1,9 @@
+"""Flask routes to handle Hashfiles"""
 from flask import Blueprint, render_template, url_for, redirect, flash
 from flask_login import login_required, current_user
+from sqlalchemy.sql import exists
 from hashview.models import Hashfiles, Customers, Jobs, HashfileHashes, HashNotifications, Hashes
 from hashview.models import db
-from sqlalchemy.sql import exists
-from sqlalchemy import delete
 
 hashfiles = Blueprint('hashfiles', __name__)
 
@@ -11,6 +11,7 @@ hashfiles = Blueprint('hashfiles', __name__)
 @login_required
 
 def hashfiles_list():
+    """Function to return list of hashfiles"""
     hashfiles = Hashfiles.query.order_by(Hashfiles.uploaded_at.desc()).all()
     # customers = Customers.query.order_by(Customers.name).all()
     customers = Customers.query.filter(exists().where(Customers.id == Hashfiles.customer_id)).all()
@@ -29,13 +30,13 @@ def hashfiles_list():
             hash_type_dict[hashfile.id] = db.session.query(Hashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id==hashfile.id).first().hash_type
         else:
             hash_type_dict[hashfile.id] = 'UNKNOWN'
-            
 
     return render_template('hashfiles.html', title='Hashfiles', hashfiles=hashfiles, customers=customers, cracked_rate=cracked_rate, jobs=jobs, hash_type_dict=hash_type_dict)
 
 @hashfiles.route("/hashfiles/delete/<int:hashfile_id>", methods=['GET', 'POST'])
 @login_required
 def hashfiles_delete(hashfile_id):
+    """Function to delete hashfile by id"""
     hashfile = Hashfiles.query.get_or_404(hashfile_id)
     jobs = Jobs.query.filter_by(hashfile_id = hashfile_id).first()
 
@@ -58,4 +59,3 @@ def hashfiles_delete(hashfile_id):
     else:
         flash('Error in deleteing hashfile', 'danger')
         return redirect(url_for('hashfiles.hashfiles_list'))
-

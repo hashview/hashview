@@ -100,6 +100,6 @@ Contact us on Twitter
 
 A basic docker setup for development is provided. It is not meant to be production-ready. Use at your own risk.
 
-### 1) Create a `config.conf`file, customizing it as needed.
+### 1) Create a `./hashview/config.conf`file, customizing it as needed.
 ### 2) Be sure to change the MYSQL_PASSWORD in `docker-compose.yml` (and match it with the value in `config.conf`).
 ### 3) Run `docker compose up`

@@ -1,10 +1,13 @@
+"""Forms Page to manage Jobs"""
 from flask_wtf import FlaskForm
-from wtforms import StringField, SubmitField, SelectField, TextAreaField, FileField, SelectMultipleField, widgets
+from wtforms import StringField, SubmitField, SelectField, TextAreaField, FileField
 from wtforms.validators import DataRequired, ValidationError
 from hashview.models import Jobs
 
 
 class JobsForm(FlaskForm):
+    """Class representing an Jobs Forms"""
+
 	name = StringField('Job Name', validators=[DataRequired()])
 	priority = SelectField('Job Priority', choices=[('5', '5 - highest'),
 													('4', '4 - higher'),
@@ -21,6 +24,8 @@ class JobsForm(FlaskForm):
 			raise ValidationError('That job name is taken. Please choose a different one.')
 
 class JobsNewHashFileForm(FlaskForm):
+    """Class representing an Jobs New Hashfile Form"""
+
     name = StringField('Hashfile Name') # While required we may dynamically create this based on file upload
     file_type = SelectField('Hash File Format', choices=[('', '--SELECT--'),
 													('pwdump', 'pwdump()'), 
@@ -216,6 +221,8 @@ class JobsNewHashFileForm(FlaskForm):
     submit = SubmitField('Next')
 
 class JobsNotificationsForm(FlaskForm):
+	"""Class representing Job Notification Form"""    
+
     job_completion = SelectField('Notify when Job completes', choices=[('none', 'No'),
 													                    ('email', 'Send Email'),
 													                    ('push', 'Send Push Notification')], validators=[DataRequired()])
@@ -225,4 +232,6 @@ class JobsNotificationsForm(FlaskForm):
     submit = SubmitField('Next')
 
 class JobSummaryForm(FlaskForm):
+    """Class representing an Jobs Summary"""
+
     submit = SubmitField('Complete')

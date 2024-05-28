@@ -140,6 +140,7 @@ def cli(args) -> int:
         with app.app_context():
             from hashview.models import db
             from hashview.users.routes import bcrypt
+            from hashview.scheduler import data_retention_cleanup
 
             ensure_settings_cli(db)
             ensure_admin_account_cli(db, bcrypt)

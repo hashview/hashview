@@ -167,9 +167,9 @@ def cli(args) -> int:
         else:
             app.run(host='0.0.0.0', port=8443, ssl_context=('./hashview/ssl/cert.pem', './hashview/ssl/key.pem'), debug=parsed_args.debug)
 
-    except:
-        print('Exception!:')
-        traceback.print_exc()
+    except Exception as ex:
+        print(f'Exception!: {ex}', file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
         return 1
 
     else:

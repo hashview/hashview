@@ -1,3 +1,4 @@
+"""Flask routes to handle Customers"""
 from flask import Blueprint, render_template, redirect, url_for, flash
 from flask_login import login_required, current_user
 from hashview.models import Customers, Jobs, Hashfiles, HashfileHashes, Hashes, HashNotifications
@@ -13,6 +14,7 @@ customers = Blueprint('customers', __name__)
 @customers.route("/customers", methods=['GET'])
 @login_required
 def customers_list():
+    """Function to return list of customers"""
     customers = Customers.query.order_by(Customers.name).all()
     jobs = Jobs.query.all()
     hashfiles = Hashfiles.query.all()
@@ -21,18 +23,20 @@ def customers_list():
 @customers.route("/customers/add", methods=['GET', 'POST'])
 @login_required
 def customers_add():
+    """Function to add a new customer"""
     form = CustomersForm()
     if form.validate_on_submit():
         customer = Customers(name=form.name.data)
         db.session.add(customer)
         db.session.commit()
-        flash(f'Customer created!', 'success')
+        flash('Customer created!', 'success')
         return redirect(url_for('customers.customers_list'))  # will need to do a conditional return if this was reated during a job creation
     return render_template('cusomers_add.html', title='Customer Add', form=form)
 
 @customers.route("/customers/delete/<int:customer_id>", methods=['POST'])
 @login_required
 def customers_delete(customer_id):
+    """Function to delete a customer"""
     customer = Customers.query.get_or_404(customer_id)
     if current_user.admin:
         # Check if jobs are present

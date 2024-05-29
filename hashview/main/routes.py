@@ -1,3 +1,4 @@
+"""Flask routes to main page"""
 import json
 
 from flask import Blueprint, render_template, redirect, flash
@@ -13,6 +14,7 @@ main = Blueprint('main', __name__)
 @main.route("/")
 @login_required
 def home():
+    """Function to return the home page"""
     jobs = Jobs.query.filter(or_((Jobs.status.like('Running')),(Jobs.status.like('Queued'))))
     running_jobs = Jobs.query.filter_by(status = 'Running').order_by(Jobs.priority.desc(), Jobs.queued_at.asc()).all()
     queued_jobs = Jobs.query.filter_by(status = 'Queued').order_by(Jobs.priority.desc(), Jobs.queued_at.asc()).all()
@@ -33,13 +35,15 @@ def home():
 
     collapse_all = ""
     for job in jobs:
-        collapse_all = (collapse_all + "collapse" + str(job.id) + " ")
+        collapse_all = collapse_all + "collapse" + str(job.id) + " "
 
     return render_template('home.html', jobs=jobs, running_jobs=running_jobs, queued_jobs=queued_jobs, users=users, customers=customers, job_tasks=job_tasks, tasks=tasks, agents=agents, recovered_list=recovered_list, time_estimated_list=time_estimated_list, collapse_all=collapse_all)
 
 @main.route("/job_task/stop/<int:job_task_id>")
 @login_required
 def stop_job_task(job_task_id):
+    """Function to stop specific task on a running job"""
+
     job_task = JobTasks.query.get(job_task_id)
     job = Jobs.query.get(job_task.job_id)
 
@@ -50,5 +54,3 @@ def stop_job_task(job_task_id):
             flash('You are unauthorized to stop this task', 'danger')
 
     return redirect("/")
-
-

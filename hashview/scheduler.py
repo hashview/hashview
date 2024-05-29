@@ -1,3 +1,4 @@
+"""Function file to scheduler"""
 from logging import Logger
 from functools import partial
 
@@ -13,6 +14,7 @@ scheduler = APScheduler()
 
 def try_send_email(user, subject :str, plaintext_body :str, mailer :Mail) -> bool:
     """ try to send an email, returning an error message on failure """
+
     error = 'unknown error'
     try:
         error = f"failed to get user's email address from user: {user!r}"
@@ -36,6 +38,8 @@ def try_send_email(user, subject :str, plaintext_body :str, mailer :Mail) -> boo
 
 
 def _data_retention_cleanup_inner(db :SQLAlchemy, mailer :Mail, logger :Logger):
+    """ description needed """
+
     from pathlib import Path
     from datetime import datetime
     from datetime import timedelta
@@ -133,11 +137,11 @@ def _data_retention_cleanup_inner(db :SQLAlchemy, mailer :Mail, logger :Logger):
     tmp_directory = Path('hashview/control/tmp').resolve()
     retention_limit = datetime.time() - retention_period * 86400
     for child in tmp_directory.iterdir():
-        if ('.gitignore' == child.name):
+        if '.gitignore' == child.name:
             logger.debug('DataRetentionCleanup.TempFile Progressing with StepResult(Ignored: %s).', child)
             continue
 
-        if (child.stat().st_mtime < retention_limit):
+        if child.stat().st_mtime < retention_limit:
             child.unlink()
             logger.debug('DataRetentionCleanup.TempFile Progressing with StepResult(Removed: %s).', child)
             continue
@@ -147,6 +151,7 @@ def _data_retention_cleanup_inner(db :SQLAlchemy, mailer :Mail, logger :Logger):
 
 
 def data_retention_cleanup(app :Flask):
+    """ Function to manage retention cleanup """
     with app.app_context():
         try:
             app.logger.info('DataRetentionCleanup ScheduledJob Progressing.')

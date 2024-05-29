@@ -7,10 +7,10 @@ from getpass import getpass
 # Check version of python
 if sys.version_info.major < 3:
     print('You must be running python 3.6 or newer')
-    exit()
+    sys.exit()
 if sys.version_info.minor < 6:
     print('You must be running python 3.6 or newer')
-    exit()
+    sys.exit()
 
 # Step 2
 # Check if running as root
@@ -19,7 +19,7 @@ if os.geteuid() == 0:
     print('If you continue, any installed python modules will be installed as root and not a regular user.')
     continue_as_root = input('Would you like to continue as root? [y/N]: ')
     if continue_as_root.lower() != 'y':
-        exit()
+        sys.exit()
 
 # Step 3
 # Check if upgrading or installing
@@ -33,7 +33,7 @@ while step_three_prompt != '1' and step_three_prompt != '2':
 
 if step_three_prompt == '1':
     print("See MIGRATION.md")
-    exit()
+    sys.exit()
 
 # Install dependencies
 def install_and_import(package):
@@ -110,7 +110,7 @@ print('Writing hashview config at: hashview/config.conf')
 # There's probably a better way to do this:
 print('Bulding Database')
 os.system('export FLASK_APP=hashview.py; flask db upgrade')
-    
+
 # Generating SSL Certs
 print('Generating SSL Certificates')
 os.system('openssl req -x509 -newkey rsa:4096 -nodes -out ./hashview/ssl/cert.pem -keyout ./hashview/ssl/key.pem -days 365')

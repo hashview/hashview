@@ -1,3 +1,4 @@
+"""Main Entry Point when running as standalone script"""
 #!/usr/bin/python3
 import sys
 import logging
@@ -13,6 +14,8 @@ from hashview import create_app
 
 
 def ensure_authlib():
+    """Ensuring authlib module is installed"""
+
     try:
         from authlib import jose
     except:
@@ -21,6 +24,8 @@ def ensure_authlib():
 
 
 def ensure_requests():
+    """Ensuring requests module is installed"""
+
     try:
         import requests
     except:
@@ -29,6 +34,8 @@ def ensure_requests():
 
 
 def ensure_flask_bcrypt():
+    """Ensuring flask_bcrypt module is installed"""
+
     try:
         import flask_bcrypt
         if '1.0.1' >=flask_bcrypt.__version__:

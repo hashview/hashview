@@ -1,3 +1,4 @@
+"""Flask routes to handle Rules"""
 import os
 from flask import Blueprint, render_template, flash, url_for, redirect, current_app
 from flask_login import login_required, current_user
@@ -16,6 +17,7 @@ rules = Blueprint('rules', __name__)
 @rules.route("/rules", methods=['GET'])
 @login_required
 def rules_list():
+    """Function to return list of rules"""
     rules = Rules.query.all()
     tasks = Tasks.query.all()
     jobs = Jobs.query.all()
@@ -26,6 +28,7 @@ def rules_list():
 @rules.route("/rules/add", methods=['GET', 'POST'])
 @login_required
 def rules_add():
+    """Function to rules file"""
     form = RulesForm()
     if form.validate_on_submit():
         if form.rules.data:
@@ -38,13 +41,14 @@ def rules_add():
                             checksum=get_filehash(rules_path))
             db.session.add(rule)
             db.session.commit()
-            flash(f'Rules File created!', 'success')
+            flash('Rules File created!', 'success')
             return redirect(url_for('rules.rules_list'))
     return render_template('rules_add.html', title='Rules Add', form=form)
 
 @rules.route("/rules/delete/<int:rule_id>", methods=['GET', 'POST'])
 @login_required
 def rules_delete(rule_id):
+    """Function to rules file"""
     rule = Rules.query.get(rule_id)
     if current_user.admin or rule.owner_id == current_user.id:
         # Check if part of a task

@@ -1,15 +1,19 @@
+"""Forms Page to manage Setup"""
 from flask_wtf import FlaskForm
-from wtforms import StringField, SubmitField, SelectField
+from wtforms import StringField, SubmitField
 from wtforms.validators import DataRequired, ValidationError
-from hashview.models import Wordlists, Rules, Tasks
-from wtforms_sqlalchemy.fields import QuerySelectField
+from hashview.models import Tasks
 
 
 class TaskGroupsForm(FlaskForm):
-    name = StringField('Name', validators=([DataRequired()]))
+    """Class representing Task Group Forms"""
+
+    name = StringField('Name', validators=[DataRequired()])
     submit = SubmitField('Create')  
 
     def validate_task(self, name):
+        """Function to validate task"""
+
         task = Tasks.query.filter_by(name = name.data).first()
         if task:
             raise ValidationError('That task name is taken. Please choose a different one.')

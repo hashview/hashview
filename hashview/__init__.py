@@ -79,7 +79,7 @@ def setup_defaults_if_needed():
         from hashview.scheduler import scheduler
         from hashview.scheduler import data_retention_cleanup
         logger.info('Clearing Scheduled Jobs.')
-        scheduler.delete_all_jobs()
+        scheduler.remove_all_jobs()
         logger.info('Adding Default Scheduled Jobs Progressing.')
         scheduler.add_job(id='DATA_RETENTION', func=partial(data_retention_cleanup, current_app), trigger='cron', hour='*')
         logger.info('Adding Default Scheduled Jobs is Complete.')

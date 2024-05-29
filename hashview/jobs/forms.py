@@ -6,7 +6,7 @@ from hashview.models import Jobs
 
 
 class JobsForm(FlaskForm):
-    """Class representing an Jobs Forms"""
+	"""Class representing an Jobs Forms"""
 
 	name = StringField('Job Name', validators=[DataRequired()])
 	priority = SelectField('Job Priority', choices=[('5', '5 - highest'),
@@ -221,15 +221,15 @@ class JobsNewHashFileForm(FlaskForm):
     submit = SubmitField('Next')
 
 class JobsNotificationsForm(FlaskForm):
-	"""Class representing Job Notification Form"""    
+	"""Class representing Job Notification Form"""
 
-    job_completion = SelectField('Notify when Job completes', choices=[('none', 'No'),
+	job_completion = SelectField('Notify when Job completes', choices=[('none', 'No'),
 													                    ('email', 'Send Email'),
 													                    ('push', 'Send Push Notification')], validators=[DataRequired()])
-    hash_completion = SelectField('Notify when specific hashes crack', choices=[('none', 'No'),
+	hash_completion = SelectField('Notify when specific hashes crack', choices=[('none', 'No'),
 													                    ('email', 'Send Email'),
 													                    ('push', 'Send Push Notification')], validators=[DataRequired()])
-    submit = SubmitField('Next')
+	submit = SubmitField('Next')
 
 class JobSummaryForm(FlaskForm):
     """Class representing an Jobs Summary"""

@@ -1,17 +1,21 @@
+"""Flask routes to handle utils"""
 import os
 import secrets
 import hashlib
-import _md5
 import re
 from datetime import datetime
+import _md5
+from flask import current_app, url_for
+import requests
 from hashview.models import db
 from hashview.models import Rules, Wordlists, Hashfiles, HashfileHashes, Hashes, Tasks, Jobs, JobTasks, JobNotifications, Users, Agents
 from flask_mail import Message
-from flask import current_app, url_for
-import requests
+
 
 
 def save_file(path, form_file):
+    """Function to safe file from form submission"""
+
     random_hex = secrets.token_hex(8)
     file_name = random_hex + os.path.split(form_file.filename)[0] + '.txt'
     file_path = os.path.join(current_app.root_path, path, file_name)
@@ -25,6 +29,7 @@ def _count_generator(reader):
         b = reader(1024 * 1024)
 
 def get_linecount(filepath):
+    """Function to return line count of file"""
 
     with open(filepath, 'rb') as fp:
         c_generator = _count_generator(fp.raw.read)
@@ -32,6 +37,8 @@ def get_linecount(filepath):
         return count + 1
 
 def get_filehash(filepath):
+    """Function to sha256 hash of file"""
+
     sha256_hash = hashlib.sha256()
     with open(filepath,"rb") as f:
         # Read and update hash string value in blocks of 4K
@@ -40,6 +47,8 @@ def get_filehash(filepath):
     return sha256_hash.hexdigest()
 
 def send_email(user, subject, message):
+    """Function to send email"""
+
     msg = Message(subject, recipients=[user.email_address])
     msg.body = message
     try:
@@ -49,11 +58,15 @@ def send_email(user, subject, message):
         return False
 
 def send_html_email(user, subject, message):
+    """Function to send html based email"""
+
     msg = Message(subject, recipients=[user.email_address])
     msg.html = message
     current_app.extensions['mail'].send(msg)
 
 def send_pushover(user, subject, message):
+    """Function to send pushover notification"""
+
     if not user.pushover_user_key:
         current_app.logger.info('SendPushover is Complete with Failure(User Key not Configured).')
         return
@@ -69,34 +82,38 @@ def send_pushover(user, subject, message):
         message = message,
         title   = subject,
     )
-    response = requests.post('https://api.pushover.net/1/messages.json', params=payload)
+    response = requests.post('https://api.pushover.net/1/messages.json', params=payload, timeout=30)
     response_json = response.json()
     if 400 <= response.status_code < 500:
         current_app.logger.info('SendPushover is Complete with Failure(%s).', response_json.get('errors'))
         send_email(user, 'Error Sending Push Notification', f'Check your Pushover API keys in  your profile. Original Message: {message}')
         return
 
-    else:
-        current_app.logger.info('SendPushover is Complete with Success(%s).', response_json)
-        return
+    current_app.logger.info('SendPushover is Complete with Success(%s).', response_json)
+    return
 
 def get_md5_hash(string):
-    #m = hashlib.md5()
-    #m.update(string.encode('utf-8'))
+    """Function to get md5 hash of string"""
+
     m = _md5.md5(string.encode('utf-8'))
     return m.hexdigest()
 
 def import_hash_only(line, hash_type):
+    """Function to import single hash"""
+
     hash = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(line)).first()
+
     if hash:
         return hash.id
-    else:
-        new_hash = Hashes(hash_type=hash_type, sub_ciphertext=get_md5_hash(line), ciphertext=line, cracked=0)
-        db.session.add(new_hash)
-        db.session.commit()
-        return new_hash.id
+
+    new_hash = Hashes(hash_type=hash_type, sub_ciphertext=get_md5_hash(line), ciphertext=line, cracked=0)
+    db.session.add(new_hash)
+    db.session.commit()
+    return new_hash.id
 
 def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
+    """Function to hashfile"""
+
     # Open file
     file = open(hashfile_path, 'r')
     lines = file.readlines()
@@ -107,7 +124,7 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
         if len(line) > 0:
             if file_type == 'hash_only':
                 # forcing lower casing of hash as hashcat will return lower cased version of the has and we want to match what we imported.
-                if hash_type == '300' or hash_type == '1731':
+                if hash_type in ('300', '1731'):
                     hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
                 elif hash_type == '2100':
                     line = line.lower().rstrip()
@@ -122,7 +139,7 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                     username = None
             elif file_type == 'user_hash':
                 if ':' in line:
-                    if hash_type == '300' or hash_type == '1731':
+                    if hash_type in ('300', '1731'):
                         hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
                     if hash_type == '2100':
                         line = line.split(':',1)[1].rstrip()
@@ -170,10 +187,10 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                     line_list[5] = line_list[5].lower()
                     line = ':'.join(line_list)
                     hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
-                    username = line.split(':')[0]
+                    username = line.split(':', maxsplit=1)[0]
             else:
                 return False
-            if username == None:
+            if username is None:
                 hashfilehashes = HashfileHashes(hash_id=hash_id, hashfile_id=hashfile_id)
             else:
                 hashfilehashes = HashfileHashes(hash_id=hash_id, username=username.encode('latin-1').hex(), hashfile_id=hashfile_id)
@@ -183,6 +200,8 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
     return True
 
 def update_dynamic_wordlist(wordlist_id):
+    """Function to update dynamic wordlist"""
+
     wordlist = Wordlists.query.get(wordlist_id)
     hashes = Hashes.query.filter_by(cracked=True).distinct('plaintext')
 
@@ -205,7 +224,8 @@ def update_dynamic_wordlist(wordlist_id):
     db.session.commit()
 
 def build_hashcat_command(job_id, task_id):
-    # this function builds the main hashcat cmd we use to crack.
+    """Function to build the main hashcat cmd we use to crack"""
+
     hc_binpath = '@HASHCATBINPATH@'
     task = Tasks.query.get(task_id)
     job = Jobs.query.get(job_id)
@@ -244,11 +264,12 @@ def build_hashcat_command(job_id, task_id):
         else:
             cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + target_file + ' ' + relative_wordlist_path
     elif attackmode == 'combinator':
-      cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -a 1 ' + target_file + ' ' + wordlist_one.path + ' ' + ' ' + wordlist_two.path + ' ' + relative_rules_path
+        cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -a 1 ' + target_file + ' ' + wordlist_one.path + ' ' + ' ' + wordlist_two.path + ' ' + relative_rules_path
 
     return cmd
 
 def update_job_task_status(jobtask_id, status):
+    """Function to update task status of a job"""
 
     jobtask = JobTasks.query.get(jobtask_id)
 
@@ -289,7 +310,7 @@ def update_job_task_status(jobtask_id, status):
 
         start_time = datetime.strptime(str(job.started_at), '%Y-%m-%d %H:%M:%S')
         end_time = datetime.strptime(str(job.ended_at), '%Y-%m-%d %H:%M:%S')
-        durration = (abs(end_time - start_time).seconds) # So dumb you cant conver this to minutes, only resolution is seconds or days :(
+        durration = abs(end_time - start_time).seconds # So dumb you cant conver this to minutes, only resolution is seconds or days :(
 
         hashfile = Hashfiles.query.get(job.hashfile_id)
         hashfile.runtime += durration
@@ -317,6 +338,8 @@ def update_job_task_status(jobtask_id, status):
     return True
 
 def validate_pwdump_hashfile(hashfile_path, hash_type):
+    """Function to validate if hashfile submitted is a pwdump format"""
+
     file = open(hashfile_path, 'r')
     lines = file.readlines()
     line_number = 0
@@ -344,7 +367,9 @@ def validate_pwdump_hashfile(hashfile_path, hash_type):
                 return 'Sorry. The only Hash Type we support for PWDump files is NTLM'
     return False
 
-def validate_netntlm_hashfile(hashfile_path, hash_type):
+def validate_netntlm_hashfile(hashfile_path):
+    """Function to validate if hashfile submitted is a netntlm format"""
+
     file = open(hashfile_path, 'r')
     lines = file.readlines()
     line_number = 0
@@ -358,8 +383,7 @@ def validate_netntlm_hashfile(hashfile_path, hash_type):
         username_computer = (line.split(':')[0] + ':' + line.split(':')[2]).lower()
         if username_computer in list_of_username_and_computers:
             return 'Error: Duplicate usernames / computer found in hashfiles (' + str(username_computer) + '). Please only submit unique usernames / computer.'
-        else:
-            list_of_username_and_computers.append(username_computer)
+        list_of_username_and_computers.append(username_computer)
 
     for line in lines:
         line_number += 1
@@ -380,6 +404,8 @@ def validate_netntlm_hashfile(hashfile_path, hash_type):
     return False
 
 def validate_kerberos_hashfile(hashfile_path, hash_type):
+    """Function to validate if hashfile submitted is a kerberos format"""
+
     file = open(hashfile_path, 'r')
     lines = file.readlines()
     line_number = 0
@@ -453,6 +479,8 @@ def validate_kerberos_hashfile(hashfile_path, hash_type):
     return False
 
 def validate_shadow_hashfile(hashfile_path, hash_type):
+    """Function to validate if hashfile submitted is a shadow format"""
+
     file = open(hashfile_path, 'r')
     lines = file.readlines()
     line_number = 0
@@ -477,7 +505,9 @@ def validate_shadow_hashfile(hashfile_path, hash_type):
                     return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Sha512 Crypt from a shadow file.'
     return False
 
-def validate_user_hash_hashfile(hashfile_path, hash_type):
+def validate_user_hash_hashfile(hashfile_path):
+    """Function to validate if hashfile submitted is a user:hash format"""
+
     file = open(hashfile_path, 'r')
     lines = file.readlines()
     line_number = 0
@@ -497,6 +527,7 @@ def validate_user_hash_hashfile(hashfile_path, hash_type):
 # Dumb way of doing this, we return with an error message if we have an issue with the hashfile
 # and return false if hashfile is okay. :/ Should be the otherway around :shrug emoji:
 def validate_hash_only_hashfile(hashfile_path, hash_type):
+    """Function to validate if hashfile submitted is a hash only format"""
 
     file = open(hashfile_path, 'r')
     lines = file.readlines()
@@ -512,7 +543,7 @@ def validate_hash_only_hashfile(hashfile_path, hash_type):
         if len(line) > 0:
 
             # Check hash types
-            if hash_type == '0' or hash_type == '22' or hash_type == '1000':
+            if hash_type in ('0', '22', '1000'):
                 if len(line.rstrip()) != 32:
                     return 'Error line ' + str(line_number) + ' has an invalid number of characters (' + str(len(line.rstrip())) + ') should be 32'
             if hash_type == '122':
@@ -577,7 +608,7 @@ def validate_hash_only_hashfile(hashfile_path, hash_type):
                         dollar_cnt += 1
                 if dollar_cnt != 2:
                     return 'Error line ' + str(line_number) + '. Doesnt appear to be of the type: Mac OSX 10.8+ ($ml$)'
-            if hash_type == '9400' or hash_type == '9500' or hash_type == '9600':
+            if hash_type in ('9400', '9500', '9600'):
                 if '$' not in line:
                     return 'Error line ' + str(line_number) + ' is missing a $ character. Office hashes require 2.'
                 if '*' not in line:
@@ -592,6 +623,8 @@ def validate_hash_only_hashfile(hashfile_path, hash_type):
     return False
 
 def getTimeFormat(total_runtime): # Runtime in seconds
+    """Function to convert seconds into, minutes, hours, days or weeks"""
+
     if total_runtime >= 604800:
         return str(round(total_runtime/604800)) + " week(s)"
     elif total_runtime >= 86400:

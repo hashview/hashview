@@ -103,20 +103,20 @@ def jobs_assigned_hashfile(job_id):
                 has_problem = validate_pwdump_hashfile(hashfile_path, jobs_new_hashfile_form.pwdump_hash_type.data)
                 hash_type = jobs_new_hashfile_form.pwdump_hash_type.data
             elif jobs_new_hashfile_form.file_type.data == 'NetNTLM':
-                has_problem = validate_netntlm_hashfile(hashfile_path, jobs_new_hashfile_form.netntlm_hash_type.data)
+                has_problem = validate_netntlm_hashfile(hashfile_path)
                 hash_type = jobs_new_hashfile_form.netntlm_hash_type.data
             elif jobs_new_hashfile_form.file_type.data == 'kerberos':
-                has_problem = validate_kerberos_hashfile(hashfile_path, jobs_new_hashfile_form.kerberos_hash_type.data) 
+                has_problem = validate_kerberos_hashfile(hashfile_path, jobs_new_hashfile_form.kerberos_hash_type.data)
                 hash_type = jobs_new_hashfile_form.kerberos_hash_type.data
             elif jobs_new_hashfile_form.file_type.data == 'shadow':
                 has_problem = validate_shadow_hashfile(hashfile_path, jobs_new_hashfile_form.shadow_hash_type.data)
                 hash_type = jobs_new_hashfile_form.shadow_hash_type.data
             elif jobs_new_hashfile_form.file_type.data == 'user_hash':
-                has_problem = validate_user_hash_hashfile(hashfile_path, jobs_new_hashfile_form.hash_type.data)
+                has_problem = validate_user_hash_hashfile(hashfile_path)
                 hash_type = jobs_new_hashfile_form.hash_type.data
             elif jobs_new_hashfile_form.file_type.data == 'hash_only':
-                has_problem = validate_hash_only_hashfile(hashfile_path, jobs_new_hashfile_form.hash_type.data) 
-                hash_type = jobs_new_hashfile_form.hash_type.data                                         
+                has_problem = validate_hash_only_hashfile(hashfile_path, jobs_new_hashfile_form.hash_type.data)
+                hash_type = jobs_new_hashfile_form.hash_type.data
             else:
                 has_problem = 'Invalid File Format'
 

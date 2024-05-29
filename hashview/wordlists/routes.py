@@ -1,3 +1,4 @@
+"""Flask routes to handle Wordlists"""
 from flask import Blueprint, render_template, redirect, url_for, flash
 from flask_login import login_required, current_user
 from hashview.wordlists.forms import WordlistsForm
@@ -10,6 +11,8 @@ wordlists = Blueprint('wordlists', __name__)
 @wordlists.route("/wordlists", methods=['GET'])
 @login_required
 def wordlists_list():
+    """Function to present list of wordlists"""
+
     static_wordlists = Wordlists.query.filter_by(type='static').all()
     dynamic_wordlists = Wordlists.query.filter_by(type='dynamic').all()
     wordlists = Wordlists.query.all()
@@ -20,6 +23,8 @@ def wordlists_list():
 @wordlists.route("/wordlists/add", methods=['GET', 'POST'])
 @login_required
 def wordlists_add():
+    """Function to add new wordlist"""
+
     form = WordlistsForm()
     if form.validate_on_submit():
         if form.wordlist.data:
@@ -34,13 +39,15 @@ def wordlists_add():
                                 size=get_linecount(wordlist_path))
             db.session.add(wordlist)
             db.session.commit()
-            flash(f'Wordlist created!', 'success')
+            flash('Wordlist created!', 'success')
             return redirect(url_for('wordlists.wordlists_list'))
     return render_template('wordlists_add.html', title='Wordlist Add', form=form)
 
 @wordlists.route("/wordlists/delete/<int:wordlist_id>", methods=['POST'])
 @login_required
 def wordlists_delete(wordlist_id):
+    """Function to delete wordlist"""
+
     wordlist = Wordlists.query.get(wordlist_id)
     if current_user.admin or wordlist.owner_id == current_user.id:
 
@@ -67,6 +74,8 @@ def wordlists_delete(wordlist_id):
 @wordlists.route("/wordlists/update/<int:wordlist_id>", methods=['GET'])
 @login_required
 def dynamicwordlist_update(wordlist_id):
+    """Function to update dynamic wordlist"""
+
     wordlist = Wordlists.query.get(wordlist_id)
     if wordlist.type == 'dynamic':
         update_dynamic_wordlist(wordlist_id)

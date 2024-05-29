@@ -1,5 +1,4 @@
-import os
-
+"""Flask routes to handle Setup"""
 from datetime import datetime
 
 from flask import flash
@@ -26,25 +25,28 @@ blueprint = Blueprint('setup', __name__)
 
 @blueprint.route('/setup/admin-pass', methods=['GET'])
 def admin_pass_get():
+    """Function to get admin password setup"""
+
     if not admin_pass_needs_changed(db, bcrypt):
         return redirect(url_for('main.home'))
 
-    else:
-        admin_user = db.session.query(Users).filter_by(id=1).first()
+    admin_user = db.session.query(Users).filter_by(id=1).first()
 
-        login_user(admin_user, remember=False)
-        admin_user.last_login_utc = datetime.utcnow()
-        db.session.commit()
+    login_user(admin_user, remember=False)
+    admin_user.last_login_utc = datetime.utcnow()
+    db.session.commit()
 
-        form = SetupAdminPassForm()
-        form.first_name.data    = admin_user.first_name
-        form.last_name.data     = admin_user.last_name
-        form.email_address.data = admin_user.email_address
-        return render_template('setup_admin_pass.html.j2', form=form)
+    form = SetupAdminPassForm()
+    form.first_name.data    = admin_user.first_name
+    form.last_name.data     = admin_user.last_name
+    form.email_address.data = admin_user.email_address
+    return render_template('setup_admin_pass.html.j2', form=form)
 
 
 @blueprint.route('/setup/admin-pass', methods=['POST'])
 def admin_pass_post():
+    """Function to set admin password setup"""
+
     logger = current_app.logger
 
     if not admin_pass_needs_changed(db, bcrypt):
@@ -60,32 +62,34 @@ def admin_pass_post():
         logger.info('%s: Form was not valid.', admin_pass_post.__name__)
         return render_template('setup_admin_pass.html.j2', form=form)
 
-    else:
-        admin_user = db.session.query(Users).filter_by(id=1).first()
-        admin_user.first_name    = form.first_name.data
-        admin_user.last_name     = form.last_name.data
-        admin_user.email_address = form.email_address.data
-        admin_user.password      = bcrypt.generate_password_hash(form.password.data)
-        db.session.commit()
-        flash('Admin password changed!', 'success')
-        return redirect(url_for('setup.settings_get'))
+    admin_user = db.session.query(Users).filter_by(id=1).first()
+    admin_user.first_name    = form.first_name.data
+    admin_user.last_name     = form.last_name.data
+    admin_user.email_address = form.email_address.data
+    admin_user.password      = bcrypt.generate_password_hash(form.password.data)
+    db.session.commit()
+    flash('Admin password changed!', 'success')
+    return redirect(url_for('setup.settings_get'))
 
 
 @blueprint.route('/setup/settings', methods=['GET'])
 def settings_get():
+    """Function to get settings setup"""
+
     if not settings_needs_added(db):
         return redirect(url_for('main.home'))
 
-    else:
-        form = SetupSettingsForm()
-        form.retention_period.data  = 1
-        form.max_runtime_tasks.data = 0
-        form.max_runtime_jobs.data  = 0
-        return render_template('setup_settings.html.j2', form=form)
+    form = SetupSettingsForm()
+    form.retention_period.data  = 1
+    form.max_runtime_tasks.data = 0
+    form.max_runtime_jobs.data  = 0
+    return render_template('setup_settings.html.j2', form=form)
 
 
 @blueprint.route('/setup/settings', methods=['POST'])
 def settings_post():
+    """Function to set settings setup"""
+
     logger = current_app.logger
 
     if not settings_needs_added(db):
@@ -101,13 +105,12 @@ def settings_post():
         logger.info('%s: Form was not valid.', settings_post.__name__)
         return render_template('setup_settings.html.j2', form=form)
 
-    else:
-        settings = Settings(
-            retention_period  = form.retention_period.data,
-            max_runtime_tasks = form.max_runtime_tasks.data,
-            max_runtime_jobs  = form.max_runtime_jobs.data
-        )
-        db.session.add(settings)
-        db.session.commit()
-        flash('Settings added!', 'success')
-        return redirect(url_for('main.home'))
+    settings = Settings(
+        retention_period  = form.retention_period.data,
+        max_runtime_tasks = form.max_runtime_tasks.data,
+        max_runtime_jobs  = form.max_runtime_jobs.data
+    )
+    db.session.add(settings)
+    db.session.commit()
+    flash('Settings added!', 'success')
+    return redirect(url_for('main.home'))

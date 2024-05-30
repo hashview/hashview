@@ -2,6 +2,11 @@
 Notable changes will be documented here
 
 ## Current Release
+## [v0.8.2-Beta] - 2024-XX-XX
+### Added
+### Changed
+### Fixed
+
 ## [v0.8.1-Beta] - 2023-08-18
 ### Added
 - Added support for max runtimes both for Jobs and Tasks. Admins can set the value (in hours) with = 0 being indefinate. 

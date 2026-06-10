@@ -890,6 +890,42 @@ paths:
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
 
+  /v1/hashfiles/{hashfile_id}/conversion:
+    get:
+      tags: [Hashfiles]
+      summary: Poll the conversion status of an uploaded source file
+      description: >-
+        Returns the current state of the async conversion for a hashfile
+        created via the wpa_pcap or ntds upload endpoints. Status transitions
+        pending -> converting -> ready | failed; conversion_error carries the
+        message when status is failed.
+      operationId: getConversionStatus
+      x-audience: user
+      security:
+        - userApiKey: []
+      parameters:
+        - name: hashfile_id
+          in: path
+          required: true
+          schema: {type: integer}
+      responses:
+        '200':
+          description: >-
+            HTTP 200 always; body status 200 with the conversion state, or a
+            body status 404 if the hashfile or its conversion record doesn't
+            exist.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ConversionStatusResponse'
+                  - $ref: '#/components/schemas/ApiError'
+              examples:
+                converting:
+                  value: {status: 200, type: message, hashfile_id: 12, conversion_id: 3, source_type: wpa_pcap, conversion_status: converting, conversion_error: null}
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
+
   /v1/hashfiles/{hashfile_id}:
     get:
       tags: [Hashfiles]
@@ -1198,6 +1234,24 @@ components:
           enum: [message]
         msg:
           type: string
+
+    ConversionStatusResponse:
+      type: object
+      description: Current state of an async source-file conversion.
+      required: [status, hashfile_id, conversion_status]
+      properties:
+        status: {type: integer, enum: [200]}
+        type: {type: string, enum: [message]}
+        hashfile_id: {type: integer}
+        conversion_id: {type: integer}
+        source_type: {type: string, enum: [wpa_pcap, ntds]}
+        conversion_status:
+          type: string
+          enum: [pending, converting, ready, failed]
+        conversion_error:
+          type: string
+          nullable: true
+          description: Error message when conversion_status is "failed"; otherwise null.
 
     ApiError:
       type: object

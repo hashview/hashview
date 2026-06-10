@@ -204,6 +204,26 @@ class Hashfiles(db.Model):
     customer_id = db.Column(db.Integer, nullable=False)
     owner_id = db.Column(db.Integer, nullable=False)
 
+class HashfileConversions(db.Model):
+    """Tracks async conversion state for source file uploads (pcap, ntds.dit)."""
+
+    __tablename__ = 'hashfile_conversions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    hashfile_id = db.Column(db.Integer, db.ForeignKey('hashfiles.id'), unique=True, nullable=False)
+    source_type = db.Column(db.String(20), nullable=False)   # 'wpa_pcap' | 'ntds'
+    status = db.Column(db.String(20), nullable=False, default='pending')
+    source_path = db.Column(db.Text, nullable=False)
+    system_path = db.Column(db.Text, nullable=True)          # ntds only: SYSTEM hive path
+    conversion_error = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, nullable=True)       # set when status→converting
+
+    hashfile = db.relationship(
+        'Hashfiles',
+        backref=db.backref('conversion', uselist=False, cascade='all, delete-orphan'),
+    )
+
 class HashfileHashes(db.Model):
     """Class object to represent HashfileHashes"""
 

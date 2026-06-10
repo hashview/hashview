@@ -20,6 +20,7 @@ from hashview.models import (
     Agents,
     Customers,
     Hashes,
+    HashfileConversions,
     HashfileHashes,
     Hashfiles,
     JobNotifications,
@@ -1559,3 +1560,26 @@ def v1_api_hashes_import(hash_type):
             'msg': 'Unsupported Hashtype'
             }
     return jsonify(message)
+
+@api.route('/v1/hashfiles/<int:hashfile_id>/conversion', methods=['GET'])
+def v1_api_get_conversion_status(hashfile_id):
+    if not is_authorized(user=True, agent=False, request=request):
+        return redirect("/v1/not_authorized")
+
+    hashfile = Hashfiles.query.get(hashfile_id)
+    if not hashfile:
+        return jsonify({'status': 404, 'type': 'Error', 'msg': 'Hashfile not found'})
+
+    conv = HashfileConversions.query.filter_by(hashfile_id=hashfile_id).first()
+    if not conv:
+        return jsonify({'status': 404, 'type': 'Error', 'msg': 'No conversion record for this hashfile'})
+
+    return jsonify({
+        'status': 200,
+        'type': 'message',
+        'hashfile_id': hashfile_id,
+        'conversion_id': conv.id,
+        'source_type': conv.source_type,
+        'conversion_status': conv.status,
+        'conversion_error': conv.conversion_error,
+    })

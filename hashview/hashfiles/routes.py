@@ -12,6 +12,7 @@ from hashview.jobs.forms import JobsNewHashFileForm
 from hashview.models import (
     Customers,
     Hashes,
+    HashfileConversions,
     HashfileHashes,
     Hashfiles,
     HashNotifications,
@@ -123,11 +124,19 @@ def hashfiles_list():
                 })
         hashfile_jobs[hashfile.id] = rows
 
+    conversions = {
+        c.hashfile_id: c
+        for c in HashfileConversions.query.filter(
+            HashfileConversions.status.in_(['pending', 'converting', 'failed'])
+        ).all()
+    }
+
     return render_template('hashfiles.html.j2', title='Hashfiles', hashfiles=hashfiles,
                            customers=customers, jobs=jobs,
                            hash_type_dict=hash_type_dict, hashfile_stats=hashfile_stats,
                            total_hashes=total_hashes, total_recovered=total_recovered,
-                           overall_rate=overall_rate, hashfile_jobs=hashfile_jobs)
+                           overall_rate=overall_rate, hashfile_jobs=hashfile_jobs,
+                           conversions=conversions)
 
 @hashfiles.route("/hashfiles/delete/<int:hashfile_id>", methods=['GET', 'POST'])
 @login_required

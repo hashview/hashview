@@ -185,6 +185,106 @@ def _data_retention_cleanup_inner(db :SQLAlchemy, mailer :Mail, logger :Logger):
         )
 
 
+# Imported at module scope so tests can monkeypatch hashview.scheduler.convert_pcap / convert_ntds
+try:
+    from hashview.utils.convert import ConversionError, convert_ntds, convert_pcap
+except ImportError:  # pragma: no cover
+    pass
+
+
+def process_pending_conversions(app: Flask):
+    """Pick up pending source-file conversion jobs and run them.
+
+    Called by APScheduler every 30 seconds. Each record transitions:
+      pending -> converting -> ready | failed
+    Records stuck in 'converting' for >10 minutes are reset to 'pending'
+    so a server restart mid-conversion doesn't leave them stranded.
+    """
+    with app.app_context():
+        try:
+            from datetime import datetime, timedelta
+
+            from hashview.models import HashfileConversions, db
+
+            stuck_cutoff = datetime.utcnow() - timedelta(minutes=10)
+            stuck = (
+                HashfileConversions.query
+                .filter_by(status='converting')
+                .filter(HashfileConversions.started_at < stuck_cutoff)
+                .all()
+            )
+            just_reset_ids = set()
+            for record in stuck:
+                record.status = 'pending'
+                record.started_at = None
+                just_reset_ids.add(record.id)
+            if stuck:
+                db.session.commit()
+
+            pending = HashfileConversions.query.filter_by(status='pending').all()
+            for record in pending:
+                # Skip records we just reset this cycle — let them be picked up next time.
+                if record.id in just_reset_ids:
+                    continue
+
+                record.status = 'converting'
+                record.started_at = datetime.utcnow()
+                db.session.commit()
+
+                try:
+                    _run_conversion(record)
+                    record.status = 'ready'
+                    db.session.commit()
+                except Exception as exc:
+                    record.status = 'failed'
+                    record.conversion_error = str(exc)
+                    db.session.commit()
+
+        except Exception:
+            app.logger.exception('process_pending_conversions failed.')
+
+
+def _run_conversion(record):
+    """Dispatch conversion based on source_type. Raises ConversionError on failure."""
+    from hashview.utils.utils import import_hashfilehashes
+
+    if record.source_type == 'wpa_pcap':
+        out_path = convert_pcap(record.source_path)
+        import_hashfilehashes(
+            hashfile_id=record.hashfile_id,
+            hashfile_path=out_path,
+            file_type='hash_only',
+            hash_type='22000',
+        )
+        _safe_remove(out_path)
+        _safe_remove(record.source_path)
+
+    elif record.source_type == 'ntds':
+        out_path = convert_ntds(record.source_path, record.system_path)
+        import_hashfilehashes(
+            hashfile_id=record.hashfile_id,
+            hashfile_path=out_path,
+            file_type='pwdump',
+            hash_type='1000',
+        )
+        _safe_remove(out_path)
+        _safe_remove(record.source_path)
+        _safe_remove(record.system_path)
+
+    else:
+        raise ConversionError(f'Unknown source type: {record.source_type!r}')
+
+
+def _safe_remove(path):
+    """Delete a file, ignoring errors if it no longer exists."""
+    import os
+    if path:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
 def data_retention_cleanup(app :Flask):
     """ Function to manage retention cleanup """
     with app.app_context():

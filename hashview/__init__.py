@@ -69,15 +69,30 @@ def setup_defaults_if_needed():
         logger.exception('Upgrading Database failed.')
 
     try:
-        from hashview.scheduler import data_retention_cleanup, scheduler
+        from hashview.scheduler import (
+            data_retention_cleanup,
+            process_pending_conversions,
+            scheduler,
+        )
         logger.info('Clearing Scheduled Jobs.')
         scheduler.remove_all_jobs()
         logger.info('Adding Default Scheduled Jobs Progressing.')
+        # Pass the real application object, not the current_app proxy: these jobs
+        # run in bare APScheduler threads with no app context, where the proxy
+        # would raise "Working outside of application context" when each job does
+        # `with app.app_context()`.
+        app_obj = current_app._get_current_object()  # pylint: disable=protected-access
         scheduler.add_job(
             id='DATA_RETENTION',
-            func=partial(data_retention_cleanup, current_app),
+            func=partial(data_retention_cleanup, app_obj),
             trigger='cron',
             hour='*',
+        )
+        scheduler.add_job(
+            id='CONVERSION_PROCESSOR',
+            func=partial(process_pending_conversions, app_obj),
+            trigger='interval',
+            seconds=30,
         )
         logger.info('Adding Default Scheduled Jobs is Complete.')
     except Exception:

@@ -24,6 +24,7 @@ from hashview.models import (
     Hashes,
     HashfileHashes,
     Hashfiles,
+    HashfileConversions,
     JobNotifications,
     Jobs,
     JobTasks,
@@ -926,3 +927,103 @@ def test_jobs_add_creates_notification_rows(client, admin_user):
     rows = JobNotifications.query.filter_by(job_id=body["job_id"]).all()
     assert {r.method for r in rows} == {"email", "slack"}
     assert all(r.owner_id == admin_user.id for r in rows)
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/hashfiles/<hashfile_id>/conversion
+# ---------------------------------------------------------------------------
+
+@pytest.mark.security
+def test_conversion_status_returns_pending_record(client, admin_user):
+    """Pending conversion record is returned with all fields."""
+    cust = Customers(name="StatusCorp")
+    _db.session.add(cust)
+    _db.session.commit()
+
+    hf = Hashfiles(name="status-test", customer_id=cust.id, owner_id=admin_user.id)
+    _db.session.add(hf)
+    _db.session.commit()
+
+    conv = HashfileConversions(
+        hashfile_id=hf.id,
+        source_type='wpa_pcap',
+        status='pending',
+        source_path='/tmp/cap.pcapng',
+    )
+    _db.session.add(conv)
+    _db.session.commit()
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.get(f"/v1/hashfiles/{hf.id}/conversion")
+    body = _json_body(resp)
+
+    assert body["status"] == 200
+    assert body["conversion_status"] == "pending"
+    assert body["source_type"] == "wpa_pcap"
+    assert body["hashfile_id"] == hf.id
+    assert body["conversion_id"] == conv.id
+    assert body["conversion_error"] is None
+
+
+@pytest.mark.security
+def test_conversion_status_failed_includes_error_message(client, admin_user):
+    """A failed conversion record includes the conversion_error field."""
+    cust = Customers(name="FailedCorp")
+    _db.session.add(cust)
+    _db.session.commit()
+
+    hf = Hashfiles(name="failed-test", customer_id=cust.id, owner_id=admin_user.id)
+    _db.session.add(hf)
+    _db.session.commit()
+
+    conv = HashfileConversions(
+        hashfile_id=hf.id,
+        source_type='wpa_pcap',
+        status='failed',
+        source_path='/tmp/cap.pcapng',
+        conversion_error='hcxpcapngtool is not installed',
+    )
+    _db.session.add(conv)
+    _db.session.commit()
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.get(f"/v1/hashfiles/{hf.id}/conversion")
+    body = _json_body(resp)
+
+    assert body["status"] == 200
+    assert body["conversion_status"] == "failed"
+    assert "hcxpcapngtool" in body["conversion_error"]
+
+
+@pytest.mark.security
+def test_conversion_status_hashfile_not_found_returns_404(client, admin_user):
+    """Non-existent hashfile_id returns 404."""
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.get("/v1/hashfiles/99999/conversion")
+    body = _json_body(resp)
+    assert body["status"] == 404
+
+
+@pytest.mark.security
+def test_conversion_status_no_conversion_record_returns_404(client, admin_user):
+    """Hashfile with no conversion record returns 404."""
+    cust = Customers(name="NoConvCorp")
+    _db.session.add(cust)
+    _db.session.commit()
+
+    hf = Hashfiles(name="no-conv", customer_id=cust.id, owner_id=admin_user.id)
+    _db.session.add(hf)
+    _db.session.commit()
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.get(f"/v1/hashfiles/{hf.id}/conversion")
+    body = _json_body(resp)
+    assert body["status"] == 404
+
+
+@pytest.mark.security
+def test_conversion_status_no_cookie_redirects(client):
+    """No uuid cookie redirects to not_authorized."""
+    resp = client.get("/v1/hashfiles/1/conversion")
+    assert resp.status_code == 302
+    assert "/not_authorized" in resp.headers["Location"]

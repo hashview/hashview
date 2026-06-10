@@ -58,6 +58,20 @@
                         <span style="color:var(--text-mute); display:inline-flex;">{{ icon('file', size=16) }}</span>
                         {{ hashfile.name }}
                     </span>
+                    {% if conversions.get(hashfile.id) %}
+                      {% set conv = conversions[hashfile.id] %}
+                      {% if conv.status in ('pending', 'converting') %}
+                        <span class="tag is-warning is-light">
+                          <span class="icon"><i class="fas fa-spinner fa-spin"></i></span>
+                          &nbsp;Converting…
+                        </span>
+                      {% elif conv.status == 'failed' %}
+                        <span class="tag is-danger is-light"
+                              title="{{ conv.conversion_error | e }}">
+                          Conversion failed
+                        </span>
+                      {% endif %}
+                    {% endif %}
                 </td>
                 <td class="center"><span class="badge cyan">{{ hash_type_dict[hashfile.id] }}</span></td>
                 <td style="color:var(--text-dim);">{% for c in customers %}{% if c.id == hashfile.customer_id %}{{ c.name }}{% endif %}{% endfor %}</td>

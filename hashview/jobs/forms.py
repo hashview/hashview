@@ -50,6 +50,7 @@ class JobsNewHashFileForm(FlaskForm):
 													('user_hash', '$user:$hash'),
 													('hash_only', '$hash'),
 													('wpa_pcap', 'WPA Capture (pcap / pcapng) — pwnagotchi, hcxdumptool'),
+													('ntds', 'NTDS.dit (requires SYSTEM hive)'),
 													], validators=[DataRequired()])
 													
     hash_type = SelectField('Hash Type', choices=HASH_TYPE_CHOICES)
@@ -65,6 +66,7 @@ class JobsNewHashFileForm(FlaskForm):
 
     hashfilehashes = TextAreaField('Hashes')
     hashfile = FileField('Upload Hashfile')
+    system_file = FileField('SYSTEM hive (NTDS.dit only)')
     submit = SubmitField('Next')
 
 class JobsNotificationsForm(FlaskForm):

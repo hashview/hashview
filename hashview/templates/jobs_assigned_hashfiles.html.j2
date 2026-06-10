@@ -48,11 +48,13 @@
     function showHashTypeSelected(sel){
         var map = {pwdump:'pwdump_hash_type_div', NetNTLM:'netntlm_hash_type_div', kerberos:'kerberos_hash_type_div',
                    shadow:'shadow_hash_type_div', user_hash:'hash_type_div', hash_only:'hash_type_div',
-                   wpa_pcap:'hash_type_placeholder'};
+                   wpa_pcap:'hash_type_placeholder', ntds:'hash_type_placeholder'};
         ['pwdump_hash_type_div','netntlm_hash_type_div','kerberos_hash_type_div','shadow_hash_type_div','hash_type_div','hash_type_placeholder']
             .forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display='none'; });
         var show = map[sel.value];
         document.getElementById(show ? show : 'hash_type_placeholder').style.display = 'block';
+        var sfd = document.getElementById('system_file_div');
+        if (sfd) sfd.style.display = (sel.value === 'ntds') ? 'block' : 'none';
         var vsel = show ? document.getElementById(show).querySelector('select') : null;
         hvHashTypeExample(vsel);
     }
@@ -151,6 +153,11 @@
                         </div>
                         <span class="field-hint">Supports pwdump, NTDS, responder logs, shadow files, kerberos tickets, and more.</span>
                         {% if jobsNewHashFileForm.hashfile.errors %}{% for e in jobsNewHashFileForm.hashfile.errors %}<span class="field-hint" style="color:var(--red);">{{ e }}</span>{% endfor %}{% endif %}
+                        <div id="system_file_div" style="display:none; margin-top:16px;">
+                            <label class="field-label">SYSTEM hive <span class="req">*</span></label>
+                            {{ jobsNewHashFileForm.system_file(class="input") }}
+                            <span class="field-hint">Required for NTDS.dit uploads — the SYSTEM registry hive from the same domain controller.</span>
+                        </div>
                     </div>
                 </div>
 

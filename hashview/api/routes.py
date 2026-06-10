@@ -1610,6 +1610,70 @@ def v1_api_post_wpa_pcap_upload(customer_id, hashfile_name):
         'conversion_id': conv.id,
     })
 
+@api.route('/v1/hashfiles/upload/ntds/<int:customer_id>/<hashfile_name>', methods=['POST'])
+def v1_api_post_ntds_upload(customer_id, hashfile_name):
+    if not is_authorized(user=True, agent=False, request=request):
+        return redirect("/v1/not_authorized")
+
+    customer = Customers.query.get(customer_id)
+    if not customer:
+        return jsonify({'status': 400, 'type': 'Error', 'msg': 'Invalid customer ID'})
+
+    user = Users.query.filter_by(api_key=request.cookies.get('uuid')).first()
+
+    ntds_file = request.files.get('ntds_file')
+    system_file = request.files.get('system_file')
+
+    if not ntds_file or not ntds_file.filename:
+        return jsonify({'status': 400, 'type': 'Error', 'msg': 'Missing ntds_file in request'})
+    if not system_file or not system_file.filename:
+        return jsonify({'status': 400, 'type': 'Error', 'msg': 'Missing system_file in request'})
+
+    ntds_path = os.path.abspath(os.path.join(
+        current_app.root_path, 'control/tmp', secrets.token_hex(8) + '.dit'
+    ))
+    system_path = os.path.abspath(os.path.join(
+        current_app.root_path, 'control/tmp', secrets.token_hex(8) + '.sys'
+    ))
+
+    try:
+        ntds_file.save(ntds_path)
+    except Exception as e:
+        return jsonify({'status': 500, 'type': 'Error', 'msg': f'Failed to save NTDS.dit: {e}'})
+
+    try:
+        system_file.save(system_path)
+    except Exception as e:
+        if os.path.exists(ntds_path):
+            os.remove(ntds_path)
+        return jsonify({'status': 500, 'type': 'Error', 'msg': f'Failed to save SYSTEM hive: {e}'})
+
+    hashfile = Hashfiles(name=hashfile_name, customer_id=customer_id, owner_id=user.id)
+    db.session.add(hashfile)
+    db.session.commit()
+
+    conv = HashfileConversions(
+        hashfile_id=hashfile.id,
+        source_type='ntds',
+        status='pending',
+        source_path=ntds_path,
+        system_path=system_path,
+    )
+    db.session.add(conv)
+    db.session.commit()
+
+    log_event('hashfile.create', actor=(user.email_address, user.id),
+              target=f'hashfile:{hashfile.id} {hashfile.name!r}',
+              detail='source_type=ntds status=pending')
+
+    return jsonify({
+        'status': 200,
+        'type': 'message',
+        'msg': 'NTDS.dit uploaded. Conversion queued.',
+        'hashfile_id': hashfile.id,
+        'conversion_id': conv.id,
+    })
+
 @api.route('/v1/hashfiles/<int:hashfile_id>/conversion', methods=['GET'])
 def v1_api_get_conversion_status(hashfile_id):
     if not is_authorized(user=True, agent=False, request=request):

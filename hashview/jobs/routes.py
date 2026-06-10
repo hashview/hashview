@@ -351,6 +351,62 @@ def jobs_assigned_hashfile(job_id):
                     })
                 flash('Capture uploaded. Hashes will be available once conversion completes.', 'success')
                 return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
+
+            elif jobs_new_hashfile_form.file_type.data == 'ntds':
+                if not (jobs_new_hashfile_form.system_file.data and
+                        jobs_new_hashfile_form.system_file.data.filename):
+                    msg = 'NTDS.dit upload requires a SYSTEM hive file.'
+                    if is_ajax:
+                        return jsonify({'status': 'error', 'msg': msg}), 400
+                    flash(msg, 'danger')
+                    return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
+
+                try:
+                    system_path = os.path.join(
+                        current_app.root_path,
+                        save_file('control/tmp', jobs_new_hashfile_form.system_file.data),
+                    )
+                except Exception:
+                    if os.path.exists(hashfile_path):
+                        os.remove(hashfile_path)
+                    msg = 'Failed to save SYSTEM hive. Please try again.'
+                    if is_ajax:
+                        return jsonify({'status': 'error', 'msg': msg}), 500
+                    flash(msg, 'danger')
+                    return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
+
+                ntds_name = jobs_new_hashfile_form.name.data or hashfile_name
+                hashfile = Hashfiles(
+                    name=ntds_name,
+                    customer_id=job.customer_id,
+                    owner_id=current_user.id,
+                )
+                db.session.add(hashfile)
+                db.session.commit()
+
+                conv = HashfileConversions(
+                    hashfile_id=hashfile.id,
+                    source_type='ntds',
+                    status='pending',
+                    source_path=hashfile_path,
+                    system_path=system_path,
+                )
+                db.session.add(conv)
+
+                job.hashfile_id = hashfile.id
+                db.session.commit()
+                log_event('hashfile.create',
+                          target=f'hashfile:{hashfile.id} {hashfile.name!r}',
+                          detail='source_type=ntds status=pending')
+
+                if is_ajax:
+                    return jsonify({
+                        'status': 'ok',
+                        'msg': 'NTDS.dit uploaded. Hashes will be available once conversion completes (this may take several minutes for large databases).',
+                        'redirect': url_for('jobs.jobs_assigned_hashfile', job_id=job_id),
+                    })
+                flash('NTDS.dit uploaded. Hashes will be available once conversion completes.', 'success')
+                return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
             # --- End async path ---
 
             try:

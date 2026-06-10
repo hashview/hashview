@@ -1024,6 +1024,122 @@ def test_wpa_pcap_upload_empty_body_returns_400(client, app, admin_user, tmp_pat
 
 
 # ---------------------------------------------------------------------------
+# POST /v1/hashfiles/upload/ntds/<customer_id>/<hashfile_name>
+# ---------------------------------------------------------------------------
+
+@pytest.mark.security
+def test_ntds_upload_creates_hashfile_and_conversion(client, app, admin_user, tmp_path, monkeypatch):
+    """Valid ntds + SYSTEM multipart upload creates Hashfiles + pending conversion with both paths."""
+    import io
+
+    _upload_dirs(app, tmp_path, monkeypatch)
+
+    cust = Customers(name="ADCorp")
+    _db.session.add(cust)
+    _db.session.commit()
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.post(
+        f"/v1/hashfiles/upload/ntds/{cust.id}/ad-dump",
+        data={
+            "ntds_file": (io.BytesIO(b"fake ntds.dit content"), "ntds.dit"),
+            "system_file": (io.BytesIO(b"fake SYSTEM hive content"), "SYSTEM"),
+        },
+        content_type="multipart/form-data",
+    )
+    body = _json_body(resp)
+
+    assert body["status"] == 200
+    assert "hashfile_id" in body
+    assert "conversion_id" in body
+
+    conv = HashfileConversions.query.filter_by(hashfile_id=body["hashfile_id"]).first()
+    assert conv is not None
+    assert conv.status == "pending"
+    assert conv.source_type == "ntds"
+    assert conv.source_path is not None
+    assert conv.system_path is not None
+
+
+@pytest.mark.security
+def test_ntds_upload_missing_system_file_returns_400(client, app, admin_user, tmp_path, monkeypatch):
+    """Submitting ntds_file without system_file returns 400."""
+    import io
+
+    _upload_dirs(app, tmp_path, monkeypatch)
+
+    cust = Customers(name="MissingSysCorp")
+    _db.session.add(cust)
+    _db.session.commit()
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.post(
+        f"/v1/hashfiles/upload/ntds/{cust.id}/ad-dump",
+        data={
+            "ntds_file": (io.BytesIO(b"fake ntds.dit"), "ntds.dit"),
+        },
+        content_type="multipart/form-data",
+    )
+    body = _json_body(resp)
+    assert body["status"] == 400
+    assert "system_file" in body["msg"]
+
+
+@pytest.mark.security
+def test_ntds_upload_missing_ntds_file_returns_400(client, app, admin_user, tmp_path, monkeypatch):
+    """Submitting system_file without ntds_file returns 400."""
+    import io
+
+    _upload_dirs(app, tmp_path, monkeypatch)
+
+    cust = Customers(name="MissingNTDSCorp")
+    _db.session.add(cust)
+    _db.session.commit()
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.post(
+        f"/v1/hashfiles/upload/ntds/{cust.id}/ad-dump",
+        data={
+            "system_file": (io.BytesIO(b"fake SYSTEM"), "SYSTEM"),
+        },
+        content_type="multipart/form-data",
+    )
+    body = _json_body(resp)
+    assert body["status"] == 400
+    assert "ntds_file" in body["msg"]
+
+
+@pytest.mark.security
+def test_ntds_upload_no_cookie_redirects(client):
+    """No uuid cookie redirects to not_authorized."""
+    resp = client.post(
+        "/v1/hashfiles/upload/ntds/1/ad-dump",
+        data={},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 302
+    assert "/not_authorized" in resp.headers["Location"]
+
+
+@pytest.mark.security
+def test_ntds_upload_invalid_customer_returns_400(client, admin_user):
+    """Non-existent customer_id returns 400."""
+    import io
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.post(
+        "/v1/hashfiles/upload/ntds/99999/ad-dump",
+        data={
+            "ntds_file": (io.BytesIO(b"fake ntds"), "ntds.dit"),
+            "system_file": (io.BytesIO(b"fake system"), "SYSTEM"),
+        },
+        content_type="multipart/form-data",
+    )
+    body = _json_body(resp)
+    assert body["status"] == 400
+
+
+# ---------------------------------------------------------------------------
 # GET /v1/hashfiles/<hashfile_id>/conversion
 # ---------------------------------------------------------------------------
 

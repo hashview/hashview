@@ -356,6 +356,199 @@ def test_scheduler_marks_failed_on_conversion_error(app, tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# convert_ntds()
+# ---------------------------------------------------------------------------
+
+def test_convert_ntds_raises_when_tool_not_installed(tmp_path):
+    """ConversionError is raised with an install hint when impacket-secretsdump is absent."""
+    from hashview.utils.convert import ConversionError, convert_ntds
+
+    ntds = tmp_path / "ntds.dit"
+    system = tmp_path / "SYSTEM"
+    ntds.write_bytes(b"fake ntds")
+    system.write_bytes(b"fake system")
+
+    with patch("hashview.utils.convert.subprocess.run",
+               side_effect=FileNotFoundError("impacket-secretsdump")):
+        with pytest.raises(ConversionError, match="impacket-secretsdump"):
+            convert_ntds(str(ntds), str(system))
+
+
+def test_convert_ntds_raises_when_tool_exits_nonzero(tmp_path):
+    """ConversionError carries stderr when impacket-secretsdump exits non-zero."""
+    from hashview.utils.convert import ConversionError, convert_ntds
+
+    ntds = tmp_path / "ntds.dit"
+    system = tmp_path / "SYSTEM"
+    ntds.write_bytes(b"fake ntds")
+    system.write_bytes(b"fake system")
+
+    failed = subprocess.CompletedProcess(
+        args=[], returncode=1,
+        stdout=b"", stderr=b"error: cannot decrypt boot key",
+    )
+    with patch("hashview.utils.convert.subprocess.run", return_value=failed):
+        with pytest.raises(ConversionError, match="cannot decrypt boot key"):
+            convert_ntds(str(ntds), str(system))
+
+
+def test_convert_ntds_raises_when_output_is_empty(tmp_path):
+    """ConversionError when secretsdump succeeds but produces no stdout."""
+    from hashview.utils.convert import ConversionError, convert_ntds
+
+    ntds = tmp_path / "ntds.dit"
+    system = tmp_path / "SYSTEM"
+    ntds.write_bytes(b"fake ntds")
+    system.write_bytes(b"fake system")
+
+    empty = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout=b"", stderr=b"",
+    )
+    with patch("hashview.utils.convert.subprocess.run", return_value=empty):
+        with pytest.raises(ConversionError, match="No hashes extracted"):
+            convert_ntds(str(ntds), str(system))
+
+
+def test_convert_ntds_returns_output_path_on_success(tmp_path):
+    """convert_ntds writes stdout to a .pwdump file and returns its path."""
+    from hashview.utils.convert import convert_ntds
+
+    ntds = tmp_path / "ntds.dit"
+    system = tmp_path / "SYSTEM"
+    ntds.write_bytes(b"fake ntds")
+    system.write_bytes(b"fake system")
+
+    pwdump_line = b"alice:1001:aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c:::\n"
+    success = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout=pwdump_line, stderr=b"",
+    )
+    with patch("hashview.utils.convert.subprocess.run", return_value=success):
+        result = convert_ntds(str(ntds), str(system))
+
+    assert result.endswith('.pwdump')
+    assert os.path.exists(result)
+    with open(result, 'rb') as f:
+        assert f.read() == pwdump_line
+
+
+def test_ntds_upload_creates_pending_conversion_record(app, client, tmp_path):
+    """POSTing ntds.dit + SYSTEM with file_type=ntds creates a HashfileConversions
+    record with both source_path and system_path set."""
+    import io as _io
+    from hashview.models import Customers, HashfileHashes
+
+    cust = Customers(name="CorpTwo")
+    db.session.add(cust)
+    db.session.commit()
+
+    owner = _make_owner()
+    _login(client, owner)
+    job = _make_job(app, owner.id, cust.id)
+
+    data = {
+        "file_type": "ntds",
+        "name": "corp-ad-dump",
+        "hash_type": "",
+        "shadow_hash_type": "",
+        "pwdump_hash_type": "",
+        "netntlm_hash_type": "",
+        "kerberos_hash_type": "",
+        "hashfile": (
+            _io.BytesIO(b"fake ntds.dit content"),
+            "ntds.dit",
+        ),
+        "system_file": (
+            _io.BytesIO(b"fake SYSTEM hive content"),
+            "SYSTEM",
+        ),
+    }
+    resp = client.post(
+        f"/jobs/{job.id}/assigned_hashfile/",
+        data=data,
+        content_type="multipart/form-data",
+        follow_redirects=False,
+    )
+
+    assert resp.status_code in (302, 303)
+
+    hf = Hashfiles.query.filter_by(name="corp-ad-dump").first()
+    assert hf is not None
+
+    conv = HashfileConversions.query.filter_by(hashfile_id=hf.id).first()
+    assert conv is not None
+    assert conv.status == "pending"
+    assert conv.source_type == "ntds"
+    assert conv.source_path is not None
+    assert conv.system_path is not None
+
+    assert HashfileHashes.query.filter_by(hashfile_id=hf.id).count() == 0
+
+
+def test_convert_ntds_raises_on_timeout(tmp_path):
+    """ConversionError is raised with a clean message when impacket-secretsdump times out."""
+    from hashview.utils.convert import ConversionError, convert_ntds
+
+    ntds = tmp_path / "ntds.dit"
+    system = tmp_path / "SYSTEM"
+    ntds.write_bytes(b"fake ntds")
+    system.write_bytes(b"fake system")
+
+    with patch("hashview.utils.convert.subprocess.run",
+               side_effect=subprocess.TimeoutExpired(cmd=['impacket-secretsdump'], timeout=600)):
+        with pytest.raises(ConversionError, match="timed out"):
+            convert_ntds(str(ntds), str(system))
+
+
+def test_scheduler_processes_ntds_conversion_successfully(app, tmp_path, monkeypatch):
+    """Scheduler converts a pending ntds record and imports hashes via pwdump."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs(tmp_path / 'hashview' / 'control' / 'tmp')
+
+    owner = _make_owner()
+    hf = _make_hashfile(owner.id)
+
+    ntds_src = tmp_path / "ntds.dit"
+    system_src = tmp_path / "SYSTEM"
+    ntds_src.write_bytes(b"fake ntds")
+    system_src.write_bytes(b"fake system")
+    out = str(ntds_src) + '.pwdump'
+
+    conv = HashfileConversions(
+        hashfile_id=hf.id,
+        source_type='ntds',
+        status='pending',
+        source_path=str(ntds_src),
+        system_path=str(system_src),
+    )
+    db.session.add(conv)
+    db.session.commit()
+
+    pwdump_line = "alice:1001:aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c:::\n"
+
+    def _fake_convert_ntds(ntds_path, system_path):
+        with open(out, 'w') as f:
+            f.write(pwdump_line)
+        return out
+
+    with patch("hashview.scheduler.convert_ntds", _fake_convert_ntds):
+        from hashview.scheduler import process_pending_conversions
+        process_pending_conversions(app)
+
+    db.session.refresh(conv)
+    assert conv.status == 'ready'
+
+    from hashview.models import Hashes, HashfileHashes
+    imported = (
+        Hashes.query
+        .join(HashfileHashes, Hashes.id == HashfileHashes.hash_id)
+        .filter(HashfileHashes.hashfile_id == hf.id)
+        .all()
+    )
+    assert len(imported) == 1
+    assert str(imported[0].hash_type) == '1000'
+
+
+# ---------------------------------------------------------------------------
 # Test 1: FK cascade — deleting a Hashfiles record deletes its HashfileConversions
 # ---------------------------------------------------------------------------
 
@@ -421,6 +614,95 @@ def test_scheduler_removes_source_file_after_wpa_pcap_success(app, tmp_path, mon
 
 
 # ---------------------------------------------------------------------------
+# Test 3: ntds.dit, SYSTEM hive, and .pwdump all deleted after successful ntds conversion
+# ---------------------------------------------------------------------------
+
+def test_scheduler_removes_source_files_after_ntds_success(app, tmp_path, monkeypatch):
+    """ntds.dit, SYSTEM hive, and .pwdump output are all removed after successful ntds conversion."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs(tmp_path / 'hashview' / 'control' / 'tmp')
+
+    owner = _make_owner()
+    hf = _make_hashfile(owner.id)
+
+    ntds_src = tmp_path / "ntds.dit"
+    system_src = tmp_path / "SYSTEM"
+    ntds_src.write_bytes(b"fake ntds")
+    system_src.write_bytes(b"fake system")
+    out = str(ntds_src) + '.pwdump'
+
+    conv = HashfileConversions(
+        hashfile_id=hf.id,
+        source_type='ntds',
+        status='pending',
+        source_path=str(ntds_src),
+        system_path=str(system_src),
+    )
+    db.session.add(conv)
+    db.session.commit()
+
+    pwdump_line = "alice:1001:aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c:::\n"
+
+    def _fake_convert_ntds(ntds_path, system_path):
+        with open(out, 'w') as f:
+            f.write(pwdump_line)
+        return out
+
+    with patch("hashview.scheduler.convert_ntds", _fake_convert_ntds):
+        from hashview.scheduler import process_pending_conversions
+        process_pending_conversions(app)
+
+    assert not os.path.exists(str(ntds_src)), "ntds.dit should be deleted after conversion"
+    assert not os.path.exists(str(system_src)), "SYSTEM hive should be deleted after conversion"
+    assert not os.path.exists(out), ".pwdump output should be deleted after import"
+
+
+# ---------------------------------------------------------------------------
+# Test 4: ntds upload without a SYSTEM hive returns an error
+# ---------------------------------------------------------------------------
+
+def test_ntds_upload_without_system_file_returns_error(app, client, tmp_path):
+    """POSTing ntds without a SYSTEM hive file shows an error and creates no records."""
+    import io as _io
+    from hashview.models import Customers
+
+    cust = Customers(name="CorpMissingSys")
+    db.session.add(cust)
+    db.session.commit()
+
+    owner = _make_owner()
+    _login(client, owner)
+    job = _make_job(app, owner.id, cust.id)
+
+    data = {
+        "file_type": "ntds",
+        "name": "missing-system",
+        "hash_type": "",
+        "shadow_hash_type": "",
+        "pwdump_hash_type": "",
+        "netntlm_hash_type": "",
+        "kerberos_hash_type": "",
+        "hashfile": (
+            _io.BytesIO(b"fake ntds.dit content"),
+            "ntds.dit",
+        ),
+        # no system_file submitted
+    }
+    resp = client.post(
+        f"/jobs/{job.id}/assigned_hashfile/",
+        data=data,
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert resp.status_code == 200
+    assert b'SYSTEM hive' in resp.data
+
+    # No records should be created
+    assert Hashfiles.query.filter_by(name="missing-system").first() is None
+
+
+# ---------------------------------------------------------------------------
 # Test 5: convert_pcap fallback message when tool exits nonzero with no stderr
 # ---------------------------------------------------------------------------
 
@@ -437,6 +719,27 @@ def test_convert_pcap_raises_fallback_when_no_stderr(tmp_path):
     with patch("hashview.utils.convert.subprocess.run", return_value=silent_failure):
         with pytest.raises(ConversionError, match="exited with an error"):
             convert_pcap(str(src))
+
+
+# ---------------------------------------------------------------------------
+# Test 6: convert_ntds fallback message when tool exits nonzero with no stderr
+# ---------------------------------------------------------------------------
+
+def test_convert_ntds_raises_fallback_when_no_stderr(tmp_path):
+    """ConversionError has a generic message when impacket-secretsdump exits non-zero with no stderr."""
+    from hashview.utils.convert import ConversionError, convert_ntds
+
+    ntds = tmp_path / "ntds.dit"
+    system = tmp_path / "SYSTEM"
+    ntds.write_bytes(b"fake ntds")
+    system.write_bytes(b"fake system")
+
+    silent_failure = subprocess.CompletedProcess(
+        args=[], returncode=1, stdout=b"", stderr=b"",
+    )
+    with patch("hashview.utils.convert.subprocess.run", return_value=silent_failure):
+        with pytest.raises(ConversionError, match="exited with an error"):
+            convert_ntds(str(ntds), str(system))
 
 
 # ---------------------------------------------------------------------------

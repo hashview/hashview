@@ -40,3 +40,42 @@ def convert_pcap(src_path: str) -> str:
             'No valid WPA handshakes or PMKIDs found in the capture file.'
         )
     return out_path
+
+
+def convert_ntds(ntds_path: str, system_path: str) -> str:
+    """Convert an NTDS.dit + SYSTEM hive pair to pwdump format using impacket-secretsdump.
+
+    Runs impacket-secretsdump in LOCAL mode (no network required). Output is
+    written to a .pwdump file for processing by import_hashfilehashes().
+    Raises ConversionError if the tool is missing, exits non-zero, or
+    produces no output. Returns the path to the pwdump file on success.
+    """
+    out_path = ntds_path + '.pwdump'
+    try:
+        # Fixed argv list, no shell=True; tool name resolved from PATH by design.
+        result = subprocess.run(  # nosec B603 B607
+            ['impacket-secretsdump',
+             '-ntds', ntds_path,
+             '-system', system_path,
+             'LOCAL'],
+            capture_output=True,
+            timeout=600,
+        )
+    except FileNotFoundError as err:
+        raise ConversionError(
+            'impacket-secretsdump is not installed on this server. '
+            'Install impacket (pip install impacket) to enable NTDS.dit conversion.'
+        ) from err
+    except subprocess.TimeoutExpired as err:
+        raise ConversionError('impacket-secretsdump timed out after 10 minutes.') from err
+    if result.returncode != 0:
+        msg = result.stderr.decode('utf-8', errors='replace').strip()
+        raise ConversionError(msg or 'impacket-secretsdump exited with an error and produced no output.')
+    if not result.stdout.strip():
+        raise ConversionError(
+            'No hashes extracted from the NTDS.dit file. '
+            'Verify the SYSTEM hive corresponds to this NTDS.dit.'
+        )
+    with open(out_path, 'wb') as f:
+        f.write(result.stdout)
+    return out_path

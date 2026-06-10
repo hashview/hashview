@@ -937,6 +937,64 @@ paths:
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
 
+  /v1/hashfiles/upload/ntds/{customer_id}/{hashfile_name}:
+    post:
+      tags: [Hashfiles]
+      summary: Upload an NTDS.dit + SYSTEM hive for async conversion
+      description: >-
+        multipart/form-data with two file fields: `ntds_file` (the NTDS.dit)
+        and `system_file` (the SYSTEM registry hive, used for the boot key). A
+        pending conversion is queued; the scheduler later runs
+        impacket-secretsdump LOCAL (hashcat mode 1000) and imports the result.
+        Poll GET /v1/hashfiles/{hashfile_id}/conversion for progress.
+      operationId: uploadNtds
+      x-audience: user
+      security:
+        - userApiKey: []
+      parameters:
+        - name: customer_id
+          in: path
+          required: true
+          schema: {type: integer}
+        - name: hashfile_name
+          in: path
+          required: true
+          schema: {type: string}
+          description: Display name for the hashfile.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [ntds_file, system_file]
+              properties:
+                ntds_file:
+                  type: string
+                  format: binary
+                  description: The NTDS.dit database file.
+                system_file:
+                  type: string
+                  format: binary
+                  description: The SYSTEM registry hive.
+      responses:
+        '200':
+          description: >-
+            HTTP 200 always; body status 200 with hashfile_id + conversion_id
+            on success, 400 for an unknown customer or a missing ntds_file /
+            system_file, 500 if a file can't be saved.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ConversionQueuedResponse'
+                  - $ref: '#/components/schemas/ApiError'
+              examples:
+                queued:
+                  value: {status: 200, type: message, msg: NTDS.dit uploaded. Conversion queued., hashfile_id: 12, conversion_id: 3}
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
+
   /v1/hashfiles/{hashfile_id}/conversion:
     get:
       tags: [Hashfiles]

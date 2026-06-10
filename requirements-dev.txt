@@ -8,3 +8,6 @@ pip-audit==2.10.0
 pre-commit==4.6.0
 openapi-spec-validator==0.7.1
 PyYAML==6.0.3
+# Mirrors the pylint.yml CI gate for scripts/preflight.sh (rules + fail-under
+# come from .pylintrc). Requires Python >= 3.10.
+pylint==4.0.5

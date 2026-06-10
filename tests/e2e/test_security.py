@@ -40,7 +40,7 @@ def test_customer_name_xss_is_escaped(page, live_server, login):
     payload = "<svg onload=alert(1)>"
 
     page.get_by_role("link", name="Jobs").click()
-    page.get_by_role("link", name="New Job").click()
+    page.get_by_role("link", name="New Job", exact=True).click()
     expect(page.get_by_role("heading", name="Create Job")).to_be_visible()
 
     page.locator("input[name='name']").fill(f"E2E XSS Customer {uuid.uuid4().hex[:6]}")
@@ -169,7 +169,7 @@ def test_job_idor_access_denied_for_other_user(
         test_user_credentials["password"],
     )
     page.get_by_role("link", name="Jobs").click()
-    page.get_by_role("link", name="New Job").click()
+    page.get_by_role("link", name="New Job", exact=True).click()
     expect(page.get_by_role("heading", name="Create Job")).to_be_visible()
 
     page.get_by_label("Job Name").fill("E2E IDOR Job")

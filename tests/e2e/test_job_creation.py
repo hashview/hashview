@@ -18,7 +18,7 @@ def test_job_creation_flow(page, live_server, login):
             "HASHVIEW_E2E_TASK_ID, HASHVIEW_E2E_TASK_NAME."
         )
     page.get_by_role("link", name="Jobs").click()
-    page.get_by_role("link", name="New Job").click()
+    page.get_by_role("link", name="New Job", exact=True).click()
     expect(page.get_by_role("heading", name="Create Job")).to_be_visible()
 
     page.get_by_label("Job Name").fill("E2E Job")

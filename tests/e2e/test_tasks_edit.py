@@ -1,9 +1,12 @@
-"""End-to-end coverage of the /tasks/edit/<id> page.
+"""End-to-end coverage of editing a task via the /tasks edit modal.
+
+Editing is a client-side modal (opened from each row's Edit button and
+pre-filled from the task's data), not a separate /tasks/edit/<id> page.
 
 Exercises that:
-  * the edit page renders cleanly for an existing task,
+  * the edit modal opens pre-filled for an existing task,
   * editing the task name persists,
-  * switching the attack mode (Straight -> Brute-force) and submitting works.
+  * switching the attack mode (Straight -> Brute-force/mask) and saving works.
 """
 
 import re
@@ -12,7 +15,6 @@ from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect
-
 
 EXAMPLE_WORDLIST = Path(__file__).parent / "example_wordlist.txt"
 
@@ -68,8 +70,8 @@ def _create_task(page, live_server, name, mode_value, wl_name):
 
 @pytest.mark.e2e
 def test_tasks_edit_page_renders_for_existing_task(page, live_server, login):
-    """Open the edit page for a freshly-created Straight task and confirm
-    no template/server errors leaked into the rendered HTML.
+    """Open the edit modal for a freshly-created Straight task and confirm it
+    opens pre-filled with no template/server errors leaked into the page.
     """
     login()
     suffix = uuid.uuid4().hex[:6]
@@ -83,9 +85,12 @@ def test_tasks_edit_page_renders_for_existing_task(page, live_server, login):
         page.goto(f"{live_server}/tasks", wait_until="domcontentloaded")
         row = _row_with_text(page, task_name)
         expect(row).to_be_visible()
-        row.locator("a[href*='/tasks/edit/']").first.click()
+        row.locator("button[title='Edit']").click()
 
-        expect(page).to_have_url(re.compile(r".*/tasks/edit/\d+"))
+        # Editing is a client-side modal pre-filled from the task's data.
+        modal = page.locator("#edit-task-modal")
+        expect(modal).to_be_visible()
+        expect(modal.locator("#etk-name")).to_have_value(task_name)
         body = page.content()
         assert "UndefinedError" not in body
         assert "Traceback" not in body
@@ -97,7 +102,7 @@ def test_tasks_edit_page_renders_for_existing_task(page, live_server, login):
 
 @pytest.mark.e2e
 def test_tasks_edit_change_name_persists(page, live_server, login):
-    """Renaming a task on the edit page should be visible on /tasks afterwards."""
+    """Renaming a task in the edit modal should be visible on /tasks afterwards."""
     login()
     suffix = uuid.uuid4().hex[:6]
     wl_name = f"e2e-wl-{suffix}"
@@ -112,11 +117,12 @@ def test_tasks_edit_change_name_persists(page, live_server, login):
         page.goto(f"{live_server}/tasks", wait_until="domcontentloaded")
         row = _row_with_text(page, original_name)
         expect(row).to_be_visible()
-        row.locator("a[href*='/tasks/edit/']").first.click()
-        expect(page).to_have_url(re.compile(r".*/tasks/edit/\d+"))
+        row.locator("button[title='Edit']").click()
+        modal = page.locator("#edit-task-modal")
+        expect(modal).to_be_visible()
 
-        page.locator("#name").fill(new_name)
-        page.get_by_role("button", name=re.compile(r"^Update$", re.I)).click()
+        modal.locator("#etk-name").fill(new_name)
+        modal.get_by_role("button", name=re.compile(r"Save changes", re.I)).click()
         expect(page).to_have_url(re.compile(r".*/tasks/?$"))
         final_task_name = new_name
 
@@ -129,7 +135,7 @@ def test_tasks_edit_change_name_persists(page, live_server, login):
 
 @pytest.mark.e2e
 def test_tasks_edit_attack_mode_change(page, live_server, login):
-    """Switch a Straight task to Brute-force (mode 3) on the edit page."""
+    """Switch a Straight task to Brute-force (mask) in the edit modal."""
     login()
     suffix = uuid.uuid4().hex[:6]
     wl_name = f"e2e-wl-{suffix}"
@@ -142,12 +148,13 @@ def test_tasks_edit_attack_mode_change(page, live_server, login):
         page.goto(f"{live_server}/tasks", wait_until="domcontentloaded")
         row = _row_with_text(page, task_name)
         expect(row).to_be_visible()
-        row.locator("a[href*='/tasks/edit/']").first.click()
-        expect(page).to_have_url(re.compile(r".*/tasks/edit/\d+"))
+        row.locator("button[title='Edit']").click()
+        modal = page.locator("#edit-task-modal")
+        expect(modal).to_be_visible()
 
-        page.locator("#hc_attackmode").select_option("3")
-        page.locator("#mask").fill("?l?l?l?l")
-        page.get_by_role("button", name=re.compile(r"^Update$", re.I)).click()
+        modal.locator("#etk-t-mask").click()      # switch to Brute-force (mask) tab
+        modal.locator("#etk-mask").fill("?l?l?l?l")
+        modal.get_by_role("button", name=re.compile(r"Save changes", re.I)).click()
         expect(page).to_have_url(re.compile(r".*/tasks/?$"))
 
         page.goto(f"{live_server}/tasks", wait_until="domcontentloaded")

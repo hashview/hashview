@@ -63,6 +63,17 @@ done
 
 if ! curl -fsS "$BASE_URL/login" >/dev/null 2>&1; then
   echo "App did not become ready in time."
+  # Surface startup/migration errors first — a long readiness poll floods the
+  # log with per-request tracebacks that bury the real boot failure under a
+  # plain --tail.
+  echo "--- startup-relevant app log lines ---"
+  # `|| true`: under `set -euo pipefail`, a no-match grep exits 1 and would
+  # abort the script here, skipping the tail dump and the explicit exit below.
+  $COMPOSE_BIN logs app 2>&1 | grep -iE \
+    "Upgrading Database|Setting up defaults|Adding Default|Traceback|Error|Exception|Connection refused|doesn't exist|Multiple head|alembic" \
+    | head -60 || true
+  echo "--- recent docker logs (tail) ---"
+  $COMPOSE_BIN logs --tail 200
   exit 1
 fi
 

@@ -26,9 +26,18 @@ services:
     volumes:
       - db:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
-      timeout: 20s
-      retries: 10
+      # Gate on the REAL server: force TCP (-h 127.0.0.1) and run a query as the
+      # app's user against its database, so the check only passes after init is
+      # fully done. The previous `mysqladmin ping -h localhost` used the unix
+      # socket, which answers during MySQL's temporary init server — letting the
+      # app start and run migrations before the real server accepts TCP. Those
+      # migrations fail (connection refused) and get swallowed, leaving an empty
+      # schema and "Table 'hashview.users' doesn't exist" on every request.
+      test: ["CMD-SHELL", "mysql -h 127.0.0.1 -u hashview -phashview -e 'SELECT 1' hashview || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
 
 volumes:
   db:

@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 import uuid
 
 import pytest
@@ -16,7 +17,7 @@ def test_agent_registers_and_receives_work(live_server):
     env["HASHVIEW_AGENT_NAME"] = "test-agent"
     env["HASHVIEW_AGENT_MAX_SECONDS"] = "5"
     result = subprocess.run(
-        ["python", "tests/agent/sim.py"],
+        [sys.executable, "tests/agent/sim.py"],
         env=env,
         capture_output=True,
         text=True,

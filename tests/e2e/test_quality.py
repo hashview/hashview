@@ -31,7 +31,7 @@ def test_login_invalid_email_shows_error(page, live_server):
 def test_job_name_required_validation(page, live_server, login):
     login()
     page.get_by_role("link", name="Jobs").click()
-    page.get_by_role("link", name="New Job").click()
+    page.get_by_role("link", name="New Job", exact=True).click()
     expect(page.get_by_role("heading", name="Create Job")).to_be_visible()
 
     _select_customer(page)
@@ -43,7 +43,7 @@ def test_job_name_required_validation(page, live_server, login):
 def test_job_name_xss_is_escaped(page, live_server, login):
     login()
     page.get_by_role("link", name="Jobs").click()
-    page.get_by_role("link", name="New Job").click()
+    page.get_by_role("link", name="New Job", exact=True).click()
     expect(page.get_by_role("heading", name="Create Job")).to_be_visible()
 
     xss_payload = '<script id="xss-test">window.__xss=1</script>'
@@ -68,7 +68,7 @@ def test_job_name_xss_is_escaped(page, live_server, login):
 def test_hashfile_validation_rejects_invalid_hash(page, live_server, login):
     login()
     page.get_by_role("link", name="Jobs").click()
-    page.get_by_role("link", name="New Job").click()
+    page.get_by_role("link", name="New Job", exact=True).click()
     expect(page.get_by_role("heading", name="Create Job")).to_be_visible()
 
     page.get_by_label("Job Name").fill("E2E Invalid Hash Test")
@@ -93,7 +93,7 @@ def test_hashfile_validation_rejects_invalid_hash(page, live_server, login):
 def test_hashfile_upload_example_file(page, live_server, login):
     login()
     page.get_by_role("link", name="Jobs").click()
-    page.get_by_role("link", name="New Job").click()
+    page.get_by_role("link", name="New Job", exact=True).click()
     expect(page.get_by_role("heading", name="Create Job")).to_be_visible()
 
     page.get_by_label("Job Name").fill("E2E Upload Example Hashfile")
@@ -117,7 +117,7 @@ def test_hashfile_upload_example_file(page, live_server, login):
 def test_hashfile_upload_example_pwdump(page, live_server, login):
     login()
     page.get_by_role("link", name="Jobs").click()
-    page.get_by_role("link", name="New Job").click()
+    page.get_by_role("link", name="New Job", exact=True).click()
     expect(page.get_by_role("heading", name="Create Job")).to_be_visible()
 
     page.get_by_label("Job Name").fill("E2E Upload Example Pwdump")

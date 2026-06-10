@@ -930,6 +930,100 @@ def test_jobs_add_creates_notification_rows(client, admin_user):
 
 
 # ---------------------------------------------------------------------------
+# POST /v1/hashfiles/upload/wpa_pcap/<customer_id>/<hashfile_name>
+# ---------------------------------------------------------------------------
+
+def _upload_dirs(app, tmp_path, monkeypatch):
+    """Point app root_path at tmp_path and create control/tmp inside it."""
+    monkeypatch.setattr(app, "root_path", str(tmp_path))
+    os.makedirs(os.path.join(str(tmp_path), "control", "tmp"), exist_ok=True)
+
+
+@pytest.mark.security
+def test_wpa_pcap_upload_creates_hashfile_and_conversion(client, app, admin_user, tmp_path, monkeypatch):
+    """Valid pcap upload creates Hashfiles + pending HashfileConversions records."""
+    _upload_dirs(app, tmp_path, monkeypatch)
+
+    cust = Customers(name="CaptureCorp")
+    _db.session.add(cust)
+    _db.session.commit()
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.post(
+        f"/v1/hashfiles/upload/wpa_pcap/{cust.id}/pwnagotchi-capture",
+        data=b"\xd4\xc3\xb2\xa1fake pcap bytes",
+        content_type="application/octet-stream",
+    )
+    body = _json_body(resp)
+
+    assert body["status"] == 200
+    assert "hashfile_id" in body
+    assert "conversion_id" in body
+
+    conv = HashfileConversions.query.filter_by(hashfile_id=body["hashfile_id"]).first()
+    assert conv is not None
+    assert conv.status == "pending"
+    assert conv.source_type == "wpa_pcap"
+
+
+@pytest.mark.security
+def test_wpa_pcap_upload_no_cookie_redirects(client):
+    """No uuid cookie redirects to not_authorized."""
+    resp = client.post(
+        "/v1/hashfiles/upload/wpa_pcap/1/test-capture",
+        data=b"bytes",
+        content_type="application/octet-stream",
+    )
+    assert resp.status_code == 302
+    assert "/not_authorized" in resp.headers["Location"]
+
+
+@pytest.mark.security
+def test_wpa_pcap_upload_agent_cookie_redirects(client, authorized_agent):
+    """Agent credentials are rejected (user-only route)."""
+    client.set_cookie("uuid", authorized_agent.uuid, domain="localhost.test")
+    resp = client.post(
+        "/v1/hashfiles/upload/wpa_pcap/1/test-capture",
+        data=b"bytes",
+        content_type="application/octet-stream",
+    )
+    assert resp.status_code == 302
+    assert "/not_authorized" in resp.headers["Location"]
+
+
+@pytest.mark.security
+def test_wpa_pcap_upload_invalid_customer_returns_400(client, admin_user):
+    """Non-existent customer_id returns a 400 error body."""
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.post(
+        "/v1/hashfiles/upload/wpa_pcap/99999/test-capture",
+        data=b"bytes",
+        content_type="application/octet-stream",
+    )
+    body = _json_body(resp)
+    assert body["status"] == 400
+
+
+@pytest.mark.security
+def test_wpa_pcap_upload_empty_body_returns_400(client, app, admin_user, tmp_path, monkeypatch):
+    """Empty request body returns a 400 error body."""
+    _upload_dirs(app, tmp_path, monkeypatch)
+
+    cust = Customers(name="EmptyCaptureCorp")
+    _db.session.add(cust)
+    _db.session.commit()
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.post(
+        f"/v1/hashfiles/upload/wpa_pcap/{cust.id}/empty-capture",
+        data=b"",
+        content_type="application/octet-stream",
+    )
+    body = _json_body(resp)
+    assert body["status"] == 400
+
+
+# ---------------------------------------------------------------------------
 # GET /v1/hashfiles/<hashfile_id>/conversion
 # ---------------------------------------------------------------------------
 

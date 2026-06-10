@@ -43,12 +43,14 @@ class JobsNewHashFileForm(FlaskForm):
 
     name = StringField('Hashfile Name') # While required we may dynamically create this based on file upload
     file_type = SelectField('Hash File Format', choices=[('', '--SELECT--'),
-													('pwdump', 'pwdump()'), 
-													('NetNTLM', 'NetNTLMv1, NetNTLMv1+ESS or NetNTLMv2'), 
+													('pwdump', 'pwdump()'),
+													('NetNTLM', 'NetNTLMv1, NetNTLMv1+ESS or NetNTLMv2'),
 													('kerberos', 'Kerberos'),
 													('shadow', 'Linux / Unix Shadow File'),
 													('user_hash', '$user:$hash'),
-													('hash_only', '$hash')], validators=[DataRequired()])
+													('hash_only', '$hash'),
+													('wpa_pcap', 'WPA Capture (pcap / pcapng) — pwnagotchi, hcxdumptool'),
+													], validators=[DataRequired()])
 													
     hash_type = SelectField('Hash Type', choices=HASH_TYPE_CHOICES)
 

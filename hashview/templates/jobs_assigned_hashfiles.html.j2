@@ -47,7 +47,8 @@
     // show the hash-type select that matches the chosen file format
     function showHashTypeSelected(sel){
         var map = {pwdump:'pwdump_hash_type_div', NetNTLM:'netntlm_hash_type_div', kerberos:'kerberos_hash_type_div',
-                   shadow:'shadow_hash_type_div', user_hash:'hash_type_div', hash_only:'hash_type_div'};
+                   shadow:'shadow_hash_type_div', user_hash:'hash_type_div', hash_only:'hash_type_div',
+                   wpa_pcap:'hash_type_placeholder'};
         ['pwdump_hash_type_div','netntlm_hash_type_div','kerberos_hash_type_div','shadow_hash_type_div','hash_type_div','hash_type_placeholder']
             .forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display='none'; });
         var show = map[sel.value];

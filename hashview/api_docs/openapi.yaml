@@ -890,6 +890,53 @@ paths:
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
 
+  /v1/hashfiles/upload/wpa_pcap/{customer_id}/{hashfile_name}:
+    post:
+      tags: [Hashfiles]
+      summary: Upload a WPA capture for async conversion
+      description: >-
+        The request body is the RAW capture file (pcap/pcapng) as binary. A
+        Hashfiles record and a pending HashfileConversions record are created;
+        a scheduler job later runs hcxpcapngtool (hashcat mode 22000) and
+        imports the result. Poll GET /v1/hashfiles/{hashfile_id}/conversion
+        for progress.
+      operationId: uploadWpaPcap
+      x-audience: user
+      security:
+        - userApiKey: []
+      parameters:
+        - name: customer_id
+          in: path
+          required: true
+          schema: {type: integer}
+        - name: hashfile_name
+          in: path
+          required: true
+          schema: {type: string}
+          description: Display name for the hashfile.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary}
+      responses:
+        '200':
+          description: >-
+            HTTP 200 always; body status 200 with hashfile_id + conversion_id
+            on success, 400 for an unknown customer or empty body, 500 if the
+            capture file can't be saved.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ConversionQueuedResponse'
+                  - $ref: '#/components/schemas/ApiError'
+              examples:
+                queued:
+                  value: {status: 200, type: message, msg: Capture uploaded. Conversion queued., hashfile_id: 12, conversion_id: 3}
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
+
   /v1/hashfiles/{hashfile_id}/conversion:
     get:
       tags: [Hashfiles]
@@ -1234,6 +1281,19 @@ components:
           enum: [message]
         msg:
           type: string
+
+    ConversionQueuedResponse:
+      type: object
+      description: >-
+        Returned by the wpa_pcap / ntds upload endpoints when the source file
+        is saved and a conversion is queued (status pending).
+      required: [status, hashfile_id, conversion_id]
+      properties:
+        status: {type: integer, enum: [200]}
+        type: {type: string, enum: [message]}
+        msg: {type: string}
+        hashfile_id: {type: integer}
+        conversion_id: {type: integer}
 
     ConversionStatusResponse:
       type: object

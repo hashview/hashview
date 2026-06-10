@@ -1561,6 +1561,55 @@ def v1_api_hashes_import(hash_type):
             }
     return jsonify(message)
 
+@api.route('/v1/hashfiles/upload/wpa_pcap/<int:customer_id>/<hashfile_name>', methods=['POST'])
+def v1_api_post_wpa_pcap_upload(customer_id, hashfile_name):
+    if not is_authorized(user=True, agent=False, request=request):
+        return redirect("/v1/not_authorized")
+
+    customer = Customers.query.get(customer_id)
+    if not customer:
+        return jsonify({'status': 400, 'type': 'Error', 'msg': 'Invalid customer ID'})
+
+    user = Users.query.filter_by(api_key=request.cookies.get('uuid')).first()
+
+    raw_content = request.get_data()
+    if not raw_content:
+        return jsonify({'status': 400, 'type': 'Error', 'msg': 'Missing capture file content in request body'})
+
+    file_path = os.path.abspath(os.path.join(
+        current_app.root_path, 'control/tmp', secrets.token_hex(8) + '.pcapng'
+    ))
+    try:
+        with open(file_path, 'wb') as f:
+            f.write(raw_content)
+    except Exception as e:
+        return jsonify({'status': 500, 'type': 'Error', 'msg': f'Failed to save capture file: {e}'})
+
+    hashfile = Hashfiles(name=hashfile_name, customer_id=customer_id, owner_id=user.id)
+    db.session.add(hashfile)
+    db.session.commit()
+
+    conv = HashfileConversions(
+        hashfile_id=hashfile.id,
+        source_type='wpa_pcap',
+        status='pending',
+        source_path=file_path,
+    )
+    db.session.add(conv)
+    db.session.commit()
+
+    log_event('hashfile.create', actor=(user.email_address, user.id),
+              target=f'hashfile:{hashfile.id} {hashfile.name!r}',
+              detail='source_type=wpa_pcap status=pending')
+
+    return jsonify({
+        'status': 200,
+        'type': 'message',
+        'msg': 'Capture uploaded. Conversion queued.',
+        'hashfile_id': hashfile.id,
+        'conversion_id': conv.id,
+    })
+
 @api.route('/v1/hashfiles/<int:hashfile_id>/conversion', methods=['GET'])
 def v1_api_get_conversion_status(hashfile_id):
     if not is_authorized(user=True, agent=False, request=request):

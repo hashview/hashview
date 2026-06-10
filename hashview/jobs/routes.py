@@ -26,6 +26,7 @@ from hashview.jobs.forms import (
 from hashview.models import (
     Customers,
     Hashes,
+    HashfileConversions,
     HashfileHashes,
     Hashfiles,
     HashNotifications,
@@ -318,6 +319,40 @@ def jobs_assigned_hashfile(job_id):
                 hashfilehashes_file.write(jobs_new_hashfile_form.hashfilehashes.data)
 
         if len(hashfile_path) > 0:
+            # --- Async source-file types: queue for background conversion ---
+            if jobs_new_hashfile_form.file_type.data == 'wpa_pcap':
+                hashfile = Hashfiles(
+                    name=hashfile_name,
+                    customer_id=job.customer_id,
+                    owner_id=current_user.id,
+                )
+                db.session.add(hashfile)
+                db.session.commit()
+
+                conv = HashfileConversions(
+                    hashfile_id=hashfile.id,
+                    source_type='wpa_pcap',
+                    status='pending',
+                    source_path=hashfile_path,
+                )
+                db.session.add(conv)
+
+                job.hashfile_id = hashfile.id
+                db.session.commit()
+                log_event('hashfile.create',
+                          target=f'hashfile:{hashfile.id} {hashfile.name!r}',
+                          detail='source_type=wpa_pcap status=pending')
+
+                if is_ajax:
+                    return jsonify({
+                        'status': 'ok',
+                        'msg': 'Capture uploaded. Hashes will be available once conversion completes (up to ~30 seconds).',
+                        'redirect': url_for('jobs.jobs_assigned_hashfile', job_id=job_id),
+                    })
+                flash('Capture uploaded. Hashes will be available once conversion completes.', 'success')
+                return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
+            # --- End async path ---
+
             try:
                 if jobs_new_hashfile_form.file_type.data == 'pwdump':
                     has_problem = validate_pwdump_hashfile(hashfile_path, jobs_new_hashfile_form.pwdump_hash_type.data)

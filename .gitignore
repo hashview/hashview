@@ -152,3 +152,7 @@ hashview/control/logs/*
 hashview/control/wordlists_import/*
 hashview/ssl/*
 .scratch/
+
+# test artifacts / local env
+coverage.json
+.env.test

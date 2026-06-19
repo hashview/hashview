@@ -20,13 +20,12 @@ Coverage targets (line numbers as of the version under test):
       * task-not-found (lines 380-382)
       * try_commit failure → flash (lines 400-402)
 
-Known bugs captured with xfail(strict=True):
+Known bugs noted (documented in prose, not asserted via xfail):
   - tasks_add combinator stores j_rule/k_rule correctly (no trailing-comma
-    bug in the ADD path, so those succeed; the xfail is for a different issue
-    found during development and documented below).
+    bug in the ADD path, so those succeed).
   - Duplicate dead-code elif branches at lines 219-241 can never be reached
     (first elif 6/7 at line 207 always wins). Documented as a code-quality
-    bug; no runtime impact so no xfail needed.
+    bug; no runtime impact.
 """
 
 import pytest

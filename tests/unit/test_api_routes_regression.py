@@ -387,12 +387,17 @@ def _seed_startable_job(owner, status="Queued"):
 
 @pytest.mark.security
 def test_jobs_start_success_queues_tasks(client, admin_user, monkeypatch):
-    """A Queued job owned by the caller is started: tasks queued + command built."""
+    """A startable job owned by the caller is started: tasks queued + command built.
+
+    NB: dev now rejects jobs already in Running/Queued status (the route guards
+    against re-queuing), so a startable job is seeded as 'Ready' -- the status a
+    freshly-created job carries before it is started.
+    """
     monkeypatch.setattr(
         "hashview.api.routes.build_hashcat_command",
         lambda job_id, task_id: f"hashcat -j{job_id} -t{task_id}",
     )
-    job, jt = _seed_startable_job(admin_user, status="Queued")
+    job, jt = _seed_startable_job(admin_user, status="Ready")
 
     _auth(client, admin_user.api_key)
     resp = client.post(f"/v1/jobs/start/{job.id}")
@@ -419,15 +424,19 @@ def test_jobs_start_invalid_id_returns_400(client, admin_user):
 
 @pytest.mark.security
 def test_jobs_start_non_owner_returns_403(client, admin_user, regular_user):
-    """A non-admin who does not own the Queued job cannot start it."""
-    job, _ = _seed_startable_job(admin_user, status="Queued")
+    """A non-admin who does not own a startable job cannot start it.
+
+    The job is seeded 'Ready' so it gets past the dev re-queue guard and reaches
+    the ownership check, which is the branch under test.
+    """
+    job, _ = _seed_startable_job(admin_user, status="Ready")
 
     _auth(client, regular_user.api_key)
     resp = client.post(f"/v1/jobs/start/{job.id}")
     body = _body(resp)
     assert body["status"] == 403
-    # The job stays Queued (not promoted) when the caller is unauthorized.
-    assert Jobs.query.get(job.id).status == "Queued"
+    # The job stays in its pre-start status (not promoted) when unauthorized.
+    assert Jobs.query.get(job.id).status == "Ready"
 
 
 # ---------------------------------------------------------------------------
@@ -661,13 +670,13 @@ def test_hashfile_upload_invalid_file_format_returns_400(client, admin_user):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="search with no 'hash' key raises KeyError "
-                                       "instead of the JSON 'Invalid Search' envelope")
 def test_search_missing_hash_key_returns_invalid_envelope(client, admin_user):
-    """A POST body that is present but omits the 'hash' key should be answered
-    with the same graceful ``{status: 500, msg: 'Invalid Search'}`` envelope as
-    an empty hash -- not an unhandled ``KeyError`` (HTML 500). The route does
-    ``if search_json['hash']`` with no guard for the absent key.
+    """A POST body that is present but omits the 'hash' key is answered with the
+    graceful ``{status: 500, msg: 'Invalid Search'}`` envelope.
+
+    Fixed in dev (issue #213): the route now uses ``search_json.get('hash')`` and
+    falls through every recognized key to the 'Invalid Search' envelope instead
+    of raising an unhandled ``KeyError`` (HTML 500). (Was xfail; bug is fixed.)
     """
     _auth(client, admin_user.api_key)
     resp = client.post("/v1/search", json={"not_hash": "oops"})
@@ -677,14 +686,14 @@ def test_search_missing_hash_key_returns_invalid_envelope(client, admin_user):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="update_job_task_status nulls agent_id before "
-                                       "looking the agent up, so hc_status is never cleared")
 def test_canceling_task_clears_assigned_agents_hc_status(app, admin_user):
-    """Canceling (or completing) a task that an agent is running should clear
-    that agent's ``hc_status``. Today the helper sets ``jobtask.agent_id = None``
-    *before* ``Agents.query.get(jobtask.agent_id)``, so the lookup is always
-    ``get(None)`` -> ``None`` (and emits a SAWarning), leaving the stale running
-    status on the agent forever.
+    """Canceling (or completing) a task that an agent is running clears that
+    agent's ``hc_status``.
+
+    Fixed in dev (issue #237): ``update_job_task_status`` now looks the agent up
+    and clears ``hc_status`` *before* nulling ``jobtask.agent_id`` (previously the
+    nulling happened first, so the lookup was always ``get(None)`` -> ``None`` and
+    the stale status stuck forever). (Was xfail; bug is fixed.)
     """
     from hashview.utils.utils import update_job_task_status
 

@@ -38,7 +38,7 @@ def test_searches_list_password_search_finds_match(app, client):
     _seed_cracked(plaintext="UniquePass1")
     resp = client.post("/search", data={
         "search_type": "password", "query": "UniquePass1",
-        "export_type": "Comma", "submit": "Search",
+        "submit": "Search",
     })
     assert resp.status_code == 200
     assert b"UniquePass1" in resp.data

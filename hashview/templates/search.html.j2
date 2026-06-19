@@ -12,17 +12,13 @@
 
 <div class="card">
     <div class="card-body">
-        <form method="POST" action="" enctype="multipart/form-data">
+        <form id="search-form" method="POST" action="" enctype="multipart/form-data">
             {{ searchForm.hidden_tag() }}
             {% if searchForm.search_type.errors %}
                 <div style="display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap;">
                     {{ searchForm.search_type(class="select is-invalid", style="max-width:180px;") }}
                     {{ searchForm.query(class="input is-invalid", placeholder="Enter search text", style="flex:1; min-width:220px;") }}
                     {{ searchForm.submit(class="btn btn-primary") }}
-                    {% if results %}
-                        {{ searchForm.export(class="btn", title="Export results to a file") }}
-                        {{ searchForm.export_type(class="select", title="Column Separator to use when exporting", style="max-width:140px;") }}
-                    {% endif %}
                 </div>
                 <div class="invalid-feedback">
                     {% for error in searchForm.search_type.errors %}
@@ -34,10 +30,6 @@
                     {{ searchForm.search_type(class="select", style="max-width:180px;") }}
                     {{ searchForm.query(class="input", placeholder="Enter search text", style="flex:1; min-width:220px;") }}
                     {{ searchForm.submit(class="btn btn-primary") }}
-                    {% if results %}
-                        {{ searchForm.export(class="btn", title="Export results to a file") }}
-                        {{ searchForm.export_type(class="select", title="Column Separator to use when exporting", style="max-width:140px;") }}
-                    {% endif %}
                 </div>
             {% endif %}
         </form>
@@ -45,8 +37,11 @@
 </div>
 
 {% if hash_results %}
-<div class="card">
-    <div class="card-head"><span>{{ icon('hash', size=15) }} Hash Results</span></div>
+<div class="card" style="margin: var(--gap) 0;">
+    <div class="card-head">
+        <span>{{ icon('hash', size=15) }} Hash Results</span>
+        <button type="submit" form="search-form" name="export" value="hash" class="btn btn-sm" style="margin-left:auto;" title="Export these results as CSV">{{ icon('download', size=14) }} Export CSV</button>
+    </div>
     <table class="tbl">
         <thead>
             <tr>
@@ -89,8 +84,11 @@
 {% endif %}
 
 {% if hashfile_results %}
-<div class="card">
-    <div class="card-head"><span>{{ icon('file', size=15) }} Hashfile Results</span></div>
+<div class="card" style="margin: var(--gap) 0;">
+    <div class="card-head">
+        <span>{{ icon('file', size=15) }} Hashfile Results</span>
+        <button type="submit" form="search-form" name="export" value="hashfile" class="btn btn-sm" style="margin-left:auto;" title="Export these results as CSV">{{ icon('download', size=14) }} Export CSV</button>
+    </div>
     <table class="tbl">
         <thead>
             <tr>

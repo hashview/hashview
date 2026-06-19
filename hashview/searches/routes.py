@@ -63,49 +63,59 @@ def searches_list():
             flash('No results found.', 'warning')
     else:
         customers = None
-        results = None
 
-    if hashfile_results and "export" in request.form: #Export Results
-        return export_results(customers, results, hashfiles, searchForm.export_type.data)
+    # Export Results — the per-table "Export CSV" buttons submit the search form with
+    # name="export" and value "hash" / "hashfile" to export that specific table.
+    if "export" in request.form:
+        export_target = request.form.get('export')
+        if export_target == 'hash' and hash_results:
+            return export_results(hash_results, 'hash')
+        if export_target == 'hashfile' and hashfile_results:
+            return export_results(hashfile_results, 'hashfile', customers=customers, hashfiles=hashfiles)
 
     return render_template('search.html.j2', title='Search', searchForm=searchForm, customers=customers, hash_results=hash_results, hashfile_results=hashfile_results, hashfiles=hashfiles, redacted_data=redacted_data)
 
 #Creating this in memory instead of on disk to avoid any extra cleanup. This can be changed later if files get too large
-def export_results(customers, results, hashfiles, separator):
-    """Function to export search results"""
+def export_results(results, kind, customers=None, hashfiles=None):
+    """Export search results as a downloadable CSV.
+
+    `kind` selects the column layout, matching the two on-screen tables in
+    search.html.j2:
+      * 'hash'     - plain Hashes rows (Recovered At, Hash Type, Cipher Text, Plain Text)
+      * 'hashfile' - (Hashes, HashfileHashes) tuples (Customer, Username, Hash, Plain Text)
+    """
     str_io = io.StringIO()
-    separator = (',' if separator == "Comma" else ":")
-    get_rows(str_io, customers, results, hashfiles, separator)
-    byteIO = io.BytesIO()
-    byteIO.write(str_io.getvalue().encode())
-    byteIO.seek(0)
+    get_rows(str_io, results, kind, customers, hashfiles)
+    byte_io = io.BytesIO(str_io.getvalue().encode())
     str_io.close()
-    return send_file(byteIO, download_name="search.txt", as_attachment=True)
+    byte_io.seek(0)
+    return send_file(byte_io, mimetype='text/csv',
+                     download_name=f'search_{kind}.csv', as_attachment=True)
 
-#If this logic changes on in the html (search.html) it will need to change here as well
-def get_rows(str_io, customers, results, hashfiles, separator):
-    """Function to get rows for export search results"""
-
-    writer = csv.writer(str_io,delimiter=separator)
-    for entry in results:
-        col = ["None"] #set the first column to none incase the customer is not returned
-        for hashfile in hashfiles:
-            if hashfile.id == entry[1].hashfile_id:
-                for customer in customers:
-                    if customer.id == hashfile.customer_id:
-                        col[0] = customer.name # Customer
-
-        if entry[1].username: # Username
-            col.append(jinja_hex_decode(entry[1].username))
-        else:
-            col.append("None")
-
-        col.append(entry[0].ciphertext) # Hash
-
-        if entry[0].cracked: #Plaintext
-            col.append(jinja_hex_decode(entry[0].plaintext))
-        else:
-            col.append("unrecovered")
-
-        writer.writerow([col[0],col[1],col[2],col[3]])
+#If this logic changes in the html (search.html.j2) it will need to change here as well
+def get_rows(str_io, results, kind, customers, hashfiles):
+    """Write the search results to `str_io` as CSV rows (comma-delimited)."""
+    writer = csv.writer(str_io)
+    if kind == 'hash':
+        writer.writerow(['Recovered At', 'Hash Type', 'Cipher Text', 'Plain Text'])
+        for entry in results:
+            if entry.cracked:
+                recovered = entry.recovered_at if entry.recovered_at else 'Before Jan 1st 2025'
+                plaintext = jinja_hex_decode(entry.plaintext)
+            else:
+                recovered = 'unrecovered'
+                plaintext = 'unrecovered'
+            writer.writerow([recovered, entry.hash_type, entry.ciphertext, plaintext])
+    else:
+        writer.writerow(['Customer', 'Username', 'Hash', 'Plain Text'])
+        for entry in results:
+            customer_name = 'None'
+            for hashfile in hashfiles:
+                if hashfile.id == entry[1].hashfile_id:
+                    for customer in customers:
+                        if customer.id == hashfile.customer_id:
+                            customer_name = customer.name
+            username = jinja_hex_decode(entry[1].username) if entry[1].username else 'None'
+            plaintext = jinja_hex_decode(entry[0].plaintext) if entry[0].cracked else 'unrecovered'
+            writer.writerow([customer_name, username, entry[0].ciphertext, plaintext])
     return str_io

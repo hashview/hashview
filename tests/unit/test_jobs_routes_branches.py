@@ -208,12 +208,8 @@ def test_jobs_add_invalid_priority_falls_back_to_normal(app, client):
 # jobs_assigned_hashfile — redirect when job is running/queued (lines 265-266)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True,
-    reason="Bug: hashview/jobs/routes.py:266 calls url_for('jobs.list', ...) "
-           "but the endpoint is 'jobs.jobs_list'; causes BuildError on redirect "
-           "when hashfile assignment is attempted on a running/queued job.")
 def test_jobs_assigned_hashfile_redirects_when_running(app, client):
-    """Assigning a hashfile to a running job should flash and redirect (bug: wrong endpoint)."""
+    """Assigning a hashfile to a running job should flash and redirect to the jobs list."""
     user = _nonadmin()
     customer = _make_customer()
     job = _make_job(user.id, customer.id, status="Running")
@@ -225,12 +221,8 @@ def test_jobs_assigned_hashfile_redirects_when_running(app, client):
     assert b"stop and remove job from queue" in resp.data
 
 
-@pytest.mark.xfail(strict=True,
-    reason="Bug: hashview/jobs/routes.py:266 calls url_for('jobs.list', ...) "
-           "but the endpoint is 'jobs.jobs_list'; causes BuildError on redirect "
-           "when hashfile assignment is attempted on a running/queued job.")
 def test_jobs_assigned_hashfile_redirects_when_queued(app, client):
-    """Assigning a hashfile to a queued job should flash and redirect (bug: wrong endpoint)."""
+    """Assigning a hashfile to a queued job should flash and redirect to the jobs list."""
     user = _nonadmin()
     customer = _make_customer()
     job = _make_job(user.id, customer.id, status="Queued")

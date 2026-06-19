@@ -765,15 +765,6 @@ def test_jobs_get_no_cookie_redirects(client):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Bug: v1_api_post_add_job uses request.get_json() without silent=True "
-        "(hashview/api/routes.py:720). An empty body with content-type "
-        "application/json causes Flask to return an HTML 400 page instead of "
-        "the route's JSON {'status': 400, 'msg': 'Missing job data ...'}."
-    ),
-)
 def test_jobs_add_missing_body_returns_400(client, admin_user):
     """POST /v1/jobs/add with no JSON body should return JSON 400 (correct behavior)."""
     client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
@@ -830,14 +821,19 @@ def test_jobs_add_no_effective_tasks_returns_500(client, admin_user):
 
 
 def _seed_queued_job(owner):
-    """Seed a Queued job with one JobTask."""
+    """Seed a startable (Ready) job with one JobTask.
+
+    The /v1/jobs/start route guards against re-starting a job that is already
+    'Running' or 'Queued', so the job must be in a startable state ('Ready')
+    for the success/permission paths to be exercised.
+    """
     cust = Customers(name=f"StartCo-{owner.id}")
     _db.session.add(cust)
     _db.session.commit()
     hf = Hashfiles(name=f"start-hf-{owner.id}", customer_id=cust.id, owner_id=owner.id)
     _db.session.add(hf)
     _db.session.commit()
-    job = Jobs(name="start-me", status="Queued", hashfile_id=hf.id,
+    job = Jobs(name="start-me", status="Ready", hashfile_id=hf.id,
                customer_id=cust.id, owner_id=owner.id)
     _db.session.add(job)
     _db.session.commit()
@@ -862,7 +858,7 @@ def _seed_queued_job(owner):
 
 @pytest.mark.security
 def test_jobs_start_admin_queued_job_returns_200(client, admin_user, monkeypatch):
-    """POST /v1/jobs/start/<id> for an owner+Queued job succeeds."""
+    """POST /v1/jobs/start/<id> for an owner+Ready job succeeds."""
     import hashview.api.routes as routes_mod
     monkeypatch.setattr(routes_mod, "build_hashcat_command", lambda job_id, task_id: "hc cmd")
 
@@ -1434,15 +1430,6 @@ def test_search_no_cookie_redirects(client):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Bug: v1_api_search uses request.get_json() without silent=True "
-        "(hashview/api/routes.py:1392). An empty body with content-type "
-        "application/json causes Flask to return an HTML 400 page instead of "
-        "the route's JSON {'status': 500, 'msg': 'Invalid Search'}."
-    ),
-)
 def test_search_no_body_returns_500(client, admin_user):
     """POST /v1/search with no JSON body should return JSON 500 (correct behavior)."""
     client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
@@ -1492,15 +1479,6 @@ def test_search_not_found_returns_no_results_message(client, admin_user):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Bug: v1_api_search accesses search_json['hash'] without using .get() "
-        "(hashview/api/routes.py:1395). When the 'hash' key is absent a bare "
-        "KeyError propagates as an unhandled exception (500 HTML traceback) "
-        "instead of the intended JSON {'status': 500, 'msg': 'Invalid Search'}."
-    ),
-)
 def test_search_missing_hash_key_returns_500(client, admin_user):
     """POST /v1/search without a 'hash' key should return JSON 500 (correct behavior)."""
     client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")

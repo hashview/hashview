@@ -626,8 +626,8 @@ class TestSearches:
 
     # --- direct unit tests for export_results / get_rows ---
 
-    def test_export_results_comma_separator(self, app, client):
-        """Directly exercise export_results and get_rows (lines 76-111) via app context."""
+    def test_export_results_hashfile_cracked(self, app, client):
+        """Directly exercise export_results/get_rows for the hashfile (cracked) layout."""
         from hashview.searches.routes import export_results
 
         admin = _admin()
@@ -638,17 +638,17 @@ class TestSearches:
         hfh = self._make_hashfile_hash(h.id, hf.id, username="dave")
 
         # Simulate the result set as it would come from the query: (Hashes, HashfileHashes)
-        customers = [cust]
-        hashfiles = [hf]
         results = [(h, hfh)]
 
         with app.app_context():
             with app.test_request_context():
-                resp = export_results(customers, results, hashfiles, "Comma")
+                resp = export_results(results, "hashfile", customers=[cust], hashfiles=[hf])
         assert resp is not None
+        assert resp.status_code == 200
+        assert "search_hashfile.csv" in resp.headers["Content-Disposition"]
 
-    def test_export_results_colon_separator(self, app, client):
-        """Cover the Colon separator branch in export_results."""
+    def test_export_results_hashfile_uncracked(self, app, client):
+        """Cover the uncracked branch of the hashfile export layout."""
         from hashview.searches.routes import export_results
 
         admin = _admin()
@@ -658,14 +658,14 @@ class TestSearches:
         hf = self._make_hashfile(admin.id, cust.id, name="col.txt")
         hfh = self._make_hashfile_hash(h.id, hf.id, username=None)
 
-        customers = [cust]
-        hashfiles = [hf]
         results = [(h, hfh)]
 
         with app.app_context():
             with app.test_request_context():
-                resp = export_results(customers, results, hashfiles, "Colon")
+                resp = export_results(results, "hashfile", customers=[cust], hashfiles=[hf])
         assert resp is not None
+        assert resp.status_code == 200
+        assert "search_hashfile.csv" in resp.headers["Content-Disposition"]
 
     def test_get_rows_no_matching_customer(self, app, client):
         """Cover get_rows when no customer matches the hashfile (col stays 'None')."""
@@ -689,7 +689,7 @@ class TestSearches:
 
         with app.app_context():
             buf = _io.StringIO()
-            get_rows(buf, customers, results, hashfiles, ",")
+            get_rows(buf, results, "hashfile", customers, hashfiles)
             output = buf.getvalue()
         assert "None" in output  # customer col stays 'None'
 

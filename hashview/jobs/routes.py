@@ -263,7 +263,7 @@ def jobs_assigned_hashfile(job_id):
 
     if job.status == 'Running' or job.status == 'Queued':
         flash('You can not edit a running or queued job. First stop and remove job from queue before editing.', 'danger')
-        return redirect(url_for('jobs.list', job_id=job_id))
+        return redirect(url_for('jobs.jobs_list'))
 
     for hashfile in hashfiles:
         # one aggregated query per hashfile: total hashes, cracked count, representative mode

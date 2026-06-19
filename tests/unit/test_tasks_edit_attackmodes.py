@@ -6,10 +6,9 @@
 uncovered. These tests drive an edit POST in each mode and assert the task row
 is persisted correctly, plus the GET pre-population path.
 
-Tests only — no production code is changed. The known combinator ``j_rule`` /
-``k_rule`` bug (trailing commas at routes.py store a 1-tuple instead of the
-submitted string) is captured as an ``xfail`` so the suite stays green while
-documenting the defect; remove the marker once the route is fixed.
+The combinator ``j_rule`` / ``k_rule`` bug (trailing commas in routes.py stored
+a 1-tuple instead of the submitted string, 500ing the edit POST) is fixed here;
+``test_edit_mode1_combinator_persists`` now pins the corrected behavior.
 """
 
 import pytest
@@ -85,18 +84,10 @@ def test_edit_mode0_with_rule_and_loopback(app, client):
 
 # ----------------------------------------------------- mode 1 (combinator) edit
 
-@pytest.mark.xfail(
-    reason="Combinator edit is broken in tasks/routes.py: the trailing commas in "
-           "`task.j_rule=tasksForm.j_rule.data,` / `task.k_rule=...,` assign a "
-           "1-tuple to a String(25) column, so the commit raises (sqlite: "
-           "ProgrammingError 'type tuple is not supported'; MySQL fails likewise) "
-           "and the whole edit POST 500s. Production fix is out of scope for this "
-           "tests-only change; remove this marker once routes.py drops the commas.",
-    strict=True,
-)
 def test_edit_mode1_combinator_persists(app, client):
-    """Intended behavior: editing a task to combinator mode persists wordlists
-    and the -j/-k rules as plain strings. Currently raises on commit (see xfail)."""
+    """Editing a task to combinator mode persists wordlists and the -j/-k rules
+    as plain strings (regression: trailing commas in routes.py used to store a
+    1-tuple in the String(25) column and 500 the edit POST)."""
     user = _user()
     _login(client, user)
     wl1 = _wordlist(user.id, "wlA")

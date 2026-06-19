@@ -179,10 +179,10 @@ def customers_delete(customer_id):
     for hashfile in hashfiles:
         hashfile_hashes = HashfileHashes.query.filter_by(hashfile_id = hashfile.id).all()
         for hashfile_hash in hashfile_hashes:
-            hashes = Hashes.query.filter_by(id=hashfile_hash.id, cracked=0).all()
+            hashes = Hashes.query.filter_by(id=hashfile_hash.hash_id, cracked=0).all()
             for hash in hashes:
                 # Check to see if our hashfile is the ONLY hashfile for this customer that has this hash
-                customer_cnt = HashfileHashes.query.filter_by(hash_id=hash.id).distinct('customer_id')
+                customer_cnt = HashfileHashes.query.filter_by(hash_id=hash.id).distinct('customer_id').count()
                 if customer_cnt < 2:
                     db.session.delete(hash)
                     HashNotifications.query.filter_by(hash_id=hashfile_hash.hash_id).delete()

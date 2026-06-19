@@ -39,7 +39,7 @@ DELETE_ROUTES = [
     ("POST", "/users/delete/999999", None),
     ("POST", "/hashfiles/delete/999999", None),
     ("POST", "/customers/delete/999999", None),
-    ("GET", "/jobs/999999/remove_task/888888", None),
+    ("POST", "/jobs/999999/remove_task/888888", None),
     ("GET", "/task_groups/assigned_tasks/999999/remove_task/888888", None),
 ]
 

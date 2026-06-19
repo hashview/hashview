@@ -51,7 +51,10 @@
                                 {% if already_assigned.value == 0 %}
                                     {% set any_task.value = 1 %}
                                     <!-- TODO: filter out tasks already assigned to the job -->
-                                    <a class="btn btn-ghost btn-block" style="justify-content:flex-start;" href="/jobs/{{job.id}}/assign_task/{{task.id}}">{{ icon('task', size=14) }} {{task.name}}</a>
+                                    <form method="POST" action="/jobs/{{job.id}}/assign_task/{{task.id}}">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit" class="btn btn-ghost btn-block" style="justify-content:flex-start;">{{ icon('task', size=14) }} {{task.name}}</button>
+                                    </form>
                                 {% endif %}
                             {% endfor %}
                             {% if any_task.value == 0 %}
@@ -69,7 +72,10 @@
                     <div class="card" style="margin-top:8px; max-height:300px; overflow-y:auto;">
                         <div class="card-body" style="padding:6px;">
                             {% for task_group in task_groups %}
-                                <a class="btn btn-ghost btn-block" style="justify-content:flex-start;" href="/jobs/{{job.id}}/assign_task_group/{{task_group.id}}">{{ icon('group', size=14) }} {{task_group.name}}</a>
+                                <form method="POST" action="/jobs/{{job.id}}/assign_task_group/{{task_group.id}}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-ghost btn-block" style="justify-content:flex-start;">{{ icon('group', size=14) }} {{task_group.name}}</button>
+                                </form>
                             {% else %}
                                 <div class="page-sub" style="padding:8px 10px;">No task groups available.</div>
                             {% endfor %}
@@ -80,7 +86,10 @@
                 <div class="term-divider">OR</div>
 
                 {# ---- Add Top Tasks (lucky) ---- #}
-                <a class="btn btn-primary btn-sm" href="/jobs/{{job.id}}/assign_task/lucky" role="button">{{ icon('zap', size=15) }} I'm Feeling Lucky — top 5</a>
+                <form method="POST" action="/jobs/{{job.id}}/assign_task/lucky" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-primary btn-sm">{{ icon('zap', size=15) }} I'm Feeling Lucky — top 5</button>
+                </form>
             </div>
         </div>
     </div>
@@ -134,9 +143,18 @@
                             </td>
                             <td class="center">
                                 <div style="display:flex; gap:4px; justify-content:center;">
-                                    <a class="icon-btn" href="/jobs/{{job.id}}/move_task_up/{{job_task.task_id}}" role="button" title="Move Up">{{ icon('arrowUp', size=15) }}</a>
-                                    <a class="icon-btn" href="/jobs/{{job.id}}/move_task_down/{{job_task.task_id}}" role="button" title="Move Down">{{ icon('arrowDown', size=15) }}</a>
-                                    <a class="icon-btn act-del" href="/jobs/{{job.id}}/remove_task/{{job_task.task_id}}" role="button" title="Delete">{{ icon('trash', size=15) }}</a>
+                                    <form method="POST" action="/jobs/{{job.id}}/move_task_up/{{job_task.task_id}}" style="display:contents">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit" class="icon-btn" title="Move Up">{{ icon('arrowUp', size=15) }}</button>
+                                    </form>
+                                    <form method="POST" action="/jobs/{{job.id}}/move_task_down/{{job_task.task_id}}" style="display:contents">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit" class="icon-btn" title="Move Down">{{ icon('arrowDown', size=15) }}</button>
+                                    </form>
+                                    <form method="POST" action="/jobs/{{job.id}}/remove_task/{{job_task.task_id}}" style="display:contents">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit" class="icon-btn act-del" title="Delete">{{ icon('trash', size=15) }}</button>
+                                    </form>
                                 </div>
                             </td>
                         </tr>
@@ -165,7 +183,8 @@
     <div class="hv-dialog-body">This will permanently delete all assigned tasks for this job. Are you sure you want to continue?</div>
     <div class="hv-dialog-foot">
         <button class="btn" onclick="this.closest('dialog').close()">Back</button>
-        <form action="/jobs/{{job.id}}/remove_all_tasks" method="GET" style="display:inline;">
+        <form action="/jobs/{{job.id}}/remove_all_tasks" method="POST" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="btn btn-danger" type="submit">Delete</button>
         </form>
     </div>

@@ -113,12 +113,12 @@ def test_jobs_assign_then_remove_task_round_trip(app, client):
     task = _make_task(user.id, wl.id)
     _login(client, user)
 
-    resp = client.get(f"/jobs/{job.id}/assign_task/{task.id}",
+    resp = client.post(f"/jobs/{job.id}/assign_task/{task.id}",
                       follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert JobTasks.query.filter_by(job_id=job.id, task_id=task.id).count() == 1
 
-    resp = client.get(f"/jobs/{job.id}/remove_task/{task.id}",
+    resp = client.post(f"/jobs/{job.id}/remove_task/{task.id}",
                       follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert JobTasks.query.filter_by(job_id=job.id, task_id=task.id).count() == 0
@@ -132,8 +132,8 @@ def test_jobs_assign_duplicate_static_wordlist_task_rejected(app, client):
     task = _make_task(user.id, wl.id)
     _login(client, user)
 
-    client.get(f"/jobs/{job.id}/assign_task/{task.id}")
-    resp = client.get(f"/jobs/{job.id}/assign_task/{task.id}",
+    client.post(f"/jobs/{job.id}/assign_task/{task.id}")
+    resp = client.post(f"/jobs/{job.id}/assign_task/{task.id}",
                       follow_redirects=True)
     assert b"Task already assigned to the job." in resp.data
     assert JobTasks.query.filter_by(job_id=job.id, task_id=task.id).count() == 1
@@ -149,8 +149,8 @@ def test_jobs_assign_duplicate_dynamic_wordlist_task_allowed(app, client):
     task = _make_task(user.id, wl.id)
     _login(client, user)
 
-    client.get(f"/jobs/{job.id}/assign_task/{task.id}")
-    client.get(f"/jobs/{job.id}/assign_task/{task.id}")
+    client.post(f"/jobs/{job.id}/assign_task/{task.id}")
+    client.post(f"/jobs/{job.id}/assign_task/{task.id}")
     assert JobTasks.query.filter_by(job_id=job.id, task_id=task.id).count() == 2
 
 
@@ -338,13 +338,13 @@ def test_jobs_assign_task_group_assigns_all_and_skips_static_dupes(app, client):
     db.session.commit()
     _login(client, user)
 
-    resp = client.get(f"/jobs/{job.id}/assign_task_group/{tg.id}",
+    resp = client.post(f"/jobs/{job.id}/assign_task_group/{tg.id}",
                       follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert JobTasks.query.filter_by(job_id=job.id).count() == 2
 
     # re-assigning the group: static-wordlist tasks are not duplicated
-    client.get(f"/jobs/{job.id}/assign_task_group/{tg.id}")
+    client.post(f"/jobs/{job.id}/assign_task_group/{tg.id}")
     assert JobTasks.query.filter_by(job_id=job.id).count() == 2
 
 
@@ -372,7 +372,7 @@ def test_jobs_move_task_up_swaps_order(app, client):
     job, t1, t2 = _job_with_two_tasks(user)
     _login(client, user)
 
-    resp = client.get(f"/jobs/{job.id}/move_task_up/{t2.id}",
+    resp = client.post(f"/jobs/{job.id}/move_task_up/{t2.id}",
                       follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert _task_order(job.id) == [t2.id, t1.id]
@@ -383,7 +383,7 @@ def test_jobs_move_task_up_already_top_warns(app, client):
     job, t1, t2 = _job_with_two_tasks(user)
     _login(client, user)
 
-    resp = client.get(f"/jobs/{job.id}/move_task_up/{t1.id}",
+    resp = client.post(f"/jobs/{job.id}/move_task_up/{t1.id}",
                       follow_redirects=True)
     assert b"already at the top" in resp.data
     assert _task_order(job.id) == [t1.id, t2.id]  # unchanged
@@ -394,7 +394,7 @@ def test_jobs_move_task_down_swaps_order(app, client):
     job, t1, t2 = _job_with_two_tasks(user)
     _login(client, user)
 
-    resp = client.get(f"/jobs/{job.id}/move_task_down/{t1.id}",
+    resp = client.post(f"/jobs/{job.id}/move_task_down/{t1.id}",
                       follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert _task_order(job.id) == [t2.id, t1.id]
@@ -405,7 +405,7 @@ def test_jobs_move_task_down_already_bottom_warns(app, client):
     job, t1, t2 = _job_with_two_tasks(user)
     _login(client, user)
 
-    resp = client.get(f"/jobs/{job.id}/move_task_down/{t2.id}",
+    resp = client.post(f"/jobs/{job.id}/move_task_down/{t2.id}",
                       follow_redirects=True)
     assert b"already at the bottom" in resp.data
     assert _task_order(job.id) == [t1.id, t2.id]  # unchanged
@@ -544,7 +544,7 @@ def test_jobs_start_owner_queues(app, client):
     job, task, jt = _full_wizard_job(user)
     _login(client, user)
 
-    resp = client.get(f"/jobs/start/{job.id}", follow_redirects=False)
+    resp = client.post(f"/jobs/start/{job.id}", follow_redirects=False)
     assert resp.status_code in (301, 302)
     db.session.expire_all()
     assert Jobs.query.get(job.id).status == "Queued"
@@ -557,7 +557,7 @@ def test_jobs_start_non_owner_denied(app, client):
     job, task, jt = _full_wizard_job(admin)
     _login(client, user)
 
-    resp = client.get(f"/jobs/start/{job.id}", follow_redirects=True)
+    resp = client.post(f"/jobs/start/{job.id}", follow_redirects=True)
     assert b"do not have rights to start this job" in resp.data
     assert Jobs.query.get(job.id).status == "Incomplete"  # unchanged
 
@@ -568,7 +568,7 @@ def test_jobs_start_without_tasks_errors(app, client):
     job = _make_job(user.id, customer.id)
     _login(client, user)
 
-    resp = client.get(f"/jobs/start/{job.id}", follow_redirects=True)
+    resp = client.post(f"/jobs/start/{job.id}", follow_redirects=True)
     assert b"Error in starting job" in resp.data
 
 
@@ -579,7 +579,7 @@ def test_jobs_stop_running_job_cancels(app, client):
     db.session.commit()
     _login(client, user)
 
-    resp = client.get(f"/jobs/stop/{job.id}", follow_redirects=False)
+    resp = client.post(f"/jobs/stop/{job.id}", follow_redirects=False)
     assert resp.status_code in (301, 302)
     db.session.expire_all()
     assert Jobs.query.get(job.id).status == "Canceled"
@@ -592,7 +592,7 @@ def test_jobs_stop_not_running_flashes(app, client):
     job, task, jt = _full_wizard_job(user, status="Incomplete")
     _login(client, user)
 
-    resp = client.get(f"/jobs/stop/{job.id}", follow_redirects=True)
+    resp = client.post(f"/jobs/stop/{job.id}", follow_redirects=True)
     assert b"not activly running" in resp.data
     assert Jobs.query.get(job.id).status == "Incomplete"  # unchanged
 
@@ -603,6 +603,6 @@ def test_jobs_stop_non_owner_denied(app, client):
     job, task, jt = _full_wizard_job(admin, status="Running")
     _login(client, user)
 
-    resp = client.get(f"/jobs/stop/{job.id}", follow_redirects=True)
+    resp = client.post(f"/jobs/stop/{job.id}", follow_redirects=True)
     assert b"do not have rights to stop this job" in resp.data
     assert Jobs.query.get(job.id).status == "Running"  # unchanged

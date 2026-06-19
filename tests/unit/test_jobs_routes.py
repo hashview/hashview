@@ -159,7 +159,7 @@ def test_jobs_assign_task_creates_jobtask(app, client):
     cust = make_customer()
     job = _job(admin, cust)
     task = _task(admin)
-    resp = client.get(f"/jobs/{job.id}/assign_task/{task.id}", follow_redirects=False)
+    resp = client.post(f"/jobs/{job.id}/assign_task/{task.id}", follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert JobTasks.query.filter_by(job_id=job.id, task_id=task.id).count() == 1
 
@@ -175,7 +175,7 @@ def test_jobs_assign_task_group_creates_one_per_task(app, client):
                     tasks=json.dumps([t1.id, t2.id]))
     db.session.add(tg)
     db.session.commit()
-    resp = client.get(f"/jobs/{job.id}/assign_task_group/{tg.id}", follow_redirects=False)
+    resp = client.post(f"/jobs/{job.id}/assign_task_group/{tg.id}", follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert JobTasks.query.filter_by(job_id=job.id).count() == 2
 
@@ -196,7 +196,7 @@ def test_jobs_move_task_up_swaps_order(app, client):
     _assign(job, t1)
     _assign(job, t2)
     assert _ordered_task_ids(job) == [t1.id, t2.id]
-    resp = client.get(f"/jobs/{job.id}/move_task_up/{t2.id}", follow_redirects=False)
+    resp = client.post(f"/jobs/{job.id}/move_task_up/{t2.id}", follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert _ordered_task_ids(job) == [t2.id, t1.id]
 
@@ -209,7 +209,7 @@ def test_jobs_move_task_up_top_is_noop(app, client):
     t1, t2 = _task(admin, name="first"), _task(admin, name="second")
     _assign(job, t1)
     _assign(job, t2)
-    client.get(f"/jobs/{job.id}/move_task_up/{t1.id}", follow_redirects=False)
+    client.post(f"/jobs/{job.id}/move_task_up/{t1.id}", follow_redirects=False)
     assert _ordered_task_ids(job) == [t1.id, t2.id]
 
 
@@ -221,7 +221,7 @@ def test_jobs_move_task_down_swaps_order(app, client):
     t1, t2 = _task(admin, name="first"), _task(admin, name="second")
     _assign(job, t1)
     _assign(job, t2)
-    resp = client.get(f"/jobs/{job.id}/move_task_down/{t1.id}", follow_redirects=False)
+    resp = client.post(f"/jobs/{job.id}/move_task_down/{t1.id}", follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert _ordered_task_ids(job) == [t2.id, t1.id]
 
@@ -233,7 +233,7 @@ def test_jobs_remove_all_tasks_clears(app, client):
     job = _job(admin, cust)
     _assign(job, _task(admin, name="a"))
     _assign(job, _task(admin, name="b"))
-    resp = client.get(f"/jobs/{job.id}/remove_all_tasks", follow_redirects=False)
+    resp = client.post(f"/jobs/{job.id}/remove_all_tasks", follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert JobTasks.query.filter_by(job_id=job.id).count() == 0
 
@@ -271,7 +271,7 @@ def test_jobs_start_queues_job(app, client, tmp_path):
     job = _job(admin, cust, status="Ready", hashfile_id=hf.id)
     wl = _static_wl(admin, tmp_path)
     _assign(job, _task(admin, wl_id=wl.id))
-    resp = client.get(f"/jobs/start/{job.id}", follow_redirects=False)
+    resp = client.post(f"/jobs/start/{job.id}", follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert Jobs.query.get(job.id).status == "Queued"
     assert JobTasks.query.filter_by(job_id=job.id).first().status == "Queued"
@@ -283,7 +283,7 @@ def test_jobs_stop_cancels_running_job(app, client):
     cust = make_customer()
     job = _job(admin, cust, status="Running")
     jt = _assign(job, _task(admin), status="Running")
-    resp = client.get(f"/jobs/stop/{job.id}", follow_redirects=False)
+    resp = client.post(f"/jobs/stop/{job.id}", follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert Jobs.query.get(job.id).status == "Canceled"
     assert JobTasks.query.get(jt.id).status == "Canceled"
@@ -294,7 +294,7 @@ def test_jobs_stop_non_running_flashes(app, client):
     login(client, admin)
     cust = make_customer()
     job = _job(admin, cust, status="Ready")
-    resp = client.get(f"/jobs/stop/{job.id}", follow_redirects=False)
+    resp = client.post(f"/jobs/stop/{job.id}", follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert Jobs.query.get(job.id).status == "Ready"
 

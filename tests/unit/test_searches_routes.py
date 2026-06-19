@@ -44,21 +44,44 @@ def test_searches_list_password_search_finds_match(app, client):
     assert b"UniquePass1" in resp.data
 
 
-def test_get_rows_writes_csv(app):
+def test_get_rows_writes_hashfile_csv(app):
     cust, hf, h, hfh = _seed_cracked(username="carol", plaintext="pw1", ciphertext="abc123")
     str_io = io.StringIO()
-    get_rows(str_io, [cust], [(h, hfh)], [hf], ",")
+    get_rows(str_io, [(h, hfh)], "hashfile", [cust], [hf])
     out = str_io.getvalue()
+    assert "Customer,Username,Hash,Plain Text" in out
     assert "SearchCo" in out
     assert "carol" in out
     assert "abc123" in out
     assert "pw1" in out
 
 
-def test_export_results_returns_attachment(app):
+def test_get_rows_writes_hash_csv(app):
+    cust, hf, h, hfh = _seed_cracked(plaintext="pw2", ciphertext="cafe01")
+    str_io = io.StringIO()
+    get_rows(str_io, [h], "hash", None, None)
+    out = str_io.getvalue()
+    assert "Recovered At,Hash Type,Cipher Text,Plain Text" in out
+    assert "1000" in out  # hash_type
+    assert "cafe01" in out
+    assert "pw2" in out
+
+
+def test_export_results_hashfile_returns_attachment(app):
     cust, hf, h, hfh = _seed_cracked(ciphertext="ffee00")
     # send_file needs a request context.
     with app.test_request_context("/search"):
-        resp = export_results([cust], [(h, hfh)], [hf], "Colon")
+        resp = export_results([(h, hfh)], "hashfile", customers=[cust], hashfiles=[hf])
     assert resp.status_code == 200
     assert resp.headers["Content-Disposition"].startswith("attachment")
+    assert "search_hashfile.csv" in resp.headers["Content-Disposition"]
+
+
+def test_export_results_hash_returns_attachment(app):
+    cust, hf, h, hfh = _seed_cracked(ciphertext="ddcc11")
+    # send_file needs a request context.
+    with app.test_request_context("/search"):
+        resp = export_results([h], "hash")
+    assert resp.status_code == 200
+    assert resp.headers["Content-Disposition"].startswith("attachment")
+    assert "search_hash.csv" in resp.headers["Content-Disposition"]

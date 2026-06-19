@@ -215,30 +215,6 @@ def tasks_add():
             db.session.add(task)
             db.session.commit()
             flash(f'Task {tasksForm.name.data} created!', 'success')
-        # Hybrid Wordlist + Mask or Hybrid Mask + Wordlist
-        elif tasksForm.hc_attackmode.data == 6 or tasksForm.hc_attackmode.data == 7:
-            task = Tasks(   name=tasksForm.name.data,
-                            owner_id=current_user.id,
-                            wl_id=tasksForm.wl_id.data,
-                            rule_id=None,
-                            hc_attackmode=tasksForm.hc_attackmode.data,
-                            hc_mask=tasksForm.mask.data,
-            )
-            db.session.add(task)
-            db.session.commit()
-            flash(f'Task {tasksForm.name.data} created!', 'success')
-        # Hybrid Wordlist + Mask or Hybrid Mask + Wordlist
-        elif tasksForm.hc_attackmode.data == 6 or tasksForm.hc_attackmode.data == 7:
-            task = Tasks(   name=tasksForm.name.data,
-                            owner_id=current_user.id,
-                            wl_id=tasksForm.wl_id.data,
-                            rule_id=None,
-                            hc_attackmode=tasksForm.hc_attackmode.data,
-                            hc_mask=tasksForm.mask.data,
-            )
-            db.session.add(task)
-            db.session.commit()
-            flash(f'Task {tasksForm.name.data} created!', 'success')            
         else:
             flash('Attack Mode not supported... yet...', 'danger')
         if task is not None:

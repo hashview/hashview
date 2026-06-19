@@ -14,6 +14,7 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required
+from flask_wtf import FlaskForm
 from sqlalchemy import case, func
 
 from hashview.jobs.forms import (
@@ -464,10 +465,16 @@ def jobs_list_tasks(job_id):
 
     return render_template('jobs_assigned_tasks.html.j2', title='Jobs Assigned Tasks', job=job, tasks=tasks, job_tasks=job_tasks, task_groups=task_groups, wordlists=wordlists, alert_hashes=alert_hashes, website=_job_uses_website_keywords(job_id))
 
-@jobs.route("/jobs/<int:job_id>/assign_task/<int:task_id>", methods=['GET'])
+@jobs.route("/jobs/<int:job_id>/assign_task/<int:task_id>", methods=['POST'])
 @login_required
 def jobs_assign_task(job_id, task_id):
     """Function to assign task to job"""
+
+    # POST + bare FlaskForm CSRF check (token in the request body): protects this
+    # state-mutating route against CSRF (#167).
+    if not FlaskForm().validate_on_submit():
+        flash('Security check failed (invalid or missing CSRF token).', 'danger')
+        return redirect("/jobs/" + str(job_id) + "/tasks")
 
     # Someone smarter than me can turn this into a single DB Query
     jobtask_exists = JobTasks.query.filter_by(job_id=job_id, task_id=task_id).first()
@@ -492,10 +499,14 @@ def jobs_assign_task(job_id, task_id):
 
     return redirect("/jobs/"+str(job_id)+"/tasks")
 
-@jobs.route("/jobs/<int:job_id>/assign_task_group/<int:task_group_id>", methods=['GET'])
+@jobs.route("/jobs/<int:job_id>/assign_task_group/<int:task_group_id>", methods=['POST'])
 @login_required
 def jobs_assign_task_group(job_id, task_group_id):
     """Function to assign task group to job"""
+
+    if not FlaskForm().validate_on_submit():
+        flash('Security check failed (invalid or missing CSRF token).', 'danger')
+        return redirect("/jobs/" + str(job_id) + "/tasks")
 
     task_group = TaskGroups.query.get(task_group_id)
 
@@ -526,9 +537,13 @@ def jobs_assign_task_group(job_id, task_group_id):
 
     return redirect("/jobs/" + str(job_id) + "/tasks")
 
-@jobs.route("/jobs/<int:job_id>/assign_task/lucky", methods=['GET'])
+@jobs.route("/jobs/<int:job_id>/assign_task/lucky", methods=['POST'])
 @login_required
 def jobs_assign_lucky_task_group(job_id):
+
+    if not FlaskForm().validate_on_submit():
+        flash('Security check failed (invalid or missing CSRF token).', 'danger')
+        return redirect("/jobs/" + str(job_id) + "/tasks")
 
     job = Jobs.query.get(job_id)
     hashfile = Hashfiles.query.get(job.hashfile_id)
@@ -561,10 +576,14 @@ def jobs_assign_lucky_task_group(job_id):
         flash('Successfully Added Top 10 Tasks', 'success')
     return redirect("/jobs/" + str(job_id) + "/tasks")
 
-@jobs.route("/jobs/<int:job_id>/move_task_up/<int:task_id>", methods=['GET'])
+@jobs.route("/jobs/<int:job_id>/move_task_up/<int:task_id>", methods=['POST'])
 @login_required
 def jobs_move_task_up(job_id, task_id):
     """Function to move assigned task up on task list for job"""
+
+    if not FlaskForm().validate_on_submit():
+        flash('Security check failed (invalid or missing CSRF token).', 'danger')
+        return redirect("/jobs/" + str(job_id) + "/tasks")
 
     job_tasks = JobTasks.query.filter_by(job_id=job_id).all()
 
@@ -596,10 +615,14 @@ def jobs_move_task_up(job_id, task_id):
 
     return redirect("/jobs/"+str(job_id)+"/tasks")
 
-@jobs.route("/jobs/<int:job_id>/move_task_down/<int:task_id>", methods=['GET'])
+@jobs.route("/jobs/<int:job_id>/move_task_down/<int:task_id>", methods=['POST'])
 @login_required
 def jobs_move_task_down(job_id, task_id):
     """Function to move assigned task down on task list for job"""
+
+    if not FlaskForm().validate_on_submit():
+        flash('Security check failed (invalid or missing CSRF token).', 'danger')
+        return redirect("/jobs/" + str(job_id) + "/tasks")
 
     job_tasks = JobTasks.query.filter_by(job_id=job_id).all()
 
@@ -633,10 +656,14 @@ def jobs_move_task_down(job_id, task_id):
 
     return redirect("/jobs/"+str(job_id)+"/tasks")
 
-@jobs.route("/jobs/<int:job_id>/remove_task/<int:task_id>", methods=['GET'])
+@jobs.route("/jobs/<int:job_id>/remove_task/<int:task_id>", methods=['POST'])
 @login_required
 def jobs_remove_task(job_id, task_id):
     """Function to remove task from task list on job"""
+
+    if not FlaskForm().validate_on_submit():
+        flash('Security check failed (invalid or missing CSRF token).', 'danger')
+        return redirect("/jobs/" + str(job_id) + "/tasks")
 
     job_task = JobTasks.query.filter_by(job_id=job_id, task_id=task_id).first()
     if job_task is None:
@@ -648,10 +675,14 @@ def jobs_remove_task(job_id, task_id):
 
     return redirect("/jobs/"+str(job_id)+"/tasks")
 
-@jobs.route("/jobs/<int:job_id>/remove_all_tasks", methods=['GET'])
+@jobs.route("/jobs/<int:job_id>/remove_all_tasks", methods=['POST'])
 @login_required
 def jobs_remove_all_tasks(job_id):
     """Function to remove all tasks from job"""
+
+    if not FlaskForm().validate_on_submit():
+        flash('Security check failed (invalid or missing CSRF token).', 'danger')
+        return redirect("/jobs/" + str(job_id) + "/tasks")
 
     job_tasks = JobTasks.query.filter_by(job_id=job_id)
     for tasks in job_tasks:
@@ -855,10 +886,14 @@ def jobs_summary(job_id):
 
     return render_template('jobs_summary.html.j2', title='Job Summary', job=job, form=form, job_notification=job_notification, cracked_rate=cracked_rate, cracked_cnt=cracked_cnt, hash_total=hash_total, hashfile_hash_type=hashfile_hash_type, job_tasks=job_tasks, hash_notification_cnt=hash_notification_cnt, customer=customer, hashfile=hashfile, tasks=tasks, hash_notification=hash_notification, settings=settings, website=_job_uses_website_keywords(job_id))
 
-@jobs.route("/jobs/start/<int:job_id>", methods=['GET'])
+@jobs.route("/jobs/start/<int:job_id>", methods=['POST'])
 @login_required
 def jobs_start(job_id):
     """Function to start job"""
+
+    if not FlaskForm().validate_on_submit():
+        flash('Security check failed (invalid or missing CSRF token).', 'danger')
+        return redirect(url_for('jobs.jobs_list'))
 
     job = Jobs.query.get(job_id)
     job_tasks = JobTasks.query.filter_by(job_id = job_id).all()
@@ -882,10 +917,14 @@ def jobs_start(job_id):
         flash('Error in starting job', 'danger')
         return redirect(url_for('jobs.jobs_list'))
 
-@jobs.route("/jobs/stop/<int:job_id>", methods=['GET'])
+@jobs.route("/jobs/stop/<int:job_id>", methods=['POST'])
 @login_required
 def jobs_stop(job_id):
     """Function to stop a job"""
+
+    if not FlaskForm().validate_on_submit():
+        flash('Security check failed (invalid or missing CSRF token).', 'danger')
+        return redirect(url_for('jobs.jobs_list'))
 
     job = Jobs.query.get(job_id)
     job_tasks = JobTasks.query.filter_by(job_id = job_id).all()

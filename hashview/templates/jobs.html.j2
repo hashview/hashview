@@ -65,13 +65,22 @@
                     <button type="button" class="icon-btn" id="jobmenubtn-{{ job.id }}" popovertarget="jobmenu-{{ job.id }}" title="Actions" aria-label="Actions">{{ icon('dots', size=16) }}</button>
                     <div class="job-menu" popover="auto" id="jobmenu-{{ job.id }}" data-anchor="jobmenubtn-{{ job.id }}">
                         {% if job.status == 'Ready' %}
-                            <a class="mi go" href="{{ url_for('jobs.jobs_start', job_id=job.id) }}">{{ icon('play', size=15) }} Start</a>
+                            <form method="POST" action="{{ url_for('jobs.jobs_start', job_id=job.id) }}" style="display:contents">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="mi go">{{ icon('play', size=15) }} Start</button>
+                            </form>
                         {% elif job.status == 'Queued' or job.status == 'Running' %}
-                            <a class="mi stop" href="{{ url_for('jobs.jobs_stop', job_id=job.id) }}">{{ icon('stop', size=15) }} Stop</a>
+                            <form method="POST" action="{{ url_for('jobs.jobs_stop', job_id=job.id) }}" style="display:contents">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="mi stop">{{ icon('stop', size=15) }} Stop</button>
+                            </form>
                         {% elif job.status == 'Completed' %}
                             <span class="mi disabled" style="color:var(--green);">{{ icon('check', size=15) }} Completed</span>
                         {% elif job.status == 'Canceled' %}
-                            <a class="mi" href="{{ url_for('jobs.jobs_start', job_id=job.id) }}">{{ icon('refresh', size=15) }} Restart</a>
+                            <form method="POST" action="{{ url_for('jobs.jobs_start', job_id=job.id) }}" style="display:contents">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="mi">{{ icon('refresh', size=15) }} Restart</button>
+                            </form>
                         {% endif %}
                         {% if job.status != 'Incomplete' %}
                             <a class="mi" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}">{{ icon('chart', size=15) }} Analytics</a>

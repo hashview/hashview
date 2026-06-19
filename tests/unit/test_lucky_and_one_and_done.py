@@ -128,7 +128,7 @@ def test_lucky_assigns_historically_effective_tasks_for_hash_type(
 
     _login(client, admin.id)
 
-    resp = client.get(
+    resp = client.post(
         f"/jobs/{job.id}/assign_task/lucky",
         follow_redirects=False,
     )

@@ -318,8 +318,8 @@ def task_edit(task_id):
                 task.name = tasksForm.name.data
                 task.wl_id = tasksForm.wl_id.data
                 task.wl_id_2 = tasksForm.wl_id_2.data
-                task.j_rule=tasksForm.j_rule.data,
-                task.k_rule=tasksForm.k_rule.data,
+                task.j_rule = tasksForm.j_rule.data
+                task.k_rule = tasksForm.k_rule.data
                 task.hc_attackmode = tasksForm.hc_attackmode.data
                 task.loopback = False
 

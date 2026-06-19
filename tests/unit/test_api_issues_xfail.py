@@ -210,7 +210,6 @@ def test_218_uploadcrackfile_bad_jobtask_returns_404(client, agent_a):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="#218: search_json['hash'] raises KeyError when 'hash' key absent")
 def test_218_search_missing_hash_key_is_handled(client, admin_user):
     _auth(client, admin_user.api_key)
     resp = client.post(
@@ -228,7 +227,6 @@ def test_218_search_missing_hash_key_is_handled(client, admin_user):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="#219: source still contains the no-op `Hashes.task_id is not None` filter")
 def test_219_jobs_add_uses_proper_null_filter():
     src = inspect.getsource(api_routes.v1_api_post_add_job)
     assert "Hashes.task_id is not None" not in src
@@ -288,7 +286,6 @@ def test_221_unauthorized_returns_401_or_403(client):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="#224: handler returns f'...: {e}', leaking raw exception text")
 def test_224_exception_detail_not_leaked(client, admin_user, monkeypatch):
     secret = "INTERNAL-LEAK-TOKEN-zzz"
 
@@ -371,7 +368,6 @@ def test_226_rule_download_cleans_up_tmp(client, app, admin_user, tmp_path, monk
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="#227: writes to hardcoded 'hashview/control/tmp/' but serves from 'control/tmp/'")
 def test_227_hashfile_download_uses_root_path(client, app, admin_user, tmp_path, monkeypatch):
     monkeypatch.setattr(app, "root_path", str(tmp_path))
     # chdir so the route's CWD-relative open()/send_from_directory don't touch

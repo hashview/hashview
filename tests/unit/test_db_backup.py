@@ -17,6 +17,7 @@ import pytest
 from hashview.models import db, Users
 from hashview.utils.backup import (
     create_encrypted_db_backup, purge_stale_backups, _write_defaults_file, BackupError,
+    _sha256, _require_tools,
 )
 from sqlalchemy.engine.url import make_url
 
@@ -155,6 +156,40 @@ def test_purge_stale_backups(tmp_path):
     purge_stale_backups(str(tmp_path), max_age_seconds=3600)
     assert not old.exists()
     assert new.exists() and other.exists()
+
+
+def test_purge_stale_backups_missing_dir_is_noop(tmp_path):
+    # the function swallows OSError from a non-existent directory
+    purge_stale_backups(str(tmp_path / "does-not-exist"))
+
+
+def test_sha256_matches_hashlib(tmp_path):
+    import hashlib
+    # content just over one 1 MiB chunk -> exercises the multi-read loop
+    data = b"x" * (1024 * 1024 + 7)
+    path = tmp_path / "f.bin"
+    path.write_bytes(data)
+    assert _sha256(str(path)) == hashlib.sha256(data).hexdigest()
+
+    # empty file -> single (zero-length) read path
+    empty = tmp_path / "empty.bin"
+    empty.write_bytes(b"")
+    assert _sha256(str(empty)) == hashlib.sha256(b"").hexdigest()
+
+
+def test_require_tools_raises_when_tool_missing(monkeypatch):
+    monkeypatch.setattr("hashview.utils.backup.shutil.which", lambda name: None)
+    with pytest.raises(BackupError) as exc:
+        _require_tools(need_mysqldump=True)
+    assert "Missing required tool" in str(exc.value)
+    # gzip/openssl still required even without mysqldump
+    with pytest.raises(BackupError):
+        _require_tools(need_mysqldump=False)
+
+
+def test_require_tools_passes_when_present(monkeypatch):
+    monkeypatch.setattr("hashview.utils.backup.shutil.which", lambda name: "/usr/bin/" + name)
+    assert _require_tools() is None
 
 
 # ---------------------------------------------------------------------------

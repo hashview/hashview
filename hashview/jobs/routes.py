@@ -208,10 +208,20 @@ def jobs_add():
     if jobs_form.validate_on_submit():
         customer_id = jobs_form.customer_id.data
         if jobs_form.customer_id.data == 'add_new':
-            customer = Customers(name=jobs_form.customer_name.data)
-            db.session.add(customer)
-            db.session.commit()
-            customer_id = customer.id
+            # Don't create a duplicate: reuse an existing customer whose name matches
+            # the submitted one (case-insensitive, whitespace-trimmed).
+            new_customer_name = (jobs_form.customer_name.data or '').strip()
+            existing_customer = Customers.query.filter(
+                func.lower(Customers.name) == new_customer_name.lower()
+            ).first()
+            if existing_customer:
+                customer_id = existing_customer.id
+                flash(f'Customer "{existing_customer.name}" already exists — using the existing record.', 'warning')
+            else:
+                customer = Customers(name=new_customer_name)
+                db.session.add(customer)
+                db.session.commit()
+                customer_id = customer.id
 
         if settings.enabled_job_weights:
             if int(jobs_form.priority.data) >= 1 and int(jobs_form.priority.data) <=5:

@@ -896,9 +896,12 @@ def jobs_start(job_id):
         return redirect(url_for('jobs.jobs_list'))
 
     job = Jobs.query.get(job_id)
+    if job is None:
+        flash('Job not found — it may have already been deleted.', 'warning')
+        return redirect(url_for('jobs.jobs_list'))
     job_tasks = JobTasks.query.filter_by(job_id = job_id).all()
 
-    if job and job_tasks:
+    if job_tasks:
         if current_user.admin or job.owner_id == current_user.id:
             job.status = 'Queued'
             job.queued_at = datetime.now()
@@ -927,23 +930,23 @@ def jobs_stop(job_id):
         return redirect(url_for('jobs.jobs_list'))
 
     job = Jobs.query.get(job_id)
+    if job is None:
+        flash('Job not found — it may have already been deleted.', 'warning')
+        return redirect(url_for('jobs.jobs_list'))
     job_tasks = JobTasks.query.filter_by(job_id = job_id).all()
 
-    if job:
-        if current_user.admin or job.owner_id == current_user.id:
-            if job.status == 'Running' or job.status == 'Queued':
-                job.status = 'Canceled'
-                job.ended_at = datetime.now()
+    if current_user.admin or job.owner_id == current_user.id:
+        if job.status == 'Running' or job.status == 'Queued':
+            job.status = 'Canceled'
+            job.ended_at = datetime.now()
 
-                for job_task in job_tasks:
-                    job_task.status = 'Canceled'
-                    job_task.agent_id = None
-                db.session.commit()
-                flash('Job has been stopped!', 'success')
-            else:
-                flash('Job not activly running.', 'danger')
+            for job_task in job_tasks:
+                job_task.status = 'Canceled'
+                job_task.agent_id = None
+            db.session.commit()
+            flash('Job has been stopped!', 'success')
         else:
-            flash('You do not have rights to stop this job!', 'danger')
+            flash('Job not activly running.', 'danger')
     else:
-        flash('Error in stopping job', 'danger')
+        flash('You do not have rights to stop this job!', 'danger')
     return redirect(url_for('jobs.jobs_list'))

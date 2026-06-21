@@ -211,8 +211,6 @@ def v1_api_get_admin_settings():
 def v1_api_set_agent_heartbeat():
     # Get uuid
     uuid = request.cookies.get('uuid')
-    if not versionCheck(request.cookies.get('agent_version')):
-        return redirect("/v1/upgrade_required")
 
     settings = Settings.query.first()
 
@@ -235,6 +233,14 @@ def v1_api_set_agent_heartbeat():
         return jsonify(message)
 
     else:
+        # The version gate applies to KNOWN agents (they're about to sync/work).
+        # A brand-new agent is registered as Pending above regardless of version,
+        # so a freshly stood-up (or behind) agent always lands in the agents table
+        # for an admin to approve instead of being turned away before it's ever
+        # recorded (which left it invisible — not even a DB row).
+        if not versionCheck(request.cookies.get('agent_version')):
+            update_heartbeat(uuid)
+            return redirect("/v1/upgrade_required")
         update_heartbeat(uuid)
         if agent.status == 'Pending':
             # Agent exists, but has not ben activated. Update heartbeet and turn agent away

@@ -18,7 +18,8 @@
         <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));">
             {% for agent in agents %}
                 {% set is_down = agent.id not in agt_online_ids %}
-                {% set working = recovered_list.get(agent.id) %}
+                {% set t = (telemetry.get(agent.id) if telemetry is defined else none) or {} %}
+                {% set working = t.task %}
                 <div class="card" style="padding:14px 15px;{% if is_down %}border-color:var(--red-dim);{% endif %}">
                     <div style="display:flex;align-items:center;gap:9px;margin-bottom:11px;">
                         <span class="dot-led {% if is_down %}off{% elif working %}run{% else %}on{% endif %}"></span>
@@ -28,24 +29,33 @@
                         </span>
                     </div>
                     {% if is_down %}
-                        <div class="mono" style="font-size:11.5px;color:var(--red);margin-bottom:8px;">last seen {{ agent.last_checkin }}</div>
                         <a class="btn btn-sm btn-danger" href="/agents/restart/{{ agent.id }}" role="button">{{ icon('refresh', size=14) }} Restart</a>
                     {% else %}
                         <div style="display:flex;justify-content:space-between;font-size:11.5px;font-family:var(--mono);">
+                            <span style="color:var(--text-mute);">task</span>
+                            <span style="color:{{ 'var(--text)' if working else 'var(--text-dim)' }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px;">{{ t.task or 'idle' }}</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;font-size:11.5px;font-family:var(--mono);margin-top:7px;">
                             <span style="color:var(--text-mute);">rate</span>
                             <span style="color:{{ 'var(--primary)' if working else 'var(--text-dim)' }};{% if working %}text-shadow:var(--glow-text);{% endif %}white-space:nowrap;">{{ agent.benchmark or '—' }}</span>
                         </div>
-                        {% if working %}
-                            <div style="display:flex;justify-content:space-between;font-size:11.5px;font-family:var(--mono);margin-top:7px;">
-                                <span style="color:var(--text-mute);">recovered</span>
-                                <span style="color:var(--text);">{{ recovered_list[agent.id] }}</span>
-                            </div>
-                            {% if time_estimated_list.get(agent.id) %}
-                            <div style="display:flex;justify-content:space-between;font-size:11.5px;font-family:var(--mono);margin-top:4px;">
-                                <span style="color:var(--text-mute);">eta</span>
-                                <span style="color:var(--amber);">{{ time_estimated_list[agent.id].split('(')[1].split(')')[0] if '(' in time_estimated_list[agent.id] else time_estimated_list[agent.id] }}</span>
-                            </div>
-                            {% endif %}
+                        {% if t.util is not none %}
+                        <div style="display:flex;justify-content:space-between;font-size:11.5px;font-family:var(--mono);margin-top:7px;">
+                            <span style="color:var(--text-mute);">util</span>
+                            <span style="color:var(--text);">{{ t.util }}%</span>
+                        </div>
+                        {% endif %}
+                        {% if t.temp is not none %}
+                        <div style="display:flex;justify-content:space-between;font-size:11.5px;font-family:var(--mono);margin-top:7px;">
+                            <span style="color:var(--text-mute);">temp</span>
+                            <span style="color:{% if t.temp >= 80 %}var(--red){% elif t.temp >= 70 %}var(--amber){% else %}var(--text){% endif %};">{{ t.temp }}°C</span>
+                        </div>
+                        {% endif %}
+                        {% if working and time_estimated_list.get(agent.id) %}
+                        <div style="display:flex;justify-content:space-between;font-size:11.5px;font-family:var(--mono);margin-top:7px;">
+                            <span style="color:var(--text-mute);">eta</span>
+                            <span style="color:var(--amber);">{{ time_estimated_list[agent.id].split('(')[1].split(')')[0] if '(' in time_estimated_list[agent.id] else time_estimated_list[agent.id] }}</span>
+                        </div>
                         {% endif %}
                     {% endif %}
                 </div>

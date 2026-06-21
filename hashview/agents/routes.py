@@ -11,14 +11,66 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required
+from flask_wtf import FlaskForm
 from sqlalchemy import text
 
 import hashview
 from hashview.agents.forms import AgentsForm
-from hashview.models import Agents, JobTasks, db
-from hashview.utils.utils import try_commit
+from hashview.models import AgentBenchmarks, Agents, JobTasks, db
+from hashview.utils.hashcat_modes import (
+    HASH_TYPE_CHOICES,
+    KERBEROS_HASH_TYPE_CHOICES,
+    NETNTLM_HASH_TYPE_CHOICES,
+    SHADOW_HASH_TYPE_CHOICES,
+)
+from hashview.utils.utils import agent_telemetry, try_commit
 
 agents = Blueprint('agents', __name__)
+
+# Hash mode (int) -> human label, e.g. 1000 -> "(1000) NTLM". Built once from the
+# canonical hashcat_modes lists so the agent-info modal can name each benchmark.
+_MODE_NAMES = {}
+for _choices in (HASH_TYPE_CHOICES, KERBEROS_HASH_TYPE_CHOICES,
+                 NETNTLM_HASH_TYPE_CHOICES, SHADOW_HASH_TYPE_CHOICES):
+    for _mode, _label in _choices:
+        try:
+            _MODE_NAMES[int(_mode)] = _label
+        except (TypeError, ValueError):
+            pass
+
+_SPEED_UNITS = ('H/s', 'kH/s', 'MH/s', 'GH/s', 'TH/s', 'PH/s')
+
+
+def _fmt_speed(hps):
+    """Raw hashes/sec -> human string, e.g. 28460000000 -> '28.46 GH/s'."""
+    value = float(hps or 0)
+    idx = 0
+    while value >= 1000 and idx < len(_SPEED_UNITS) - 1:
+        value /= 1000.0
+        idx += 1
+    if idx == 0:
+        return '%d %s' % (int(value), _SPEED_UNITS[idx])
+    return '%.2f %s' % (value, _SPEED_UNITS[idx])
+
+
+def _agent_benchmarks(agents_):
+    """Map agent.id -> list of {hash_type, name, speed, updated_at} for the modal."""
+    ids = [a.id for a in agents_]
+    out = {aid: [] for aid in ids}
+    if not ids:
+        return out
+    rows = (AgentBenchmarks.query
+            .filter(AgentBenchmarks.agent_id.in_(ids))
+            .order_by(AgentBenchmarks.hash_type)
+            .all())
+    for row in rows:
+        out.setdefault(row.agent_id, []).append({
+            'hash_type': row.hash_type,
+            'name': _MODE_NAMES.get(row.hash_type, ''),
+            'speed': _fmt_speed(row.speed),
+            'updated_at': row.updated_at,
+        })
+    return out
 
 
 def _fmt_age(seconds):
@@ -78,9 +130,35 @@ def agents_list():
         else:
             agents = Agents.query.all()
             return render_template('agents.html.j2', title='agents', agents=agents,
-                                   agent_age=_agent_ages(agents), agentsForm=agents_form)
+                                   agent_age=_agent_ages(agents),
+                                   agent_benchmarks=_agent_benchmarks(agents),
+                                   telemetry=agent_telemetry(agents),
+                                   agentsForm=agents_form)
     else:
         abort(403)
+
+@agents.route("/agents/benchmark", methods=['POST'])
+@login_required
+def agents_benchmark_all():
+    """Flush all stored per-(agent, hashtype) benchmarks.
+
+    With benchmark-first dispatch, every agent re-runs `hashcat -b` for the
+    in-use hash types on its next idle check-in, refreshing the data the chunk
+    planner sizes from. Admin-only + CSRF-protected.
+    """
+    if not current_user.admin:
+        abort(403)
+    if not FlaskForm().validate_on_submit():
+        flash('Security check failed (invalid or missing CSRF token).', 'danger')
+        return redirect(url_for('agents.agents_list'))
+
+    AgentBenchmarks.query.delete()
+    if not try_commit('flush agent benchmarks'):
+        flash('Could not reset benchmarks; please try again.', 'danger')
+        return redirect(url_for('agents.agents_list'))
+
+    flash('Benchmarks reset — agents will re-benchmark on their next check-in.', 'success')
+    return redirect(url_for('agents.agents_list'))
 
 @agents.route("/agents/edit/<int:agent_id>", methods=['GET', 'POST'])
 @login_required

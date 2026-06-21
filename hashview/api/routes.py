@@ -17,6 +17,7 @@ from sqlalchemy.ext.declarative import DeclarativeMeta
 
 import hashview
 from hashview.models import (
+    AgentBenchmarks,
     Agents,
     Customers,
     Hashes,
@@ -34,12 +35,13 @@ from hashview.models import (
 )
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
-    build_hashcat_command,
+    build_job_task_commands,
     compress_to_gz,
     decompress_gz,
     get_filehash,
     get_linecount,
     get_md5_hash,
+    hashtypes_in_use,
     hexplain_to_text,
     import_hashfilehashes,
     ingest_static_wordlist_file,
@@ -47,6 +49,8 @@ from hashview.utils.utils import (
     notify_admins,
     ntlm_hash_hex,
     process_recovered_hash_notifications,
+    rechunk_queued_tasks_for_hashtype,
+    slowest_benchmark,
     text_from_field,
     update_dynamic_wordlist,
     update_job_task_status,
@@ -306,6 +310,15 @@ def v1_api_set_agent_heartbeat():
                     json_response = json.loads(hc_status)
                     agent.benchmark = json_response['Speed #']
                     agent.hc_status = str(agent_data['hc_status']).replace("\'", "\"")
+                    # Persist device telemetry. Unlike hc_status (cleared on idle),
+                    # these are RETAINED so the agents page can show a card's
+                    # model/count/temps even when the agent isn't currently cracking.
+                    if json_response.get('GPU_Count') is not None:
+                        agent.gpu_count = json_response['GPU_Count']
+                    if json_response.get('GPU_Model'):
+                        agent.gpu_model = json_response['GPU_Model']
+                    if json_response.get('Temps'):
+                        agent.gpu_temps = json_response['Temps']
 
                 db.session.commit()
 
@@ -323,21 +336,60 @@ def v1_api_set_agent_heartbeat():
                         'job_task_id': already_assigned_task.id
                     }
                     return jsonify(message)
-                else:
-                    # Get first unassigned jobtask and 'assign' it to this agent
-                    job_task_entry = JobTasks.query.filter_by(status = 'Queued').order_by(JobTasks.priority.desc(), JobTasks.id).first()
-                    if job_task_entry:
-                        job_task_entry.agent_id = agent.id
-                        job_task_entry.status = 'Running'
-                        job_task_entry.started_at = datetime.now()
-                        db.session.commit()
-                        message = {
-                            'status': 200,
-                            'type': 'message',
-                            'msg': 'START',
-                            'job_task_id': job_task_entry.id
-                        }
-                        return jsonify(message)
+
+                # Benchmark-first: chunk sizing needs a per-hashtype benchmark from
+                # every agent. If this agent is missing one for any hash type
+                # currently in use, have it benchmark those BEFORE taking crack work
+                # (results come back via POST /v1/agents/benchmark). New hash types
+                # introduced later are picked up automatically here.
+                have = {b.hash_type for b in
+                        AgentBenchmarks.query.filter_by(agent_id=agent.id).all()}
+                missing = sorted(hashtypes_in_use() - have)
+                if missing:
+                    update_heartbeat(uuid)
+                    message = {
+                        'status': 200,
+                        'type': 'message',
+                        'msg': 'BENCHMARK',
+                        'hash_modes': missing,
+                    }
+                    return jsonify(message)
+
+                # Get the next Queued chunk and 'assign' it to this agent. Order so
+                # ALL chunks of a task are exhausted before the next task starts: by
+                # priority, then the task's first (lowest) JobTask id — chunk 1 reuses
+                # the original row's low id, so min(id) per (job, task) is the job's
+                # task order — then chunk number within the task. Ordering by raw id
+                # alone interleaves tasks (every task's chunk 1, then the chunk 2s, …)
+                # because chunks 2..N are created later and get higher ids.
+                task_first = (db.session.query(
+                                  JobTasks.job_id.label('job_id'),
+                                  JobTasks.task_id.label('task_id'),
+                                  func.min(JobTasks.id).label('first_id'))
+                              .group_by(JobTasks.job_id, JobTasks.task_id)
+                              .subquery())
+                job_task_entry = (db.session.query(JobTasks)
+                                  .join(task_first,
+                                        (JobTasks.job_id == task_first.c.job_id)
+                                        & (JobTasks.task_id == task_first.c.task_id))
+                                  .filter(JobTasks.status == 'Queued')
+                                  .order_by(JobTasks.priority.desc(),
+                                            task_first.c.first_id.asc(),
+                                            JobTasks.chunk_no.asc(),
+                                            JobTasks.id.asc())
+                                  .first())
+                if job_task_entry:
+                    job_task_entry.agent_id = agent.id
+                    job_task_entry.status = 'Running'
+                    job_task_entry.started_at = datetime.now()
+                    db.session.commit()
+                    message = {
+                        'status': 200,
+                        'type': 'message',
+                        'msg': 'START',
+                        'job_task_id': job_task_entry.id
+                    }
+                    return jsonify(message)
                 update_heartbeat(uuid)
                 message = {
                     'status': 200,
@@ -353,6 +405,60 @@ def v1_api_set_agent_heartbeat():
                     'msg': 'OK'
                 }
                 return jsonify(message)
+
+@api.route('/v1/agents/benchmark', methods=['POST'])
+def v1_api_post_agent_benchmark():
+    # Agent reports hashcat benchmark speeds (raw H/s) per hash mode. Upsert one
+    # row per (agent, hash_type); re-running a benchmark overwrites the old value.
+    if not is_authorized(user=False, agent=True, request=request):
+        return redirect("/v1/not_authorized")
+
+    update_heartbeat(request.cookies.get('uuid'))
+    agent = Agents.query.filter_by(uuid=request.cookies.get('uuid')).first()
+
+    data = request.get_json(silent=True)
+    if not data or 'benchmark_results' not in data:
+        return jsonify({
+            'status': 400,
+            'type': 'Error',
+            'msg': 'Missing benchmark_results in request body'
+        })
+
+    results = data['benchmark_results'] or {}
+    # Hash types with no usable benchmark BEFORE this report. If this report gives
+    # one its first usable speed, queued whole tasks of that type can now be split
+    # (jobs queued for a brand-new type while every agent was busy ran un-chunked).
+    pending = set()
+    for mode in results:
+        try:
+            m = int(mode)
+        except (TypeError, ValueError):
+            continue
+        if not slowest_benchmark(m):
+            pending.add(m)
+
+    for mode, speed in results.items():
+        try:
+            mode_i = int(mode)
+            speed_i = int(float(speed))
+        except (TypeError, ValueError):
+            continue  # skip an unparseable entry rather than failing the batch
+        row = AgentBenchmarks.query.filter_by(agent_id=agent.id, hash_type=mode_i).first()
+        if row:
+            row.speed = speed_i
+            row.updated_at = datetime.now()
+        else:
+            db.session.add(AgentBenchmarks(
+                agent_id=agent.id, hash_type=mode_i, speed=speed_i,
+                updated_at=datetime.now()))
+    db.session.commit()
+
+    # Now that benchmarks for these types may exist, re-plan any still-queued whole
+    # tasks of theirs into chunks (no-op if the type is still unusable / nothing queued).
+    for m in pending:
+        rechunk_queued_tasks_for_hashtype(m)
+
+    return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
 
 @api.route('/v1/customers', methods=['GET'])
 def v1_api_get_customers():
@@ -867,10 +973,7 @@ def v1_api_post_start_job(job_id):
         if current_user.admin or job.owner_id == current_user.id:
             job.status = 'Queued'
             job.queued_at = datetime.now()
-            for job_task in job_tasks:
-                job_task.status = 'Queued'
-                job_task.priority = job.priority
-                job_task.command = build_hashcat_command(job.id, job_task.task_id)
+            build_job_task_commands(job)
 
             db.session.commit()
             return jsonify  ({

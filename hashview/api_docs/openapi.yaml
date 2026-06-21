@@ -240,6 +240,7 @@ paths:
                 start: {value: {status: 200, type: message, msg: START, job_task_id: 7}}
                 ok: {value: {status: 200, type: message, msg: OK}}
                 canceled: {value: {status: 200, type: message, msg: Canceled}}
+                benchmark: {value: {status: 200, type: message, msg: BENCHMARK, hash_modes: [1000, 1800]}}
         '302':
           description: >-
             Agent version older than the server version; redirect to
@@ -247,6 +248,45 @@ paths:
           headers:
             Location:
               schema: {type: string, example: /v1/upgrade_required}
+
+  /v1/agents/benchmark:
+    post:
+      tags: [Agents, Agent Protocol]
+      summary: Agent reports hashcat benchmark speeds
+      description: >-
+        Agent-only. The agent posts `hashcat -b` speeds (raw hashes/sec, summed
+        across its devices) keyed by hash mode, in response to a heartbeat
+        `msg: "BENCHMARK"`. The server upserts one row per (agent, hash type);
+        these feed the task chunk planner, which sizes chunks from the slowest
+        benchmarked agent. Unparseable entries are skipped.
+      operationId: agentBenchmark
+      x-audience: agent
+      security:
+        - agentUuid: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [benchmark_results]
+              properties:
+                benchmark_results:
+                  type: object
+                  description: Map of hash-mode (string) -> speed in hashes/sec.
+                  additionalProperties:
+                    type: integer
+              example: {benchmark_results: {"1000": 28460000000, "1800": 95000}}
+      responses:
+        '200':
+          description: Benchmarks recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiMessage'
+              example: {status: 200, type: message, msg: OK}
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
 
   # ----------------------------------------------------------------- Admin
   /v1/admin/settings:

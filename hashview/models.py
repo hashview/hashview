@@ -121,6 +121,13 @@ class Settings(db.Model):
     max_runtime_jobs = db.Column(db.Integer)                    # Time will be measured in hours
     max_runtime_tasks = db.Column(db.Integer)                   # Time will be measured in hours
     enabled_job_weights = db.Column(db.Boolean, nullable=False, default=False)
+    # Task chunking (Settings -> Jobs). When enabled, eligible tasks (everything
+    # except those using a dynamic wordlist) are split into smaller per-agent
+    # chunks sized from per-hashtype agent benchmarks. Default OFF so behaviour is
+    # unchanged until an admin opts in. chunk_target_duration is the rough
+    # wall-clock (seconds) one chunk should take on the SLOWEST benchmarked agent.
+    enabled_chunking = db.Column(db.Boolean, nullable=False, default=False)
+    chunk_target_duration = db.Column(db.Integer, nullable=False, default=3600)
     # Website-keywords crawler settings (used by the (DYNAMIC) Website Keywords wordlist)
     crawl_min_word_length = db.Column(db.Integer, nullable=False, default=8)
     crawl_user_agent = db.Column(db.String(255), nullable=False, default=DEFAULT_CRAWL_USER_AGENT)
@@ -187,6 +194,18 @@ class JobTasks(db.Model):
     status = db.Column(db.String(50), nullable=False)
     started_at = db.Column(db.DateTime, nullable=True)      # These defaults should be changed
     agent_id = db.Column(db.Integer, db.ForeignKey('agents.id'))
+    # Chunking: when a task is split, each chunk is its own JobTasks row. chunk_no
+    # is 1-based within the (job, task); chunk_total is the chunk count. Both NULL
+    # for a whole, un-chunked task.
+    chunk_no = db.Column(db.Integer, nullable=True)
+    chunk_total = db.Column(db.Integer, nullable=True)
+    # The chunk's slice, stored so the command is re-derivable on re-queue without
+    # re-planning: wordlist base-loop modes set chunk_skip/chunk_limit (word
+    # offsets); mask base-loop modes set chunk_mask (the sub-mask). All NULL for a
+    # whole, un-chunked task.
+    chunk_skip = db.Column(db.BigInteger, nullable=True)
+    chunk_limit = db.Column(db.BigInteger, nullable=True)
+    chunk_mask = db.Column(db.String(64), nullable=True)
 
 class Customers(db.Model):
     """Class object to represent Customers"""
@@ -225,6 +244,31 @@ class Agents(db.Model):
     benchmark = db.Column(db.String(20))
     cpu_count = db.Column(db.Integer)
     gpu_count = db.Column(db.Integer)
+    # Device telemetry parsed from the agent's hashcat --status-json on each
+    # working check-in and RETAINED across idle (so the agents page can show a
+    # card's model/temp even when it's not currently cracking). gpu_model is a
+    # short label (e.g. 'RTX 4090'); gpu_temps is a comma-separated list of the
+    # per-card temperatures in °C (e.g. '71,70,72').
+    gpu_model = db.Column(db.String(128))
+    gpu_temps = db.Column(db.String(128))
+
+class AgentBenchmarks(db.Model):
+    """Per-(agent, hash_type) hashcat benchmark used to size task chunks.
+
+    `speed` is raw hashes/sec summed across the agent's devices, parsed from
+    `hashcat -b -m <mode> --machine-readable`. The chunk planner sizes chunks
+    from the SLOWEST agent's speed for the job's hash_type. One row per
+    (agent, hash_type); re-running a benchmark upserts the row.
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    agent_id = db.Column(db.Integer, db.ForeignKey('agents.id'), nullable=False, index=True)
+    hash_type = db.Column(db.Integer, nullable=False, index=True)
+    speed = db.Column(db.BigInteger, nullable=False)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    __table_args__ = (
+        db.UniqueConstraint('agent_id', 'hash_type', name='uix_agent_hashtype'),
+    )
 
 class Rules(db.Model):
     id = db.Column(db.Integer, primary_key=True)

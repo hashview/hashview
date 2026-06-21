@@ -130,6 +130,21 @@
                             <label class="switch">{{ HashviewForm.enabled_job_weights(role="switch") }}<span class="track"></span></label>
                         </div>
 
+                        <div style="display:flex; align-items:center; gap:12px; margin-top:20px;">
+                            <div style="flex:1; min-width:0;">
+                                <div style="color:var(--text);">Task chunking</div>
+                                <div class="field-hint" style="margin-top:2px;">Split eligible tasks into smaller chunks distributed across agents, sized from per-hashtype agent benchmarks. Tasks using a dynamic wordlist are never chunked.</div>
+                            </div>
+                            <label class="switch">{{ HashviewForm.enabled_chunking(role="switch") }}<span class="track"></span></label>
+                        </div>
+
+                        <div class="field" style="margin-top:16px;">
+                            <label class="field-label" for="set-chunk-dur">Target chunk runtime (seconds)</label>
+                            {{ HashviewForm.chunk_target_duration(class="input", type="number", min="1", id="set-chunk-dur") }}
+                            <span class="field-hint">Roughly how long one chunk should take on the slowest agent. Keep it well under the per-task max runtime.</span>
+                            {% for e in HashviewForm.chunk_target_duration.errors %}<div class="invalid-feedback" style="display:block;">{{ e }}</div>{% endfor %}
+                        </div>
+
                         {# ---- Web crawler (the (DYNAMIC) Website Keywords wordlist) ---- #}
                         <div style="height:1px; background:var(--border-soft); margin:22px 0 16px;"></div>
                         <div class="mono" style="font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-mute); margin-bottom:14px;">Web crawler · (DYNAMIC) Website Keywords</div>

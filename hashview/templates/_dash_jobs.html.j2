@@ -90,7 +90,7 @@
                                 {% if g.expandable %}
                                     <tr class="chunk-sub" data-parent="{{ key }}" hidden>
                                         <td></td>
-                                        <td colspan="7" class="mono" style="color:var(--text-mute);font-size:10px;">{{ g.completed|commafy }} completed · {{ g.running|commafy }} running · {{ g.queued|commafy }} queued</td>
+                                        <td colspan="7" class="mono" style="color:var(--text-mute);font-size:10px;"><span style="color:var(--green);">{{ g.completed|commafy }}</span> completed · <span style="color:var(--amber);">{{ g.running|commafy }}</span> running · {{ g.queued|commafy }} queued</td>
                                     </tr>
                                     {% for ch in g.active_chunks %}
                                     <tr class="chunk-row" data-parent="{{ key }}" hidden>

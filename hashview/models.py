@@ -210,7 +210,7 @@ class HashfileHashes(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     hash_id = db.Column(db.Integer, nullable=False, index=True)
     username = db.Column(db.String(256), nullable=True, default=None, index=True)
-    hashfile_id = db.Column(db.Integer, nullable=False)
+    hashfile_id = db.Column(db.Integer, nullable=False, index=True)
 
 class Agents(db.Model):
     """Class object to represent Agents"""

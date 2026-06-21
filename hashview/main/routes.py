@@ -197,12 +197,20 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
             chunks_done += completed
             chunks_active += running
 
+            # Derive the parent status, preferring "canceled" in the terminal state.
+            # A canceled task often has some chunks that finished before the stop (or
+            # a race completes one mid-cancel); checking canceled == total here would
+            # let that Completed+Canceled mix fall through to 'Queued'. So: running
+            # wins; then any still-pending work is 'Queued'; otherwise (terminal) a
+            # single canceled chunk makes the task 'Canceled'; else all-done.
             if running:
                 status = 'Running'
+            elif queued:
+                status = 'Queued'
+            elif canceled:
+                status = 'Canceled'
             elif completed == total:
                 status = 'Completed'
-            elif canceled == total:
-                status = 'Canceled'
             else:
                 status = 'Queued'
 

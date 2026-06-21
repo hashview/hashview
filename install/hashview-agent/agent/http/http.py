@@ -15,12 +15,21 @@ http = requests.Session()
 http.mount("https://", adapter)
 http.mount("http://", adapter)
 
+
+def _scheme():
+    """Return 'https://' when the configured use_ssl is truthy, else 'http://'.
+
+    Tolerant of how use_ssl gets written: the setup prompt is '[y/N]' and stores
+    the raw answer ('y'/'yes'/'True'), so accept any of them (case-insensitive)
+    rather than only the exact string 'True'. Otherwise a 'y' answer talks plain
+    HTTP to a TLS port and the server resets the connection (the agent then never
+    registers)."""
+    return 'https://' if str(Config.USE_SSL).strip().lower() in (
+        'true', 't', 'yes', 'y', '1', 'on') else 'http://'
+
+
 def get(url):
-    path = ''
-    if Config.USE_SSL == 'True':
-        path += 'https://'
-    else:
-        path += 'http://'
+    path = _scheme()
 
     with open('VERSION.TXT', 'r') as f:
         version = f.readline().strip('\n')
@@ -44,11 +53,7 @@ def get(url):
         print('[!] HTTP POST (response): Got an unexpected return code:' + str(response.status_code))
 
 def post(url, data):
-    path = ''
-    if Config.USE_SSL == 'True':
-        path += 'https://'
-    else:
-        path += 'http://'
+    path = _scheme()
 
     with open('VERSION.TXT', 'r') as f:
         version = f.readline().strip('\n')

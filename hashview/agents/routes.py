@@ -222,19 +222,26 @@ def agents_delete(agent_id):
     if agent is None:
         flash('Agent not found — it may have already been deleted.', 'warning')
         return redirect(url_for('agents.agents_list'))
-    if current_user.admin:
-        jobtasks = JobTasks.query.filter_by(agent_id = agent_id).count()
-        if jobtasks > 0:
-            flash('Error: Agent is active with a task.', 'danger')
-        else:
-            db.session.delete(agent)
-            if not try_commit(f'delete agent {agent_id}'):
-                flash('Agent could not be deleted — it may have already been removed.', 'danger')
-                return redirect(url_for('agents.agents_list'))
-            flash('Agent removed', 'success')
-        return redirect(url_for('agents.agents_list'))
-    else:
+    if not current_user.admin:
         abort(403)
+
+    # Remove every reference to this agent BEFORE deleting it. Two foreign keys
+    # point at agents.id — job_tasks.agent_id and agent_benchmarks.agent_id — and
+    # either one blocks the delete (the commit rolls back, so the agent silently
+    # reappears). Re-queue any chunk it was actively running so the work isn't
+    # orphaned, unlink the rest, and drop its stored per-hashtype benchmarks.
+    for jt in JobTasks.query.filter_by(agent_id=agent_id).all():
+        if jt.status == 'Running':
+            jt.status = 'Queued'
+        jt.agent_id = None
+    AgentBenchmarks.query.filter_by(agent_id=agent_id).delete(synchronize_session=False)
+
+    db.session.delete(agent)
+    if not try_commit(f'delete agent {agent_id}'):
+        flash('Agent could not be deleted — please try again.', 'danger')
+        return redirect(url_for('agents.agents_list'))
+    flash('Agent removed', 'success')
+    return redirect(url_for('agents.agents_list'))
 
 @agents.route("/agents/download", methods=['GET'])
 @login_required

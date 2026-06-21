@@ -28,6 +28,7 @@ if "agent.config" not in sys.modules:
         NAME = "test-agent"
         UUID = "00000000-0000-0000-0000-000000000000"
         HC_BIN_PATH = "/usr/bin/hashcat"
+        HC_EXTRA_ARGS = ""
 
     _config_stub.Config = Config
     sys.modules["agent.config"] = _config_stub

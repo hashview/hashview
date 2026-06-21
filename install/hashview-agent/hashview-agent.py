@@ -96,8 +96,10 @@ if not os.path.exists('agent/config.conf'):
     hashcat_path = input('Enter the path to a local install of hashcat: ')
     while not os.path.exists(hashcat_path):
         print("Error: File not found.")
-        hashcat_path = input('Enter the path to a local install of hashcat: ')    
+        hashcat_path = input('Enter the path to a local install of hashcat: ')
 
+    hc_extra_args = input('Optional: extra hashcat arguments for this agent, '
+                          'e.g. -d 3,4 (leave blank for none): ').strip()
 
     # Write config file
     config = open("agent/config.conf", "w")
@@ -110,6 +112,7 @@ if not os.path.exists('agent/config.conf'):
     config.write("name = " + str(name) + "\n")
     config.write("uuid = " + str(agent_uuid) + "\n")
     config.write("HC_BIN_PATH = " + str(hashcat_path) + "\n")
+    config.write("HC_EXTRA_ARGS = " + str(hc_extra_args) + "\n")
 
     config.close()
 
@@ -425,7 +428,14 @@ def download_hashfile(job_id, jobtask_id, hashfile_id):
 
 def replaceHashcatBinPath(cmd):
     from agent.config import Config
-    return cmd.replace('@HASHCATBINPATH@', Config.HC_BIN_PATH)
+    # HC_BIN_PATH is the bare binary; append any host-specific HC_EXTRA_ARGS
+    # (e.g. '-d 3,4') after it. The crack command runs via shell=True, so the
+    # shell re-parses this string into binary + flags.
+    binpath = Config.HC_BIN_PATH
+    extra = (getattr(Config, 'HC_EXTRA_ARGS', '') or '').strip()
+    if extra:
+        binpath = binpath + ' ' + extra
+    return cmd.replace('@HASHCATBINPATH@', binpath)
 
 def run_hashcat(cmd):
     run_command(cmd)
@@ -439,8 +449,11 @@ def run_benchmark(hash_modes):
     Triggered by a heartbeat reply of msg='BENCHMARK'. The server uses these
     per-(agent, hash type) speeds to size task chunks for the slowest agent.
     """
-    from agent.bench import parse_benchmark_speed
+    from agent.bench import parse_benchmark_speed, parse_hc_extra_args
     from agent.config import Config
+    # Apply host-specific args (e.g. '-d 3,4') to the benchmark too, so the
+    # measured rate reflects the same devices that will run the crack.
+    hc_args = parse_hc_extra_args(getattr(Config, 'HC_EXTRA_ARGS', ''))
     results = {}
     for mode in hash_modes or []:
         LOG.info('Benchmarking hash mode %s...', mode)
@@ -448,7 +461,7 @@ def run_benchmark(hash_modes):
             # stdout/stderr=PIPE (not capture_output=) so this works on Python 3.6,
             # which agents in the field still run; capture_output was added in 3.7.
             proc = subprocess.run(  # noqa: UP022
-                [Config.HC_BIN_PATH, '-b', '-m', str(mode)],
+                [Config.HC_BIN_PATH, *hc_args, '-b', '-m', str(mode)],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 timeout=BENCHMARK_TIMEOUT)
         except Exception:

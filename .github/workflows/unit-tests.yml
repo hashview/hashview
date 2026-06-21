@@ -28,7 +28,12 @@ jobs:
       - name: Run unit + security + agent tests with coverage
         run: |
           python -m pytest tests/unit tests/security tests/agent_unit \
-            --cov=hashview --cov-report=term-missing --cov-report=xml --cov-fail-under=70 -q
+            --cov=hashview --cov-report=term-missing --cov-report=xml \
+            --cov-report=json:coverage.json --cov-fail-under=85 -q
+      # Enforce the function-level gate: fail if any function in hashview/ has
+      # zero executed body lines (waivers live in the allowlist, kept empty).
+      - name: Enforce function-level coverage gate
+        run: python tests/check_function_coverage.py coverage.json
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:

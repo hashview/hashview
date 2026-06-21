@@ -47,6 +47,22 @@ def test_heartbeat_returns_none_on_unexpected_type(monkeypatch):
     assert api.heartbeat("idle", "stopped") is None
 
 
+def test_heartbeat_no_op_when_server_returns_no_body(monkeypatch):
+    # http.post returns None for a non-200 (e.g. the server is mid-reboot / 500).
+    # heartbeat must NOT crash on json.loads(None); it returns a safe sentinel so
+    # the agent's cycle continues and retries next beat (callers read ['msg']).
+    monkeypatch.setattr(http, "post", lambda path, body: None)
+    resp = api.heartbeat("Working", "")
+    assert resp == {"type": "message", "status": 200, "msg": None}
+    assert resp["msg"] != "Canceled"
+
+
+def test_heartbeat_no_op_when_server_returns_non_json(monkeypatch):
+    # A non-JSON body (e.g. an HTML 500 page) is likewise treated as a no-op.
+    monkeypatch.setattr(http, "post", lambda path, body: "<html>500</html>")
+    assert api.heartbeat("Working", "")["msg"] is None
+
+
 # ---------------------------------------------------------------------------
 # server_settings
 # ---------------------------------------------------------------------------
@@ -441,3 +457,17 @@ def test_scheme_defaults_to_http_for_falsey(monkeypatch):
     for val in ("False", "false", "no", "n", "0", "", None):
         monkeypatch.setattr(Config, "USE_SSL", val)
         assert httpmod._scheme() == "http://", val
+
+
+# ---------------------------------------------------------------------------
+# retry policy (ride out a server restart)
+# ---------------------------------------------------------------------------
+
+def test_retry_policy_retries_posts_and_transient_statuses():
+    # POSTs must be retried, not just idempotent GETs: a RemoteDisconnected on a
+    # heartbeat/upload POST while the server restarts must be ridden out, else the
+    # monitor loop dies and orphans the running hashcat (the reported bug).
+    from agent.http import http as httpmod
+    assert httpmod.retries.allowed_methods is None      # None => retry every method
+    assert 503 in httpmod.retries.status_forcelist      # server not-yet-ready gateway
+    assert httpmod.retries.total and httpmod.retries.total >= 1

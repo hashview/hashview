@@ -78,11 +78,27 @@ def _set_agent_cookies(client, uuid):
 
 
 def test_heartbeat_old_version_redirects_to_upgrade(app, client):
+    # The version gate applies to a KNOWN (already-registered) agent.
+    _agent(uuid="x", status="Idle")
     client.set_cookie("uuid", "x", domain=DOMAIN)
     client.set_cookie("agent_version", "0.0.1", domain=DOMAIN)
     resp = client.post("/v1/agents/heartbeat", json={"agent_status": "Idle", "hc_status": ""})
     assert 300 <= resp.status_code < 400
     assert "upgrade_required" in resp.headers.get("Location", "")
+
+
+def test_heartbeat_new_agent_registers_even_when_version_behind(app, client):
+    # A brand-new agent must be recorded (visible for approval) on first contact
+    # even if its version is behind, instead of being turned away unseen.
+    db.session.add(Settings(max_runtime_tasks=0, max_runtime_jobs=0))
+    db.session.commit()
+    client.set_cookie("uuid", "new-old-agent", domain=DOMAIN)
+    client.set_cookie("agent_version", "0.0.1", domain=DOMAIN)
+    client.set_cookie("name", "new-rig", domain=DOMAIN)
+    resp = client.post("/v1/agents/heartbeat", json={"agent_status": "Idle", "hc_status": ""})
+    assert _body(resp)["msg"] == "Go Away"
+    agent = Agents.query.filter_by(uuid="new-old-agent").first()
+    assert agent is not None and agent.status == "Pending"   # now visible in the table
 
 
 def test_heartbeat_new_agent_is_registered_pending(app, client):

@@ -278,3 +278,49 @@ def test_parent_rate_sums_chunk_with_unusual_speed_format(app, db_session):
     g = _build(job)["groups"][0]
     assert len(g["active_chunks"]) == 2
     assert g["rate"] == "150.0 GH/s"     # both summed, not just the first (100)
+
+
+def _seed_task_with_chunk_statuses(statuses, email):
+    """Create a Running job with one chunked task whose chunks have `statuses`,
+    and return its derived dashboard group. Used to pin the parent-status logic."""
+    user = Users(first_name="A", last_name="D", email_address=email,
+                 password="x" * 60, admin=True)
+    db.session.add(user)
+    db.session.commit()
+    cust = Customers(name="C")
+    db.session.add(cust)
+    db.session.commit()
+    hf = Hashfiles(name="h", customer_id=cust.id, owner_id=user.id)
+    db.session.add(hf)
+    db.session.commit()
+    job = Jobs(name="j", owner_id=user.id, customer_id=cust.id, hashfile_id=hf.id,
+               status="Running", priority=3)
+    db.session.add(job)
+    db.session.commit()
+    task = Tasks(name="t", owner_id=user.id, hc_attackmode=0)
+    db.session.add(task)
+    db.session.commit()
+    total = len(statuses)
+    for i, st in enumerate(statuses, start=1):
+        db.session.add(JobTasks(job_id=job.id, task_id=task.id, status=st,
+                                chunk_no=i, chunk_total=total))
+    db.session.commit()
+    return _build(job)["groups"][0]
+
+
+@pytest.mark.security
+@pytest.mark.parametrize("statuses, expected", [
+    # The reported bug: a canceled task that had finished some chunks first must
+    # still read 'Canceled', not fall through to 'Queued'.
+    (["Completed", "Completed", "Canceled", "Canceled", "Canceled"], "Canceled"),
+    (["Canceled", "Canceled", "Canceled"], "Canceled"),          # all canceled
+    (["Canceled"], "Canceled"),                                  # single-chunk task
+    # Regression guards for the other branches:
+    (["Completed", "Completed", "Queued", "Queued"], "Queued"),  # pending work remains
+    (["Completed", "Completed", "Completed"], "Completed"),
+    (["Running", "Queued", "Canceled"], "Running"),              # any running wins
+    (["Queued", "Canceled"], "Queued"),                         # pending beats a lone cancel
+])
+def test_job_task_group_status_derivation(app, db_session, statuses, expected):
+    g = _seed_task_with_chunk_statuses(statuses, email=f"{abs(hash(tuple(statuses)))}@e.com")
+    assert g["status"] == expected

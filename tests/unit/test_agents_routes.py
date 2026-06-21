@@ -1,6 +1,6 @@
 """Regression tests for agents routes/helpers (function-coverage batch)."""
 
-from hashview.models import AgentBenchmarks, Agents, db
+from hashview.models import AgentBenchmarks, Agents, JobTasks, db
 from tests.unit.helpers import login, make_admin, make_user
 
 
@@ -112,3 +112,34 @@ def test_agents_info_modal_no_benchmarks_message(app, client):
     html = resp.get_data(as_text=True)
     assert f'id="info-{a.id}"' in html
     assert "No benchmarks recorded yet" in html
+
+
+def test_agents_delete_removes_agent_and_all_references(app, client):
+    """Deleting an agent also clears every agent_id reference (job_tasks +
+    agent_benchmarks) and re-queues any chunk it was running, so the delete can't
+    be blocked by a foreign key and leave the agent showing in the list."""
+    admin = make_admin()
+    login(client, admin)
+    a = _agent(name="DelRig", status="Working", uuid="del-u")
+    db.session.add(AgentBenchmarks(agent_id=a.id, hash_type=1000, speed=123))
+    jt = JobTasks(job_id=1, task_id=1, status="Running", priority=3, agent_id=a.id)
+    db.session.add(jt)
+    db.session.commit()
+    a_id, jt_id = a.id, jt.id
+
+    resp = client.post(f"/agents/delete/{a_id}", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    assert Agents.query.get(a_id) is None                                 # actually gone
+    assert AgentBenchmarks.query.filter_by(agent_id=a_id).count() == 0    # benchmarks removed
+    jt2 = JobTasks.query.get(jt_id)
+    assert jt2.agent_id is None                                           # reference cleared
+    assert jt2.status == "Queued"                                         # running chunk re-queued
+
+
+def test_agents_delete_forbidden_for_non_admin(app, client):
+    user = make_user()
+    login(client, user)
+    a = _agent(uuid="del-nonadmin")
+    resp = client.post(f"/agents/delete/{a.id}", follow_redirects=False)
+    assert resp.status_code == 403
+    assert Agents.query.get(a.id) is not None

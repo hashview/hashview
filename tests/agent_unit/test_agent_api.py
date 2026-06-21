@@ -421,3 +421,23 @@ def test_parse_device_info_empty():
     from agent.bench import parse_device_info
     assert parse_device_info({}) == (0, "", "")
     assert parse_device_info({"devices": []}) == (0, "", "")
+
+
+# ---------------------------------------------------------------------------
+# http._scheme (use_ssl interpretation)
+# ---------------------------------------------------------------------------
+
+def test_scheme_treats_yes_ish_values_as_https(monkeypatch):
+    from agent.config import Config
+    from agent.http import http as httpmod
+    for val in ("True", "true", "TRUE", "yes", "Yes", "y", "Y", "1", "on", " true "):
+        monkeypatch.setattr(Config, "USE_SSL", val)
+        assert httpmod._scheme() == "https://", val
+
+
+def test_scheme_defaults_to_http_for_falsey(monkeypatch):
+    from agent.config import Config
+    from agent.http import http as httpmod
+    for val in ("False", "false", "no", "n", "0", "", None):
+        monkeypatch.setattr(Config, "USE_SSL", val)
+        assert httpmod._scheme() == "http://", val

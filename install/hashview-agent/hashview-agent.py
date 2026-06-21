@@ -80,10 +80,10 @@ if not os.path.exists('agent/config.conf'):
         print('Error: You must provide a port. By default Hashview Server runs on 8443: ')
         port = input("Enter the port of the hashview server: ")
     use_tls = input('Does the Hashview server use SSL/TLS? [y/N]:')
-    if use_tls == 'y' or use_tls == 'Y':
-        use_tls = True
-    else:
-        use_tls = False
+    # Accept y / yes / true (any case) as yes; anything else is no. Stored as the
+    # string 'True'/'False'. (Previously only an exact 'y'/'Y' counted, so 'yes'
+    # silently became no -> the agent then spoke plain HTTP to a TLS port.)
+    use_tls = str(use_tls).strip().lower() in ('y', 'yes', 'true', 't', '1')
 
     hostname = socket.gethostname()
     name = input('Enter the name of this Hashview Agent [Hit Enter for: ' + hostname + ']: ')

@@ -29,6 +29,8 @@ MANIFEST
 
 # AI
 .claude
+MEMORY.md
+CLAUDE.md
 
 # PyInstaller
 #  Usually these files are written by a python script from a template

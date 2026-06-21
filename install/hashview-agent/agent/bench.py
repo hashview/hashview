@@ -5,6 +5,17 @@ on its own, like the server-side chunk planner. The agent's run_benchmark()
 shells out to ``hashcat -b -m <mode>`` and feeds the captured output here.
 """
 import re
+import shlex
+
+
+def parse_hc_extra_args(extra):
+    """Parse HC_EXTRA_ARGS (free-form hashcat flags, e.g. '-d 3,4') into a list
+    of argv tokens for list-form subprocess calls (benchmarking). Empty -> [].
+    Falls back to whitespace splitting on unbalanced quotes."""
+    try:
+        return shlex.split(extra or '')
+    except ValueError:
+        return (extra or '').split()
 
 # Per-device benchmark line, e.g. "Speed.#1.........:  1234.5 MH/s (12.34ms) ...".
 # Match #<digit> only so the aggregate "Speed.#*" line is not double counted.

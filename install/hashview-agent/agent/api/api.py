@@ -10,7 +10,13 @@ def heartbeat(agent_status, hc_status):
     }
 
     response = http.post('/v1/agents/heartbeat', json.loads(json.dumps(message)))
-    decoded_response = json.loads(response)
+    try:
+        decoded_response = json.loads(response)
+    except (TypeError, ValueError):
+        # response is None (server returned a non-200, e.g. it was mid-reboot) or
+        # not JSON. Treat this beat as a no-op: keep the current work and retry on
+        # the next cycle instead of crashing the agent loop.
+        return {'type': 'message', 'status': 200, 'msg': None}
     if decoded_response['type'] == 'message' and decoded_response['status'] == 200:
         return decoded_response
     elif decoded_response['type'] == 'message' and decoded_response['status'] == 426:

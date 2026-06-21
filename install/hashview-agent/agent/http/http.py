@@ -9,7 +9,21 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from requests.packages.urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 
-retries = Retry(total=100, backoff_factor=1)
+# Retry transient failures so a brief server outage (restart/redeploy) is ridden
+# out rather than surfacing as an error. allowed_methods=None retries POST too,
+# not just idempotent GETs: the agent's POSTs (heartbeat, crack upload, jobtask
+# status) are all safe to repeat, and WITHOUT this a RemoteDisconnected during a
+# restart kills the in-flight monitor loop and orphans the running hashcat instead
+# of resuming. status_forcelist rides out the server coming back as a not-yet-ready
+# gateway; raise_on_status=False lets a final non-200 return normally (callers
+# already handle that) instead of raising after the retries are spent.
+retries = Retry(
+    total=100,
+    backoff_factor=1,
+    allowed_methods=None,
+    status_forcelist=(502, 503, 504),
+    raise_on_status=False,
+)
 adapter = HTTPAdapter(max_retries=retries)
 http = requests.Session()
 http.mount("https://", adapter)

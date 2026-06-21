@@ -663,12 +663,22 @@ def monitor_hashcat(thread, job, job_task):
                      hc_status.get('Recovered', '?'),
                      hc_status.get('Speed #', '?'),
                      hc_status.get('Time_Estimated', '?'))
-        if send_heartbeat('Working', hc_status)['msg'] == 'Canceled':
-            LOG.info('Server canceled this task; stopping hashcat.')
-            pid = getHashcatPid()
-            if pid:
-                killHashcat(pid)
-        upload_cracks(job, job_task)
+        # A transient server outage (e.g. a restart) raised here must NOT kill the
+        # monitor loop -- that would orphan the still-running hashcat (no status,
+        # no final upload, task never Completed). Log and retry on the next poll;
+        # the HTTP layer already retries through brief outages, this catches the
+        # rest. We keep looping as long as hashcat is alive.
+        try:
+            if send_heartbeat('Working', hc_status)['msg'] == 'Canceled':
+                LOG.info('Server canceled this task; stopping hashcat.')
+                pid = getHashcatPid()
+                if pid:
+                    killHashcat(pid)
+            upload_cracks(job, job_task)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception:
+            LOG.exception('Status report/upload failed this poll; retrying next cycle.')
 
 
 def run_assigned_task(job_task_id):
@@ -712,7 +722,10 @@ def handle_heartbeat():
     """One heartbeat cycle: report this agent's status and act on the reply."""
     if getHashcatPid():
         # A hashcat run is already in flight (e.g. it outlived an agent restart).
-        if send_heartbeat('Working', 'somevalue')['msg'] == 'Canceled':
+        # We're not monitoring that process here, so we have no hc_status to report
+        # -- send an empty one (the server skips the telemetry parse for a blank
+        # value) rather than a placeholder it would fail to JSON-decode.
+        if send_heartbeat('Working', '')['msg'] == 'Canceled':
             LOG.info('Server canceled the running task.')
         return
 

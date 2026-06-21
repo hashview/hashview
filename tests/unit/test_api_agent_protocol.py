@@ -128,6 +128,25 @@ def test_heartbeat_idle_agent_gets_queued_task(app, client):
     assert JobTasks.query.get(jt.id).agent_id == agent.id
 
 
+def test_heartbeat_working_agent_tolerates_malformed_hc_status(app, client):
+    # When hashcat outlives an agent restart the agent sends a non-JSON hc_status
+    # placeholder. The heartbeat must NOT 500 on json.loads of that value -- it
+    # should skip the telemetry update and return OK so the task keeps running.
+    db.session.add(Settings(max_runtime_tasks=0, max_runtime_jobs=0))
+    db.session.commit()
+    agent = _agent(uuid="work-agent", status="Working")
+    jt = JobTasks(job_id=1, task_id=1, status="Running", priority=3, agent_id=agent.id)
+    db.session.add(jt)
+    db.session.commit()
+    _set_agent_cookies(client, "work-agent")
+    resp = client.post("/v1/agents/heartbeat",
+                       json={"agent_status": "Working", "hc_status": "somevalue"})
+    assert resp.status_code == 200          # previously 500 (JSONDecodeError)
+    assert _body(resp)["msg"] == "OK"
+    # telemetry left untouched (not overwritten with garbage)
+    assert Agents.query.get(agent.id).benchmark is None
+
+
 # --- read endpoints ---------------------------------------------------------
 
 def test_get_update_wordlist_returns_ok(app, client, monkeypatch):

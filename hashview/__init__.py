@@ -377,14 +377,19 @@ def create_app(testing=False, config_overrides=None):
                 return (a.status or '').strip().lower()
 
             def _hps(s):
-                """Parse a benchmark display string (e.g. '284.6 GH/s') to H/s."""
-                if not s:
+                """Parse a speed string to raw H/s, tolerantly (case, thousands
+                separators, trailing text, units k/M/G/T/P/E, or a bare number)."""
+                if s is None:
                     return 0.0
-                m = re.match(r"\s*([0-9]*\.?[0-9]+)\s*([kKmMgGtTpP]?)H/s", str(s))
-                if not m:
-                    return 0.0
-                mult = {"": 1, "K": 1e3, "M": 1e6, "G": 1e9, "T": 1e12, "P": 1e15}
-                return float(m.group(1)) * mult.get(m.group(2).upper(), 1)
+                if isinstance(s, (int, float)):
+                    return float(s)
+                s = str(s)
+                mult = {"": 1, "K": 1e3, "M": 1e6, "G": 1e9, "T": 1e12, "P": 1e15, "E": 1e18}
+                m = re.search(r'([0-9][0-9,]*(?:\.[0-9]+)?)\s*([kmgtpe]?)\s*h/s', s, re.IGNORECASE)
+                if m:
+                    return float(m.group(1).replace(',', '')) * mult[m.group(2).upper()]
+                m = re.search(r'[0-9][0-9,]*(?:\.[0-9]+)?', s)
+                return float(m.group(0).replace(',', '')) if m else 0.0
 
             def _fmt(h):
                 for unit, div in (("PH/s", 1e15), ("TH/s", 1e12), ("GH/s", 1e9),
@@ -418,6 +423,7 @@ def create_app(testing=False, config_overrides=None):
                     "total": len(agents),
                     "speed": _fmt(total_hps),
                     "online_ids": up_ids,
+                    "gpus": sum((a.gpu_count or 0) for a in agents),
                 },
                 "job_queue": {
                     "running": Jobs.query.filter_by(status='Running').count(),

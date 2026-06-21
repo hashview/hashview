@@ -42,7 +42,7 @@ from hashview.models import (
 )
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
-    build_hashcat_command,
+    build_job_task_commands,
     import_hashfilehashes,
     save_file,
     try_commit,
@@ -884,10 +884,7 @@ def jobs_summary(job_id):
         job.status = 'Queued'
         job.queued_at = datetime.now()
         job.updated_at = datetime.now()
-        for job_task in job_tasks:
-            job_task.status = 'Queued'
-            job_task.priority = job.priority
-            job_task.command = build_hashcat_command(job.id, job_task.task_id)
+        build_job_task_commands(job)
         db.session.commit()
 
         flash('Job created and queued', 'success')
@@ -915,10 +912,7 @@ def jobs_start(job_id):
         if current_user.admin or job.owner_id == current_user.id:
             job.status = 'Queued'
             job.queued_at = datetime.now()
-            for job_task in job_tasks:
-                job_task.status = 'Queued'
-                job_task.priority = job.priority
-                job_task.command = build_hashcat_command(job.id, job_task.task_id)
+            build_job_task_commands(job)
 
             db.session.commit()
             flash('Job has been Started!', 'success')

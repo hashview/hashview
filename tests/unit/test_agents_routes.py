@@ -1,6 +1,6 @@
 """Regression tests for agents routes/helpers (function-coverage batch)."""
 
-from hashview.models import Agents, db
+from hashview.models import AgentBenchmarks, Agents, db
 from tests.unit.helpers import login, make_admin, make_user
 
 
@@ -60,3 +60,55 @@ def test_agents_deauthorize_sets_pending(app, client):
     resp = client.get(f"/agents/{a.id}/deauthorize", follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert Agents.query.get(a.id).status == "Pending"
+
+
+def test_agents_benchmark_all_flushes_for_admin(app, client):
+    admin = make_admin()
+    login(client, admin)
+    a = _agent(status="Idle", uuid="bench-flush-u")
+    db.session.add(AgentBenchmarks(agent_id=a.id, hash_type=1000, speed=123))
+    db.session.commit()
+    assert AgentBenchmarks.query.count() == 1
+
+    resp = client.post("/agents/benchmark", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    assert AgentBenchmarks.query.count() == 0   # all benchmarks flushed
+
+
+def test_agents_benchmark_all_forbidden_for_non_admin(app, client):
+    user = make_user()
+    login(client, user)
+    resp = client.post("/agents/benchmark", follow_redirects=False)
+    assert resp.status_code == 403
+
+
+def test_fmt_speed_units():
+    from hashview.agents.routes import _fmt_speed
+    assert _fmt_speed(0) == "0 H/s"
+    assert _fmt_speed(999) == "999 H/s"
+    assert _fmt_speed(2500) == "2.50 kH/s"
+    assert _fmt_speed(28460000000) == "28.46 GH/s"
+
+
+def test_agents_info_modal_shows_benchmarks(app, client):
+    admin = make_admin()
+    login(client, admin)
+    a = _agent(name="InfoAgent", status="Idle", uuid="info-u")
+    db.session.add(AgentBenchmarks(agent_id=a.id, hash_type=1000, speed=28460000000))
+    db.session.commit()
+    resp = client.get("/agents")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert f'id="info-{a.id}"' in html      # the per-agent info modal is rendered
+    assert "28.46 GH/s" in html             # benchmark speed, human-formatted
+    assert "NTLM" in html                   # hash mode labeled by name
+
+
+def test_agents_info_modal_no_benchmarks_message(app, client):
+    admin = make_admin()
+    login(client, admin)
+    a = _agent(name="BareAgent", status="Idle", uuid="bare-u")
+    resp = client.get("/agents")
+    html = resp.get_data(as_text=True)
+    assert f'id="info-{a.id}"' in html
+    assert "No benchmarks recorded yet" in html

@@ -16,15 +16,12 @@
     <div class="term-divider">running jobs</div>
     <div style="margin-top:14px;">
         {% for job in running_jobs %}
+            {% set d = (job_dash.get(job.id) if job_dash is defined else none) or {'groups': [], 'tasks_total': 0, 'tasks_done': 0, 'tasks_running': 0, 'chunks_total': 0, 'chunks_done': 0, 'chunks_active': 0} %}
             {% if job.started_at %}
                 {% set job_elapsed = (datetime.now() - job.started_at).total_seconds() %}
                 {% set job_remaining = (settings.max_runtime_jobs * 3600 - job_elapsed) if settings and settings.max_runtime_jobs else 0 %}
                 {% set job_remaining_abs = job_remaining if job_remaining > 0 else 0 %}
             {% endif %}
-            {% set total = namespace(value=0) %}
-            {% set done = namespace(value=0) %}
-            {% set running = namespace(value=0) %}
-            {% for jt in job_tasks %}{% if jt.job_id == job.id %}{% set total.value = total.value + 1 %}{% if jt.status == 'Completed' %}{% set done.value = done.value + 1 %}{% elif jt.status == 'Running' %}{% set running.value = running.value + 1 %}{% endif %}{% endif %}{% endfor %}
             <details class="card job-card" data-job-id="{{ job.id }}" open>
                 <summary class="card-head">
                     <span class="dot-led run"></span>
@@ -46,31 +43,69 @@
                 </summary>
                 <div class="card-body">
                     <div style="display:flex;justify-content:space-between;font-size:11px;font-family:var(--mono);color:var(--text-dim);margin-bottom:7px;">
-                        <span>{{ done.value }}/{{ total.value }} tasks complete</span><span>{{ running.value }} running</span>
+                        <span>{{ d.tasks_done }}/{{ d.tasks_total }} tasks complete · {{ d.chunks_done|commafy }}/{{ d.chunks_total|commafy }} chunks</span>
+                        <span>{{ d.tasks_running }} running · {{ d.chunks_active|commafy }} chunks active</span>
                     </div>
                     <div class="progress">
-                        {% if total.value %}
-                        <div class="seg-done" style="width: {{ (done.value / total.value) * 100 }}%"></div>
-                        <div class="seg-run" style="width: {{ (running.value / total.value) * 100 }}%"></div>
+                        {% if d.chunks_total %}
+                        <div class="seg-done" style="width: {{ (d.chunks_done / d.chunks_total) * 100 }}%"></div>
+                        <div class="seg-run" style="width: {{ (d.chunks_active / d.chunks_total) * 100 }}%"></div>
                         {% endif %}
                     </div>
                     <table class="tbl rj-tasks" style="margin-top:16px;">
-                        <thead><tr><th>Task</th><th class="center">Status</th><th>Agent</th><th class="center">Recovered</th><th class="center">Rate</th><th class="center">ETA</th><th></th></tr></thead>
+                        <thead><tr><th style="width:30px;"></th><th>Task</th><th class="center">Status</th><th>Chunk progress</th><th class="center">Recovered</th><th class="center">Rate</th><th class="center">ETA</th><th></th></tr></thead>
                         <tbody>
-                            {% for jt in job_tasks %}{% if jt.job_id == job.id %}
-                                {% set tname = namespace(v='') %}{% for t in tasks %}{% if t.id == jt.task_id %}{% set tname.v = t.name %}{% endif %}{% endfor %}
-                                {% set ag = namespace(name='', rate='', rec='', eta='') %}
-                                {% for a in agents %}{% if a.id == jt.agent_id %}{% set ag.name = a.name %}{% set ag.rate = a.benchmark %}{% if recovered_list.get(a.id) %}{% set ag.rec = recovered_list[a.id].split(' ')[0] %}{% endif %}{% if time_estimated_list.get(a.id) and '(' in time_estimated_list[a.id] %}{% set ag.eta = time_estimated_list[a.id].split('(')[1].split(')')[0] %}{% endif %}{% endif %}{% endfor %}
-                                <tr>
-                                    <td class="mono">{{ tname.v }}</td>
-                                    <td class="center">{{ status_badge(jt.status) }}</td>
-                                    <td class="mono" style="color:var(--text-dim);">{{ ag.name or '—' }}</td>
-                                    <td class="center num" style="color:{{ 'var(--primary)' if ag.rec else 'var(--text-mute)' }};">{{ ag.rec.split('/') | map('commafy') | join('/') if ag.rec else '—' }}</td>
-                                    <td class="center num" style="color:var(--text-dim);">{{ ag.rate or '—' }}</td>
-                                    <td class="center num" style="color:{{ 'var(--amber)' if ag.eta else 'var(--text-mute)' }};">{{ ag.eta or '—' }}</td>
-                                    <td class="center">{% if jt.status == 'Running' %}<a class="icon-btn" href="{{ url_for('main.stop_job_task', job_task_id=jt.id) }}" title="Stop task">{{ icon('stop', size=15) }}</a>{% endif %}</td>
+                            {% for g in d.groups %}
+                                {% set key = job.id ~ ':' ~ g.task_id %}
+                                <tr class="task-row" data-task-key="{{ key }}">
+                                    <td class="center">
+                                        {% if g.expandable %}
+                                        <button type="button" class="chunk-toggle" data-key="{{ key }}" title="Show active chunks" onclick="toggleChunks('{{ key }}', this)">{{ icon('chevR', size=14) }}</button>
+                                        {% else %}
+                                        <span class="chunk-toggle disabled" title="No active chunks">{{ icon('chevR', size=14) }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="mono">{{ g.name }}</div>
+                                        {% if g.attack %}<div class="mono" style="font-size:10px;color:var(--text-mute);margin-top:2px;">{{ g.attack }}</div>{% endif %}
+                                    </td>
+                                    <td class="center">{{ status_badge(g.status) }}</td>
+                                    <td style="min-width:160px;">
+                                        <div style="display:flex;justify-content:space-between;font-size:10px;font-family:var(--mono);color:var(--text-dim);margin-bottom:4px;">
+                                            <span>{{ g.completed|commafy }}/{{ g.total|commafy }} chunks</span>
+                                            {% if g.running %}<span style="color:var(--amber);">{{ g.running }} active</span>{% endif %}
+                                        </div>
+                                        <div class="progress" style="height:6px;">
+                                            {% if g.total %}
+                                            <div class="seg-done" style="width: {{ (g.completed / g.total) * 100 }}%"></div>
+                                            <div class="seg-run" style="width: {{ (g.running / g.total) * 100 }}%"></div>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td class="center num" style="color:{{ 'var(--primary)' if g.recovered else 'var(--text-mute)' }};">{{ g.recovered|commafy if g.recovered else '—' }}</td>
+                                    <td class="center num" style="color:var(--text-dim);">{{ g.rate or '—' }}</td>
+                                    <td class="center num" style="color:{{ 'var(--amber)' if g.eta else 'var(--text-mute)' }};">{{ g.eta or '—' }}</td>
+                                    <td class="center">{% if g.status == 'Running' %}<a class="icon-btn" href="{{ url_for('main.stop_task', job_id=job.id, task_id=g.task_id) }}" title="Stop task">{{ icon('stop', size=15) }}</a>{% endif %}</td>
                                 </tr>
-                            {% endif %}{% endfor %}
+                                {% if g.expandable %}
+                                    <tr class="chunk-sub" data-parent="{{ key }}" hidden>
+                                        <td></td>
+                                        <td colspan="7" class="mono" style="color:var(--text-mute);font-size:10px;">{{ g.completed|commafy }} completed · {{ g.running|commafy }} running · {{ g.queued|commafy }} queued</td>
+                                    </tr>
+                                    {% for ch in g.active_chunks %}
+                                    <tr class="chunk-row" data-parent="{{ key }}" hidden>
+                                        <td></td>
+                                        <td></td>
+                                        <td class="mono center" style="color:var(--text-dim);">#{{ ch.chunk_no }}{% if ch.chunk_total %}<span style="color:var(--text-mute);">/{{ ch.chunk_total }}</span>{% endif %}</td>
+                                        <td class="mono" style="color:var(--text-dim);">{{ ch.agent }}</td>
+                                        <td class="center num" style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy if ch.recovered else '—' }}</td>
+                                        <td class="center num" style="color:var(--text-dim);">{{ ch.rate or '—' }}</td>
+                                        <td class="center num" style="color:{{ 'var(--amber)' if ch.eta else 'var(--text-mute)' }};">{{ ch.eta or '—' }}</td>
+                                        <td></td>
+                                    </tr>
+                                    {% endfor %}
+                                {% endif %}
+                            {% endfor %}
                         </tbody>
                     </table>
                 </div>

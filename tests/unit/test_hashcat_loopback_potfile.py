@@ -188,6 +188,23 @@ def test_no_loopback_for_non_straight_modes(app, attackmode, extra):
     assert "--loopback" not in cmd
 
 
+@pytest.mark.security
+def test_no_loopback_when_chunked(app):
+    """--loopback is mutually exclusive with --limit in hashcat, so a chunked
+    slice (which carries --skip/--limit) must omit --loopback even on -a 0 + rule."""
+    user = _make_user()
+    wl = _wordlist(user)
+    rule = _rule(user)
+    _, job, task = _build(user, attackmode=0, wl=wl, rule_id=rule.id, loopback=True)
+    # whole task still emits --loopback
+    assert "--loopback" in build_hashcat_command(job.id, task.id)
+    # a chunk slice drops --loopback and adds --skip/--limit
+    chunked = build_hashcat_command(job.id, task.id, chunk={"skip": 0, "limit": 50},
+                                    job_task_id=999)
+    assert "--loopback" not in chunked
+    assert "--skip 0 --limit 50" in chunked
+
+
 # ---------------------------------------------------------------------------
 # Routes persist / clear Tasks.loopback
 # ---------------------------------------------------------------------------

@@ -8,10 +8,9 @@ which is the same object api.py bound via ``from agent.http import http``.
 import json
 
 import pytest
-
 from agent.api import api
+from agent.bench import parse_benchmark_speed
 from agent.http import http
-
 
 VERSION_MISMATCH = {"type": "message", "status": 426}
 
@@ -330,3 +329,95 @@ def test_senderror_exits_on_426(monkeypatch):
     monkeypatch.setattr(http, "post", lambda path, body: json.dumps(VERSION_MISMATCH))
     with pytest.raises(SystemExit):
         api.sendError("hashcat exploded")
+
+
+# ---------------------------------------------------------------------------
+# report_benchmark
+# ---------------------------------------------------------------------------
+
+def test_report_benchmark_posts_results(monkeypatch):
+    payload = {"type": "message", "status": 200, "msg": "OK"}
+    captured = {}
+
+    def fake_post(path, body):
+        captured["path"] = path
+        captured["body"] = body
+        return json.dumps(payload)
+
+    monkeypatch.setattr(http, "post", fake_post)
+    results = {"1000": 28460000000, "1800": 95000}
+    assert api.report_benchmark(results) == payload
+    assert captured["path"] == "/v1/agents/benchmark"
+    assert captured["body"] == {"benchmark_results": results}
+
+
+def test_report_benchmark_exits_on_426_version_mismatch(monkeypatch):
+    monkeypatch.setattr(http, "post", lambda path, body: json.dumps(VERSION_MISMATCH))
+    with pytest.raises(SystemExit):
+        api.report_benchmark({"1000": 1})
+
+
+# ---------------------------------------------------------------------------
+# parse_benchmark_speed (agent.bench)
+# ---------------------------------------------------------------------------
+
+def test_parse_benchmark_speed_sums_devices_and_units():
+    out = ("Speed.#1.........:  1000 H/s (1.0ms)\n"
+           "Speed.#2.........:  2.5 kH/s (1.0ms)\n")
+    assert parse_benchmark_speed(out) == 1000 + 2500
+
+
+def test_parse_benchmark_speed_excludes_aggregate_star_line():
+    out = ("Speed.#1.........:  1.0 GH/s\n"
+           "Speed.#2.........:  1.0 GH/s\n"
+           "Speed.#*.........:  2.0 GH/s\n")   # aggregate must not be added
+    assert parse_benchmark_speed(out) == 2 * 10**9
+
+
+def test_parse_benchmark_speed_none_when_absent():
+    assert parse_benchmark_speed("no speed lines here") is None
+
+
+def test_parse_benchmark_speed_zero_is_reported():
+    assert parse_benchmark_speed("Speed.#1.........:  0 H/s") == 0
+
+
+# ---------------------------------------------------------------------------
+# parse_device_info / _short_gpu_name (agent.bench)
+# ---------------------------------------------------------------------------
+
+def test_short_gpu_name_trims_vendor_prefix():
+    from agent.bench import _short_gpu_name
+    assert _short_gpu_name("NVIDIA GeForce RTX 4090") == "RTX 4090"
+    assert _short_gpu_name("NVIDIA RTX A6000") == "RTX A6000"
+    assert _short_gpu_name("AMD Radeon RX 6900 XT") == "RX 6900 XT"
+    assert _short_gpu_name("Tesla A100") == "Tesla A100"   # no known prefix
+    assert _short_gpu_name("") == ""
+
+
+def test_parse_device_info_extracts_count_model_temps():
+    from agent.bench import parse_device_info
+    status = {"devices": [
+        {"device_id": 1, "device_type": "GPU", "device_name": "NVIDIA GeForce RTX 4090", "speed": 1, "temp": 71},
+        {"device_id": 2, "device_type": "GPU", "device_name": "NVIDIA GeForce RTX 4090", "speed": 1, "temp": 70},
+        {"device_id": 3, "device_type": "CPU", "device_name": "Intel", "speed": 0, "temp": 55},
+    ]}
+    count, model, temps = parse_device_info(status)
+    assert count == 2                 # GPUs only (CPU excluded)
+    assert model == "RTX 4090"
+    assert temps == "71,70"
+
+
+def test_parse_device_info_falls_back_to_all_devices_when_untyped():
+    from agent.bench import parse_device_info
+    status = {"devices": [
+        {"device_id": 1, "device_name": "NVIDIA GeForce RTX 3090", "speed": 1, "temp": 60},
+    ]}
+    count, model, temps = parse_device_info(status)
+    assert count == 1 and model == "RTX 3090" and temps == "60"
+
+
+def test_parse_device_info_empty():
+    from agent.bench import parse_device_info
+    assert parse_device_info({}) == (0, "", "")
+    assert parse_device_info({"devices": []}) == (0, "", "")

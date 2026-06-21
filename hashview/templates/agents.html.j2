@@ -10,7 +10,14 @@
         <h1 class="page-title">Agents</h1>
         <div class="page-sub">// {% if agent_stats is defined %}{{ agent_stats.up | commafy }}/{{ agent_stats.total | commafy }} online | {{ agent_stats.speed }} aggregate{% else %}0/0 online | 0 H/s aggregate{% endif %}</div>
     </div>
-    <a class="btn btn-primary" href="{{ url_for('agents.agents_download') }}" role="button">{{ icon('download', size=15) }} Download Agent</a>
+    <div style="display:flex; gap:8px; align-items:center;">
+        <form method="POST" action="{{ url_for('agents.agents_benchmark_all') }}" style="margin:0;"
+              onsubmit="return confirm('Re-run benchmarks on all agents? Existing benchmark results are cleared and each agent re-benchmarks the in-use hash types on its next check-in.');">
+            {{ agentsForm.csrf_token }}
+            <button type="submit" class="btn" title="Clear stored benchmarks; agents re-run hashcat -b on next check-in">{{ icon('refresh', size=15) }} Reset Benchmarks</button>
+        </form>
+        <a class="btn btn-primary" href="{{ url_for('agents.agents_download') }}" role="button">{{ icon('download', size=15) }} Download Agent</a>
+    </div>
 </div>
 
 {# ---------- agent fleet summary cards ---------- #}
@@ -25,8 +32,7 @@
     </div>
     <div class="kpi">
         <div class="kpi-label">{{ icon('cpu', size=16) }} GPUs Active</div>
-        <div class="kpi-value">—</div>
-        <div class="kpi-foot mono">telemetry pending</div>
+        <div class="kpi-value">{{ (agent_stats.gpus if agent_stats is defined else 0) | commafy }}</div>
     </div>
 </div>
 
@@ -35,34 +41,47 @@
     <table class="tbl agents-tbl">
         <thead>
             <tr>
-                <th>Agent Name</th>
-                <th>Status</th>
-                <th>IP</th>
-                <th>Speed</th>
-                <th>Last Heartbeat</th>
+                <th>Agent</th>
+                <th>GPU</th>
+                <th class="center">Status</th>
+                <th>Util</th>
+                <th class="center">Temp</th>
+                <th class="center">Hashrate</th>
+                <th>Current Task</th>
+                <th>Check-in</th>
                 <th class="center" style="width:160px;">Control</th>
             </tr>
         </thead>
         <tbody>
+            {% set online_ids = agent_stats.online_ids if agent_stats is defined else [] %}
             {% for agent in agents %}
+            {% set t = (telemetry.get(agent.id) if telemetry is defined else none) or {} %}
+            {% set online = agent.id in online_ids %}
             <tr>
-                <td style="font-weight:500;">{{ agent.name }}</td>
-                <td>
+                <td style="font-weight:500;">
                     <span style="display:inline-flex; align-items:center; gap:8px;">
-                        {% if agent.status == 'Pending' %}
-                            <span class="dot-led idle"></span>
-                        {% elif agent.status == 'Working' or agent.status == 'Syncing' %}
-                            <span class="dot-led run"></span>
-                        {% elif agent.status == 'Idle' or agent.status == 'Authorized' %}
-                            <span class="dot-led on"></span>
-                        {% else %}
-                            <span class="dot-led off"></span>
-                        {% endif %}
-                        {{ status_badge(agent.status) }}
+                        <span class="dot-led {% if not online %}off{% elif t.task %}run{% else %}on{% endif %}"></span>
+                        {{ agent.name }}
                     </span>
                 </td>
-                <td class="mono" style="color:var(--text-dim);">{{ agent.src_ip }}</td>
-                <td class="num">{{ agent.benchmark }}</td>
+                <td class="mono" style="color:var(--text-dim);">{{ t.gpu or '—' }}</td>
+                <td class="center">
+                    {% if agent.status == 'Pending' %}{{ status_badge('Pending') }}
+                    {%- elif not online %}{{ status_badge('offline') }}
+                    {%- elif t.task %}{{ status_badge('running') }}
+                    {%- else %}{{ status_badge('online') }}{% endif %}
+                </td>
+                <td>
+                    {% if t.util is not none %}
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <div class="progress" style="height:6px; width:64px;"><div class="seg-done" style="width: {{ [t.util, 100]|min }}%;"></div></div>
+                        <span class="mono" style="font-size:11px; color:var(--text-dim);">{{ t.util }}%</span>
+                    </div>
+                    {% else %}<span style="color:var(--text-mute);">—</span>{% endif %}
+                </td>
+                <td class="center num" style="color:{% if t.temp is not none and t.temp >= 80 %}var(--red){% elif t.temp is not none and t.temp >= 70 %}var(--amber){% else %}var(--text-dim){% endif %};">{% if t.temp is not none %}{{ t.temp }}°C{% else %}—{% endif %}</td>
+                <td class="center num" style="color:{{ 'var(--primary)' if t.task else 'var(--text-mute)' }};">{% if t.task %}{{ t.hashrate or '—' }}{% elif online %}idle{% else %}—{% endif %}</td>
+                <td class="mono" style="color:var(--text-dim);">{{ t.task or '—' }}</td>
                 <td class="mono" style="color:var(--text-dim);">
                     {%- set hb = agent_age.get(agent.id) if agent_age is defined else none -%}
                     {% if hb %}<span title="{{ agent.last_checkin }}">{{ hb }}</span>{% else %}<span style="color:var(--text-mute);">never</span>{% endif %}
@@ -74,6 +93,7 @@
                         {% else %}
                             <a class="icon-btn act-stop" href="{{ url_for('agents.agents_deauthorize', agent_id=agent.id) }}" role="button" title="Deauthorize">{{ icon('ban', size=15) }}</a>
                         {% endif %}
+                        <button type="button" class="icon-btn" title="Agent info" onclick="document.getElementById('info-{{ agent.id }}').showModal()">{{ icon('info', size=15) }}</button>
                         <a class="icon-btn" href="{{ url_for('agents.agents_edit', agent_id=agent.id) }}" role="button" title="Edit">{{ icon('edit', size=15) }}</a>
                         <button type="button" class="icon-btn act-del" title="Delete" onclick="document.getElementById('del-{{ agent.id }}').showModal()">{{ icon('trash', size=15) }}</button>
                     </div>
@@ -89,6 +109,46 @@
     </div>
     {% endif %}
 </div>
+
+{# ---- per-agent info modals (details + benchmarks) ---- #}
+{% for agent in agents %}
+<dialog class="hv-dialog" id="info-{{ agent.id }}" style="width:min(580px, 94vw);">
+    <div class="hv-dialog-head"><h3>{{ agent.name }}</h3><button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close">{{ icon('x', size=15) }}</button></div>
+    <div class="hv-dialog-body">
+        <div style="display:grid; grid-template-columns:auto 1fr; gap:6px 16px; margin-bottom:18px; font-size:13px;">
+            <div style="color:var(--text-dim);">Status</div><div>{{ status_badge(agent.status) }}</div>
+            <div style="color:var(--text-dim);">IP</div><div class="mono">{{ agent.src_ip }}</div>
+            <div style="color:var(--text-dim);">UUID</div><div class="mono" style="word-break:break-all;">{{ agent.uuid }}</div>
+            <div style="color:var(--text-dim);">Current speed</div><div>{{ agent.benchmark or '—' }}</div>
+            <div style="color:var(--text-dim);">CPUs / GPUs</div><div>{{ agent.cpu_count if agent.cpu_count is not none else '—' }} / {{ agent.gpu_count if agent.gpu_count is not none else '—' }}</div>
+            <div style="color:var(--text-dim);">Last heartbeat</div><div class="mono">{{ agent.last_checkin or 'never' }}</div>
+        </div>
+        <div class="mono" style="font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-mute); margin-bottom:8px;">Benchmarks · hashcat -b</div>
+        {% set bms = agent_benchmarks.get(agent.id) if agent_benchmarks is defined else none %}
+        {% if bms %}
+        <div style="max-height:300px; overflow:auto;">
+            <table class="tbl">
+                <thead><tr><th>Hash type</th><th class="num">Speed</th><th>Updated</th></tr></thead>
+                <tbody>
+                    {% for b in bms %}
+                    <tr>
+                        <td>{{ b.name or b.hash_type }}</td>
+                        <td class="num">{{ b.speed }}</td>
+                        <td class="mono" style="color:var(--text-dim);">{{ b.updated_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="mono" style="color:var(--text-dim);">No benchmarks recorded yet — they are collected when the agent is idle (or after "Reset Benchmarks").</div>
+        {% endif %}
+    </div>
+    <div class="hv-dialog-foot">
+        <button class="btn" onclick="this.closest('dialog').close()">Close</button>
+    </div>
+</dialog>
+{% endfor %}
 
 {# ---- per-agent delete modals (native <dialog>, no framework) ---- #}
 {% for agent in agents %}

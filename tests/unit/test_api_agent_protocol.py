@@ -10,16 +10,19 @@ import json
 
 import hashview
 from hashview.models import (
+    AgentBenchmarks,
     Agents,
     Customers,
     Hashes,
     HashfileHashes,
     Hashfiles,
-    JobTasks,
     Jobs,
+    JobTasks,
+    Rules,
     Settings,
     Tasks,
     Users,
+    Wordlists,
     db,
 )
 
@@ -234,7 +237,7 @@ def test_put_jobtask_crackfile_marks_hash_cracked(app, client, monkeypatch):
     db.session.commit()
     client.set_cookie("uuid", "crack-agent", domain=DOMAIN)
     # encoded_plaintext is hex; hexplain_to_text decodes it -> "password"
-    hexpw = "password".encode().hex()
+    hexpw = b"password".hex()
     resp = client.post("/v1/uploadCrackFile/1/1000",
                        json={"file": f"{ntlm}:{hexpw}"})
     body = _body(resp)
@@ -260,3 +263,182 @@ def test_agent_only_route_rejects_user(app, client):
     resp = client.post("/v1/uploadCrackFile/1/1000", json={"file": ""})
     assert 300 <= resp.status_code < 400
     assert "not_authorized" in resp.headers.get("Location", "")
+
+
+# --- per-hashtype benchmarks (chunk sizing) ---------------------------------
+
+def test_benchmark_endpoint_upserts(app, client):
+    """POST /v1/agents/benchmark inserts then overwrites one row per hash type."""
+    agent = _agent(uuid="bench-agent", status="Idle")
+    _set_agent_cookies(client, "bench-agent")
+
+    resp = client.post("/v1/agents/benchmark",
+                       json={"benchmark_results": {"1000": 28460000000, "1800": 95000}})
+    assert _body(resp)["msg"] == "OK"
+    rows = {r.hash_type: r.speed
+            for r in AgentBenchmarks.query.filter_by(agent_id=agent.id).all()}
+    assert rows == {1000: 28460000000, 1800: 95000}
+
+    # re-running a benchmark upserts (no duplicate row, value replaced)
+    resp = client.post("/v1/agents/benchmark",
+                       json={"benchmark_results": {"1000": 30000000000}})
+    assert _body(resp)["msg"] == "OK"
+    assert AgentBenchmarks.query.filter_by(agent_id=agent.id, hash_type=1000).count() == 1
+    assert AgentBenchmarks.query.filter_by(
+        agent_id=agent.id, hash_type=1000).first().speed == 30000000000
+
+
+def test_benchmark_endpoint_rejects_user(app, client):
+    """/v1/agents/benchmark is agent-only — a user credential is turned away."""
+    _user(api_key="user-key")
+    client.set_cookie("uuid", "user-key", domain=DOMAIN)
+    resp = client.post("/v1/agents/benchmark", json={"benchmark_results": {"1000": 1}})
+    assert 300 <= resp.status_code < 400
+    assert "not_authorized" in resp.headers.get("Location", "")
+
+
+def test_benchmark_endpoint_missing_body(app, client):
+    _agent(uuid="bench-agent2", status="Idle")
+    _set_agent_cookies(client, "bench-agent2")
+    resp = client.post("/v1/agents/benchmark", json={})
+    body = _body(resp)
+    assert body["status"] == 400
+    assert "benchmark_results" in body["msg"]
+
+
+def test_heartbeat_idle_missing_benchmark_returns_benchmark(app, client):
+    """Benchmark-first: an idle agent missing a benchmark for an in-use hash type
+    is told to BENCHMARK before it is given crack work."""
+    db.session.add(Settings(retention_period=30, max_runtime_tasks=0, max_runtime_jobs=0))
+    db.session.add(Hashes(sub_ciphertext="0" * 32, ciphertext="AAA",
+                          hash_type=1000, cracked=False))
+    db.session.commit()
+    _agent(uuid="hb-agent", status="Idle")
+    _set_agent_cookies(client, "hb-agent")
+
+    body = _body(client.post("/v1/agents/heartbeat",
+                             json={"agent_status": "Idle", "hc_status": ""}))
+    assert body["msg"] == "BENCHMARK"
+    assert body["hash_modes"] == [1000]
+
+
+def test_heartbeat_idle_with_benchmark_returns_start(app, client):
+    """Once the in-use hash types are benchmarked, the idle agent gets work."""
+    db.session.add(Settings(retention_period=30, max_runtime_tasks=0, max_runtime_jobs=0))
+    db.session.add(Hashes(sub_ciphertext="0" * 32, ciphertext="AAA",
+                          hash_type=1000, cracked=False))
+    db.session.commit()
+    agent = _agent(uuid="hb2-agent", status="Idle")
+    db.session.add(AgentBenchmarks(agent_id=agent.id, hash_type=1000, speed=1000))
+    jt = JobTasks(job_id=1, task_id=1, status="Queued", priority=3)
+    db.session.add(jt)
+    db.session.commit()
+    _set_agent_cookies(client, "hb2-agent")
+
+    body = _body(client.post("/v1/agents/heartbeat",
+                             json={"agent_status": "Idle", "hc_status": ""}))
+    assert body["msg"] == "START"
+    assert body["job_task_id"] == jt.id
+
+
+def test_benchmark_report_rechunks_queued_whole_task(app, client):
+    """A benchmark report for a hash type that had none re-plans still-queued
+    whole tasks of that type into chunks (option 1: re-chunk on first benchmark)."""
+    db.session.add(Settings(retention_period=30, max_runtime_tasks=0, max_runtime_jobs=0,
+                            enabled_chunking=True, chunk_target_duration=60))
+    user = _user(api_key="rc-owner")
+    cust = Customers(name="C")
+    db.session.add(cust)
+    db.session.commit()
+    hf = Hashfiles(name="hf", customer_id=cust.id, owner_id=user.id)
+    db.session.add(hf)
+    db.session.commit()
+    h = Hashes(sub_ciphertext="0" * 32, ciphertext="AAA", hash_type=1000, cracked=False)
+    db.session.add(h)
+    db.session.commit()
+    db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    wl = Wordlists(name="wl", owner_id=user.id, type="static",
+                   path="control/wordlists/wl.gz", size=1_000_000, checksum="0" * 64)
+    db.session.add(wl)
+    db.session.commit()
+    rule = Rules(name="r", owner_id=user.id, path="control/rules/r.rule",
+                 checksum="0" * 64, size=100)
+    db.session.add(rule)
+    db.session.commit()
+    task = Tasks(name="t", owner_id=user.id, hc_attackmode=0, wl_id=wl.id,
+                 rule_id=rule.id, loopback=False)
+    db.session.add(task)
+    db.session.commit()
+    job = Jobs(name="j", owner_id=user.id, customer_id=cust.id, hashfile_id=hf.id,
+               status="Queued", priority=3)
+    db.session.add(job)
+    db.session.commit()
+    db.session.add(JobTasks(job_id=job.id, task_id=task.id, status="Queued"))
+    db.session.commit()
+    assert JobTasks.query.filter_by(job_id=job.id).count() == 1   # queued whole
+
+    _agent(uuid="rc-bench", status="Idle")
+    _set_agent_cookies(client, "rc-bench")
+    # a slow speed so the 1M-word task is worth splitting (fast speeds -> 1 chunk)
+    resp = client.post("/v1/agents/benchmark",
+                       json={"benchmark_results": {"1000": 1000}})
+    assert _body(resp)["msg"] == "OK"
+    # the queued whole task was split into chunks by the report
+    rows = JobTasks.query.filter_by(job_id=job.id).all()
+    assert len(rows) > 1
+    assert all(r.chunk_total == len(rows) for r in rows)
+
+
+def test_dispatch_exhausts_task_chunks_before_next_task(app, client):
+    """With 2+ agents, all chunks of a task are handed out before the next task.
+
+    Insert chunks so their raw ids INTERLEAVE the tasks (A1, B1, A2, A3, B2);
+    ordering by raw id alone would hand out A1, B1, A2... The grouped ordering must
+    instead drain task A (chunks 1,2,3) before task B (chunks 1,2). No Hashes are
+    seeded, so benchmark-first stays out of the way.
+    """
+    db.session.add(Settings(max_runtime_tasks=0, max_runtime_jobs=0))
+    db.session.commit()
+    rows = [
+        dict(task_id=1, chunk_no=1, chunk_total=3),
+        dict(task_id=2, chunk_no=1, chunk_total=2),
+        dict(task_id=1, chunk_no=2, chunk_total=3),
+        dict(task_id=1, chunk_no=3, chunk_total=3),
+        dict(task_id=2, chunk_no=2, chunk_total=2),
+    ]
+    for r in rows:                       # commit individually -> ascending ids in insert order
+        db.session.add(JobTasks(job_id=1, status="Queued", priority=3, **r))
+        db.session.commit()
+
+    order = []
+    for i in range(len(rows)):
+        _agent(uuid=f"disp-{i}", status="Idle")
+        _set_agent_cookies(client, f"disp-{i}")
+        body = _body(client.post("/v1/agents/heartbeat",
+                                 json={"agent_status": "Idle", "hc_status": ""}))
+        assert body["msg"] == "START"
+        jt = JobTasks.query.get(body["job_task_id"])
+        order.append((jt.task_id, jt.chunk_no))
+
+    assert order == [(1, 1), (1, 2), (1, 3), (2, 1), (2, 2)]
+
+
+def test_heartbeat_working_persists_gpu_telemetry(app, client):
+    """A Working heartbeat's hc_status device info is parsed and persisted on the
+    agent (and retained across idle), populating the agents page GPU/temp columns."""
+    db.session.add(Settings(max_runtime_tasks=0, max_runtime_jobs=0))
+    db.session.commit()
+    agent = _agent(uuid="gpu-agent", status="Working")
+    db.session.add(JobTasks(job_id=1, task_id=1, status="Running", priority=3,
+                            agent_id=agent.id))
+    db.session.commit()
+    _set_agent_cookies(client, "gpu-agent")
+    hc = {"Speed #": "100 GH/s", "Recovered": "1/9", "Time_Estimated": "x (1h)",
+          "GPU_Count": 8, "GPU_Model": "RTX 4090", "Temps": "71,70,72"}
+    resp = client.post("/v1/agents/heartbeat",
+                       json={"agent_status": "Working", "hc_status": hc})
+    assert resp.status_code == 200
+    a = Agents.query.get(agent.id)
+    assert a.gpu_count == 8
+    assert a.gpu_model == "RTX 4090"
+    assert a.gpu_temps == "71,70,72"

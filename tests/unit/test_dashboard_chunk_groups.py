@@ -72,10 +72,13 @@ def _seed_running_job():
     db.session.add(JobTasks(job_id=job.id, task_id=task_b.id, status="Running",
                             agent_id=agent_b.id))
 
-    # 4 cracked hashes credited to task A
+    # 4 cracked hashes credited to task A, present in THIS job's hashfile
     for i in range(4):
-        db.session.add(Hashes(sub_ciphertext=f"{i:032x}", ciphertext=f"c{i}",
-                              hash_type=1000, cracked=True, task_id=task_a.id))
+        h = Hashes(sub_ciphertext=f"{i:032x}", ciphertext=f"c{i}",
+                   hash_type=1000, cracked=True, task_id=task_a.id)
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
     db.session.commit()
     return job, task_a, task_b
 
@@ -115,6 +118,44 @@ def test_job_task_groups_chunked_task(app, db_session):
     chunk = g['active_chunks'][0]
     assert chunk['chunk_no'] == 3 and chunk['agent'] == 'rig-alpha'
     assert g['eta'] == '41 mins'
+
+
+@pytest.mark.security
+def test_recovered_is_scoped_to_the_jobs_hashfile(app, db_session):
+    # A task is reusable across jobs/hashfiles, so the parent 'recovered' must
+    # count only cracks that live in THIS job's hashfile -- not every job that ran
+    # the same task (the reported bug, which counted Hashes.task_id globally).
+    job, task_a, _ = _seed_running_job()          # 4 cracked in this job's hashfile
+    other_hf = Hashfiles(name="other", customer_id=job.customer_id, owner_id=job.owner_id)
+    db.session.add(other_hf)
+    db.session.commit()
+    # same task cracked 3 more hashes, but they belong to a DIFFERENT hashfile
+    for i in range(3):
+        h = Hashes(sub_ciphertext=f"{i + 90:032x}", ciphertext=f"o{i}",
+                   hash_type=1000, cracked=True, task_id=task_a.id)
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=other_hf.id))
+    db.session.commit()
+    g = {grp['task_id']: grp for grp in _build(job)['groups']}[task_a.id]
+    assert g['recovered'] == 4                     # not 7
+
+
+@pytest.mark.security
+def test_recovered_counts_per_account_in_hashfile(app, db_session):
+    # One cracked hash shared by multiple usernames in the hashfile counts once
+    # per account, matching the recovered totals shown elsewhere (email/analytics).
+    job, task_a, _ = _seed_running_job()          # 4 single-account cracks
+    shared = Hashes(sub_ciphertext="ab" * 16, ciphertext="shared",
+                    hash_type=1000, cracked=True, task_id=task_a.id)
+    db.session.add(shared)
+    db.session.commit()
+    for uname in ("alice", "bob"):
+        db.session.add(HashfileHashes(hash_id=shared.id, hashfile_id=job.hashfile_id,
+                                      username=uname))
+    db.session.commit()
+    g = {grp['task_id']: grp for grp in _build(job)['groups']}[task_a.id]
+    assert g['recovered'] == 6                     # 4 + 2 accounts on the shared hash
 
 
 @pytest.mark.security

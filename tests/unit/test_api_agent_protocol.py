@@ -7,6 +7,7 @@ routes). Cookie domain must equal the test SERVER_NAME (localhost.test).
 """
 
 import json
+from datetime import datetime, timedelta
 
 import hashview
 from hashview.models import (
@@ -77,6 +78,19 @@ def _set_agent_cookies(client, uuid):
     client.set_cookie("agent_version", hashview.__version__, domain=DOMAIN)
 
 
+def _hours_ago(h):
+    return datetime.now() - timedelta(hours=h)
+
+
+def _job_running():
+    # Minimal Running job; the cancel path dereferences Jobs.query.get(job_id).
+    # FKs (customer_id/owner_id) aren't enforced under SQLite, so 1/1 is fine.
+    job = Jobs(name="j", status="Running", customer_id=1, owner_id=1, priority=3)
+    db.session.add(job)
+    db.session.commit()
+    return job
+
+
 def test_heartbeat_old_version_redirects_to_upgrade(app, client):
     # The version gate applies to a KNOWN (already-registered) agent.
     _agent(uuid="x", status="Idle")
@@ -145,6 +159,104 @@ def test_heartbeat_working_agent_tolerates_malformed_hc_status(app, client):
     assert _body(resp)["msg"] == "OK"
     # telemetry left untouched (not overwritten with garbage)
     assert Agents.query.get(agent.id).benchmark is None
+
+
+# --- max_runtime_tasks enforced on the PARENT task --------------------------
+
+def test_parent_task_runtime_cap_cancels_whole_group(app, client):
+    # 4h cap. The earliest chunk of task 7 started 5h ago, so the PARENT task is
+    # over the cap even though the chunk this agent runs started only 1h ago. The
+    # Working heartbeat must cancel the whole (job, task) group, not just one chunk.
+    db.session.add(Settings(max_runtime_tasks=4, max_runtime_jobs=0))
+    db.session.commit()
+    job = _job_running()
+    agent = _agent(uuid="rt-agent", status="Working")
+    db.session.add_all([
+        JobTasks(job_id=job.id, task_id=7, status="Completed", chunk_no=1, chunk_total=3,
+                 started_at=_hours_ago(5)),
+        JobTasks(job_id=job.id, task_id=7, status="Running", chunk_no=2, chunk_total=3,
+                 agent_id=agent.id, started_at=_hours_ago(1)),
+        JobTasks(job_id=job.id, task_id=7, status="Queued", chunk_no=3, chunk_total=3),
+        JobTasks(job_id=job.id, task_id=99, status="Queued"),   # keeps the job from completing
+    ])
+    db.session.commit()
+    _set_agent_cookies(client, "rt-agent")
+    resp = client.post("/v1/agents/heartbeat", json={"agent_status": "Working", "hc_status": ""})
+    assert _body(resp)["msg"] == "Canceled"
+    rows = {jt.chunk_no: jt.status for jt in JobTasks.query.filter_by(job_id=job.id, task_id=7).all()}
+    assert rows == {1: "Completed", 2: "Canceled", 3: "Canceled"}   # running + queued both canceled
+    assert JobTasks.query.filter_by(job_id=job.id, task_id=99).first().status == "Queued"
+
+
+def test_parent_task_within_cap_keeps_running(app, client):
+    # Earliest chunk started 1h ago (< 4h): the agent keeps working, nothing canceled.
+    db.session.add(Settings(max_runtime_tasks=4, max_runtime_jobs=0))
+    db.session.commit()
+    agent = _agent(uuid="rt-ok", status="Working")
+    jt = JobTasks(job_id=1, task_id=7, status="Running", chunk_no=1, chunk_total=2,
+                  agent_id=agent.id, started_at=_hours_ago(1))
+    db.session.add(jt)
+    db.session.add(JobTasks(job_id=1, task_id=7, status="Queued", chunk_no=2, chunk_total=2))
+    db.session.commit()
+    _set_agent_cookies(client, "rt-ok")
+    resp = client.post("/v1/agents/heartbeat", json={"agent_status": "Working", "hc_status": ""})
+    assert _body(resp)["msg"] == "OK"
+    assert JobTasks.query.get(jt.id).status == "Running"
+
+
+def test_whole_unchunked_task_still_capped(app, client):
+    # A whole, un-chunked task is a group of one: started 5h ago > 4h -> canceled
+    # (the cap behavior for singular tasks is unchanged).
+    db.session.add(Settings(max_runtime_tasks=4, max_runtime_jobs=0))
+    db.session.commit()
+    job = _job_running()
+    agent = _agent(uuid="rt-whole", status="Working")
+    jt = JobTasks(job_id=job.id, task_id=7, status="Running", agent_id=agent.id,
+                  started_at=_hours_ago(5))
+    db.session.add(jt)
+    db.session.add(JobTasks(job_id=job.id, task_id=99, status="Queued"))   # guard
+    db.session.commit()
+    _set_agent_cookies(client, "rt-whole")
+    resp = client.post("/v1/agents/heartbeat", json={"agent_status": "Working", "hc_status": ""})
+    assert _body(resp)["msg"] == "Canceled"
+    assert JobTasks.query.get(jt.id).status == "Canceled"
+
+
+def test_idle_dispatch_skips_and_cancels_expired_task(app, client):
+    # At the cap moment no chunk is running (one completed long ago, the rest
+    # queued), so the Working check can't fire. An idle agent must not be handed a
+    # queued chunk of the expired task -- the group is canceled and it gets OK.
+    db.session.add(Settings(max_runtime_tasks=4, max_runtime_jobs=0))
+    db.session.commit()
+    job = _job_running()
+    agent = _agent(uuid="rt-idle", status="Idle")
+    db.session.add_all([
+        JobTasks(job_id=job.id, task_id=7, status="Completed", chunk_no=1, chunk_total=2,
+                 started_at=_hours_ago(5)),
+        JobTasks(job_id=job.id, task_id=7, status="Queued", chunk_no=2, chunk_total=2),
+        JobTasks(job_id=job.id, task_id=99, status="Queued"),   # another task keeps the job alive
+    ])
+    db.session.commit()
+    _set_agent_cookies(client, "rt-idle")
+    resp = client.post("/v1/agents/heartbeat", json={"agent_status": "Idle", "hc_status": ""})
+    assert _body(resp)["msg"] == "OK"                                  # not START
+    assert JobTasks.query.filter_by(job_id=job.id, task_id=7, chunk_no=2).first().status == "Canceled"
+    assert JobTasks.query.filter_by(agent_id=agent.id).first() is None  # nothing assigned
+
+
+def test_runtime_cap_disabled_never_cancels(app, client):
+    # max_runtime_tasks = 0 disables the cap, however long it's been running.
+    db.session.add(Settings(max_runtime_tasks=0, max_runtime_jobs=0))
+    db.session.commit()
+    agent = _agent(uuid="rt-off", status="Working")
+    jt = JobTasks(job_id=1, task_id=7, status="Running", agent_id=agent.id,
+                  started_at=_hours_ago(10))
+    db.session.add(jt)
+    db.session.commit()
+    _set_agent_cookies(client, "rt-off")
+    resp = client.post("/v1/agents/heartbeat", json={"agent_status": "Working", "hc_status": ""})
+    assert _body(resp)["msg"] == "OK"
+    assert JobTasks.query.get(jt.id).status == "Running"
 
 
 # --- read endpoints ---------------------------------------------------------

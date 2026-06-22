@@ -205,7 +205,44 @@ def v1_api_get_admin_settings():
         'status': 200,
         'settings': json.dumps(settings, cls=AlchemyEncoder)
     }
-    return jsonify(message)    
+    return jsonify(message)
+
+# Active chunk statuses -- work that is in flight or still pending for a task.
+_ACTIVE_JOBTASK_STATUSES = ('Running', 'Queued', 'Not Started', 'Importing')
+
+
+def _parent_task_started_at(job_id, task_id):
+    """Earliest started_at across all chunks of a (job, task) group -- i.e. when
+    the parent task first began processing. None if nothing has started yet.
+
+    A task can fan out into many chunks that run in parallel on different agents,
+    so the per-chunk started_at can't bound the task's total runtime; the group's
+    MIN(started_at) is the real start. A whole, un-chunked task is just a group of
+    one, so this returns its own started_at."""
+    return (db.session.query(func.min(JobTasks.started_at))
+            .filter(JobTasks.job_id == job_id,
+                    JobTasks.task_id == task_id,
+                    JobTasks.started_at.isnot(None))
+            .scalar())
+
+
+def _task_runtime_exceeded(job_id, task_id, max_hours):
+    """True if the parent task has been running longer than max_hours (wall-clock
+    from the earliest chunk start). 0/None disables the cap."""
+    if not max_hours or max_hours <= 0:
+        return False
+    started = _parent_task_started_at(job_id, task_id)
+    return started is not None and started + timedelta(hours=max_hours) < datetime.now()
+
+
+def _cancel_task_group(job_id, task_id):
+    """Cancel every still-active chunk of a (job, task) group (the running chunk
+    plus any queued/importing siblings), so an over-limit task stops entirely and
+    no further chunk of it gets dispatched."""
+    for jt in JobTasks.query.filter_by(job_id=job_id, task_id=task_id).all():
+        if jt.status in _ACTIVE_JOBTASK_STATUSES:
+            update_job_task_status(jt.id, 'Canceled')
+
 
 @api.route('/v1/agents/heartbeat', methods=['POST'])
 def v1_api_set_agent_heartbeat():
@@ -283,8 +320,15 @@ def v1_api_set_agent_heartbeat():
                     }
                     return jsonify(message)
 
-                if settings.max_runtime_tasks > 0 and job_task.started_at is not None and job_task.started_at + timedelta(hours=settings.max_runtime_tasks) < datetime.now():
-                    update_job_task_status(job_task.id, 'Canceled')
+                # Enforce max_runtime_tasks on the PARENT task, not each chunk.
+                # Chunks run in parallel, so summing their runtimes overcounts;
+                # measure from the earliest chunk start of this (job, task) group
+                # and, when over the cap, cancel the whole group (running + queued
+                # chunks). A whole, un-chunked task is a group of one, so it's still
+                # capped exactly as before.
+                if _task_runtime_exceeded(job_task.job_id, job_task.task_id,
+                                          settings.max_runtime_tasks):
+                    _cancel_task_group(job_task.job_id, job_task.task_id)
                     message = {
                         'status': 200,
                         'type': 'message',
@@ -395,6 +439,22 @@ def v1_api_set_agent_heartbeat():
                                             JobTasks.id.asc())
                                   .first())
                 if job_task_entry:
+                    # Don't start a fresh chunk of a task that's already over its
+                    # runtime cap. This closes the gap where, at the cap moment, no
+                    # chunk happened to be running (all just completed, only queued
+                    # left), so the Working-heartbeat check couldn't fire. Cancel the
+                    # whole group and let the next beat pick a different task.
+                    if _task_runtime_exceeded(job_task_entry.job_id,
+                                              job_task_entry.task_id,
+                                              settings.max_runtime_tasks):
+                        _cancel_task_group(job_task_entry.job_id, job_task_entry.task_id)
+                        update_heartbeat(uuid)
+                        message = {
+                            'status': 200,
+                            'type': 'message',
+                            'msg': 'OK'
+                        }
+                        return jsonify(message)
                     job_task_entry.agent_id = agent.id
                     job_task_entry.status = 'Running'
                     job_task_entry.started_at = datetime.now()

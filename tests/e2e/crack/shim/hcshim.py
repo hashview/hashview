@@ -86,7 +86,11 @@ def _load_rule_lines(path):
     with open(path, "r", encoding="utf-8", errors="surrogateescape") as f:
         for raw in f:
             line = raw.rstrip("\n")
-            if not line or line.startswith("#"):
+            stripped = line.strip()
+            # Skip blank, whitespace-only, and comment lines. A whitespace-only
+            # line would otherwise split to zero ops and act as a silent
+            # passthrough rule (testing the un-ruled word).
+            if not stripped or stripped.startswith("#"):
                 continue
             lines.append(line)
     return lines

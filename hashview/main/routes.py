@@ -165,13 +165,25 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
     """
     running_ids = {j.id for j in running_jobs}
     task_ids = {jt.task_id for jt in job_tasks if jt.job_id in running_ids}
-    # cumulative recovered count per task_id (hashes credited to that task)
-    recovered_by_task = {}
-    if task_ids:
-        for tid, cnt in (db.session.query(Hashes.task_id, db.func.count(Hashes.id))
-                         .filter(Hashes.cracked == 1, Hashes.task_id.in_(task_ids))
-                         .group_by(Hashes.task_id).all()):
-            recovered_by_task[tid] = cnt
+    # Recovered count per (hashfile, task): cracked hashes credited to the task
+    # that actually live in THIS job's hashfile. Scoping by hashfile_id matters
+    # because a task is reusable across jobs/hashfiles -- counting Hashes.task_id
+    # alone credited cracks from every other job that ran the same task. Counted
+    # per HashfileHashes (account) row, matching the recovered counts shown
+    # elsewhere (job-completion email, analytics).
+    hashfile_ids = {j.hashfile_id for j in running_jobs}
+    recovered_by_hf_task = {}
+    if task_ids and hashfile_ids:
+        rows = (db.session.query(HashfileHashes.hashfile_id, Hashes.task_id,
+                                 db.func.count(HashfileHashes.id))
+                .join(Hashes, Hashes.id == HashfileHashes.hash_id)
+                .filter(Hashes.cracked == 1,
+                        Hashes.task_id.in_(task_ids),
+                        HashfileHashes.hashfile_id.in_(hashfile_ids))
+                .group_by(HashfileHashes.hashfile_id, Hashes.task_id)
+                .all())
+        for hf_id, tid, cnt in rows:
+            recovered_by_hf_task[(hf_id, tid)] = cnt
 
     out = {}
     for job in running_jobs:
@@ -243,7 +255,7 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
                 'queued': queued, 'canceled': canceled,
                 'is_chunked': is_chunked,
                 'expandable': bool(running) and is_chunked,
-                'recovered': recovered_by_task.get(task_id, 0),
+                'recovered': recovered_by_hf_task.get((job.hashfile_id, task_id), 0),
                 'rate': _fmt(rate_hps) if rate_hps else '',
                 'eta': eta,
                 'active_chunks': active,

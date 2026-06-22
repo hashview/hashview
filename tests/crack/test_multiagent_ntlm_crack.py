@@ -24,6 +24,25 @@ def _verify(compose, job_name):
     return json.loads(line)
 
 
+def _print_summary(state, observed):
+    """Echo the recovered job to stdout so the CI log (pytest runs with -s)
+    documents exactly what each run attempted and cracked, not just 'passed'.
+    Printed before the assertions so a failing run is debuggable too."""
+    print("\n========== crack job summary ==========")
+    print(f"job_status: {state['job_status']}")
+    print("job_tasks:")
+    for jt in state["job_tasks"]:
+        agents = sorted(observed.get(jt["id"], set())) or "-"
+        print(f"  job_task {jt['id']}  task_id={jt['task_id']}  "
+              f"status={jt['status']}  agents_seen={agents}")
+    print("recovered hashes:")
+    for h in state["hashes"]:
+        mark = "OK " if h["cracked"] else "MISS"
+        print(f"  [{mark}] task={h['task_id']}  {h['plaintext']!r}  "
+              f"(sub_ciphertext={h['sub_ciphertext']})")
+    print("=======================================\n")
+
+
 @pytest.mark.e2e_crack
 def test_two_agents_really_crack_ntlm_job():
     manifest_path = os.getenv("HASHVIEW_E2E_CRACK_MANIFEST")
@@ -55,6 +74,7 @@ def test_two_agents_really_crack_ntlm_job():
         time.sleep(POLL_SECONDS)
 
     assert state is not None, "verifier never returned state"
+    _print_summary(state, observed)
 
     # 1. Every target hash recovered with the EXACT chosen plaintext.
     cracked = {h["plaintext"] for h in state["hashes"] if h["cracked"]}

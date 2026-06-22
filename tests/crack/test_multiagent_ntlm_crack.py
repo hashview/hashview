@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-POLL_SECONDS = 5
+POLL_SECONDS = 1
 DEADLINE_SECONDS = 240
 
 
@@ -35,10 +35,18 @@ def test_two_agents_really_crack_ntlm_job():
     job_name = manifest["job_name"]
     expected_plaintexts = {pt for t in manifest["tasks"] for pt in t["target_plaintexts"]}
 
+    # Poll until the job completes, recording which agent each job_task was
+    # assigned to WHILE it runs. The server nulls JobTasks.agent_id on
+    # completion, so the assignment is only observable transiently — capture it
+    # during the run rather than reading it after the fact.
     state = None
+    observed = {}  # job_task id -> set of non-None agent_ids seen while running
     deadline = time.time() + DEADLINE_SECONDS
     while time.time() < deadline:
         state = _verify(compose, job_name)
+        for jt in state["job_tasks"]:
+            if jt["agent_id"] is not None:
+                observed.setdefault(jt["id"], set()).add(jt["agent_id"])
         done = (state["job_status"] == "Completed"
                 and state["hashes"]
                 and all(h["cracked"] for h in state["hashes"]))
@@ -58,10 +66,12 @@ def test_two_agents_really_crack_ntlm_job():
     assert len(state["job_tasks"]) == 2, state
     assert all(jt["status"] == "Completed" for jt in state["job_tasks"]), state
 
-    # 3. Real concurrent distribution: two DISTINCT agents, neither None.
-    agent_ids = {jt["agent_id"] for jt in state["job_tasks"]}
-    assert len(agent_ids) == 2 and None not in agent_ids, (
-        f"expected two distinct agent_ids, got {agent_ids}; state={state}")
+    # 3. Real concurrent distribution: both job_tasks were observed assigned to
+    #    agents, and the two were handled by two DISTINCT agents.
+    assert len(observed) == 2, f"both job_tasks should have been assigned; saw {observed}"
+    distinct_agents = {aid for seen in observed.values() for aid in seen}
+    assert len(distinct_agents) == 2, (
+        f"expected two distinct agents across the job_tasks, saw {observed}")
 
     # 4. Per-task attribution: each task's targets recovered under that task's id.
     task_ids = {jt["task_id"] for jt in state["job_tasks"]}

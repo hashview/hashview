@@ -15,11 +15,14 @@ if [ -z "${ROCKYOU_PATH:-}" ] || [ ! -f "${ROCKYOU_PATH:-}" ]; then
   exit 2
 fi
 
-# Server config (matches docker-compose.yml db credentials).
-if [ ! -f hashview/config.conf ]; then
-  cat > hashview/config.conf <<'EOF'
+# Server config (baked into the app image at build time; matches
+# docker-compose.yml db credentials). SERVER_NAME MUST be app:5000 — Flask only
+# routes requests whose Host matches SERVER_NAME, and the agents connect to
+# http://app:5000. (config.conf is gitignored / a generated test artifact, so we
+# overwrite it for a deterministic build.)
+cat > hashview/config.conf <<'EOF'
 [SERVER]
-SERVER_NAME = 127.0.0.1:5000
+SERVER_NAME = app:5000
 SECRET_KEY = e2e-crack-secret-key
 
 [database]
@@ -35,7 +38,6 @@ username =
 password =
 default_sender =
 EOF
-fi
 
 if [ ! -x .venv/bin/python ]; then
   python3 -m venv .venv
@@ -59,12 +61,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Readiness: SERVER_NAME=app:5000 means a host-side curl (Host 127.0.0.1:5000)
+# gets a 404, not 200 — that still proves the server process is accepting
+# connections, which is all we need (agents use the matching Host app:5000).
 echo "Waiting for app at $BASE_URL ..."
+app_up() {
+  local code
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$BASE_URL/login" 2>/dev/null || true)"
+  [ -n "$code" ] && [ "$code" != "000" ]
+}
 for _ in {1..60}; do
-  curl -fsS "$BASE_URL/login" >/dev/null 2>&1 && { echo "App up."; break; }
+  app_up && { echo "App up (responding)."; break; }
   sleep 2
 done
-if ! curl -fsS "$BASE_URL/login" >/dev/null 2>&1; then
+if ! app_up; then
   echo "App did not become ready."; $COMPOSE logs --tail 200 app; exit 1
 fi
 
@@ -84,7 +94,7 @@ echo "Running pytest -m e2e_crack ..."
 set +e
 HASHVIEW_E2E_CRACK_MANIFEST="$MANIFEST" \
 HASHVIEW_E2E_CRACK_COMPOSE="$COMPOSE" \
-  ./.venv/bin/python -m pytest -m e2e_crack tests/e2e/test_multiagent_ntlm_crack.py -vv -s
+  ./.venv/bin/python -m pytest -m e2e_crack tests/crack/test_multiagent_ntlm_crack.py -vv -s
 EXIT=$?
 set -e
 

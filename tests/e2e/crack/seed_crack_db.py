@@ -13,6 +13,7 @@ import os
 import secrets
 import sys
 
+import hashview
 from flask import Flask
 from flask_bcrypt import Bcrypt
 
@@ -26,7 +27,13 @@ from hashview.utils.utils import (build_hashcat_command, get_filehash,
 
 
 def build_app():
-    app = Flask(__name__)
+    # root_path MUST match the running server's app (the hashview package dir),
+    # NOT this script's location — ingest_static_wordlist_file and the rule write
+    # store files under <root_path>/control/{wordlists,rules}, which is exactly
+    # where the server's /v1/wordlists/<id> and /v1/rules/<id> download routes
+    # read from. Using Flask(__name__) here would resolve to /tmp and the agent
+    # would never find the synced files.
+    app = Flask(__name__, root_path=os.path.dirname(hashview.__file__))
     app.config.from_object(Config)
     db.init_app(app)
     Bcrypt(app)
@@ -34,16 +41,18 @@ def build_app():
 
 
 def _ensure_admin(app):
+    bcrypt = Bcrypt(app)
     admin = db.session.get(Users, 1)
     if admin is None:
-        bcrypt = Bcrypt(app)
-        admin = Users(
-            id=1, first_name="E2E", last_name="Crack",
-            email_address="e2e-crack@example.com",
-            password=bcrypt.generate_password_hash("e2e-crack-pw").decode("utf-8"),
-            admin=True,
-        )
+        admin = Users(id=1, first_name="E2E", last_name="Crack",
+                      email_address="e2e-crack@example.com", password="x", admin=True)
         db.session.add(admin)
+    # Always set a NON-default password. The app boots a default admin whose
+    # password == DEFAULT_PASSWORD; admin_pass_needs_changed() then keeps EVERY
+    # request — including agent endpoints — redirected to the setup wizard until
+    # the password is changed. Setting it here satisfies that gate headlessly.
+    admin.password = bcrypt.generate_password_hash("e2e-crack-pw").decode("utf-8")
+    admin.admin = True
     if db.session.query(Settings).first() is None:
         db.session.add(Settings(retention_period=0, max_runtime_jobs=0, max_runtime_tasks=0))
     db.session.flush()

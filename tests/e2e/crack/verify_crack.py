@@ -7,11 +7,14 @@ import sys
 from flask import Flask
 from flask_bcrypt import Bcrypt
 
-from hashview.config import Config
 from hashview.models import HashfileHashes, Hashes, JobTasks, Jobs, db
 
 
 def build_app():
+    # Import Config lazily: its class body reads hashview/config.conf at
+    # definition time, which only exists inside the running container. Unit
+    # tests import this module and build their own app without build_app().
+    from hashview.config import Config
     app = Flask(__name__)
     app.config.from_object(Config)
     db.init_app(app)

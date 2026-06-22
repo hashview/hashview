@@ -17,7 +17,6 @@ import hashview
 from flask import Flask
 from flask_bcrypt import Bcrypt
 
-from hashview.config import Config
 from hashview.models import (Agents, Customers, HashfileHashes, Hashes,
                              Hashfiles, JobTasks, Jobs, Rules, Settings, Tasks,
                              Users, Wordlists, db)
@@ -33,6 +32,12 @@ def build_app():
     # where the server's /v1/wordlists/<id> and /v1/rules/<id> download routes
     # read from. Using Flask(__name__) here would resolve to /tmp and the agent
     # would never find the synced files.
+    #
+    # Import Config lazily: its class body reads hashview/config.conf at
+    # definition time, which only exists inside the running container. Keeping
+    # it out of module scope lets unit tests import this seeder (they build
+    # their own app and never call build_app()) without a config file present.
+    from hashview.config import Config
     app = Flask(__name__, root_path=os.path.dirname(hashview.__file__))
     app.config.from_object(Config)
     db.init_app(app)

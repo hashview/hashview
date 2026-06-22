@@ -1103,74 +1103,6 @@ def test_hashfile_get_returns_file(client, app, admin_user, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# /v1/uploadCrackFile/<task_id>/<hash_type>  (old route)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.security
-def test_uploadcrackfile_old_route_no_cookie_redirects(client):
-    """POST /v1/uploadCrackFile/<task>/<type> without agent cookie redirects."""
-    resp = client.post(
-        "/v1/uploadCrackFile/1/1000",
-        data=json.dumps({"file": ""}),
-        content_type="application/json",
-    )
-    assert 300 <= resp.status_code < 400
-    assert "not_authorized" in resp.headers.get("Location", "")
-
-
-@pytest.mark.security
-def test_uploadcrackfile_old_route_processes_entry(
-    client, authorized_agent, monkeypatch
-):
-    """POST /v1/uploadCrackFile/<task>/<hash_type> processes a hash:plain pair."""
-    import hashview.utils.utils as utils_mod
-    monkeypatch.setattr(utils_mod, "process_recovered_hash_notifications", lambda: None)
-    monkeypatch.setattr(utils_mod, "hexplain_to_text", lambda s: s)
-
-    hash_val = NTLM_HASH
-    h = Hashes(
-        sub_ciphertext=get_md5_hash(hash_val),
-        ciphertext=hash_val,
-        hash_type=1000,
-        cracked=False,
-    )
-    _db.session.add(h)
-    _db.session.commit()
-
-    client.set_cookie("uuid", authorized_agent.uuid, domain="localhost.test")
-    resp = client.post(
-        "/v1/uploadCrackFile/1/1000",
-        data=json.dumps({"file": f"{hash_val}:password\n"}),
-        content_type="application/json",
-    )
-    body = _json(resp)
-    assert body["status"] == 200
-    assert body["msg"] == "OK"
-    _db.session.refresh(h)
-    assert h.cracked
-
-
-@pytest.mark.security
-def test_uploadcrackfile_old_route_no_matching_hash_is_noop(
-    client, authorized_agent, monkeypatch
-):
-    """POST /v1/uploadCrackFile/<task>/<hash_type> with unknown hash is a no-op."""
-    import hashview.utils.utils as utils_mod
-    monkeypatch.setattr(utils_mod, "process_recovered_hash_notifications", lambda: None)
-    monkeypatch.setattr(utils_mod, "hexplain_to_text", lambda s: s)
-
-    client.set_cookie("uuid", authorized_agent.uuid, domain="localhost.test")
-    resp = client.post(
-        "/v1/uploadCrackFile/1/1000",
-        data=json.dumps({"file": "AAAA1234AAAA1234AAAA1234AAAA1234:unknown\n"}),
-        content_type="application/json",
-    )
-    body = _json(resp)
-    assert body["status"] == 200
-
-
-# ---------------------------------------------------------------------------
 # /v1/uploadCrackFile/<job_task_id>  (new route)
 # ---------------------------------------------------------------------------
 
@@ -2367,50 +2299,6 @@ def test_hashfiles_by_hash_type_user_not_found_returns_403(client, monkeypatch):
     resp = client.get("/v1/hashfiles/hash_type/1000")
     body = _json(resp)
     assert body["status"] == 403
-
-
-@pytest.mark.security
-def test_uploadcrackfile_old_route_exception_during_commit(
-    client, authorized_agent, monkeypatch
-):
-    """POST /v1/uploadCrackFile/<task>/<hash_type> where db.session.commit raises
-    prints the error and continues (lines 1229-1231: the inner try/except).
-
-    The route catches commit exceptions silently (just prints) and still returns
-    status 200, so the exception path is covered even though the record isn't saved.
-
-    We trigger the exception by making hexplain_to_text raise (the inner try
-    block also catches any error from the helper calls, not just commit).
-    """
-    import hashview.api.routes as routes_mod
-    import hashview.utils.utils as utils_mod
-    monkeypatch.setattr(utils_mod, "process_recovered_hash_notifications", lambda: None)
-
-    def raise_hexplain(s):
-        raise ValueError("simulated hexplain error")
-
-    # The route imports hexplain_to_text directly into its namespace, so patch there
-    monkeypatch.setattr(routes_mod, "hexplain_to_text", raise_hexplain)
-
-    hash_val = NTLM_HASH
-    h = Hashes(
-        sub_ciphertext=get_md5_hash(hash_val),
-        ciphertext=hash_val,
-        hash_type=1000,
-        cracked=False,
-    )
-    _db.session.add(h)
-    _db.session.commit()
-
-    client.set_cookie("uuid", authorized_agent.uuid, domain="localhost.test")
-    resp = client.post(
-        "/v1/uploadCrackFile/1/1000",
-        data=json.dumps({"file": f"{hash_val}:password\n"}),
-        content_type="application/json",
-    )
-    # Despite the inner exception, the route always returns 200
-    body = _json(resp)
-    assert body["status"] == 200
 
 
 @pytest.mark.security

@@ -221,29 +221,6 @@ def test_post_hashfile_upload_creates_hashfile(app, client):
     assert Hashfiles.query.get(body["hashfile_id"]) is not None
 
 
-def test_put_jobtask_crackfile_marks_hash_cracked(app, client, monkeypatch):
-    monkeypatch.setattr("hashview.api.routes.process_recovered_hash_notifications",
-                        lambda: None)
-    agent = _agent(uuid="crack-agent", status="Working")
-    # NTLM('password') sub_ciphertext keyed by get_md5_hash(ciphertext)
-    from hashview.utils.utils import get_md5_hash
-    ntlm = "8846F7EAEE8FB117AD06BDD830B7586C"
-    h = Hashes(sub_ciphertext=get_md5_hash(ntlm), ciphertext=ntlm,
-               hash_type=1000, cracked=False)
-    db.session.add(h)
-    db.session.commit()
-    client.set_cookie("uuid", "crack-agent", domain=DOMAIN)
-    # encoded_plaintext is hex; hexplain_to_text decodes it -> "password"
-    hexpw = "password".encode().hex()
-    resp = client.post("/v1/uploadCrackFile/1/1000",
-                       json={"file": f"{ntlm}:{hexpw}"})
-    body = _body(resp)
-    assert body["status"] == 200
-    refreshed = Hashes.query.get(h.id)
-    assert refreshed.cracked
-    assert refreshed.plaintext == "password"
-
-
 # --- privilege boundaries ---------------------------------------------------
 
 def test_user_only_route_rejects_agent(app, client):
@@ -257,6 +234,6 @@ def test_user_only_route_rejects_agent(app, client):
 def test_agent_only_route_rejects_user(app, client):
     _user()
     client.set_cookie("uuid", "user-key", domain=DOMAIN)
-    resp = client.post("/v1/uploadCrackFile/1/1000", json={"file": ""})
+    resp = client.post("/v1/uploadCrackFile/1", json={"file": ""})
     assert 300 <= resp.status_code < 400
     assert "not_authorized" in resp.headers.get("Location", "")

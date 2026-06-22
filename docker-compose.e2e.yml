@@ -1,0 +1,35 @@
+# Overlay adding two real agents for the crack e2e test. The UUIDs/names MUST
+# match tests/e2e/crack/gen_slices.py manifest "agents" (the seeder authorizes
+# exactly these UUIDs).
+services:
+  agent1:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    environment:
+      HASHVIEW_SERVER: app
+      HASHVIEW_PORT: "5000"
+      USE_SSL: "False"
+      NAME: e2e-agent-1
+      UUID: 11111111-1111-1111-1111-111111111111
+      HC_BIN_PATH: /opt/hcshim/hashcat
+    depends_on:
+      app:
+        condition: service_started
+
+  agent2:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    environment:
+      HASHVIEW_SERVER: app
+      HASHVIEW_PORT: "5000"
+      USE_SSL: "False"
+      NAME: e2e-agent-2
+      UUID: 22222222-2222-2222-2222-222222222222
+      HC_BIN_PATH: /opt/hcshim/hashcat
+    depends_on:
+      app:
+        condition: service_started

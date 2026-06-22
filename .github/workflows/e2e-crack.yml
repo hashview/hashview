@@ -1,0 +1,42 @@
+name: E2E Crack
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-crack:
+    runs-on: ubuntu-latest
+    # Builds the app image + two agent images and runs a full multi-agent
+    # compose stack, so it needs more headroom than the Playwright e2e job.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install rockyou wordlist
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wordlists
+          # rockyou ships gzipped; decompress in place (-k keeps the .gz).
+          if [ -f /usr/share/wordlists/rockyou.txt.gz ]; then
+            sudo gunzip -kf /usr/share/wordlists/rockyou.txt.gz
+          fi
+          # Fail fast and loudly if the package layout ever changes.
+          test -f /usr/share/wordlists/rockyou.txt
+          wc -l /usr/share/wordlists/rockyou.txt
+
+      - name: Run multi-agent crack e2e
+        env:
+          DOCKER_PLATFORM: linux/amd64
+          ROCKYOU_PATH: /usr/share/wordlists/rockyou.txt
+        run: ./tests/run_e2e_crack_compose.sh

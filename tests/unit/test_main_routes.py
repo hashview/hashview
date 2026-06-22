@@ -52,6 +52,35 @@ def test_stop_job_task_cancels(app, client):
     assert JobTasks.query.get(jt.id).status == "Canceled"
 
 
+def test_stop_task_cancels_all_chunks(app, client):
+    """/job_task/stop_task cancels every still-active chunk of a (job, task)."""
+    from hashview.models import Hashfiles
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    hf = Hashfiles(name="hf", customer_id=cust.id, owner_id=admin.id, runtime=0)
+    db.session.add(hf)
+    db.session.commit()
+    job = Jobs(name="j", status="Running", customer_id=cust.id, owner_id=admin.id,
+               hashfile_id=hf.id)
+    db.session.add(job)
+    db.session.commit()
+    # Two chunks of the SAME task plus a finished one that must be left alone.
+    running = JobTasks(job_id=job.id, task_id=7, status="Running", priority=3,
+                       started_at=datetime.utcnow())
+    queued = JobTasks(job_id=job.id, task_id=7, status="Queued", priority=3)
+    completed = JobTasks(job_id=job.id, task_id=7, status="Completed", priority=3)
+    db.session.add_all([running, queued, completed])
+    db.session.commit()
+
+    resp = client.get(f"/job_task/stop_task/{job.id}/7", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    assert JobTasks.query.get(running.id).status == "Canceled"
+    assert JobTasks.query.get(queued.id).status == "Canceled"
+    # A chunk that already finished is not reopened/recanceled.
+    assert JobTasks.query.get(completed.id).status == "Completed"
+
+
 def test_dashboard_recovery_fragment(app, client):
     # /dashboard/recovery returns just the live-feed table fragment (polled ~5s).
     admin = make_admin()

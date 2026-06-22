@@ -21,9 +21,13 @@ from hashview.models import (
 )
 from hashview.utils.utils import (
     agent_telemetry,
-    fmt_hps as _fmt,
-    parse_hps as _hps,
     update_job_task_status,
+)
+from hashview.utils.utils import (
+    fmt_hps as _fmt,
+)
+from hashview.utils.utils import (
+    parse_hps as _hps,
 )
 
 main = Blueprint('main', __name__)

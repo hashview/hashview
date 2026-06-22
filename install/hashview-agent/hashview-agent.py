@@ -460,7 +460,9 @@ def run_benchmark(hash_modes):
         try:
             # stdout/stderr=PIPE (not capture_output=) so this works on Python 3.6,
             # which agents in the field still run; capture_output was added in 3.7.
-            proc = subprocess.run(  # noqa: UP022
+            # nosec B603 - fixed argv (no shell); binary is the operator-set
+            # Config.HC_BIN_PATH and args are local config / numeric hash modes.
+            proc = subprocess.run(  # noqa: UP022  # nosec B603
                 [Config.HC_BIN_PATH, *hc_args, '-b', '-m', str(mode)],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 timeout=BENCHMARK_TIMEOUT)

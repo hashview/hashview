@@ -49,8 +49,18 @@ rm -rf "$ARTIFACTS"
 CRACK_ARTIFACT_DIR="$ARTIFACTS" ./.venv/bin/python tests/e2e/crack/gen_slices.py
 MANIFEST="$ARTIFACTS/manifest.json"
 
-echo "Building + starting db and app..."
-$COMPOSE up -d --build app
+# Build ALL images up front. With Compose v2+ bake, `up --build <svc>` rebuilds
+# every service in the project, not just the named one. If we deferred the agent
+# build to a later `up --build agent1 agent2`, that would rebuild the app image,
+# recreate the app container, and wipe the seeder/verifier scripts we cp into its
+# ephemeral /tmp below — leaving the verifier poll to fail with "can't open file
+# /tmp/verify_crack.py". Building everything now, then starting with plain `up -d`
+# (no --build), keeps the app container stable for the whole test.
+echo "Building images (app + agents)..."
+$COMPOSE build app agent1 agent2
+
+echo "Starting db and app..."
+$COMPOSE up -d app
 
 cleanup() {
   if [ "$KEEP" = "1" ]; then
@@ -88,7 +98,7 @@ $COMPOSE cp "$MANIFEST" app:/tmp/crack/manifest.json
 $COMPOSE exec -T -e PYTHONPATH=/ -w / app python /tmp/seed_crack_db.py /tmp/crack/manifest.json
 
 echo "Starting agents..."
-$COMPOSE up -d --build agent1 agent2
+$COMPOSE up -d agent1 agent2
 
 echo "Running pytest -m e2e_crack ..."
 set +e

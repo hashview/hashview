@@ -642,8 +642,8 @@ def test_jobs_assign_task_duplicate_with_no_wordlist_flashes(app, client):
     _login(client, user)
 
     # Assign again — should flash "Task already assigned"
-    resp = client.get(f"/jobs/{job.id}/assign_task/{task.id}",
-                      follow_redirects=True)
+    resp = client.post(f"/jobs/{job.id}/assign_task/{task.id}",
+                       follow_redirects=True)
     assert b"Task already assigned to the job." in resp.data
     assert JobTasks.query.filter_by(job_id=job.id, task_id=task.id).count() == 1
 
@@ -669,8 +669,8 @@ def test_jobs_assign_task_group_dynamic_duplicate_added(app, client):
     _login(client, user)
 
     # Re-assign via task group — dynamic allows duplicates
-    resp = client.get(f"/jobs/{job.id}/assign_task_group/{tg.id}",
-                      follow_redirects=False)
+    resp = client.post(f"/jobs/{job.id}/assign_task_group/{tg.id}",
+                       follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert JobTasks.query.filter_by(job_id=job.id, task_id=task.id).count() == 2
 
@@ -697,7 +697,7 @@ def test_jobs_assign_task_group_no_wordlist_duplicate_skipped(app, client):
     db.session.commit()
     _login(client, user)
 
-    client.get(f"/jobs/{job.id}/assign_task_group/{tg.id}")
+    client.post(f"/jobs/{job.id}/assign_task_group/{tg.id}")
     # Still only 1 (no-wordlist duplicate is silently skipped)
     assert JobTasks.query.filter_by(job_id=job.id, task_id=task.id).count() == 1
 
@@ -715,8 +715,8 @@ def test_jobs_assign_lucky_no_data_flashes(app, client):
     hf, h = _attach_hashfile(job, user.id, cracked=False)
     _login(client, user)
 
-    resp = client.get(f"/jobs/{job.id}/assign_task/lucky",
-                      follow_redirects=True)
+    resp = client.post(f"/jobs/{job.id}/assign_task/lucky",
+                       follow_redirects=True)
     assert resp.status_code == 200
     assert b"Not enough data" in resp.data
 
@@ -744,8 +744,8 @@ def test_jobs_assign_lucky_with_data_assigns_tasks(app, client):
     db.session.commit()
     _login(client, user)
 
-    resp = client.get(f"/jobs/{job.id}/assign_task/lucky",
-                      follow_redirects=True)
+    resp = client.post(f"/jobs/{job.id}/assign_task/lucky",
+                       follow_redirects=True)
     assert resp.status_code == 200
     assert b"Successfully Added Top 10 Tasks" in resp.data
     assert JobTasks.query.filter_by(job_id=job.id, task_id=effective_task.id).count() == 1
@@ -765,8 +765,8 @@ def test_jobs_remove_task_not_found_flashes(app, client):
     _login(client, user)
 
     # task is not assigned to job — remove should flash
-    resp = client.get(f"/jobs/{job.id}/remove_task/{task.id}",
-                      follow_redirects=True)
+    resp = client.post(f"/jobs/{job.id}/remove_task/{task.id}",
+                       follow_redirects=True)
     assert b"no longer on this job" in resp.data
 
 
@@ -786,7 +786,7 @@ def test_jobs_remove_all_tasks_clears_all(app, client):
     db.session.commit()
     _login(client, user)
 
-    resp = client.get(f"/jobs/{job.id}/remove_all_tasks", follow_redirects=False)
+    resp = client.post(f"/jobs/{job.id}/remove_all_tasks", follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert JobTasks.query.filter_by(job_id=job.id).count() == 0
 
@@ -857,8 +857,8 @@ def test_jobs_move_task_down_three_tasks_else_branch(app, client):
     _login(client, user)
 
     # Move t1 down: order should become [t2, t1, t3]
-    resp = client.get(f"/jobs/{job.id}/move_task_down/{t1.id}",
-                      follow_redirects=False)
+    resp = client.post(f"/jobs/{job.id}/move_task_down/{t1.id}",
+                       follow_redirects=False)
     assert resp.status_code in (301, 302)
     order = [jt.task_id for jt in
              JobTasks.query.filter_by(job_id=job.id).order_by(JobTasks.id).all()]
@@ -1037,10 +1037,10 @@ def test_jobs_stop_not_found_flashes(app, client):
     user = _admin()
     _login(client, user)
 
-    resp = client.get("/jobs/stop/99999", follow_redirects=True)
+    resp = client.post("/jobs/stop/99999", follow_redirects=True)
     assert resp.status_code == 200
-    # The route flashes "Error in stopping job" and redirects to jobs list
-    assert b"Error in stopping job" in resp.data
+    # The route flashes a "not found" warning and redirects to the jobs list
+    assert b"Job not found" in resp.data
 
 
 # ---------------------------------------------------------------------------

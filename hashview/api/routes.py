@@ -244,6 +244,24 @@ def _cancel_task_group(job_id, task_id):
             update_job_task_status(jt.id, 'Canceled')
 
 
+def _hashfile_has_uncracked(hashfile_id):
+    """True if the hashfile still has at least one uncracked hash left to solve."""
+    return (db.session.query(HashfileHashes.id)
+            .join(Hashes, Hashes.id == HashfileHashes.hash_id)
+            .filter(HashfileHashes.hashfile_id == hashfile_id, Hashes.cracked == 0)
+            .first() is not None)
+
+
+def _cancel_job_active_tasks(job_id):
+    """Cancel every still-active task/chunk of a job. Used when the whole hashfile
+    is recovered (nothing left to crack) or for one-and-done jobs -- running the
+    rest would just burn cycles on an already-solved hashfile. Cancelling the last
+    active task lets update_job_task_status roll the job up to Completed."""
+    for jt in JobTasks.query.filter_by(job_id=job_id).all():
+        if jt.status in _ACTIVE_JOBTASK_STATUSES:
+            update_job_task_status(jt.id, 'Canceled')
+
+
 @api.route('/v1/agents/heartbeat', methods=['POST'])
 def v1_api_set_agent_heartbeat():
     # Get uuid
@@ -1558,27 +1576,15 @@ def v1_api_post_jobtask_crackfile_upload(job_task_id):
     # Send per-hash "recovered" notifications (email/push/slack) for any now-cracked watched hash.
     process_recovered_hash_notifications()
 
-    # Check if job type is one and done
-    if job.limit_recovered and recovered_at_least_one_hash:
-
-        # cancel all running and queued job tasks
-        jobtasks = JobTasks.query.filter_by(job_id=job.id)
-        for jobtask in jobtasks:
-            update_job_task_status( jobtask_id = jobtask.id,
-                                    status = 'Canceled')
-        #     if jobtask.status == 'Running':
-        #         print(f"setting jobtask.id {jobtask.id} from {jobtask.status} to Canceled")
-        #         jobtask.status = 'Canceled'
-        #     elif jobtask.status == 'Ready':
-        #         print(f"setting jobtask.id {jobtask.id} from {jobtask.status} to Canceled")
-        #         jobtask.status = 'Canceled'
-        # db.session.commit()
-
-        # # set job status to completed
-        # job.status = 'Completed'
-        # job.ended_at = datetime.now()
-        # print(f"setting Job.id {job.id} to Completed")
-        # db.session.commit()
+    # Stop the job when there's nothing left to crack. One-and-done jobs stop after
+    # the first recovery; ANY job stops once its hashfile is fully recovered --
+    # continuing to run the remaining chunks/tasks would just burn cycles on a
+    # solved hashfile. Cancelling the still-active tasks lets update_job_task_status
+    # roll the job up to Completed. Gated on a fresh recovery so the (cheap)
+    # "any uncracked left?" check only runs when the recovery state changed.
+    if recovered_at_least_one_hash and (
+            job.limit_recovered or not _hashfile_has_uncracked(job.hashfile_id)):
+        _cancel_job_active_tasks(job.id)
 
     message = {
         'status': 200,

@@ -394,6 +394,91 @@ def test_put_jobtask_crackfile_marks_hash_cracked(app, client, monkeypatch):
     assert refreshed.plaintext == "password"
 
 
+# --- stop the job once nothing is left to crack -----------------------------
+
+def _crackfile_job(n_uncracked=1, limit_recovered=False):
+    """A Running job over a hashfile with n_uncracked NTLM hashes; returns
+    (job, [(hash, ciphertext), ...]). Ciphertexts are keyed the way the upload
+    handler looks them up (sub_ciphertext = get_md5_hash(ciphertext))."""
+    from hashview.utils.utils import get_md5_hash
+    hf = Hashfiles(name="hf", customer_id=1, owner_id=1)
+    db.session.add(hf)
+    db.session.commit()
+    hashes = []
+    for i in range(n_uncracked):
+        ct = f"{i:032X}"                       # 32-hex, NTLM-shaped
+        h = Hashes(sub_ciphertext=get_md5_hash(ct), ciphertext=ct,
+                   hash_type=1000, cracked=False)
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+        hashes.append((h, ct))
+    db.session.commit()
+    job = Jobs(name="j", status="Running", customer_id=1, owner_id=1, priority=3,
+               hashfile_id=hf.id, limit_recovered=limit_recovered)
+    db.session.add(job)
+    db.session.commit()
+    return job, hashes
+
+
+def test_crackfile_all_recovered_cancels_remaining_tasks(app, client, monkeypatch):
+    # Cracking the LAST uncracked hash leaves the hashfile fully recovered, so every
+    # still-active task/chunk of the job is canceled (no point running the rest).
+    monkeypatch.setattr("hashview.api.routes.process_recovered_hash_notifications", lambda: None)
+    job, hashes = _crackfile_job(n_uncracked=1)
+    agent = _agent(uuid="cf-all", status="Working")
+    running = JobTasks(job_id=job.id, task_id=29, status="Running", chunk_no=1, chunk_total=3, agent_id=agent.id)
+    queued = JobTasks(job_id=job.id, task_id=29, status="Queued", chunk_no=2, chunk_total=3)
+    done = JobTasks(job_id=job.id, task_id=29, status="Completed", chunk_no=3, chunk_total=3)
+    db.session.add_all([running, queued, done])
+    db.session.commit()
+    client.set_cookie("uuid", "cf-all", domain=DOMAIN)
+    h, ct = hashes[0]
+    resp = client.post(f"/v1/uploadCrackFile/{running.id}", json={"file": f"{ct}:{b'pw'.hex()}"})
+    assert _body(resp)["status"] == 200
+    assert Hashes.query.get(h.id).cracked
+    assert JobTasks.query.get(running.id).status == "Canceled"
+    assert JobTasks.query.get(queued.id).status == "Canceled"
+    assert JobTasks.query.get(done.id).status == "Completed"   # finished work stays finished
+
+
+def test_crackfile_partial_recovery_keeps_tasks_running(app, client, monkeypatch):
+    # One of two hashes cracked -> work remains, so tasks are NOT canceled.
+    monkeypatch.setattr("hashview.api.routes.process_recovered_hash_notifications", lambda: None)
+    job, hashes = _crackfile_job(n_uncracked=2)
+    agent = _agent(uuid="cf-part", status="Working")
+    running = JobTasks(job_id=job.id, task_id=29, status="Running", chunk_no=1, chunk_total=2, agent_id=agent.id)
+    queued = JobTasks(job_id=job.id, task_id=29, status="Queued", chunk_no=2, chunk_total=2)
+    db.session.add_all([running, queued])
+    db.session.commit()
+    client.set_cookie("uuid", "cf-part", domain=DOMAIN)
+    (h0, ct0), (h1, _) = hashes
+    resp = client.post(f"/v1/uploadCrackFile/{running.id}", json={"file": f"{ct0}:{b'pw'.hex()}"})
+    assert _body(resp)["status"] == 200
+    assert Hashes.query.get(h0.id).cracked
+    assert not Hashes.query.get(h1.id).cracked
+    assert JobTasks.query.get(running.id).status == "Running"
+    assert JobTasks.query.get(queued.id).status == "Queued"
+
+
+def test_crackfile_limit_recovered_one_and_done_still_cancels(app, client, monkeypatch):
+    # The existing one-and-done flag still cancels after the FIRST recovery, even
+    # with uncracked hashes remaining.
+    monkeypatch.setattr("hashview.api.routes.process_recovered_hash_notifications", lambda: None)
+    job, hashes = _crackfile_job(n_uncracked=2, limit_recovered=True)
+    agent = _agent(uuid="cf-ltd", status="Working")
+    running = JobTasks(job_id=job.id, task_id=29, status="Running", agent_id=agent.id)
+    queued = JobTasks(job_id=job.id, task_id=29, status="Queued")
+    db.session.add_all([running, queued])
+    db.session.commit()
+    client.set_cookie("uuid", "cf-ltd", domain=DOMAIN)
+    h0, ct0 = hashes[0]
+    resp = client.post(f"/v1/uploadCrackFile/{running.id}", json={"file": f"{ct0}:{b'pw'.hex()}"})
+    assert _body(resp)["status"] == 200
+    assert JobTasks.query.get(running.id).status == "Canceled"
+    assert JobTasks.query.get(queued.id).status == "Canceled"
+
+
 # --- privilege boundaries ---------------------------------------------------
 
 def test_user_only_route_rejects_agent(app, client):

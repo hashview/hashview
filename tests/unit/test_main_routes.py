@@ -9,7 +9,7 @@ from hashview.models import (
     JobTasks,
     db,
 )
-from tests.unit.helpers import login, make_admin, make_customer
+from tests.unit.helpers import login, make_admin, make_customer, make_user
 
 
 def test_home_renders_with_recovery_feed(app, client):
@@ -50,6 +50,62 @@ def test_stop_job_task_cancels(app, client):
     resp = client.get(f"/job_task/stop/{jt.id}", follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert JobTasks.query.get(jt.id).status == "Canceled"
+
+
+def test_stop_task_cancels_all_chunks(app, client):
+    """/job_task/stop_task cancels every still-active chunk of a (job, task)."""
+    from hashview.models import Hashfiles
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    hf = Hashfiles(name="hf", customer_id=cust.id, owner_id=admin.id, runtime=0)
+    db.session.add(hf)
+    db.session.commit()
+    job = Jobs(name="j", status="Running", customer_id=cust.id, owner_id=admin.id,
+               hashfile_id=hf.id)
+    db.session.add(job)
+    db.session.commit()
+    # Two chunks of the SAME task plus a finished one that must be left alone.
+    running = JobTasks(job_id=job.id, task_id=7, status="Running", priority=3,
+                       started_at=datetime.utcnow())
+    queued = JobTasks(job_id=job.id, task_id=7, status="Queued", priority=3)
+    completed = JobTasks(job_id=job.id, task_id=7, status="Completed", priority=3)
+    db.session.add_all([running, queued, completed])
+    db.session.commit()
+
+    resp = client.get(f"/job_task/stop_task/{job.id}/7", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    assert JobTasks.query.get(running.id).status == "Canceled"
+    assert JobTasks.query.get(queued.id).status == "Canceled"
+    # A chunk that already finished is not reopened/recanceled.
+    assert JobTasks.query.get(completed.id).status == "Completed"
+
+
+def test_stop_task_missing_job_redirects(app, client):
+    """/job_task/stop_task for a nonexistent job flashes and redirects home."""
+    admin = make_admin()
+    login(client, admin)
+    resp = client.get("/job_task/stop_task/424242/1", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+
+
+def test_stop_task_non_owner_non_admin_does_not_cancel(app, client):
+    """A non-owner non-admin user can't stop someone else's task."""
+    owner = make_admin()
+    cust = make_customer()
+    job = Jobs(name="j", status="Running", customer_id=cust.id, owner_id=owner.id)
+    db.session.add(job)
+    db.session.commit()
+    jt = JobTasks(job_id=job.id, task_id=9, status="Running", priority=3,
+                  started_at=datetime.utcnow())
+    db.session.add(jt)
+    db.session.commit()
+
+    intruder = make_user()
+    login(client, intruder)
+    resp = client.get(f"/job_task/stop_task/{job.id}/9", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    assert JobTasks.query.get(jt.id).status == "Running"   # left untouched
 
 
 def test_dashboard_recovery_fragment(app, client):

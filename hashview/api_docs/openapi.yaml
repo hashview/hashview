@@ -1105,46 +1105,6 @@ paths:
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
 
-  /v1/uploadCrackFile/{task_id}/{hash_type}:
-    post:
-      tags: [Hashes, Agent Protocol]
-      summary: Upload cracked hashes (legacy)
-      deprecated: true
-      description: >-
-        Legacy variant kept for old agents ("old and probably unused"). Does
-        NOT validate `task_id`. As with the current variant, a missing/empty
-        body or a body without `file` raises an unhandled HTTP 500. Prefer
-        `/v1/uploadCrackFile/{job_task_id}`.
-      operationId: uploadCrackFileLegacy
-      x-audience: agent
-      security:
-        - agentUuid: []
-      parameters:
-        - name: task_id
-          in: path
-          required: true
-          schema: {type: integer}
-        - name: hash_type
-          in: path
-          required: true
-          schema: {type: integer}
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CrackFileUpload'
-      responses:
-        '200':
-          description: Acknowledged.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiMessage'
-              example: {status: 200, type: message, msg: OK}
-        '302':
-          $ref: '#/components/responses/NotAuthorizedRedirect'
-
   # ---------------------------------------------------------------- Search
   /v1/search:
     post:

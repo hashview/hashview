@@ -7,6 +7,7 @@ exclusion, and the whole-task fallbacks.
 
 
 from hashview.utils.chunking import (
+    _expand_mask,
     is_chunkable,
     mask_keyspace,
     parse_mask,
@@ -156,3 +157,67 @@ def test_plan_mask_mode7_includes_wordlist_factor():
                         slowest_speed=1, target_seconds=100)
     assert whole == [{}]
     assert len(split) >= 2
+
+
+# --- plan_chunks: hybrid mode 6 (wordlist + mask) --------------------------
+
+def test_plan_mode6_hybrid_uses_mask_as_amplifier():
+    """Mode 6 multiplies each word by the mask keyspace when sizing chunks.
+
+    With a ?d?d (=100) mask the per-word candidate count is 100x, so the same
+    wordlist that runs whole without a mask splits into word-range chunks.
+    """
+    with_mask = plan_chunks(6, wordlist_size=1000, mask='?d?d',
+                            slowest_speed=1000, target_seconds=1)
+    no_mask = plan_chunks(6, wordlist_size=1000, mask=None,
+                          slowest_speed=1000, target_seconds=1)
+    assert len(with_mask) >= 2
+    assert all('skip' in s and 'limit' in s for s in with_mask)  # word-range chunks
+    assert no_mask == [{}]                                       # amplifier=1 -> whole
+
+
+# --- plan_chunks: whole-task fallbacks (guard branches) --------------------
+
+def test_plan_wordlist_whole_when_size_missing():
+    # A wordlist-mode task with no/zero wordlist size can't be tiled.
+    assert plan_chunks(0, wordlist_size=0, rule_count=5,
+                       slowest_speed=1, target_seconds=1) == [{}]
+
+
+def test_plan_mask_whole_when_mask_missing():
+    # A mask-mode task with no mask string can't be expanded.
+    assert plan_chunks(3, mask=None, slowest_speed=1, target_seconds=1) == [{}]
+
+
+def test_plan_whole_for_unsupported_attackmode():
+    # An attackmode that's neither a wordlist nor a mask mode runs whole.
+    assert plan_chunks(99, wordlist_size=10**9, slowest_speed=1,
+                       target_seconds=1) == [{}]
+
+
+def test_plan_mask_whole_when_max_chunks_below_first_charset():
+    # max_chunks (5) is smaller than the first charset (?d=10), so even one
+    # position can't be expanded within the cap -> run whole.
+    assert plan_chunks(3, mask='?d?d?d?d', slowest_speed=1, target_seconds=1,
+                       max_chunks=5) == [{}]
+
+
+# --- plan_chunks: mask expansion with literals -----------------------------
+
+def test_plan_mask_expands_with_leading_literal():
+    # A literal segment ahead of the expanded charset is carried into every
+    # sub-mask (exercises the 'lit' branch while building prefixes).
+    specs = plan_chunks(3, mask='a?d?d?d', slowest_speed=1, target_seconds=1,
+                        max_chunks=100)
+    assert len(specs) >= 2
+    assert all(s['mask'].startswith('a') for s in specs)
+
+
+def test_expand_mask_returns_none_for_all_literal_mask():
+    # No charset positions -> nothing to split.
+    assert _expand_mask('abcd', desired_chunks=4, max_chunks=100) is None
+
+
+def test_expand_mask_returns_none_for_unparseable_mask():
+    # A custom-charset mask (?1) doesn't parse -> can't be expanded.
+    assert _expand_mask('?1?l', desired_chunks=4, max_chunks=100) is None

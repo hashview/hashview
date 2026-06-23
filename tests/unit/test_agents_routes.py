@@ -143,3 +143,33 @@ def test_agents_delete_forbidden_for_non_admin(app, client):
     resp = client.post(f"/agents/delete/{a.id}", follow_redirects=False)
     assert resp.status_code == 403
     assert Agents.query.get(a.id) is not None
+
+
+def test_agents_benchmark_all_commit_failure_flashes(app, client):
+    """If the benchmark flush can't commit, the route flashes an error and
+    redirects rather than silently dropping the request."""
+    from unittest.mock import patch
+    admin = make_admin()
+    login(client, admin)
+    a = _agent(status="Idle", uuid="bench-fail-u")
+    db.session.add(AgentBenchmarks(agent_id=a.id, hash_type=1000, speed=123))
+    db.session.commit()
+
+    with patch("hashview.agents.routes.try_commit", return_value=False):
+        resp = client.post("/agents/benchmark", follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"Could not reset benchmarks" in resp.data
+
+
+def test_agents_delete_commit_failure_flashes(app, client):
+    """If the agent delete can't commit, the route flashes an error rather than
+    silently dropping the request."""
+    from unittest.mock import patch
+    admin = make_admin()
+    login(client, admin)
+    a = _agent(name="StuckRig", status="Idle", uuid="del-fail-u")
+
+    with patch("hashview.agents.routes.try_commit", return_value=False):
+        resp = client.post(f"/agents/delete/{a.id}", follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"Agent could not be deleted" in resp.data

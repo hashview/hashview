@@ -361,7 +361,52 @@ def _seed_task_with_chunk_statuses(statuses, email):
     (["Completed", "Completed", "Completed"], "Completed"),
     (["Running", "Queued", "Canceled"], "Running"),              # any running wins
     (["Queued", "Canceled"], "Queued"),                         # pending beats a lone cancel
+    # Terminal fallback: a status outside running/queued/canceled/completed
+    # (e.g. 'Importing') with not-all-completed lands on the else -> 'Queued'.
+    (["Completed", "Importing"], "Queued"),
 ])
 def test_job_task_group_status_derivation(app, db_session, statuses, expected):
     g = _seed_task_with_chunk_statuses(statuses, email=f"{abs(hash(tuple(statuses)))}@e.com")
     assert g["status"] == expected
+
+
+def test_attack_label_handles_missing_task():
+    """_attack_label tolerates a task that was deleted out from under a chunk."""
+    from hashview.main.routes import _attack_label
+    assert _attack_label(None) == ''
+
+
+def test_job_task_groups_skips_other_jobs_tasks(app, db_session):
+    """_job_task_groups is fed every JobTask but must group only those belonging
+    to the job being rendered (the jt.job_id != job.id skip)."""
+    user = Users(first_name="A", last_name="D", email_address="multi@e.com",
+                 password="x" * 60, admin=True)
+    db.session.add(user)
+    db.session.commit()
+    cust = Customers(name="MultiCo")
+    db.session.add(cust)
+    db.session.commit()
+    hf = Hashfiles(name="hf", customer_id=cust.id, owner_id=user.id)
+    db.session.add(hf)
+    db.session.commit()
+    mine = Jobs(name="mine", owner_id=user.id, customer_id=cust.id,
+                hashfile_id=hf.id, status="Running", priority=3)
+    other = Jobs(name="other", owner_id=user.id, customer_id=cust.id,
+                 hashfile_id=hf.id, status="Running", priority=3)
+    db.session.add_all([mine, other])
+    db.session.commit()
+    t_mine = Tasks(name="mine-task", owner_id=user.id, hc_attackmode=0)
+    t_other = Tasks(name="other-task", owner_id=user.id, hc_attackmode=0)
+    db.session.add_all([t_mine, t_other])
+    db.session.commit()
+    db.session.add(JobTasks(job_id=mine.id, task_id=t_mine.id, status="Running"))
+    db.session.add(JobTasks(job_id=other.id, task_id=t_other.id, status="Running"))
+    db.session.commit()
+
+    groups = _job_task_groups(
+        [mine], JobTasks.query.all(),
+        {t.id: t for t in Tasks.query.all()},
+        {}, {}, {},
+    )[mine.id]["groups"]
+    grouped = {g["task_id"] for g in groups}
+    assert grouped == {t_mine.id}            # only this job's task, other skipped

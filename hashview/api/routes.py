@@ -1270,7 +1270,8 @@ def v1_api_post_hashfile_upload(customer_id, file_format, hash_type, hashfile_na
 
     # import contents from file
     try:
-        print(f"[DEBUG] Validating hashfile {file_path} of type {file_format} for hashtype {hash_type}")
+        current_app.logger.debug('API: validating hashfile %s of format %s for hashtype %s',
+                                 file_path, file_format, hash_type)
         if file_format == 0:
             has_problem = validate_pwdump_hashfile(file_path, str(hash_type))
         elif file_format == 1:
@@ -1441,63 +1442,6 @@ def v1_api_get_hashfiles_by_hash_type(hash_type):
     return jsonify(message)
 
 # Upload Cracked Hashes
-# old and probably unused
-@api.route('/v1/uploadCrackFile/<int:task_id>/<int:hash_type>', methods=['POST'])
-def v1_api_put_jobtask_crackfile_upload(task_id, hash_type):
-    if not is_authorized(user=False, agent=True, request=request):
-        return redirect("/v1/not_authorized")
-
-    update_heartbeat(request.cookies.get('uuid'))
-
-    # TODO
-    # We really should validate if task_id is legit
-    
-    # save to file
-    # silent=True so an empty/invalid body returns None (-> JSON error) instead of
-    # Flask's HTML 400 page, which the agent can't parse (#212).
-    file_contents = request.get_json(silent=True)
-    if not file_contents or 'file' not in file_contents:
-        return jsonify({
-            'status': 400,
-            'type': 'Error',
-            'msg': 'Missing file data in request body'
-        })
-
-    #for entry in lines:
-    for entry in file_contents['file'].split('\n'):
-        if ':' in entry:
-            encoded_plaintext = entry.split(':')[-1]
-            elements = entry.split(':')
-            # Remove cracked hash
-            elements.pop()
-            ciphertext = ':'.join(elements)
-
-            #print('Plaintext: ' + str(bytes.fromhex(plaintext).decode('latin-1')))
-            #print('Ciphertext: ' + str(ciphertext))
-
-            record = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(ciphertext), cracked='0').first()
-            if record:
-                try:
-                    record.plaintext = hexplain_to_text(encoded_plaintext)
-                    record.cracked = 1
-                    #print('i should be updating the datetime')
-                    record.recovered_at = datetime.today()
-                    record.task_id = task_id
-                    db.session.commit()
-                except Exception:
-                    current_app.logger.exception('API: failed to import a cracked hash during agent heartbeat')
-
-    # Send per-hash "recovered" notifications (email/push/slack) for any now-cracked watched hash.
-    process_recovered_hash_notifications()
-
-    message = {
-        'status': 200,
-        'type': 'message',
-        'msg': 'OK'
-    }
-    return jsonify(message)
-
-# Upload Cracked Hashes
 @api.route('/v1/uploadCrackFile/<int:job_task_id>', methods=['POST'])
 def v1_api_post_jobtask_crackfile_upload(job_task_id):
     if not is_authorized(user=False, agent=True, request=request):
@@ -1556,14 +1500,13 @@ def v1_api_post_jobtask_crackfile_upload(job_task_id):
                 partial_hash = "WPA*02*{}%".format(ciphertext.replace(':', '*'))
                 record = Hashes.query.filter_by(hash_type=hash_type, cracked='0').filter(Hashes.ciphertext.like(partial_hash)).first()
                 if not record:
-                    print(f"[DEBUG] No record found for partial hash {partial_hash}")
+                    current_app.logger.debug('API: no record found for partial hash %s', partial_hash)
             else:
                 record = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(ciphertext), cracked='0').first()
             if record:
                 try:
                     record.plaintext = hexplain_to_text(encoded_plaintext)
                     record.cracked = 1
-                    #print('i should be updating the datetime')
                     record.recovered_at = datetime.today()
                     record.task_id = job_task.task_id
                     record.recovered_by = job.owner_id

@@ -10,6 +10,8 @@ import os
 import time
 from datetime import datetime, timedelta
 
+import pytest
+
 from hashview.models import (
     Customers,
     Hashes,
@@ -250,6 +252,75 @@ def test_inner_purges_job_referencing_aged_hashfile(app, tmp_path, monkeypatch):
     assert Jobs.query.get(job_id) is None  # cascaded via the hashfile branch
     assert JobTasks.query.filter_by(job_id=job_id).count() == 0
     assert JobNotifications.query.filter_by(job_id=job_id).count() == 0
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "BUG: server retention sweep only reaps control/tmp; control/hashes and "
+    "control/outfiles accumulate uploaded hashes and cracked output indefinitely, "
+    "even after the DB rows are purged. Remove this marker once scheduler.py reaps "
+    "those dirs too."))
+def test_inner_reaps_hashes_and_outfiles_dirs(app, tmp_path, monkeypatch):
+    """Server retention must reap aged files in control/hashes and control/outfiles,
+    not just control/tmp. Those dirs hold uploaded hashes (hashfile_*.txt) and cracked
+    output (hc_cracked_*.txt, hc_potfile_*.pot); leaving them on disk after the DB rows
+    are purged is a data-retention hole."""
+    monkeypatch.setattr(app, "root_path", str(tmp_path))
+    dirs = {}
+    for name in ("tmp", "hashes", "outfiles"):
+        d = tmp_path / "control" / name
+        os.makedirs(d)
+        dirs[name] = d
+    _settings(retention_period=30)
+
+    stale = time.time() - 40 * 86400
+    aged, fresh = {}, {}
+    for name, d in dirs.items():
+        a = d / f"aged-{name}"
+        a.write_text("secret")
+        os.utime(a, (stale, stale))
+        aged[name] = a
+        f = d / f"fresh-{name}"  # within retention window -> must survive
+        f.write_text("recent")
+        fresh[name] = f
+
+    _run_inner(app)
+
+    for name in dirs:
+        assert not aged[name].exists(), f"aged file in control/{name} should be reaped"
+        assert fresh[name].exists(), f"fresh file in control/{name} should be kept"
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "BUG: the whole sweep is one try/except, so the first un-processable aged row "
+    "(here an orphaned owner_id -> AttributeError building the email at "
+    "scheduler.py:72) aborts retention of every later row. Remove this marker once "
+    "the sweep is per-item resilient."))
+def test_inner_continues_after_an_unprocessable_job(app, tmp_path, monkeypatch):
+    """One un-processable aged job (e.g. an orphaned owner_id whose user was deleted)
+    must not abort retention of every other aged job. Pins per-item resilience: the
+    sweep no longer bails on the first failing row."""
+    _setup_tmp(app, tmp_path, monkeypatch)
+    _settings(retention_period=30)
+    admin = _admin()
+    cust = Customers(name="Acme")
+    db.session.add(cust)
+    db.session.commit()
+
+    aged = datetime.utcnow() - timedelta(days=90)
+    # owner_id references a user that doesn't exist; building the deletion email
+    # dereferences None and raises, the way an orphaned job would in production.
+    bad = Jobs(name="orphaned", status="Completed", customer_id=cust.id,
+               owner_id=999999, created_at=aged)
+    good = Jobs(name="deletable", status="Completed", customer_id=cust.id,
+                owner_id=admin.id, created_at=aged)
+    db.session.add_all([bad, good])
+    db.session.commit()
+    good_id = good.id
+
+    _run_inner(app)
+    db.session.expire_all()
+
+    assert Jobs.query.get(good_id) is None  # not blocked by the bad job
 
 
 def test_outer_wrapper_swallows_failures(app, tmp_path, monkeypatch):

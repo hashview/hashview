@@ -371,29 +371,6 @@ def test_post_hashfile_upload_creates_hashfile(app, client):
     assert Hashfiles.query.get(body["hashfile_id"]) is not None
 
 
-def test_put_jobtask_crackfile_marks_hash_cracked(app, client, monkeypatch):
-    monkeypatch.setattr("hashview.api.routes.process_recovered_hash_notifications",
-                        lambda: None)
-    agent = _agent(uuid="crack-agent", status="Working")
-    # NTLM('password') sub_ciphertext keyed by get_md5_hash(ciphertext)
-    from hashview.utils.utils import get_md5_hash
-    ntlm = "8846F7EAEE8FB117AD06BDD830B7586C"
-    h = Hashes(sub_ciphertext=get_md5_hash(ntlm), ciphertext=ntlm,
-               hash_type=1000, cracked=False)
-    db.session.add(h)
-    db.session.commit()
-    client.set_cookie("uuid", "crack-agent", domain=DOMAIN)
-    # encoded_plaintext is hex; hexplain_to_text decodes it -> "password"
-    hexpw = b"password".hex()
-    resp = client.post("/v1/uploadCrackFile/1/1000",
-                       json={"file": f"{ntlm}:{hexpw}"})
-    body = _body(resp)
-    assert body["status"] == 200
-    refreshed = Hashes.query.get(h.id)
-    assert refreshed.cracked
-    assert refreshed.plaintext == "password"
-
-
 # --- stop the job once nothing is left to crack -----------------------------
 
 def _crackfile_job(n_uncracked=1, limit_recovered=False):
@@ -436,7 +413,9 @@ def test_crackfile_all_recovered_cancels_remaining_tasks(app, client, monkeypatc
     h, ct = hashes[0]
     resp = client.post(f"/v1/uploadCrackFile/{running.id}", json={"file": f"{ct}:{b'pw'.hex()}"})
     assert _body(resp)["status"] == 200
-    assert Hashes.query.get(h.id).cracked
+    cracked = Hashes.query.get(h.id)
+    assert cracked.cracked
+    assert cracked.plaintext == "pw"          # hex plaintext decoded via hexplain_to_text
     assert JobTasks.query.get(running.id).status == "Canceled"
     assert JobTasks.query.get(queued.id).status == "Canceled"
     assert JobTasks.query.get(done.id).status == "Completed"   # finished work stays finished
@@ -492,7 +471,7 @@ def test_user_only_route_rejects_agent(app, client):
 def test_agent_only_route_rejects_user(app, client):
     _user()
     client.set_cookie("uuid", "user-key", domain=DOMAIN)
-    resp = client.post("/v1/uploadCrackFile/1/1000", json={"file": ""})
+    resp = client.post("/v1/uploadCrackFile/1", json={"file": ""})
     assert 300 <= resp.status_code < 400
     assert "not_authorized" in resp.headers.get("Location", "")
 

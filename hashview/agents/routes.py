@@ -215,8 +215,9 @@ def agents_delete(agent_id):
     # Remove every reference to this agent BEFORE deleting it. Two foreign keys
     # point at agents.id — job_tasks.agent_id and agent_benchmarks.agent_id — and
     # either one blocks the delete (the commit rolls back, so the agent silently
-    # reappears). Re-queue any chunk it was actively running so the work isn't
-    # orphaned, unlink the rest, and drop its stored per-hashtype benchmarks.
+    # reappears). Re-queue any chunk it was actively running (so the work isn't
+    # orphaned), clear agent_id on all of its job_tasks, and drop its stored
+    # per-hashtype benchmarks.
     for jt in JobTasks.query.filter_by(agent_id=agent_id).all():
         if jt.status == 'Running':
             jt.status = 'Queued'

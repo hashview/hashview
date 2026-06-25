@@ -341,8 +341,8 @@ def v1_api_set_agent_heartbeat():
                 # Enforce max_runtime_tasks on the PARENT task, not each chunk.
                 # Chunks run in parallel, so summing their runtimes overcounts;
                 # measure from the earliest chunk start of this (job, task) group
-                # and, when over the cap, cancel the whole group (running + queued
-                # chunks). A whole, un-chunked task is a group of one, so it's still
+                # and, when over the cap, cancel the whole group's still-active
+                # chunks. A whole, un-chunked task is a group of one, so it's still
                 # capped exactly as before.
                 if _task_runtime_exceeded(job_task.job_id, job_task.task_id,
                                           settings.max_runtime_tasks):

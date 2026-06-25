@@ -39,23 +39,25 @@ for _choices in (HASH_TYPE_CHOICES, KERBEROS_HASH_TYPE_CHOICES,
             pass
 
 def _agent_benchmarks(agents_):
-    """Map agent.id -> list of {hash_type, name, speed, updated_at} for the modal."""
-    ids = [a.id for a in agents_]
-    out = {aid: [] for aid in ids}
-    if not ids:
-        return out
+    """agent.id -> list of {hash_type, name, speed, updated_at} for the modal.
+
+    Every agent is present; agents with no benchmarks map to [].
+    """
+    by_agent = {a.id: [] for a in agents_}
+    if not by_agent:
+        return by_agent          # no agents -> skip the empty-IN() query
     rows = (AgentBenchmarks.query
-            .filter(AgentBenchmarks.agent_id.in_(ids))
+            .filter(AgentBenchmarks.agent_id.in_(by_agent))
             .order_by(AgentBenchmarks.hash_type)
             .all())
     for row in rows:
-        out.setdefault(row.agent_id, []).append({
+        by_agent[row.agent_id].append({
             'hash_type': row.hash_type,
             'name': _MODE_NAMES.get(row.hash_type, ''),
             'speed': fmt_hps(row.speed, places=2),
             'updated_at': row.updated_at,
         })
-    return out
+    return by_agent
 
 
 def _fmt_age(seconds):

@@ -332,7 +332,6 @@ def create_app(testing=False, config_overrides=None):
         if not getattr(current_user, "is_authenticated", False):
             return {}
         try:
-            import re
             from datetime import datetime, timedelta
 
             from sqlalchemy import text
@@ -349,6 +348,11 @@ def create_app(testing=False, config_overrides=None):
                 Wordlists,
                 db,
             )
+
+            # _hps/_fmt: the single source in utils (function-local import dodges a
+            # load-time circular import on the package root).
+            from hashview.utils.utils import fmt_hps as _fmt
+            from hashview.utils.utils import parse_hps as _hps
 
             agents = Agents.query.all()
             # last_checkin is stamped with the database clock (api.update_heartbeat uses
@@ -375,28 +379,6 @@ def create_app(testing=False, config_overrides=None):
 
             def _state(a):
                 return (a.status or '').strip().lower()
-
-            def _hps(s):
-                """Parse a speed string to raw H/s, tolerantly (case, thousands
-                separators, trailing text, units k/M/G/T/P/E, or a bare number)."""
-                if s is None:
-                    return 0.0
-                if isinstance(s, (int, float)):
-                    return float(s)
-                s = str(s)
-                mult = {"": 1, "K": 1e3, "M": 1e6, "G": 1e9, "T": 1e12, "P": 1e15, "E": 1e18}
-                m = re.search(r'([0-9][0-9,]*(?:\.[0-9]+)?)\s*([kmgtpe]?)\s*h/s', s, re.IGNORECASE)
-                if m:
-                    return float(m.group(1).replace(',', '')) * mult[m.group(2).upper()]
-                m = re.search(r'[0-9][0-9,]*(?:\.[0-9]+)?', s)
-                return float(m.group(0).replace(',', '')) if m else 0.0
-
-            def _fmt(h):
-                for unit, div in (("PH/s", 1e15), ("TH/s", 1e12), ("GH/s", 1e9),
-                                  ("MH/s", 1e6), ("kH/s", 1e3)):
-                    if h >= div:
-                        return f"{h / div:.1f} {unit}"
-                return ("%d H/s" % int(h)) if h else "0 H/s"
 
             # Single source of truth for "is this agent up" (sidebar, agents page, AND
             # the dashboard all read from this, so they can never disagree).

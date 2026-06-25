@@ -239,6 +239,9 @@ def _cancel_task_group(job_id, task_id):
     """Cancel every still-active chunk of a (job, task) group (see
     _ACTIVE_JOBTASK_STATUSES), so an over-limit task stops entirely and no
     further chunk of it gets dispatched."""
+    current_app.logger.info(
+        'Job %s task %s exceeded max_runtime_tasks; cancelling its active chunks.',
+        job_id, task_id)
     for jt in JobTasks.query.filter_by(job_id=job_id, task_id=task_id).all():
         if jt.status in _ACTIVE_JOBTASK_STATUSES:
             update_job_task_status(jt.id, 'Canceled')
@@ -1527,6 +1530,9 @@ def v1_api_post_jobtask_crackfile_upload(job_task_id):
     # "any uncracked left?" check only runs when the recovery state changed.
     if recovered_at_least_one_hash and (
             job.limit_recovered or not _hashfile_has_uncracked(job.hashfile_id)):
+        reason = ('one-and-done (limit_recovered)' if job.limit_recovered
+                  else 'hashfile fully recovered')
+        current_app.logger.info('Job %s: cancelling remaining tasks (%s).', job.id, reason)
         _cancel_job_active_tasks(job.id)
 
     message = {

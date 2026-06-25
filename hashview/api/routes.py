@@ -373,30 +373,30 @@ def v1_api_set_agent_heartbeat():
                     return jsonify(message)
                 
                 if agent_data['hc_status']:
-                    # hc_status is hashcat's status dict as rendered by the agent
-                    # (Python repr, single quotes). Parse it DEFENSIVELY: an agent
-                    # whose hashcat outlived a restart sends a non-JSON placeholder,
-                    # and a partial/mid-reboot status can be malformed. A bad value
-                    # must never 500 the heartbeat -- just skip the telemetry update
-                    # so the agent keeps its assigned work and retries next beat.
+                    # hc_status is hashcat's status dict rendered by the agent (Python
+                    # repr -> JSON). Only json.loads is in the try: a malformed value
+                    # (e.g. a non-JSON placeholder from an agent whose hashcat outlived
+                    # a restart) must never 500 the heartbeat -- log and skip telemetry.
+                    # Missing keys are tolerated via .get below.
                     raw = str(agent_data['hc_status']).replace("\'", "\"")
                     try:
                         json_response = json.loads(raw)
+                    except (ValueError, TypeError):
+                        current_app.logger.warning(
+                            'Heartbeat from agent %s had unparseable hc_status; '
+                            'skipping telemetry update.', uuid)
+                    else:
                         agent.hc_status = raw
-                        agent.benchmark = json_response['Speed #']
-                        # Persist device telemetry. Unlike hc_status (cleared on idle),
-                        # these are RETAINED so the agents page can show a card's
-                        # model/count/temps even when the agent isn't currently cracking.
+                        if json_response.get('Speed #') is not None:
+                            agent.benchmark = json_response['Speed #']
+                        # Device telemetry: RETAINED across idle so the agents page can
+                        # show a card's model/count/temps even when not cracking.
                         if json_response.get('GPU_Count') is not None:
                             agent.gpu_count = json_response['GPU_Count']
                         if json_response.get('GPU_Model'):
                             agent.gpu_model = json_response['GPU_Model']
                         if json_response.get('Temps'):
                             agent.gpu_temps = json_response['Temps']
-                    except (ValueError, KeyError, TypeError):
-                        current_app.logger.warning(
-                            'Heartbeat from agent %s had unparseable hc_status; '
-                            'skipping telemetry update.', uuid)
 
                 db.session.commit()
 

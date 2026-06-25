@@ -766,7 +766,6 @@ def jobs_assign_notification_hashes(job_id, method):
 
     job = Jobs.query.get(job_id)
     hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).with_entities(Hashes.id, HashfileHashes.username, Hashes.ciphertext).all()
-    existing_hash_notifications = HashNotifications.query.filter_by(owner_id=current_user.id)
     # `method` is a comma-joined list of channels, e.g. "email,push,slack".
     methods = [m for m in (method or '').split(',') if m in ('email', 'push', 'slack')]
     if request.method == 'POST':
@@ -784,7 +783,17 @@ def jobs_assign_notification_hashes(job_id, method):
         db.session.commit()
         return redirect("/jobs/"+str(job_id)+"/tasks")
 
-    return render_template('jobs_assigned_notifications_hashes.html.j2', title='Assigned Hash Notifications', job=job, hashes=hashes, existing_hash_notifications=existing_hash_notifications)
+    # hash_ids this user is already notified on (any channel), as a SET so the
+    # template can pre-check each row with an O(1) lookup. Previously the template
+    # re-scanned the whole HashNotifications table once per hash (a lazy query
+    # re-executed inside the per-hash loop) -- O(hashes x notifications), which
+    # pegged the server and ballooned memory for a user with many notifications.
+    notified_ids = {
+        n.hash_id for n in HashNotifications.query
+        .filter_by(owner_id=current_user.id)
+        .with_entities(HashNotifications.hash_id)
+    }
+    return render_template('jobs_assigned_notifications_hashes.html.j2', title='Assigned Hash Notifications', job=job, hashes=hashes, notified_ids=notified_ids)
 
 @jobs.route("/jobs/delete/<int:job_id>", methods=['GET', 'POST'])
 @login_required

@@ -121,9 +121,6 @@ def _agents_ctx():
     }
 
 
-# Crack-rate helpers. _hps/_fmt mirror the (nested, non-importable) sidebar helpers
-# in hashview/__init__.py; kept module-level here so the per-task chunk aggregation
-# can sum agent speeds without a circular import on the package root.
 _ATTACK_LABELS = {1: 'Combinator', 3: 'Mask',
                   6: 'Hybrid (wordlist + mask)', 7: 'Hybrid (mask + wordlist)'}
 

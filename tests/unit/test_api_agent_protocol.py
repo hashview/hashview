@@ -499,6 +499,26 @@ def test_benchmark_endpoint_upserts(app, client):
         agent_id=agent.id, hash_type=1000).first().speed == 30000000000
 
 
+def test_benchmark_endpoint_skips_unparseable_entries(app, client):
+    """A misbehaving agent that sends a non-integer mode or non-numeric speed has
+    that single entry skipped (logged as a warning) rather than failing the batch;
+    the parseable entries in the same report are still persisted."""
+    agent = _agent(uuid="bench-bad", status="Idle")
+    _set_agent_cookies(client, "bench-bad")
+
+    resp = client.post("/v1/agents/benchmark", json={"benchmark_results": {
+        "1000": 28460000000,    # good
+        "notamode": 5000,       # non-integer mode -> skipped
+        "1800": "fast",         # non-numeric speed -> skipped
+        "0": "1500.0",          # numeric string speed -> kept (int(float(...)))
+    }})
+    assert _body(resp)["msg"] == "OK"
+
+    rows = {r.hash_type: r.speed
+            for r in AgentBenchmarks.query.filter_by(agent_id=agent.id).all()}
+    assert rows == {1000: 28460000000, 0: 1500}
+
+
 def test_benchmark_endpoint_rejects_user(app, client):
     """/v1/agents/benchmark is agent-only — a user credential is turned away."""
     _user(api_key="user-key")
@@ -650,6 +670,34 @@ def test_heartbeat_working_persists_gpu_telemetry(app, client):
                        json={"agent_status": "Working", "hc_status": hc})
     assert resp.status_code == 200
     a = Agents.query.get(agent.id)
+    assert a.gpu_count == 8
+    assert a.gpu_model == "RTX 4090"
+    assert a.gpu_temps == "71,70,72"
+
+
+def test_heartbeat_idle_retains_gpu_telemetry(app, client):
+    """Device telemetry (count/model/temps) is RETAINED across idle so the agents
+    page can still show a card's GPUs when it isn't cracking; only hc_status is
+    cleared on an Idle heartbeat."""
+    db.session.add(Settings(max_runtime_tasks=0, max_runtime_jobs=0))
+    db.session.commit()
+    agent = _agent(uuid="gpu-idle", status="Working")
+    db.session.add(JobTasks(job_id=1, task_id=1, status="Running", priority=3,
+                            agent_id=agent.id))
+    db.session.commit()
+    _set_agent_cookies(client, "gpu-idle")
+    # a Working beat populates telemetry + hc_status
+    hc = {"Speed #": "100 GH/s", "GPU_Count": 8, "GPU_Model": "RTX 4090",
+          "Temps": "71,70,72"}
+    client.post("/v1/agents/heartbeat",
+                json={"agent_status": "Working", "hc_status": hc})
+
+    # going Idle clears hc_status but keeps the device telemetry
+    resp = client.post("/v1/agents/heartbeat",
+                       json={"agent_status": "Idle", "hc_status": ""})
+    assert resp.status_code == 200
+    a = Agents.query.get(agent.id)
+    assert a.hc_status == ""
     assert a.gpu_count == 8
     assert a.gpu_model == "RTX 4090"
     assert a.gpu_temps == "71,70,72"

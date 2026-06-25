@@ -23,7 +23,7 @@ from hashview.utils.hashcat_modes import (
     NETNTLM_HASH_TYPE_CHOICES,
     SHADOW_HASH_TYPE_CHOICES,
 )
-from hashview.utils.utils import agent_telemetry, try_commit
+from hashview.utils.utils import agent_telemetry, fmt_hps, try_commit
 
 agents = Blueprint('agents', __name__)
 
@@ -37,21 +37,6 @@ for _choices in (HASH_TYPE_CHOICES, KERBEROS_HASH_TYPE_CHOICES,
             _MODE_NAMES[int(_mode)] = _label
         except (TypeError, ValueError):
             pass
-
-_SPEED_UNITS = ('H/s', 'kH/s', 'MH/s', 'GH/s', 'TH/s', 'PH/s')
-
-
-def _fmt_speed(hps):
-    """Raw hashes/sec -> human string, e.g. 28460000000 -> '28.46 GH/s'."""
-    value = float(hps or 0)
-    idx = 0
-    while value >= 1000 and idx < len(_SPEED_UNITS) - 1:
-        value /= 1000.0
-        idx += 1
-    if idx == 0:
-        return '%d %s' % (int(value), _SPEED_UNITS[idx])
-    return '%.2f %s' % (value, _SPEED_UNITS[idx])
-
 
 def _agent_benchmarks(agents_):
     """Map agent.id -> list of {hash_type, name, speed, updated_at} for the modal."""
@@ -67,7 +52,7 @@ def _agent_benchmarks(agents_):
         out.setdefault(row.agent_id, []).append({
             'hash_type': row.hash_type,
             'name': _MODE_NAMES.get(row.hash_type, ''),
-            'speed': _fmt_speed(row.speed),
+            'speed': fmt_hps(row.speed, places=2),
             'updated_at': row.updated_at,
         })
     return out

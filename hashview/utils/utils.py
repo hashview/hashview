@@ -703,12 +703,16 @@ def parse_hps(s):
     return float(m.group(0).replace(',', '')) if m else 0.0
 
 
-def fmt_hps(h):
-    """Format raw H/s as a human string (e.g. 2.8e11 -> '284.6 GH/s')."""
+def fmt_hps(h, places=1):
+    """Format raw H/s as a human string (e.g. 2.8e11 -> '284.6 GH/s').
+
+    ``places`` is the decimal precision of the scaled value (default 1; the
+    agent-benchmark modal passes 2).
+    """
     for unit, div in (('PH/s', 1e15), ('TH/s', 1e12), ('GH/s', 1e9),
                       ('MH/s', 1e6), ('kH/s', 1e3)):
         if h >= div:
-            return f'{h / div:.1f} {unit}'
+            return f'{h / div:.{places}f} {unit}'
     return ('%d H/s' % int(h)) if h else '0 H/s'
 
 

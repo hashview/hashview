@@ -83,11 +83,13 @@ def test_agents_benchmark_all_forbidden_for_non_admin(app, client):
 
 
 def test_fmt_speed_units():
-    from hashview.agents.routes import _fmt_speed
-    assert _fmt_speed(0) == "0 H/s"
-    assert _fmt_speed(999) == "999 H/s"
-    assert _fmt_speed(2500) == "2.50 kH/s"
-    assert _fmt_speed(28460000000) == "28.46 GH/s"
+    # The agent-benchmark modal now formats speeds via the shared utils.fmt_hps
+    # with places=2 (was a local _fmt_speed); same output, single source.
+    from hashview.utils.utils import fmt_hps
+    assert fmt_hps(0, places=2) == "0 H/s"
+    assert fmt_hps(999, places=2) == "999 H/s"
+    assert fmt_hps(2500, places=2) == "2.50 kH/s"
+    assert fmt_hps(28460000000, places=2) == "28.46 GH/s"
 
 
 def test_agents_info_modal_shows_benchmarks(app, client):

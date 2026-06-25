@@ -17,6 +17,7 @@ from sqlalchemy import text
 import hashview
 from hashview.agents.forms import AgentsForm
 from hashview.models import AgentBenchmarks, Agents, JobTasks, db
+from hashview.utils.audit import log_event
 from hashview.utils.hashcat_modes import (
     HASH_TYPE_CHOICES,
     KERBEROS_HASH_TYPE_CHOICES,
@@ -139,11 +140,12 @@ def agents_benchmark_all():
         flash('Security check failed (invalid or missing CSRF token).', 'danger')
         return redirect(url_for('agents.agents_list'))
 
-    AgentBenchmarks.query.delete()
+    n = AgentBenchmarks.query.delete()
     if not try_commit('flush agent benchmarks'):
         flash('Could not reset benchmarks; please try again.', 'danger')
         return redirect(url_for('agents.agents_list'))
 
+    log_event('agent.benchmarks.reset', detail=f'rows={n}')
     flash('Benchmarks reset — agents will re-benchmark on their next check-in.', 'success')
     return redirect(url_for('agents.agents_list'))
 

@@ -163,6 +163,27 @@ def test_agents_benchmark_all_commit_failure_flashes(app, client):
     assert b"Could not reset benchmarks" in resp.data
 
 
+def test_agents_benchmark_all_audit_logs_reset(app, client, monkeypatch):
+    """The benchmark flush is a destructive admin action and must be audited
+    (agent.benchmarks.reset) with the deleted row count, after a successful commit."""
+    calls = []
+    monkeypatch.setattr("hashview.agents.routes.log_event",
+                        lambda *a, **k: calls.append((a, k)))
+    admin = make_admin()
+    login(client, admin)
+    a = _agent(status="Idle", uuid="bench-audit-u")
+    db.session.add_all([
+        AgentBenchmarks(agent_id=a.id, hash_type=1000, speed=123),
+        AgentBenchmarks(agent_id=a.id, hash_type=1800, speed=456),
+    ])
+    db.session.commit()
+
+    resp = client.post("/agents/benchmark", follow_redirects=False)
+    assert resp.status_code == 302
+    assert calls == [(("agent.benchmarks.reset",), {"detail": "rows=2"})]
+    assert AgentBenchmarks.query.count() == 0
+
+
 def test_agents_delete_commit_failure_flashes(app, client):
     """If the agent delete can't commit, the route flashes an error rather than
     silently dropping the request."""

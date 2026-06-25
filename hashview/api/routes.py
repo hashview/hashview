@@ -236,9 +236,9 @@ def _task_runtime_exceeded(job_id, task_id, max_hours):
 
 
 def _cancel_task_group(job_id, task_id):
-    """Cancel every still-active chunk of a (job, task) group (the running chunk
-    plus any queued/importing siblings), so an over-limit task stops entirely and
-    no further chunk of it gets dispatched."""
+    """Cancel every still-active chunk of a (job, task) group (see
+    _ACTIVE_JOBTASK_STATUSES), so an over-limit task stops entirely and no
+    further chunk of it gets dispatched."""
     for jt in JobTasks.query.filter_by(job_id=job_id, task_id=task_id).all():
         if jt.status in _ACTIVE_JOBTASK_STATUSES:
             update_job_task_status(jt.id, 'Canceled')

@@ -2,7 +2,8 @@
 
 Adds:
   - agent_benchmarks table (per-agent, per-hash_type hashcat speed)
-  - job_tasks.chunk_no / job_tasks.chunk_total (a chunk is a JobTasks row)
+  - job_tasks.chunk_no / chunk_total / chunk_skip / chunk_limit / chunk_mask
+    (a chunk is a JobTasks row; skip/limit/mask store its keyspace slice)
   - settings.enabled_chunking / settings.chunk_target_duration
 
 Revision ID: 32eb61afc767

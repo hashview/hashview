@@ -530,6 +530,9 @@ def v1_api_post_agent_benchmark():
         try:
             m = int(mode)
         except (TypeError, ValueError):
+            current_app.logger.debug(
+                'Agent %s benchmark pre-scan: non-integer mode %r; skipping.',
+                agent.id, mode)
             continue
         if not slowest_benchmark(m):
             pending.add(m)
@@ -539,7 +542,12 @@ def v1_api_post_agent_benchmark():
             mode_i = int(mode)
             speed_i = int(float(speed))
         except (TypeError, ValueError):
-            continue  # skip an unparseable entry rather than failing the batch
+            # skip an unparseable entry rather than failing the batch, but leave a
+            # trace so a misbehaving agent is diagnosable
+            current_app.logger.warning(
+                'Agent %s sent an unparseable benchmark entry %r=%r; skipping.',
+                agent.id, mode, speed)
+            continue
         row = AgentBenchmarks.query.filter_by(agent_id=agent.id, hash_type=mode_i).first()
         if row:
             row.speed = speed_i

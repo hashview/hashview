@@ -37,14 +37,9 @@
                 {% for hash in hashes %}
                 <tr>
                     <td class="center" style="vertical-align:middle;">
-                        {% set has_notification = namespace(value=0) %}
-                        {% for entry in existing_hash_notifications %}
-                            {% if entry.hash_id |string() == hash[0] |string() %}
-                                {% set has_notification.value = 1 %}
-                                <input class="hv-check" type="checkbox" name='selected' value="{{hash[0]}}" checked>
-                            {% endif %}
-                        {% endfor %}
-                        {% if has_notification.value == 0 %}
+                        {% if hash[0] in notified_ids %}
+                            <input class="hv-check" type="checkbox" name='selected' value="{{hash[0]}}" checked>
+                        {% else %}
                             <input class="hv-check" type="checkbox" name='selected' value="{{hash[0]}}">
                         {% endif %}
                     </td>

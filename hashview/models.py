@@ -255,10 +255,10 @@ class Agents(db.Model):
 class AgentBenchmarks(db.Model):
     """Per-(agent, hash_type) hashcat benchmark used to size task chunks.
 
-    `speed` is raw hashes/sec summed across the agent's devices, parsed from
-    `hashcat -b -m <mode> --machine-readable`. The chunk planner sizes chunks
-    from the SLOWEST agent's speed for the job's hash_type. One row per
-    (agent, hash_type); re-running a benchmark upserts the row.
+    `speed` is raw hashes/sec summed across the agent's devices, parsed from the
+    per-device `Speed.#N..........: <n> H/s` lines of `hashcat -b -m <mode>`. The
+    chunk planner sizes chunks from the SLOWEST agent's speed for the job's
+    hash_type. One row per (agent, hash_type); re-running a benchmark upserts the row.
     """
 
     id = db.Column(db.Integer, primary_key=True)

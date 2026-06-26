@@ -860,7 +860,7 @@ def _seed_queued_job(owner):
 def test_jobs_start_admin_queued_job_returns_200(client, admin_user, monkeypatch):
     """POST /v1/jobs/start/<id> for an owner+Ready job succeeds."""
     import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "build_hashcat_command", lambda job_id, task_id: "hc cmd")
+    monkeypatch.setattr(routes_mod, "build_job_task_commands", lambda job: None)
 
     job = _seed_queued_job(admin_user)
 
@@ -875,7 +875,7 @@ def test_jobs_start_admin_queued_job_returns_200(client, admin_user, monkeypatch
 def test_jobs_start_non_owner_non_admin_returns_403(client, admin_user, regular_user, monkeypatch):
     """POST /v1/jobs/start/<id> by a non-owner non-admin returns 403."""
     import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "build_hashcat_command", lambda job_id, task_id: "hc cmd")
+    monkeypatch.setattr(routes_mod, "build_job_task_commands", lambda job: None)
 
     job = _seed_queued_job(admin_user)
 

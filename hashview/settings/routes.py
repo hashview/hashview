@@ -74,6 +74,8 @@ def settings_list():
             settings.max_runtime_jobs = hashview_form.max_runtime_jobs.data
             settings.max_runtime_tasks = hashview_form.max_runtime_tasks.data
             settings.enabled_job_weights = hashview_form.enabled_job_weights.data
+            settings.enabled_chunking = hashview_form.enabled_chunking.data
+            settings.chunk_target_duration = hashview_form.chunk_target_duration.data
             settings.crawl_min_word_length = hashview_form.crawl_min_word_length.data
             settings.crawl_user_agent = hashview_form.crawl_user_agent.data
             settings.crawl_force_lowercase = hashview_form.crawl_force_lowercase.data
@@ -113,6 +115,8 @@ def settings_list():
             hashview_form.max_runtime_jobs.data = settings.max_runtime_jobs
             hashview_form.max_runtime_tasks.data = settings.max_runtime_tasks
             hashview_form.enabled_job_weights.data = settings.enabled_job_weights
+            hashview_form.enabled_chunking.data = settings.enabled_chunking
+            hashview_form.chunk_target_duration.data = settings.chunk_target_duration
             hashview_form.crawl_min_word_length.data = settings.crawl_min_word_length
             hashview_form.crawl_user_agent.data = settings.crawl_user_agent
             hashview_form.crawl_force_lowercase.data = settings.crawl_force_lowercase

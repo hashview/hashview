@@ -19,6 +19,10 @@ class HashviewSettingsForm(FlaskForm):
     max_runtime_jobs = StringField('Maximum runtime per Job in hours. (0 = infinate)', validators=[DataRequired()])
     max_runtime_tasks = StringField('Maximum runtime per Task in hours. (0 = infinate)', validators=[DataRequired()])
     enabled_job_weights = BooleanField('Allow users to set job priority during job creations.')
+    # Task chunking
+    enabled_chunking = BooleanField('Split tasks into smaller chunks across agents (sized from agent benchmarks).')
+    chunk_target_duration = IntegerField('Target chunk runtime in seconds (on the slowest agent).',
+                                         validators=[DataRequired(), NumberRange(min=1, max=2147483647)])
     # Website-keywords crawler settings
     crawl_min_word_length = IntegerField('Minimum word length', validators=[DataRequired(), NumberRange(min=1, max=65535)])
     crawl_user_agent = StringField('Crawler user-agent', validators=[DataRequired()])

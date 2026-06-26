@@ -188,6 +188,71 @@ def test_no_loopback_for_non_straight_modes(app, attackmode, extra):
     assert "--loopback" not in cmd
 
 
+@pytest.mark.security
+def test_no_loopback_when_chunked(app):
+    """--loopback is mutually exclusive with --limit in hashcat, so a chunked
+    slice (which carries --skip/--limit) must omit --loopback even on -a 0 + rule."""
+    user = _make_user()
+    wl = _wordlist(user)
+    rule = _rule(user)
+    _, job, task = _build(user, attackmode=0, wl=wl, rule_id=rule.id, loopback=True)
+    # whole task still emits --loopback
+    assert "--loopback" in build_hashcat_command(job.id, task.id)
+    # a chunk slice drops --loopback and adds --skip/--limit
+    chunked = build_hashcat_command(job.id, task.id, chunk={"skip": 0, "limit": 50},
+                                    job_task_id=999)
+    assert "--loopback" not in chunked
+    assert "--skip 0 --limit 50" in chunked
+
+
+# ---------------------------------------------------------------------------
+# Chunked commands: mask-mode sub-mask override + per-jobtask temp file keying
+# ---------------------------------------------------------------------------
+
+
+def test_mask_chunk_overrides_task_mask(app):
+    """A mask chunk ({'mask': ...}) runs its sub-mask in place of the task's mask
+    (mask base-loop modes 3/7) and never carries --skip/--limit."""
+    user = _make_user()
+    task_mask = "?d?d?d?d"
+    _, job, task = _build(user, attackmode=3, mask=task_mask)
+    # whole task runs the task's own mask
+    assert build_hashcat_command(job.id, task.id).endswith(task_mask)
+    # a mask chunk substitutes its sub-mask for the task mask
+    chunked = build_hashcat_command(job.id, task.id, chunk={"mask": "00?d?d"},
+                                    job_task_id=42)
+    assert chunked.endswith("00?d?d")
+    assert "-a 3 " in chunked
+    assert task_mask not in chunked          # original mask fully replaced
+    assert "--skip" not in chunked and "--limit" not in chunked
+
+
+def test_chunk_temp_files_keyed_on_job_task_id(app):
+    """job_task_id keys the per-run temp files so two chunks of one task never
+    collide on target/outfile/potfile; omitting it falls back to task_id."""
+    user = _make_user()
+    wl = _wordlist(user)
+    rule = _rule(user)
+    _, job, task = _build(user, attackmode=0, wl=wl, rule_id=rule.id)
+
+    # whole task (no job_task_id) -> files keyed on task_id
+    whole = build_hashcat_command(job.id, task.id)
+    for tmpl in ("control/hashes/hashfile_%d_%d.txt",
+                 "control/outfiles/hc_cracked_%d_%d.txt",
+                 "control/outfiles/hc_potfile_%d_%d.pot"):
+        assert tmpl % (job.id, task.id) in whole
+
+    # two chunks with distinct job_task_ids never share a file name
+    c1 = build_hashcat_command(job.id, task.id, chunk={"skip": 0, "limit": 5},
+                               job_task_id=101)
+    c2 = build_hashcat_command(job.id, task.id, chunk={"skip": 5, "limit": 5},
+                               job_task_id=202)
+    assert ("control/outfiles/hc_cracked_%d_101.txt" % job.id) in c1
+    assert ("control/outfiles/hc_cracked_%d_202.txt" % job.id) in c2
+    assert ("control/hashes/hashfile_%d_101.txt" % job.id) in c1
+    assert ("control/outfiles/hc_potfile_%d_202.pot" % job.id) in c2
+
+
 # ---------------------------------------------------------------------------
 # Routes persist / clear Tasks.loopback
 # ---------------------------------------------------------------------------

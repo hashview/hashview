@@ -80,10 +80,10 @@ if not os.path.exists('agent/config.conf'):
         print('Error: You must provide a port. By default Hashview Server runs on 8443: ')
         port = input("Enter the port of the hashview server: ")
     use_tls = input('Does the Hashview server use SSL/TLS? [y/N]:')
-    if use_tls == 'y' or use_tls == 'Y':
-        use_tls = True
-    else:
-        use_tls = False
+    # Accept y / yes / true (any case) as yes; anything else is no. Stored as the
+    # string 'True'/'False'. (Previously only an exact 'y'/'Y' counted, so 'yes'
+    # silently became no -> the agent then spoke plain HTTP to a TLS port.)
+    use_tls = str(use_tls).strip().lower() in ('y', 'yes', 'true', 't', '1')
 
     hostname = socket.gethostname()
     name = input('Enter the name of this Hashview Agent [Hit Enter for: ' + hostname + ']: ')
@@ -96,8 +96,10 @@ if not os.path.exists('agent/config.conf'):
     hashcat_path = input('Enter the path to a local install of hashcat: ')
     while not os.path.exists(hashcat_path):
         print("Error: File not found.")
-        hashcat_path = input('Enter the path to a local install of hashcat: ')    
+        hashcat_path = input('Enter the path to a local install of hashcat: ')
 
+    hc_extra_args = input('Optional: extra hashcat arguments for this agent, '
+                          'e.g. -d 3,4 (leave blank for none): ').strip()
 
     # Write config file
     config = open("agent/config.conf", "w")
@@ -110,11 +112,12 @@ if not os.path.exists('agent/config.conf'):
     config.write("name = " + str(name) + "\n")
     config.write("uuid = " + str(agent_uuid) + "\n")
     config.write("HC_BIN_PATH = " + str(hashcat_path) + "\n")
+    config.write("HC_EXTRA_ARGS = " + str(hc_extra_args) + "\n")
 
     config.close()
 
-from agent.api import api    
-    
+from agent.api import api
+
 def run_command(command):
     try:
         cmd = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -425,10 +428,61 @@ def download_hashfile(job_id, jobtask_id, hashfile_id):
 
 def replaceHashcatBinPath(cmd):
     from agent.config import Config
-    return cmd.replace('@HASHCATBINPATH@', Config.HC_BIN_PATH)
+    # HC_BIN_PATH is the bare binary; append any host-specific HC_EXTRA_ARGS
+    # (e.g. '-d 3,4') after it. The crack command runs via shell=True, so the
+    # shell re-parses this string into binary + flags.
+    binpath = Config.HC_BIN_PATH
+    extra = (getattr(Config, 'HC_EXTRA_ARGS', '') or '').strip()
+    if extra:
+        binpath = binpath + ' ' + extra
+    return cmd.replace('@HASHCATBINPATH@', binpath)
 
 def run_hashcat(cmd):
     run_command(cmd)
+
+BENCHMARK_TIMEOUT = 1200  # seconds, per hash mode
+
+
+def run_benchmark(hash_modes):
+    """Run `hashcat -b -m <mode>` for each requested mode and report H/s back.
+
+    Triggered by a heartbeat reply of msg='BENCHMARK'. The server uses these
+    per-(agent, hash type) speeds to size task chunks for the slowest agent.
+    """
+    from agent.bench import parse_benchmark_speed, parse_hc_extra_args
+    from agent.config import Config
+    # Apply host-specific args (e.g. '-d 3,4') to the benchmark too, so the
+    # measured rate reflects the same devices that will run the crack.
+    hc_args = parse_hc_extra_args(getattr(Config, 'HC_EXTRA_ARGS', ''))
+    results = {}
+    for mode in hash_modes or []:
+        LOG.info('Benchmarking hash mode %s...', mode)
+        try:
+            # stdout/stderr=PIPE (not capture_output=) so this works on Python 3.6,
+            # which agents in the field still run; capture_output was added in 3.7.
+            # nosec B603 - fixed argv (no shell); binary is the operator-set
+            # Config.HC_BIN_PATH and args are local config / numeric hash modes.
+            proc = subprocess.run(  # noqa: UP022  # nosec B603
+                [Config.HC_BIN_PATH, *hc_args, '-b', '-m', str(mode)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=BENCHMARK_TIMEOUT)
+        except Exception:
+            LOG.exception('Benchmark failed for hash mode %s; skipping.', mode)
+            continue
+        output = ((proc.stdout or b'').decode('utf-8', 'replace')
+                  + (proc.stderr or b'').decode('utf-8', 'replace'))
+        speed = parse_benchmark_speed(output)
+        if speed is None:
+            LOG.warning('Could not parse a benchmark speed for hash mode %s.', mode)
+            continue
+        results[str(mode)] = speed
+        LOG.info('Hash mode %s benchmark: %s H/s', mode, speed)
+    if results:
+        report_benchmark(results)
+
+
+def report_benchmark(results):
+    return api.report_benchmark(results)
     #os.system(cmd)
 
 def time_difference(future_timestamp):
@@ -482,6 +536,7 @@ def convert_speed(speed):
         return str(speed) + " H/s"
 
 def hashcatParser(filepath):
+    from agent.bench import parse_device_info
     status = {}
     # hashcat's stdout can contain arbitrary non-UTF-8 bytes (recovered plaintext
     # / candidate bytes). We only need the ASCII --status-json lines, so decode
@@ -499,6 +554,10 @@ def hashcatParser(filepath):
                 status['Recovered'] = (str(json_data['recovered_hashes'][0]) + "/"
                                        + str(json_data['recovered_hashes'][1]))
                 status['Speed #'] = convert_speed(sum(d['speed'] for d in json_data['devices']))
+                gpu_count, gpu_model, temps = parse_device_info(json_data)
+                status['GPU_Count'] = gpu_count
+                status['GPU_Model'] = gpu_model
+                status['Temps'] = temps
             except (ValueError, KeyError, IndexError, TypeError) as err:
                 LOG.debug('Skipping unparseable hashcat status line: %s', err)
     return status
@@ -581,7 +640,10 @@ def maybe_update_dynamic_wordlist(task):
 
 def upload_cracks(job, job_task):
     """Upload the hashcat crack file for this job task, if any cracks exist yet."""
-    crack_file = 'control/outfiles/hc_cracked_' + str(job['id']) + '_' + str(job_task['task_id']) + '.txt'
+    # Chunked tasks name temp files by JobTask id (to avoid collisions between
+    # chunks of one task); whole tasks keep the legacy job+task id naming.
+    file_key = job_task['id'] if job_task.get('chunk_total') else job_task['task_id']
+    crack_file = 'control/outfiles/hc_cracked_' + str(job['id']) + '_' + str(file_key) + '.txt'
     if not os.path.exists(crack_file):
         LOG.debug('No results yet for job task %s; nothing to upload.', job_task['id'])
         return
@@ -603,12 +665,22 @@ def monitor_hashcat(thread, job, job_task):
                      hc_status.get('Recovered', '?'),
                      hc_status.get('Speed #', '?'),
                      hc_status.get('Time_Estimated', '?'))
-        if send_heartbeat('Working', hc_status)['msg'] == 'Canceled':
-            LOG.info('Server canceled this task; stopping hashcat.')
-            pid = getHashcatPid()
-            if pid:
-                killHashcat(pid)
-        upload_cracks(job, job_task)
+        # A transient server outage (e.g. a restart) raised here must NOT kill the
+        # monitor loop -- that would orphan the still-running hashcat (no status,
+        # no final upload, task never Completed). Log and retry on the next poll;
+        # the HTTP layer already retries through brief outages, this catches the
+        # rest. We keep looping as long as hashcat is alive.
+        try:
+            if send_heartbeat('Working', hc_status)['msg'] == 'Canceled':
+                LOG.info('Server canceled this task; stopping hashcat.')
+                pid = getHashcatPid()
+                if pid:
+                    killHashcat(pid)
+            upload_cracks(job, job_task)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception:
+            LOG.exception('Status report/upload failed this poll; retrying next cycle.')
 
 
 def run_assigned_task(job_task_id):
@@ -625,8 +697,11 @@ def run_assigned_task(job_task_id):
     maybe_update_dynamic_wordlist(tasks(job_task['task_id']))
 
     job = jobs(job_task['job_id'])
-    # Hashfile name is generated to match what the job task command expects.
-    download_hashfile(job['id'], job_task['task_id'], job['hashfile_id'])
+    # Name the hashfile to match the server-built command's target file: chunks
+    # are keyed by JobTask id (so chunks of one task never collide); whole tasks
+    # keep the legacy job+task id naming so existing agents stay compatible.
+    file_key = job_task['id'] if job_task.get('chunk_total') else job_task['task_id']
+    download_hashfile(job['id'], file_key, job['hashfile_id'])
 
     cmd = (replaceHashcatBinPath(job_task['command'])
            + ' --status-json | tee control/outfiles/hcoutput_'
@@ -649,13 +724,18 @@ def handle_heartbeat():
     """One heartbeat cycle: report this agent's status and act on the reply."""
     if getHashcatPid():
         # A hashcat run is already in flight (e.g. it outlived an agent restart).
-        if send_heartbeat('Working', 'somevalue')['msg'] == 'Canceled':
+        # We're not monitoring that process here, so we have no hc_status to report
+        # -- send an empty one (the server skips the telemetry parse for a blank
+        # value) rather than a placeholder it would fail to JSON-decode.
+        if send_heartbeat('Working', '')['msg'] == 'Canceled':
             LOG.info('Server canceled the running task.')
         return
 
     response = send_heartbeat('Idle', '')
     if response['msg'] == 'Go Away':
         LOG.warning('This agent is not authorized on the server. Ask a Hashview admin to approve it.')
+    elif response['msg'] == 'BENCHMARK':
+        run_benchmark(response.get('hash_modes', []))
     elif response['msg'] == 'START':
         run_assigned_task(response['job_task_id'])
 

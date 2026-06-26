@@ -17,6 +17,7 @@ from sqlalchemy.ext.declarative import DeclarativeMeta
 
 import hashview
 from hashview.models import (
+    AgentBenchmarks,
     Agents,
     Customers,
     Hashes,
@@ -34,12 +35,13 @@ from hashview.models import (
 )
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
-    build_hashcat_command,
+    build_job_task_commands,
     compress_to_gz,
     decompress_gz,
     get_filehash,
     get_linecount,
     get_md5_hash,
+    hashtypes_in_use,
     hexplain_to_text,
     import_hashfilehashes,
     ingest_static_wordlist_file,
@@ -47,6 +49,8 @@ from hashview.utils.utils import (
     notify_admins,
     ntlm_hash_hex,
     process_recovered_hash_notifications,
+    rechunk_queued_tasks_for_hashtype,
+    slowest_benchmark,
     text_from_field,
     update_dynamic_wordlist,
     update_job_task_status,
@@ -201,14 +205,70 @@ def v1_api_get_admin_settings():
         'status': 200,
         'settings': json.dumps(settings, cls=AlchemyEncoder)
     }
-    return jsonify(message)    
+    return jsonify(message)
+
+# Active chunk statuses -- work that is in flight or still pending for a task.
+_ACTIVE_JOBTASK_STATUSES = ('Running', 'Queued', 'Not Started', 'Importing')
+
+
+def _parent_task_started_at(job_id, task_id):
+    """Earliest started_at across all chunks of a (job, task) group -- i.e. when
+    the parent task first began processing. None if nothing has started yet.
+
+    A task can fan out into many chunks that run in parallel on different agents,
+    so the per-chunk started_at can't bound the task's total runtime; the group's
+    MIN(started_at) is the real start. A whole, un-chunked task is just a group of
+    one, so this returns its own started_at."""
+    return (db.session.query(func.min(JobTasks.started_at))
+            .filter(JobTasks.job_id == job_id,
+                    JobTasks.task_id == task_id,
+                    JobTasks.started_at.isnot(None))
+            .scalar())
+
+
+def _task_runtime_exceeded(job_id, task_id, max_hours):
+    """True if the parent task has been running longer than max_hours (wall-clock
+    from the earliest chunk start). 0/None disables the cap."""
+    if not max_hours or max_hours <= 0:
+        return False
+    started = _parent_task_started_at(job_id, task_id)
+    return started is not None and started + timedelta(hours=max_hours) < datetime.now()
+
+
+def _cancel_task_group(job_id, task_id):
+    """Cancel every still-active chunk of a (job, task) group (see
+    _ACTIVE_JOBTASK_STATUSES), so an over-limit task stops entirely and no
+    further chunk of it gets dispatched."""
+    current_app.logger.info(
+        'Job %s task %s exceeded max_runtime_tasks; cancelling its active chunks.',
+        job_id, task_id)
+    for jt in JobTasks.query.filter_by(job_id=job_id, task_id=task_id).all():
+        if jt.status in _ACTIVE_JOBTASK_STATUSES:
+            update_job_task_status(jt.id, 'Canceled')
+
+
+def _hashfile_has_uncracked(hashfile_id):
+    """True if the hashfile still has at least one uncracked hash left to solve."""
+    return (db.session.query(HashfileHashes.id)
+            .join(Hashes, Hashes.id == HashfileHashes.hash_id)
+            .filter(HashfileHashes.hashfile_id == hashfile_id, Hashes.cracked == 0)
+            .first() is not None)
+
+
+def _cancel_job_active_tasks(job_id):
+    """Cancel every still-active task/chunk of a job. Used when the whole hashfile
+    is recovered (nothing left to crack) or for one-and-done jobs -- running the
+    rest would just burn cycles on an already-solved hashfile. Cancelling the last
+    active task lets update_job_task_status roll the job up to Completed."""
+    for jt in JobTasks.query.filter_by(job_id=job_id).all():
+        if jt.status in _ACTIVE_JOBTASK_STATUSES:
+            update_job_task_status(jt.id, 'Canceled')
+
 
 @api.route('/v1/agents/heartbeat', methods=['POST'])
 def v1_api_set_agent_heartbeat():
     # Get uuid
     uuid = request.cookies.get('uuid')
-    if not versionCheck(request.cookies.get('agent_version')):
-        return redirect("/v1/upgrade_required")
 
     settings = Settings.query.first()
 
@@ -231,6 +291,14 @@ def v1_api_set_agent_heartbeat():
         return jsonify(message)
 
     else:
+        # The version gate applies to KNOWN agents (they're about to sync/work).
+        # A brand-new agent is registered as Pending above regardless of version,
+        # so a freshly stood-up (or behind) agent always lands in the agents table
+        # for an admin to approve instead of being turned away before it's ever
+        # recorded (which left it invisible — not even a DB row).
+        if not versionCheck(request.cookies.get('agent_version')):
+            update_heartbeat(uuid)
+            return redirect("/v1/upgrade_required")
         update_heartbeat(uuid)
         if agent.status == 'Pending':
             # Agent exists, but has not ben activated. Update heartbeet and turn agent away
@@ -273,8 +341,15 @@ def v1_api_set_agent_heartbeat():
                     }
                     return jsonify(message)
 
-                if settings.max_runtime_tasks > 0 and job_task.started_at is not None and job_task.started_at + timedelta(hours=settings.max_runtime_tasks) < datetime.now():
-                    update_job_task_status(job_task.id, 'Canceled')
+                # Enforce max_runtime_tasks on the PARENT task, not each chunk.
+                # Chunks run in parallel, so summing their runtimes overcounts;
+                # measure from the earliest chunk start of this (job, task) group
+                # and, when over the cap, cancel the whole group's still-active
+                # chunks. A whole, un-chunked task is a group of one, so it's still
+                # capped exactly as before.
+                if _task_runtime_exceeded(job_task.job_id, job_task.task_id,
+                                          settings.max_runtime_tasks):
+                    _cancel_task_group(job_task.job_id, job_task.task_id)
                     message = {
                         'status': 200,
                         'type': 'message',
@@ -301,11 +376,30 @@ def v1_api_set_agent_heartbeat():
                     return jsonify(message)
                 
                 if agent_data['hc_status']:
-                    agent.hc_status = agent_data['agent_status']
-                    hc_status = str(agent_data['hc_status']).replace("\'", "\"")
-                    json_response = json.loads(hc_status)
-                    agent.benchmark = json_response['Speed #']
-                    agent.hc_status = str(agent_data['hc_status']).replace("\'", "\"")
+                    # hc_status is hashcat's status dict rendered by the agent (Python
+                    # repr -> JSON). Only json.loads is in the try: a malformed value
+                    # (e.g. a non-JSON placeholder from an agent whose hashcat outlived
+                    # a restart) must never 500 the heartbeat -- log and skip telemetry.
+                    # Missing keys are tolerated via .get below.
+                    raw = str(agent_data['hc_status']).replace("\'", "\"")
+                    try:
+                        json_response = json.loads(raw)
+                    except (ValueError, TypeError):
+                        current_app.logger.warning(
+                            'Heartbeat from agent %s had unparseable hc_status; '
+                            'skipping telemetry update.', uuid)
+                    else:
+                        agent.hc_status = raw
+                        if json_response.get('Speed #') is not None:
+                            agent.benchmark = json_response['Speed #']
+                        # Device telemetry: RETAINED across idle so the agents page can
+                        # show a card's model/count/temps even when not cracking.
+                        if json_response.get('GPU_Count') is not None:
+                            agent.gpu_count = json_response['GPU_Count']
+                        if json_response.get('GPU_Model'):
+                            agent.gpu_model = json_response['GPU_Model']
+                        if json_response.get('Temps'):
+                            agent.gpu_temps = json_response['Temps']
 
                 db.session.commit()
 
@@ -323,21 +417,76 @@ def v1_api_set_agent_heartbeat():
                         'job_task_id': already_assigned_task.id
                     }
                     return jsonify(message)
-                else:
-                    # Get first unassigned jobtask and 'assign' it to this agent
-                    job_task_entry = JobTasks.query.filter_by(status = 'Queued').order_by(JobTasks.priority.desc(), JobTasks.id).first()
-                    if job_task_entry:
-                        job_task_entry.agent_id = agent.id
-                        job_task_entry.status = 'Running'
-                        job_task_entry.started_at = datetime.now()
-                        db.session.commit()
+
+                # Benchmark-first: chunk sizing needs a per-hashtype benchmark from
+                # every agent. If this agent is missing one for any hash type
+                # currently in use, have it benchmark those BEFORE taking crack work
+                # (results come back via POST /v1/agents/benchmark). New hash types
+                # introduced later are picked up automatically here.
+                have = {b.hash_type for b in
+                        AgentBenchmarks.query.filter_by(agent_id=agent.id).all()}
+                missing = sorted(hashtypes_in_use() - have)
+                if missing:
+                    update_heartbeat(uuid)
+                    message = {
+                        'status': 200,
+                        'type': 'message',
+                        'msg': 'BENCHMARK',
+                        'hash_modes': missing,
+                    }
+                    return jsonify(message)
+
+                # Get the next Queued chunk and 'assign' it to this agent. Order so
+                # ALL chunks of a task are exhausted before the next task starts: by
+                # priority, then the task's first (lowest) JobTask id — chunk 1 reuses
+                # the original row's low id, so min(id) per (job, task) is the job's
+                # task order — then chunk number within the task. Ordering by raw id
+                # alone interleaves tasks (every task's chunk 1, then the chunk 2s, …)
+                # because chunks 2..N are created later and get higher ids.
+                task_first = (db.session.query(
+                                  JobTasks.job_id.label('job_id'),
+                                  JobTasks.task_id.label('task_id'),
+                                  func.min(JobTasks.id).label('first_id'))
+                              .group_by(JobTasks.job_id, JobTasks.task_id)
+                              .subquery())
+                job_task_entry = (db.session.query(JobTasks)
+                                  .join(task_first,
+                                        (JobTasks.job_id == task_first.c.job_id)
+                                        & (JobTasks.task_id == task_first.c.task_id))
+                                  .filter(JobTasks.status == 'Queued')
+                                  .order_by(JobTasks.priority.desc(),
+                                            task_first.c.first_id.asc(),
+                                            JobTasks.chunk_no.asc(),
+                                            JobTasks.id.asc())
+                                  .first())
+                if job_task_entry:
+                    # Don't start a fresh chunk of a task that's already over its
+                    # runtime cap. This closes the gap where, at the cap moment, no
+                    # chunk happened to be running (all just completed, only queued
+                    # left), so the Working-heartbeat check couldn't fire. Cancel the
+                    # whole group and let the next beat pick a different task.
+                    if _task_runtime_exceeded(job_task_entry.job_id,
+                                              job_task_entry.task_id,
+                                              settings.max_runtime_tasks):
+                        _cancel_task_group(job_task_entry.job_id, job_task_entry.task_id)
+                        update_heartbeat(uuid)
                         message = {
                             'status': 200,
                             'type': 'message',
-                            'msg': 'START',
-                            'job_task_id': job_task_entry.id
+                            'msg': 'OK'
                         }
                         return jsonify(message)
+                    job_task_entry.agent_id = agent.id
+                    job_task_entry.status = 'Running'
+                    job_task_entry.started_at = datetime.now()
+                    db.session.commit()
+                    message = {
+                        'status': 200,
+                        'type': 'message',
+                        'msg': 'START',
+                        'job_task_id': job_task_entry.id
+                    }
+                    return jsonify(message)
                 update_heartbeat(uuid)
                 message = {
                     'status': 200,
@@ -353,6 +502,68 @@ def v1_api_set_agent_heartbeat():
                     'msg': 'OK'
                 }
                 return jsonify(message)
+
+@api.route('/v1/agents/benchmark', methods=['POST'])
+def v1_api_post_agent_benchmark():
+    # Agent reports hashcat benchmark speeds (raw H/s) per hash mode. Upsert one
+    # row per (agent, hash_type); re-running a benchmark overwrites the old value.
+    if not is_authorized(user=False, agent=True, request=request):
+        return redirect("/v1/not_authorized")
+
+    update_heartbeat(request.cookies.get('uuid'))
+    agent = Agents.query.filter_by(uuid=request.cookies.get('uuid')).first()
+
+    data = request.get_json(silent=True)
+    if not data or 'benchmark_results' not in data:
+        return jsonify({
+            'status': 400,
+            'type': 'Error',
+            'msg': 'Missing benchmark_results in request body'
+        })
+
+    results = data['benchmark_results'] or {}
+    # Hash types with no usable benchmark BEFORE this report. If this report gives
+    # one its first usable speed, queued whole tasks of that type can now be split
+    # (jobs queued for a brand-new type while every agent was busy ran un-chunked).
+    pending = set()
+    for mode in results:
+        try:
+            m = int(mode)
+        except (TypeError, ValueError):
+            current_app.logger.debug(
+                'Agent %s benchmark pre-scan: non-integer mode %r; skipping.',
+                agent.id, mode)
+            continue
+        if not slowest_benchmark(m):
+            pending.add(m)
+
+    for mode, speed in results.items():
+        try:
+            mode_i = int(mode)
+            speed_i = int(float(speed))
+        except (TypeError, ValueError):
+            # skip an unparseable entry rather than failing the batch, but leave a
+            # trace so a misbehaving agent is diagnosable
+            current_app.logger.warning(
+                'Agent %s sent an unparseable benchmark entry %r=%r; skipping.',
+                agent.id, mode, speed)
+            continue
+        row = AgentBenchmarks.query.filter_by(agent_id=agent.id, hash_type=mode_i).first()
+        if row:
+            row.speed = speed_i
+            row.updated_at = datetime.now()
+        else:
+            db.session.add(AgentBenchmarks(
+                agent_id=agent.id, hash_type=mode_i, speed=speed_i,
+                updated_at=datetime.now()))
+    db.session.commit()
+
+    # Now that benchmarks for these types may exist, re-plan any still-queued whole
+    # tasks of theirs into chunks (no-op if the type is still unusable / nothing queued).
+    for m in pending:
+        rechunk_queued_tasks_for_hashtype(m)
+
+    return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
 
 @api.route('/v1/customers', methods=['GET'])
 def v1_api_get_customers():
@@ -867,10 +1078,7 @@ def v1_api_post_start_job(job_id):
         if current_user.admin or job.owner_id == current_user.id:
             job.status = 'Queued'
             job.queued_at = datetime.now()
-            for job_task in job_tasks:
-                job_task.status = 'Queued'
-                job_task.priority = job.priority
-                job_task.command = build_hashcat_command(job.id, job_task.task_id)
+            build_job_task_commands(job)
 
             db.session.commit()
             return jsonify  ({
@@ -1322,14 +1530,18 @@ def v1_api_post_jobtask_crackfile_upload(job_task_id):
     # Send per-hash "recovered" notifications (email/push/slack) for any now-cracked watched hash.
     process_recovered_hash_notifications()
 
-    # Check if job type is one and done
-    if job.limit_recovered and recovered_at_least_one_hash:
-
-        # cancel all running and queued job tasks
-        jobtasks = JobTasks.query.filter_by(job_id=job.id)
-        for jobtask in jobtasks:
-            update_job_task_status( jobtask_id = jobtask.id,
-                                    status = 'Canceled')
+    # Stop the job when there's nothing left to crack. One-and-done jobs stop after
+    # the first recovery; ANY job stops once its hashfile is fully recovered --
+    # continuing to run the remaining chunks/tasks would just burn cycles on a
+    # solved hashfile. Cancelling the still-active tasks lets update_job_task_status
+    # roll the job up to Completed. Gated on a fresh recovery so the (cheap)
+    # "any uncracked left?" check only runs when the recovery state changed.
+    if recovered_at_least_one_hash and (
+            job.limit_recovered or not _hashfile_has_uncracked(job.hashfile_id)):
+        reason = ('one-and-done (limit_recovered)' if job.limit_recovered
+                  else 'hashfile fully recovered')
+        current_app.logger.info('Job %s: cancelling remaining tasks (%s).', job.id, reason)
+        _cancel_job_active_tasks(job.id)
 
     message = {
         'status': 200,

@@ -13,3 +13,6 @@ class Config:
     NAME = file_config['AGENT']['NAME']
     UUID = file_config['AGENT']['UUID']
     HC_BIN_PATH = file_config['AGENT']['HC_BIN_PATH']
+    # Optional host-specific hashcat args (e.g. '-d 3,4' to pin GPUs); applied to
+    # both cracking and benchmarking. Absent in older configs -> '' (no args).
+    HC_EXTRA_ARGS = file_config['AGENT'].get('HC_EXTRA_ARGS', '')

@@ -15,6 +15,7 @@ from flask_mail import Message
 from sqlalchemy.exc import SQLAlchemyError
 
 from hashview.models import (
+    AgentBenchmarks,
     Agents,
     Customers,
     Hashes,
@@ -31,6 +32,7 @@ from hashview.models import (
     Wordlists,
     db,
 )
+from hashview.utils.chunking import is_chunkable, plan_chunks
 from hashview.utils.hashcat_modes import HASH_ONLY_AUTO_RULES
 
 
@@ -650,8 +652,150 @@ def update_dynamic_wordlist(wordlist_id, job_id=None):
     wordlist.last_updated = datetime.today()
     db.session.commit()
 
-def build_hashcat_command(job_id, task_id):
-    """Function to build the main hashcat cmd we use to crack"""
+def hashtypes_in_use():
+    """Set of distinct hash_type values currently present in the hashes table.
+
+    This is the canonical "what do we actually need benchmarks for" set used by
+    the heartbeat (benchmark-first) and the chunk planner — far smaller than the
+    ~485 modes hashcat supports.
+    """
+    rows = db.session.query(Hashes.hash_type).distinct().all()
+    return {row[0] for row in rows if row[0] is not None}
+
+
+def dynamic_wordlist_ids():
+    """Set of Wordlists.id whose type is 'dynamic' (stored lower-case)."""
+    rows = db.session.query(Wordlists.id).filter(Wordlists.type == 'dynamic').all()
+    return {row[0] for row in rows}
+
+
+def slowest_benchmark(hash_type):
+    """Smallest agent benchmark (hashes/sec) for ``hash_type``, or None.
+
+    Chunk sizes are computed from the SLOWEST agent so the weakest hardware still
+    finishes a chunk in roughly the target duration. Returns None when no agent
+    has benchmarked this hash type yet (caller then runs the task whole).
+    """
+    return db.session.query(db.func.min(AgentBenchmarks.speed)) \
+        .filter(AgentBenchmarks.hash_type == hash_type).scalar()
+
+
+_SPEED_UNIT_MULT = {'': 1, 'K': 1e3, 'M': 1e6, 'G': 1e9, 'T': 1e12, 'P': 1e15, 'E': 1e18}
+
+
+def parse_hps(s):
+    """Parse a speed string to raw hashes/sec, tolerantly.
+
+    Accepts '284.6 GH/s', lowercase 'gh/s', thousands separators ('1,024 MH/s'),
+    trailing text ('284.6 GH/s (12ms)'), units k/M/G/T/P/E, a bare number (assumed
+    H/s), or an int/float. Returns 0.0 when no number is present. Single source for
+    the dashboard task-rate sum, the sidebar aggregate, and agent utilization.
+    """
+    if s is None:
+        return 0.0
+    if isinstance(s, (int, float)):
+        return float(s)
+    s = str(s)
+    m = re.search(r'([0-9][0-9,]*(?:\.[0-9]+)?)\s*([kmgtpe]?)\s*h/s', s, re.IGNORECASE)
+    if m:
+        return float(m.group(1).replace(',', '')) * _SPEED_UNIT_MULT[m.group(2).upper()]
+    m = re.search(r'[0-9][0-9,]*(?:\.[0-9]+)?', s)   # bare number -> assume H/s
+    return float(m.group(0).replace(',', '')) if m else 0.0
+
+
+def fmt_hps(h, places=1):
+    """Format raw H/s as a human string (e.g. 2.8e11 -> '284.6 GH/s').
+
+    ``places`` is the decimal precision of the scaled value (default 1; the
+    agent-benchmark modal passes 2).
+    """
+    for unit, div in (('PH/s', 1e15), ('TH/s', 1e12), ('GH/s', 1e9),
+                      ('MH/s', 1e6), ('kH/s', 1e3)):
+        if h >= div:
+            return f'{h / div:.{places}f} {unit}'
+    return ('%d H/s' % int(h)) if h else '0 H/s'
+
+
+def _gpu_label(agent):
+    """'8× RTX 4090' from an agent's gpu_count + gpu_model (or '' if unknown)."""
+    count = agent.gpu_count or 0
+    model = (agent.gpu_model or '').strip()
+    if count and model:
+        return '%d× %s' % (count, model)
+    if count:
+        return '%d×' % count
+    return ''
+
+
+def _max_temp(agent):
+    """Hottest card temperature (int °C) from the agent's gpu_temps CSV, or None."""
+    if not agent.gpu_temps:
+        return None
+    temps = []
+    for part in str(agent.gpu_temps).split(','):
+        try:
+            temps.append(int(float(part.strip())))
+        except (TypeError, ValueError):
+            continue
+    return max(temps) if temps else None
+
+
+def agent_telemetry(agents):
+    """Per-agent live telemetry for the agents page + fleet modal.
+
+    Returns {agent_id: {gpu, temp, util, hashrate, task}}:
+      gpu      -> 'N× MODEL' label (str; '' if unknown)
+      temp     -> hottest card °C (int) or None
+      util     -> current hashrate as a percent of THIS agent's benchmark for the
+                  hash type it is cracking (int), or None when idle / unbenchmarked
+      hashrate -> current speed display string, or None
+      task     -> the parent task name the agent is cracking, or None
+    """
+    out = {a.id: {'gpu': _gpu_label(a), 'temp': _max_temp(a), 'util': None,
+                  'hashrate': None, 'task': None} for a in agents}
+    ids = [a.id for a in agents]
+    if not ids:
+        return out
+
+    running = {jt.agent_id: jt for jt
+               in JobTasks.query.filter(JobTasks.agent_id.in_(ids),
+                                        JobTasks.status == 'Running').all()}
+    bench = {(b.agent_id, b.hash_type): b.speed for b
+             in AgentBenchmarks.query.filter(AgentBenchmarks.agent_id.in_(ids)).all()}
+    task_names = {t.id: t.name for t in Tasks.query.all()}
+    job_ht = {}
+
+    for a in agents:
+        jt = running.get(a.id)
+        if not jt:
+            continue
+        out[a.id]['task'] = task_names.get(jt.task_id)
+        out[a.id]['hashrate'] = a.benchmark or None
+        if jt.job_id not in job_ht:
+            job = Jobs.query.get(jt.job_id)
+            job_ht[jt.job_id] = _job_hash_type(job) if job else None
+        ht = job_ht[jt.job_id]
+        bspeed = bench.get((a.id, ht)) if ht is not None else None
+        cur = parse_hps(a.benchmark)
+        if bspeed and cur:
+            out[a.id]['util'] = int(round(cur / bspeed * 100))
+    return out
+
+
+def build_hashcat_command(job_id, task_id, chunk=None, job_task_id=None):
+    """Function to build the main hashcat cmd we use to crack.
+
+    ``chunk`` (optional) is a chunk spec from
+    ``hashview.utils.chunking.plan_chunks``:
+      * ``{'skip': int, 'limit': int}`` -> append ``--skip``/``--limit`` (wordlist
+        base-loop modes 0/1/6)
+      * ``{'mask': str}``               -> run this sub-mask in place of
+        ``task.hc_mask`` (mask base-loop modes 3/7)
+    ``job_task_id`` (optional) keys the per-run temp files (target / outfile /
+    potfile) so two chunks of the SAME task never collide; it must match the file
+    names the agent uses. When omitted it falls back to ``task_id`` (the
+    un-chunked, pre-existing naming).
+    """
 
     hc_binpath = '@HASHCATBINPATH@'
     task = Tasks.query.get(task_id)
@@ -661,7 +805,12 @@ def build_hashcat_command(job_id, task_id):
     hashes_single_entry = Hashes.query.get(hashfilehashes_single_entry.hash_id)
     hash_type = hashes_single_entry.hash_type
     attackmode = task.hc_attackmode
-    mask = task.hc_mask
+    chunk = chunk or {}
+    # A mask chunk overrides the task's mask with its sub-mask; otherwise the task's.
+    mask = chunk.get('mask') or task.hc_mask
+    # Per-run temp files are keyed on the JobTask (chunk) id when chunked so two
+    # chunks of one task never share an outfile/potfile/target hashfile.
+    file_key = job_task_id if job_task_id is not None else task_id
 
     # Combinator
     wordlist = Wordlists.query.get(task.wl_id)
@@ -671,12 +820,12 @@ def build_hashcat_command(job_id, task_id):
     # else:
     #     wordlist = Wordlists.query.get(task.wl_id)
 
-    target_file = 'control/hashes/hashfile_' + str(job.id) + '_' + str(task.id) + '.txt'
-    crack_file = 'control/outfiles/hc_cracked_' + str(job.id) + '_' + str(task.id) + '.txt'
+    target_file = 'control/hashes/hashfile_' + str(job.id) + '_' + str(file_key) + '.txt'
+    crack_file = 'control/outfiles/hc_cracked_' + str(job.id) + '_' + str(file_key) + '.txt'
     # Per-jobtask potfile (replaces the old global --potfile-disable). --loopback
     # requires an enabled potfile; keeping it unique per job/task and living in
     # control/outfiles means the agent's data-retention sweep cleans it up too.
-    potfile = 'control/outfiles/hc_potfile_' + str(job.id) + '_' + str(task.id) + '.pot'
+    potfile = 'control/outfiles/hc_potfile_' + str(job.id) + '_' + str(file_key) + '.pot'
     # Wordlists are stored compressed at rest; the agent keeps them compressed
     # and hashcat reads gzip directly. ensure_gz() applies the same '.gz' name
     # rule the agent uses, so the path emitted here matches the file on disk on
@@ -709,11 +858,17 @@ def build_hashcat_command(job_id, task_id):
     cmd += ' --status --status-timer=15'
     cmd += ' --outfile-format 1,3'
     cmd += ' --outfile ' + crack_file
+    # Chunk slice for wordlist base-loop modes: restrict this run to a word range.
+    is_chunk_slice = 'skip' in chunk and 'limit' in chunk
+    if is_chunk_slice:
+        cmd += ' --skip ' + str(chunk['skip']) + ' --limit ' + str(chunk['limit'])
 
     # Loopback only applies to straight mode (-a 0) with a rule; hashcat rejects
-    # it for other attack modes. The server-side gate means a task flipped away
-    # from dict+rules never emits a stray --loopback.
-    if attackmode == 0 and isinstance(task.rule_id, int) and task.loopback:
+    # it for other attack modes. It is ALSO mutually exclusive with --limit, so a
+    # chunked slice (which carries --skip/--limit above) must never add it — the
+    # chunk runs as a plain dict+rules slice instead. The server-side gate also
+    # means a task flipped away from dict+rules never emits a stray --loopback.
+    if attackmode == 0 and isinstance(task.rule_id, int) and task.loopback and not is_chunk_slice:
         cmd += ' --loopback'
 
     # Dictionary with optional rules
@@ -757,6 +912,172 @@ def build_hashcat_command(job_id, task_id):
     #   cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -a 1 ' + target_file + ' ' + wordlist_one.path + ' ' + ' ' + wordlist_two.path + ' ' + relative_rules_path
 
     return cmd
+
+def _chunk_spec_from_row(job_task):
+    """Reconstruct a chunk spec dict from a JobTasks row's stored slice."""
+    if job_task.chunk_skip is not None and job_task.chunk_limit is not None:
+        return {'skip': job_task.chunk_skip, 'limit': job_task.chunk_limit}
+    if job_task.chunk_mask:
+        return {'mask': job_task.chunk_mask}
+    return {}
+
+
+def _job_hash_type(job):
+    """Derive the job's hash type the same way build_hashcat_command does."""
+    hfh = HashfileHashes.query.filter_by(hashfile_id=job.hashfile_id).first()
+    if not hfh:
+        return None
+    h = Hashes.query.get(hfh.hash_id)
+    return h.hash_type if h else None
+
+
+def _set_job_task_command(job, row, spec, chunk_no=None, chunk_total=None):
+    """Stamp a JobTasks row with its queue state, chunk slice, and built command."""
+    row.status = 'Queued'
+    row.priority = job.priority
+    row.chunk_no = chunk_no
+    row.chunk_total = chunk_total
+    row.chunk_skip = spec.get('skip')
+    row.chunk_limit = spec.get('limit')
+    row.chunk_mask = spec.get('mask')
+    # Whole (un-chunked) tasks keep the legacy job+task temp-file naming so
+    # existing agents keep working without an upgrade; only chunks need the
+    # per-jobtask naming to avoid collisions between chunks of the same task.
+    job_task_id = row.id if chunk_total else None
+    row.command = build_hashcat_command(job.id, row.task_id, chunk=spec, job_task_id=job_task_id)
+
+
+def build_job_task_commands(job):
+    """Queue-time: (re)build each of a job's JobTasks commands, splitting eligible
+    tasks into per-agent chunks when Settings.enabled_chunking is on.
+
+    On first queue, each whole JobTasks row (one per assigned task) is either left
+    whole or expanded into N chunk rows (the original becomes chunk 1; N-1 new rows
+    are added). Re-queueing an already-chunked job rebuilds commands in place from
+    each row's stored slice (chunk_skip/limit/mask) without re-expanding, so
+    start/stop/start is stable. Tasks that use a dynamic wordlist are never chunked.
+
+    Sets status='Queued', priority, command and the chunk_* fields on every row;
+    the caller owns job.status/queued_at and the final commit.
+    """
+    rows = JobTasks.query.filter_by(job_id=job.id).all()
+
+    # Re-queue: already chunked once -> rebuild from each row's stored slice.
+    if any(row.chunk_total for row in rows):
+        for row in rows:
+            _set_job_task_command(job, row, _chunk_spec_from_row(row),
+                                  chunk_no=row.chunk_no, chunk_total=row.chunk_total)
+        return
+
+    settings = Settings.query.first()
+    chunking_on = bool(settings and settings.enabled_chunking)
+    target_seconds = (settings.chunk_target_duration
+                      if settings and settings.chunk_target_duration else 3600)
+    dynamic_ids = dynamic_wordlist_ids() if chunking_on else set()
+    hash_type = _job_hash_type(job) if chunking_on else None
+
+    for job_task in rows:
+        task = Tasks.query.get(job_task.task_id)
+        specs = [{}]
+        if (chunking_on and task is not None and is_chunkable(
+                task.hc_attackmode, task.wl_id, task.wl_id_2, dynamic_ids)):
+            wl = Wordlists.query.get(task.wl_id) if task.wl_id else None
+            wl2 = Wordlists.query.get(task.wl_id_2) if task.wl_id_2 else None
+            rule = Rules.query.get(task.rule_id) if task.rule_id else None
+            specs = plan_chunks(
+                task.hc_attackmode,
+                wordlist_size=(wl.size if wl else None),
+                wordlist2_size=(wl2.size if wl2 else None),
+                rule_count=(rule.size if rule else 0),
+                mask=task.hc_mask,
+                slowest_speed=(slowest_benchmark(hash_type) if hash_type is not None else None),
+                target_seconds=target_seconds,
+            )
+
+        total = len(specs)
+        for idx, spec in enumerate(specs):
+            if idx == 0:
+                row = job_task
+            else:
+                row = JobTasks(job_id=job.id, task_id=job_task.task_id, status='Queued')
+                db.session.add(row)
+                db.session.flush()   # assign row.id so per-chunk file names are unique
+            if total > 1:
+                _set_job_task_command(job, row, spec, chunk_no=idx + 1, chunk_total=total)
+            else:
+                _set_job_task_command(job, row, spec)
+
+
+def rechunk_queued_tasks_for_hashtype(hash_type):
+    """Split still-queued whole tasks of `hash_type` now that a benchmark exists.
+
+    Chunk plans are built at queue time from the benchmarks available THEN. If a
+    job is queued for a brand-new hash type while every agent is busy, no
+    benchmark exists yet and its tasks fall back to whole (un-chunked) runs. Once
+    the first benchmark for that hash type lands (agent goes idle -> BENCHMARK ->
+    reports), this re-plans any of those tasks that are still safe to split:
+    status 'Queued', no agent assigned, not already chunked. Tasks already picked
+    up by an agent are left alone. Preserves the queue-built-upfront model.
+    """
+    settings = Settings.query.first()
+    if not (settings and settings.enabled_chunking):
+        return
+    slowest = slowest_benchmark(hash_type)
+    if not slowest:
+        return
+    target_seconds = (settings.chunk_target_duration
+                      if settings.chunk_target_duration else 3600)
+    dynamic_ids = dynamic_wordlist_ids()
+
+    candidates = (JobTasks.query
+                  .filter(JobTasks.status == 'Queued',
+                          JobTasks.agent_id.is_(None),
+                          JobTasks.chunk_total.is_(None))
+                  .all())
+    changed = False
+    for jt in candidates:
+        # Re-check the row is still safe to re-plan (an agent may have grabbed it
+        # between the query and now); skip if it was taken.
+        if jt.status != 'Queued' or jt.agent_id is not None or jt.chunk_total is not None:
+            continue
+        job = Jobs.query.get(jt.job_id)
+        if job is None or job.status not in ('Queued', 'Running'):
+            continue
+        if _job_hash_type(job) != hash_type:
+            continue
+        task = Tasks.query.get(jt.task_id)
+        if task is None or not is_chunkable(
+                task.hc_attackmode, task.wl_id, task.wl_id_2, dynamic_ids):
+            continue
+        wl = Wordlists.query.get(task.wl_id) if task.wl_id else None
+        wl2 = Wordlists.query.get(task.wl_id_2) if task.wl_id_2 else None
+        rule = Rules.query.get(task.rule_id) if task.rule_id else None
+        specs = plan_chunks(
+            task.hc_attackmode,
+            wordlist_size=(wl.size if wl else None),
+            wordlist2_size=(wl2.size if wl2 else None),
+            rule_count=(rule.size if rule else 0),
+            mask=task.hc_mask,
+            slowest_speed=slowest,
+            target_seconds=target_seconds,
+        )
+        if len(specs) <= 1:
+            continue  # still not worth splitting at this speed/size
+
+        total = len(specs)
+        for idx, spec in enumerate(specs):
+            if idx == 0:
+                row = jt                                   # reuse the whole row as chunk 1
+            else:
+                row = JobTasks(job_id=jt.job_id, task_id=jt.task_id, status='Queued')
+                db.session.add(row)
+                db.session.flush()
+            _set_job_task_command(job, row, spec, chunk_no=idx + 1, chunk_total=total)
+        changed = True
+
+    if changed:
+        db.session.commit()
+
 
 def update_job_task_status(jobtask_id, status):
     """Function to update task status of a job"""

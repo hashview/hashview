@@ -332,7 +332,6 @@ def create_app(testing=False, config_overrides=None):
         if not getattr(current_user, "is_authenticated", False):
             return {}
         try:
-            import re
             from datetime import datetime, timedelta
 
             from sqlalchemy import text
@@ -349,6 +348,11 @@ def create_app(testing=False, config_overrides=None):
                 Wordlists,
                 db,
             )
+
+            # _hps/_fmt: the single source in utils (function-local import dodges a
+            # load-time circular import on the package root).
+            from hashview.utils.utils import fmt_hps as _fmt
+            from hashview.utils.utils import parse_hps as _hps
 
             agents = Agents.query.all()
             # last_checkin is stamped with the database clock (api.update_heartbeat uses
@@ -376,23 +380,6 @@ def create_app(testing=False, config_overrides=None):
             def _state(a):
                 return (a.status or '').strip().lower()
 
-            def _hps(s):
-                """Parse a benchmark display string (e.g. '284.6 GH/s') to H/s."""
-                if not s:
-                    return 0.0
-                m = re.match(r"\s*([0-9]*\.?[0-9]+)\s*([kKmMgGtTpP]?)H/s", str(s))
-                if not m:
-                    return 0.0
-                mult = {"": 1, "K": 1e3, "M": 1e6, "G": 1e9, "T": 1e12, "P": 1e15}
-                return float(m.group(1)) * mult.get(m.group(2).upper(), 1)
-
-            def _fmt(h):
-                for unit, div in (("PH/s", 1e15), ("TH/s", 1e12), ("GH/s", 1e9),
-                                  ("MH/s", 1e6), ("kH/s", 1e3)):
-                    if h >= div:
-                        return f"{h / div:.1f} {unit}"
-                return ("%d H/s" % int(h)) if h else "0 H/s"
-
             # Single source of truth for "is this agent up" (sidebar, agents page, AND
             # the dashboard all read from this, so they can never disagree).
             up_ids = {a.id for a in agents if _connected(a) and _state(a) in up_states}
@@ -418,6 +405,7 @@ def create_app(testing=False, config_overrides=None):
                     "total": len(agents),
                     "speed": _fmt(total_hps),
                     "online_ids": up_ids,
+                    "gpus": sum((a.gpu_count or 0) for a in agents),
                 },
                 "job_queue": {
                     "running": Jobs.query.filter_by(status='Running').count(),

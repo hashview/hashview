@@ -1,6 +1,6 @@
-from agent.http import http
-from agent.config import Config
 import json
+
+from agent.http import http
 
 
 def heartbeat(agent_status, hc_status):
@@ -10,7 +10,13 @@ def heartbeat(agent_status, hc_status):
     }
 
     response = http.post('/v1/agents/heartbeat', json.loads(json.dumps(message)))
-    decoded_response = json.loads(response)
+    try:
+        decoded_response = json.loads(response)
+    except (TypeError, ValueError):
+        # response is None (server returned a non-200, e.g. it was mid-reboot) or
+        # not JSON. Treat this beat as a no-op: keep the current work and retry on
+        # the next cycle instead of crashing the agent loop.
+        return {'type': 'message', 'status': 200, 'msg': None}
     if decoded_response['type'] == 'message' and decoded_response['status'] == 200:
         return decoded_response
     elif decoded_response['type'] == 'message' and decoded_response['status'] == 426:
@@ -19,6 +25,22 @@ def heartbeat(agent_status, hc_status):
     else:
         print('we got an unexpected response type')
         print(str(decoded_response['type']))
+
+def report_benchmark(benchmark_results):
+    message = {
+        'benchmark_results': benchmark_results,
+    }
+
+    response = http.post('/v1/agents/benchmark', json.loads(json.dumps(message)))
+    decoded_response = json.loads(response)
+    if decoded_response['type'] == 'message' and decoded_response['status'] == 200:
+        return decoded_response
+    elif decoded_response['type'] == 'message' and decoded_response['status'] == 426:
+        print('Our agent version is older than the servers. You need to upgrade your agent before continuing.')
+        exit()
+    else:
+        print('we got an unexpected response type')
+        return decoded_response
 
 def server_settings():
     response = http.get('/v1/admin/settings')
@@ -100,7 +122,7 @@ def uploadCrackFile(file_path, job_task_id):
     # the hash portion embeds a username that can carry arbitrary non-UTF-8 bytes,
     # so decode tolerantly (errors='replace') instead of crashing the whole upload
     # on one stray byte and silently dropping every recovered crack in the file.
-    with open(file_path, 'r', encoding='utf-8', errors='replace') as file:
+    with open(file_path, encoding='utf-8', errors='replace') as file:
     # we use jobtask to determin hashtype server side. 
         #response =  http.post('/v1/uploadCrackFile/' + str(task_id) + "/" + str(hash_type), data={'file': file.read()})
         response = http.post('/v1/uploadCrackFile/' + str(job_task_id), data = {'file': file.read()})

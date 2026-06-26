@@ -1152,6 +1152,12 @@ def _build_auto_matcher(spec):
         rx = re.compile(r'[0-9a-fA-F]{%d}:.+' % spec[1])
         return (lambda s: rx.match(s) is not None,
                 '%d hex characters, a colon, then a salt' % spec[1])
+    if kind == 'prefixes':
+        # Several acceptable magic tags (str.startswith accepts a tuple). Used by
+        # PKZIP, where hashcat accepts both the legacy '$pkzip$' and '$pkzip2$'.
+        prefixes = tuple(spec[1])
+        return (lambda s: s.startswith(prefixes),
+                'a hash beginning with ' + ' or '.join("'%s'" % p for p in prefixes))
     # 'prefix' / 'litprefix'
     prefix = spec[1]
     return (lambda s: s.startswith(prefix), f"a hash beginning with '{prefix}'")

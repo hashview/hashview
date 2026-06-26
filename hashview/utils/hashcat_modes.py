@@ -7,6 +7,8 @@ spec table used by hashview.utils.utils.validate_hash_only_hashfile. Specs:
   ('hex', N)        -> exactly N hex characters
   ('hexsalt', N)    -> N hex characters, a colon, then a (lenient) salt
   ('prefix', tag)   -> must start with the literal magic tag (e.g. '$krb5tgs$')
+  ('prefixes', tags)-> must start with one of several literal magic tags (e.g. PKZIP's
+                      '$pkzip$'/'$pkzip2$', both of which hashcat accepts)
   ('litprefix', t)  -> must start with the literal uppercase token (e.g. 'SCRYPT')
 Only fixed-shape parts are constrained, so legitimate hashes are not rejected.
 """
@@ -661,11 +663,11 @@ HASH_ONLY_AUTO_RULES = {
     '16801': ('hexsalt', 32),
     '16900': ('prefix', '$ansible$'),
     '17010': ('prefix', '$gpg$'),
-    '17200': ('prefix', '$pkzip2$'),
-    '17210': ('prefix', '$pkzip2$'),
-    '17220': ('prefix', '$pkzip2$'),
-    '17225': ('prefix', '$pkzip2$'),
-    '17230': ('prefix', '$pkzip2$'),
+    '17200': ('prefixes', ('$pkzip$', '$pkzip2$')),
+    '17210': ('prefixes', ('$pkzip$', '$pkzip2$')),
+    '17220': ('prefixes', ('$pkzip$', '$pkzip2$')),
+    '17225': ('prefixes', ('$pkzip$', '$pkzip2$')),
+    '17230': ('prefixes', ('$pkzip$', '$pkzip2$')),
     '17300': ('hex', 56),
     '17400': ('hex', 64),
     '17500': ('hex', 96),

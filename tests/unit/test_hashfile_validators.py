@@ -186,6 +186,20 @@ def test_hash_only_invalid():
     _bad(validate_hash_only_hashfile, ['8743b52063cd84097a65d1633f5c74f5'], '10')      # md5+salt needs :salt
 
 
+def test_hash_only_pkzip_accepts_both_tags():
+    # hashcat's --identify maps BOTH the legacy '$pkzip$' and the '$pkzip2$' tag
+    # to the PKZIP modes (its example hash uses '$pkzip2$'), so accept either for
+    # every PKZIP mode. (Previously the rule was '$pkzip2$'-only, rejecting valid
+    # '$pkzip$' hashes.)
+    pkzip = ('$pkzip$8*1*1*0*0*19*9635*93c0ece4f264048e2af711ba68e132833ad76f985a8a2a9658'
+             '*$/pkzip$')
+    pkzip2 = '$pkzip2$3*1*1*0*0*24*3e2c*3ef8*0619e9d17ff3f994*$/pkzip2$'
+    for htype in ('17200', '17210', '17220', '17225', '17230'):
+        _ok(validate_hash_only_hashfile, [pkzip], htype)
+        _ok(validate_hash_only_hashfile, [pkzip2], htype)
+    _bad(validate_hash_only_hashfile, ['$notpkzip$1*2*3'], '17225')   # other magic still rejected
+
+
 def test_hash_only_unknown_type_is_lenient():
     # a type not in the table is accepted (cannot be safely constrained)
     _ok(validate_hash_only_hashfile, ['anything-goes-here'], '31500')

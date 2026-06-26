@@ -28,9 +28,7 @@
                             {% if is_down %}<span class="badge red">OFFLINE</span>{% elif working %}<span class="badge amber">CRACKING</span>{% else %}<span class="badge green">ONLINE</span>{% endif %}
                         </span>
                     </div>
-                    {% if is_down %}
-                        <a class="btn btn-sm btn-danger" href="/agents/restart/{{ agent.id }}" role="button">{{ icon('refresh', size=14) }} Restart</a>
-                    {% else %}
+                    {% if not is_down %}
                         <div style="display:flex;justify-content:space-between;font-size:11.5px;font-family:var(--mono);">
                             <span style="color:var(--text-mute);">task</span>
                             <span style="color:{{ 'var(--text)' if working else 'var(--text-dim)' }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px;">{{ t.task or 'idle' }}</span>

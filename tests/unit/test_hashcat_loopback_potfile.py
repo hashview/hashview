@@ -24,6 +24,7 @@ import pytest
 from hashview.models import (
     Hashes,
     HashfileHashes,
+    Hashfiles,
     Jobs,
     Rules,
     Tasks,
@@ -251,6 +252,55 @@ def test_chunk_temp_files_keyed_on_job_task_id(app):
     assert ("control/outfiles/hc_cracked_%d_202.txt" % job.id) in c2
     assert ("control/hashes/hashfile_%d_101.txt" % job.id) in c1
     assert ("control/outfiles/hc_potfile_%d_202.pot" % job.id) in c2
+
+
+# ---------------------------------------------------------------------------
+# --hex-salt: emitted only for a hex_salt hashfile on a salted mode
+# ---------------------------------------------------------------------------
+
+
+def _build_hex(user, *, hex_salt, hash_type, ciphertext="abcd:cafe"):
+    """Build a job whose hashfile carries the given hex_salt flag + hash mode and
+    return its hashcat command (straight dict mode, no rule)."""
+    hf = Hashfiles(name="hf", customer_id=1, owner_id=user.id, hex_salt=hex_salt)
+    db.session.add(hf)
+    db.session.commit()
+    hsh = Hashes(sub_ciphertext="0" * 8, ciphertext=ciphertext, hash_type=hash_type, cracked=False)
+    db.session.add(hsh)
+    db.session.commit()
+    db.session.add(HashfileHashes(hash_id=hsh.id, hashfile_id=hf.id))
+    job = Jobs(name="j", status="Queued", hashfile_id=hf.id, customer_id=1, owner_id=user.id)
+    db.session.add(job)
+    wl = _wordlist(user)
+    task = Tasks(name="t", hc_attackmode=0, owner_id=user.id,
+                 wl_id=wl.id, rule_id=None, hc_mask=None, loopback=False)
+    db.session.add(task)
+    db.session.commit()
+    return build_hashcat_command(job.id, task.id)
+
+
+@pytest.mark.security
+def test_hex_salt_emitted_for_salted_mode(app):
+    user = _make_user()
+    cmd = _build_hex(user, hex_salt=True, hash_type=10)     # md5($pass.$salt) -> salted
+    assert " --hex-salt" in cmd
+    assert " -m 10" in cmd
+
+
+@pytest.mark.security
+def test_hex_salt_omitted_when_flag_off(app):
+    user = _make_user()
+    cmd = _build_hex(user, hex_salt=False, hash_type=10)
+    assert "--hex-salt" not in cmd
+
+
+@pytest.mark.security
+def test_hex_salt_omitted_for_unsalted_mode(app):
+    """Flag on, but an unsalted mode (NTLM) has no salt -> hashcat would reject
+    --hex-salt, so it must be suppressed."""
+    user = _make_user()
+    cmd = _build_hex(user, hex_salt=True, hash_type=1000, ciphertext="b" * 32)
+    assert "--hex-salt" not in cmd
 
 
 # ---------------------------------------------------------------------------

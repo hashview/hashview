@@ -54,6 +54,9 @@
         document.getElementById(show ? show : 'hash_type_placeholder').style.display = 'block';
         var vsel = show ? document.getElementById(show).querySelector('select') : null;
         hvHashTypeExample(vsel);
+        // --hex-salt applies only to the colon-delimited hash_only / user_hash formats
+        var hs = document.getElementById('hex_salt_div');
+        if (hs) hs.style.display = (sel.value === 'hash_only' || sel.value === 'user_hash') ? 'flex' : 'none';
     }
 
     // top-level tab switch: upload / paste / existing
@@ -133,6 +136,18 @@
                         <div id="kerberos_hash_type_div" style="display:none;">{{ jobsNewHashFileForm.kerberos_hash_type(class="select", onchange="hvHashTypeExample(this)") }}</div>
                         <div id="shadow_hash_type_div" style="display:none;">{{ jobsNewHashFileForm.shadow_hash_type(class="select", onchange="hvHashTypeExample(this)") }}</div>
                         <div id="hash_type_div" style="display:none;">{{ jobsNewHashFileForm.hash_type(class="select", onchange="hvHashTypeExample(this)") }}</div>
+                    </div>
+                </div>
+
+                {# --hex-salt: only the colon-delimited hash_only / user_hash formats carry a
+                   separate salt hashcat can treat as hex; showHashTypeSelected() shows this only for those.
+                   .hex-salt-box (phosphor-app.css) is the lighter panel that lifts it off the card and
+                   illuminates when enabled; JS only flips display:none<->flex, leaving the box style. #}
+                <div id="hex_salt_div" class="hex-salt-box" style="display:none;">
+                    <label class="switch">{{ jobsNewHashFileForm.hex_salt(role="switch") }}<span class="track"></span></label>
+                    <div style="flex:1; min-width:0;">
+                        <div style="color:var(--text);">Salts are hex-encoded <code style="color:var(--text-mute); font-size:11.5px; margin-left:4px;">--hex-salt</code></div>
+                        <div class="field-hint" style="margin-top:3px;">Enable when this hashfile's salts are stored as hexadecimal. Passed to hashcat so salted modes parse the salt correctly.</div>
                     </div>
                 </div>
 

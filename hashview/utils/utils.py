@@ -871,6 +871,14 @@ def build_hashcat_command(job_id, task_id, chunk=None, job_task_id=None):
     if attackmode == 0 and isinstance(task.rule_id, int) and task.loopback and not is_chunk_slice:
         cmd += ' --loopback'
 
+    # --hex-salt: the hashfile was marked as carrying hex-encoded salts. Gated on
+    # a salted mode so we never pass it to an unsalted mode (hashcat would reject
+    # it); the upload route only sets hex_salt for the hash_only / user_hash
+    # formats, whose ciphertext keeps the colon-delimited salt hashcat parses.
+    hashfile = Hashfiles.query.get(job.hashfile_id)
+    if hashfile and hashfile.hex_salt and hash_type_uses_salt(hash_type):
+        cmd += ' --hex-salt'
+
     # Dictionary with optional rules
     if attackmode == 0:
         if isinstance(task.rule_id, int):
@@ -1511,6 +1519,57 @@ def validate_hash_only_hashfile(hashfile_path, hash_type):
         if not ok:
             return ('Error line ' + str(line_no) + ' is not a valid hash for the selected '
                     'type — expected ' + expected + '.')
+        return None
+
+    return _validate_hashfile(hashfile_path, check)
+
+
+# Modes whose hash is supplied as a colon-delimited "<hash>:<salt>" (or
+# "<salt>:<hash>") pair -- the only modes for which hashcat's --hex-salt is
+# meaningful. Derived from the existing rule sources so the set can't drift:
+# the hexsalt auto-rules (hashcat_modes) plus the curated rules whose regex
+# carries a salt colon. A few fixed-structure multi-field colon formats are
+# excluded because the text after the first colon isn't a free salt (Juniper's
+# numeric salt, SipHash's "<hex>:2:4:<hex>", DES's "<hex>:<hex>").
+_SALTED_HASH_MODE_EXCLUDE = frozenset({'22', '10100', '14000'})
+_SALTED_HASH_MODES = frozenset(
+    {mode for mode, spec in HASH_ONLY_AUTO_RULES.items() if spec[0] == 'hexsalt'}
+    | {mode for mode, (rx, _desc) in _HASH_ONLY_RULES.items() if ':' in rx.pattern}
+) - _SALTED_HASH_MODE_EXCLUDE
+
+
+def hash_type_uses_salt(hash_type):
+    """True when the hashcat mode supplies its salt as a separate colon-delimited
+    field (so --hex-salt applies). Unsalted modes (NTLM, raw MD5, ...) have no
+    salt to check, so the --hex-salt validation + flag are gated on this."""
+    return str(hash_type) in _SALTED_HASH_MODES
+
+
+_HEX_SALT_RE = re.compile(r'^[0-9a-fA-F]+$')
+
+
+def validate_hex_salt(hashfile_path, file_type, hash_type):
+    """When the --hex-salt option is set, verify every line carries a hex salt.
+
+    Salt position is format-dependent: ``hash_only`` is ``<hash>:<salt>`` (salt
+    after the 1st ':'); ``user_hash`` is ``<user>:<hash>:<salt>`` (salt after the
+    2nd ':', since import splits the username off the first colon). No-ops
+    (returns False) for modes that don't use a salt — there's nothing to check.
+    Returns an error string on the first offending line, else False (matching the
+    sibling validate_*_hashfile contract)."""
+    if not hash_type_uses_salt(hash_type):
+        return False
+    salt_index = 2 if file_type == 'user_hash' else 1
+
+    def check(line, line_no):
+        parts = line.split(':')
+        if len(parts) <= salt_index or parts[salt_index] == '':
+            return ('Error line ' + str(line_no) + ': --hex-salt is set but no salt '
+                    'was found (expected <hash>:<salt>).')
+        salt = ':'.join(parts[salt_index:])     # keep any further colons as part of the salt
+        if not _HEX_SALT_RE.match(salt):
+            return ('Error line ' + str(line_no) + ': salt ' + repr(salt) + ' is not hex '
+                    '(only 0-9 a-f allowed when --hex-salt is set).')
         return None
 
     return _validate_hashfile(hashfile_path, check)

@@ -13,8 +13,14 @@ import tempfile
 import pytest
 
 from hashview.utils.utils import (
-    validate_pwdump_hashfile, validate_netntlm_hashfile, validate_kerberos_hashfile,
-    validate_shadow_hashfile, validate_hash_only_hashfile, validate_user_hash_hashfile,
+    hash_type_uses_salt,
+    validate_hash_only_hashfile,
+    validate_hex_salt,
+    validate_kerberos_hashfile,
+    validate_netntlm_hashfile,
+    validate_pwdump_hashfile,
+    validate_shadow_hashfile,
+    validate_user_hash_hashfile,
 )
 
 
@@ -302,8 +308,11 @@ def test_hash_only_auto_table_modes():
 
 def test_form_choices_complete_and_lm_excluded():
     from hashview.utils.hashcat_modes import (
-        HASH_TYPE_CHOICES, KERBEROS_HASH_TYPE_CHOICES,
-        NETNTLM_HASH_TYPE_CHOICES, SHADOW_HASH_TYPE_CHOICES)
+        HASH_TYPE_CHOICES,
+        KERBEROS_HASH_TYPE_CHOICES,
+        NETNTLM_HASH_TYPE_CHOICES,
+        SHADOW_HASH_TYPE_CHOICES,
+    )
 
     def vals(choices):
         return [v for v, _ in choices if v]
@@ -318,3 +327,51 @@ def test_form_choices_complete_and_lm_excluded():
     assert vals(KERBEROS_HASH_TYPE_CHOICES) == ['7500', '13100', '18200', '19600', '19700', '19800', '19900', '28800', '28900']
     assert vals(NETNTLM_HASH_TYPE_CHOICES) == ['5500', '5600', '27000', '27100']
     assert vals(SHADOW_HASH_TYPE_CHOICES) == ['500', '1500', '1800', '3200', '7400', '12400', '15100']
+
+
+# ---------------------------------------------------------------------------
+# --hex-salt (hash_type_uses_salt + validate_hex_salt)
+# ---------------------------------------------------------------------------
+
+def test_hash_type_uses_salt():
+    # generic colon-delimited salted modes -> True
+    for salted in ('10', '20', '110', '1410', '1710', '11', '2811', '1100'):
+        assert hash_type_uses_salt(salted) is True, salted
+    # an auto-derived hexsalt mode -> True
+    assert hash_type_uses_salt('3100') is True
+    # unsalted raw modes -> False
+    for plain in ('0', '100', '1000', '1700', '900'):
+        assert hash_type_uses_salt(plain) is False, plain
+    # fixed-structure multi-field colon modes are excluded
+    for excluded in ('22', '10100', '14000'):
+        assert hash_type_uses_salt(excluded) is False, excluded
+    # accepts int too (str-normalised internally)
+    assert hash_type_uses_salt(10) is True
+
+
+def test_validate_hex_salt_hash_only():
+    md5 = 'a' * 32
+    # valid hex salt after the first colon
+    _ok(validate_hex_salt, [md5 + ':deadbeef', md5 + ':0123456789abcdef'], 'hash_only', '10')
+    # salt with non-hex characters
+    _bad(validate_hex_salt, [md5 + ':xyz123'], 'hash_only', '10')
+    # no salt at all (no colon)
+    _bad(validate_hex_salt, [md5], 'hash_only', '10')
+    # colon present but empty salt
+    _bad(validate_hex_salt, [md5 + ':'], 'hash_only', '10')
+
+
+def test_validate_hex_salt_user_hash():
+    md5 = 'b' * 32
+    # user:hash:salt -> salt after the 2nd colon
+    _ok(validate_hex_salt, ['alice:' + md5 + ':cafe', 'bob:' + md5 + ':00ff'], 'user_hash', '10')
+    # non-hex salt
+    _bad(validate_hex_salt, ['alice:' + md5 + ':nothex'], 'user_hash', '10')
+    # only user:hash, no salt field
+    _bad(validate_hex_salt, ['alice:' + md5], 'user_hash', '10')
+
+
+def test_validate_hex_salt_noop_for_unsalted_mode():
+    # unsalted mode -> nothing to validate, returns False even with junk "salts"
+    ntlm = 'c' * 32
+    _ok(validate_hex_salt, [ntlm, ntlm + ':whatever'], 'hash_only', '1000')

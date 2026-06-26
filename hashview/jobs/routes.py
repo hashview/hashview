@@ -47,6 +47,7 @@ from hashview.utils.utils import (
     save_file,
     try_commit,
     validate_hash_only_hashfile,
+    validate_hex_salt,
     validate_kerberos_hashfile,
     validate_netntlm_hashfile,
     validate_pwdump_hashfile,
@@ -352,6 +353,16 @@ def jobs_assigned_hashfile(job_id):
                 else:
                     has_problem = 'Invalid File Format'
 
+                # --hex-salt: when the user marked this hashfile's salts as
+                # hex-encoded, verify every salted line actually carries a hex
+                # salt. Only hash_only / user_hash carry a colon-delimited salt
+                # hashcat's --hex-salt applies to; validate_hex_salt no-ops for
+                # unsalted modes.
+                if not has_problem and jobs_new_hashfile_form.hex_salt.data \
+                        and jobs_new_hashfile_form.file_type.data in ('hash_only', 'user_hash'):
+                    has_problem = validate_hex_salt(
+                        hashfile_path, jobs_new_hashfile_form.file_type.data, hash_type)
+
                 if has_problem:
                     if is_ajax:
                         return jsonify({'status': 'error', 'msg': has_problem}), 400
@@ -359,6 +370,11 @@ def jobs_assigned_hashfile(job_id):
                     return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
                 else:
                     hashfile = Hashfiles(name=hashfile_name, customer_id=job.customer_id, owner_id=current_user.id)
+                    # Only honor --hex-salt for the two formats that carry a
+                    # colon-delimited salt, even if a crafted POST sets it for
+                    # another format (the UI only shows the toggle for these).
+                    hashfile.hex_salt = bool(jobs_new_hashfile_form.hex_salt.data) and \
+                        jobs_new_hashfile_form.file_type.data in ('hash_only', 'user_hash')
                     db.session.add(hashfile)
                     db.session.commit()
 

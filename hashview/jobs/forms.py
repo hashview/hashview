@@ -63,6 +63,9 @@ class JobsNewHashFileForm(FlaskForm):
 
     hashfilehashes = TextAreaField('Hashes')
     hashfile = FileField('Upload Hashfile')
+    # Only meaningful for the colon-delimited hash_only / user_hash formats; the
+    # template shows the toggle only for those and the route ignores it otherwise.
+    hex_salt = BooleanField('Salts are hex-encoded')
     submit = SubmitField('Next')
 
 class JobsNotificationsForm(FlaskForm):

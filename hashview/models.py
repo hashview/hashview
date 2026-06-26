@@ -222,6 +222,10 @@ class Hashfiles(db.Model):
     runtime = db.Column(db.Integer, default=0)
     customer_id = db.Column(db.Integer, nullable=False)
     owner_id = db.Column(db.Integer, nullable=False)
+    # The supplied hashes' salts are hex-encoded -> hashcat needs --hex-salt; only
+    # meaningful for the colon-delimited hash_only / user_hash formats (see
+    # build_hashcat_command + validate_hex_salt).
+    hex_salt = db.Column(db.Boolean, nullable=False, default=False)
 
 class HashfileHashes(db.Model):
     """Class object to represent HashfileHashes"""

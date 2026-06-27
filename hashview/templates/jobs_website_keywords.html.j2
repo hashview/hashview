@@ -10,7 +10,7 @@
 </div>
 {{ wizard_stepper('website', alert_hashes=(alert_hashes if alert_hashes is defined else false), website=true) }}
 
-<form method="POST" action="">
+<form method="POST" action="" id="website_form">
     {{ form.hidden_tag() }}
 
     <div class="card">
@@ -28,8 +28,13 @@
     <div class="wizard-nav">
         <a class="btn" href="{{ url_for('jobs.jobs_list_tasks', job_id=job.id) }}">{{ icon('arrowLeft', size=15) }} Back</a>
         <span class="spacer"></span>
-        {{ form.submit(class="btn btn-primary") }}
+        {{ form.submit(class="btn btn-primary", id="website_next") }}
     </div>
 </form>
+
+<script>
+    // Gate Next until a valid crawl URL is entered (URLField renders type="url").
+    hvGateNext(document.getElementById('website_form'), document.getElementById('website_next'));
+</script>
 
 {% endblock content %}

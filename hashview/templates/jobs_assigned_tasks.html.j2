@@ -174,7 +174,12 @@
 <div class="wizard-nav" style="margin-top:20px;">
     <a class="btn" href="{{ url_for('jobs.jobs_assign_notifications', job_id = job.id) }}">{{ icon('arrowLeft', size=15) }} Back</a>
     <span class="spacer"></span>
-    <a class="btn btn-primary" href="/jobs/{{job.id}}/website" role="button">Next {{ icon('arrowRight', size=15) }}</a>
+    {# A job needs at least one task to run; gate Next until one is assigned. #}
+    {% if (job_tasks is defined) and job_tasks.count() > 0 %}
+        <a class="btn btn-primary" href="/jobs/{{job.id}}/website" role="button">Next {{ icon('arrowRight', size=15) }}</a>
+    {% else %}
+        <button type="button" class="btn btn-primary" disabled title="Assign at least one task to continue">Next {{ icon('arrowRight', size=15) }}</button>
+    {% endif %}
 </div>
 
 {# ---- DeleteAllTask modal (native <dialog>) ---- #}

@@ -61,7 +61,7 @@
     <div class="wizard-nav">
         <a class="btn" href="{{ url_for('jobs.jobs_assign_notifications', job_id = job.id) }}">{{ icon('arrowLeft', size=15) }} Back</a>
         <span class="spacer"></span>
-        <input type="submit" class="btn btn-primary" value="Submit">
+        <input type="submit" id="alert_submit" class="btn btn-primary" value="Submit">
     </div>
 </form>
 
@@ -90,6 +90,20 @@
         boxes.forEach(function(b){ b.checked = !allChecked; });
         var lbl = document.getElementById('select_all_lbl');
         if (lbl) lbl.textContent = allChecked ? 'Select all' : 'Clear';
+        hvAlertGate();
     }
+
+    // Gate Submit until at least one hash is selected — an alert with no targets
+    // is pointless, so the step requires >=1 checked box.
+    function hvAlertGate(){
+        var btn = document.getElementById('alert_submit');
+        if (!btn) return;
+        btn.disabled = document.querySelectorAll('#hash_options input.hv-check:checked').length === 0;
+    }
+    document.addEventListener('DOMContentLoaded', function(){
+        var tbl = document.getElementById('hash_options');
+        if (tbl) tbl.addEventListener('change', hvAlertGate);   // delegated: any checkbox toggle
+        hvAlertGate();
+    });
 </script>
 {% endblock content %}

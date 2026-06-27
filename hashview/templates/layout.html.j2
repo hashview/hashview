@@ -225,6 +225,17 @@
             try { localStorage.setItem('hv_sidebar_collapsed', '1'); } catch (e) {}
         }
     }
+
+    // Disable a wizard step's Next/submit button until its form's required fields
+    // are satisfied (native HTML5 constraint validation). Re-checks on every input
+    // /change; server-side validation remains the source of truth.
+    function hvGateNext(form, btn) {
+        if (!form || !btn) return;
+        function sync() { btn.disabled = !form.checkValidity(); }
+        form.addEventListener('input', sync);
+        form.addEventListener('change', sync);
+        sync();
+    }
     </script>
     {% block scripts %}{% endblock %}
 </body>

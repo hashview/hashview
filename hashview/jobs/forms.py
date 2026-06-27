@@ -7,6 +7,7 @@ from wtforms import (
 	StringField,
 	SubmitField,
 	TextAreaField,
+	URLField,
 )
 from wtforms.validators import URL, DataRequired, ValidationError
 
@@ -91,5 +92,7 @@ class JobSummaryForm(FlaskForm):
 class JobWebsiteKeywordsForm(FlaskForm):
     """URL to crawl for the (DYNAMIC) Website Keywords wordlist."""
 
-    crawl_url = StringField('Website URL', validators=[DataRequired(), URL(message='Enter a valid URL, e.g. https://example.com')])
+    # URLField renders type="url" so the wizard's client-side Next gating also
+    # enforces URL shape; the URL() validator stays authoritative server-side.
+    crawl_url = URLField('Website URL', validators=[DataRequired(), URL(message='Enter a valid URL, e.g. https://example.com')])
     submit = SubmitField('Next')

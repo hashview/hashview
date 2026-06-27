@@ -31,6 +31,16 @@
     };
     var HV_PASTE_DEFAULT = 'Paste one hash per line…';
     var HV_HAS_EXISTING = {{ 'true' if hashfiles.count() else 'false' }};
+    var HV_DEFAULT_TAB = "{{ default_tab }}";
+
+    // Disable Next until the active tab's required fields are valid. The button
+    // lives outside the forms and targets the active one via its form= attribute.
+    function hvHfGate(){
+        var nb = document.getElementById('hf_next');
+        if (!nb) return;
+        var form = document.getElementById(nb.getAttribute('form'));
+        nb.disabled = form ? !form.checkValidity() : false;
+    }
 
     function hvHashTypeExample(sel){
         var ta = document.getElementById('paste_box');
@@ -54,9 +64,16 @@
         document.getElementById(show ? show : 'hash_type_placeholder').style.display = 'block';
         var vsel = show ? document.getElementById(show).querySelector('select') : null;
         hvHashTypeExample(vsel);
+        // Only the visible hash-type select is required (a required but display:none
+        // select would otherwise block form validity), so Next stays gated until a
+        // hash type is actually chosen for the selected format.
+        ['pwdump_hash_type_div','netntlm_hash_type_div','kerberos_hash_type_div','shadow_hash_type_div','hash_type_div']
+            .forEach(function(id){ var s=document.getElementById(id).querySelector('select'); if(s) s.required=false; });
+        if (vsel) vsel.required = true;
         // --hex-salt applies only to the colon-delimited hash_only / user_hash formats
         var hs = document.getElementById('hex_salt_div');
         if (hs) hs.style.display = (sel.value === 'hash_only' || sel.value === 'user_hash') ? 'flex' : 'none';
+        hvHfGate();
     }
 
     // top-level tab switch: upload / paste / existing
@@ -69,18 +86,26 @@
         ['upload','paste','existing'].forEach(function(t){
             document.getElementById('tab-'+t).classList.toggle('active', t === which);
         });
+        // Only the active tab's content field is required, so a hidden pane's field
+        // never blocks the active form's validity.
         var ta = document.getElementById('paste_box');
         if (ta) ta.required = (which === 'paste');
+        var fi = document.getElementById('hashfile_input');
+        if (fi) fi.required = (which === 'upload');
+        var nm = document.getElementById('name');
+        if (nm) nm.required = (which === 'paste');
         // point the (outside-the-card) Next button at the active form
         var nb = document.getElementById('hf_next');
         if (nb){
             nb.setAttribute('form', existing ? 'hf_form_existing' : 'hf_form');
             nb.style.display = (existing && !HV_HAS_EXISTING) ? 'none' : '';
         }
+        hvHfGate();
     }
     function hvFileChosen(input){
         var n = (input.files && input.files.length) ? input.files[0].name : '';
         document.getElementById('dropzone_name').textContent = n ? ('Selected: ' + n) : '';
+        hvHfGate();
     }
     function hvDrop(e){
         e.preventDefault();
@@ -92,6 +117,16 @@
         }
     }
     function auto_grow(el){ el.style.height='5px'; el.style.height=(el.scrollHeight)+'px'; }
+
+    // Re-gate Next on any field change in either form, and apply the initial tab
+    // state (which sets the per-tab required flags + first gate check) on load.
+    document.addEventListener('DOMContentLoaded', function(){
+        var hf = document.getElementById('hf_form');
+        if (hf){ hf.addEventListener('input', hvHfGate); hf.addEventListener('change', hvHfGate); }
+        var hfe = document.getElementById('hf_form_existing');
+        if (hfe){ hfe.addEventListener('change', hvHfGate); }
+        hvTab(HV_DEFAULT_TAB);
+    });
 </script>
 
 <div class="page-head">

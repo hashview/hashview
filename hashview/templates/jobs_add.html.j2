@@ -17,6 +17,9 @@
         {
           document.getElementById('new_customer_div').style.display = 'none';
         }
+        // The customer name is only required when adding a new customer. The form's
+        // change listener (hvGateNext) re-checks validity right after this runs.
+        document.getElementById('customer_name').required = (Index.value == 'add_new');
     }
     function updatePriority(v){
         v = parseInt(v, 10);
@@ -41,7 +44,7 @@
 
 {{ wizard_stepper('setup') }}
 
-<form method="POST" action="" enctype="multipart/form-data">
+<form method="POST" action="" enctype="multipart/form-data" id="job_setup_form">
     {{ jobsForm.hidden_tag() }}
 
     <div class="card">
@@ -65,8 +68,8 @@
             </div>
 
             <div class="field" style="display:none" id="new_customer_div">
-                <label class="field-label" for="name">Customer Name <span class="req">*</span></label>
-                <input class="input" id="name" name="customer_name" type="text">
+                <label class="field-label" for="customer_name">Customer Name <span class="req">*</span></label>
+                <input class="input" id="customer_name" name="customer_name" type="text">
             </div>
 
             {% if settings.enabled_job_weights %}
@@ -99,8 +102,14 @@
     <div class="wizard-nav">
         <a class="btn" href="{{ url_for('jobs.jobs_list') }}" role="button">{{ icon('arrowLeft', size=15) }} Cancel</a>
         <span class="spacer"></span>
-        {{ jobsForm.submit(class="btn btn-primary") }}
+        {{ jobsForm.submit(class="btn btn-primary", id="setup_next") }}
     </div>
 </form>
+
+<script>
+    // Gate Next until the job name + customer (and customer name, when adding one)
+    // are filled. showDiv() keeps customer_name's required flag in sync.
+    hvGateNext(document.getElementById('job_setup_form'), document.getElementById('setup_next'));
+</script>
 
 {% endblock content %}

@@ -693,7 +693,7 @@ def parse_hps(s):
     """
     if s is None:
         return 0.0
-    if isinstance(s, (int, float)):
+    if isinstance(s, int | float):
         return float(s)
     s = str(s)
     m = re.search(r'([0-9][0-9,]*(?:\.[0-9]+)?)\s*([kmgtpe]?)\s*h/s', s, re.IGNORECASE)

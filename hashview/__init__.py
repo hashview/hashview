@@ -227,7 +227,7 @@ def create_app(testing=False, config_overrides=None):
     logging.Formatter.formatTime = (
         lambda self, record, datefmt=None: \
             datetime.datetime
-                .fromtimestamp(record.created, datetime.timezone.utc)
+                .fromtimestamp(record.created, datetime.UTC)
                 .astimezone()
                 .isoformat(sep="T", timespec="milliseconds")
     )

@@ -9,7 +9,6 @@ import time
 import traceback
 from functools import partial
 from pathlib import Path
-from typing import Optional
 
 from hashview import create_app
 
@@ -113,7 +112,7 @@ def ensure_settings_cli(db):
 
     else:
         retention_period_int :int = 0
-        retention_period_raw :Optional[str] = None
+        retention_period_raw :str | None = None
         while 1 > retention_period_int > 65535:
             if retention_period_raw:
                 print('Error: Retention must be between 1 day and 65535 days')

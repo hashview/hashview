@@ -9,11 +9,15 @@ jobs:
   unit:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      # Supported range is Python 3.11+ (must match the setup.py floor).
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: |
             requirements.txt
@@ -34,7 +38,10 @@ jobs:
       # zero executed body lines (waivers live in the allowlist, kept empty).
       - name: Enforce function-level coverage gate
         run: python tests/check_function_coverage.py coverage.json
+      # Only the floor (3.11) leg uploads coverage, so the matrix doesn't produce
+      # duplicate artifact names and the badge stays deterministic.
       - name: Upload coverage report
+        if: matrix.python-version == '3.11'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-xml

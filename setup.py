@@ -9,8 +9,8 @@ from getpass import getpass
 
 # Step 1
 # Check version of python
-if sys.version_info < (3, 10):
-    print('You must be running python 3.10 or newer')
+if sys.version_info < (3, 11):
+    print('You must be running python 3.11 or newer')
     sys.exit()
 
 # Step 1.6

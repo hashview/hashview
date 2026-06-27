@@ -1,3 +1,11 @@
+import sys
+
+# Hashview supports Python 3.11 and newer (matches the server's setup.py floor).
+# Checked before any third-party import so an unsupported runtime fails cleanly.
+if sys.version_info < (3, 11):
+    sys.stderr.write('Hashview agent requires Python 3.11 or newer.\n')
+    sys.exit(1)
+
 import argparse
 import os
 import socket
@@ -6,7 +14,6 @@ import json
 import logging
 import secrets
 import hashlib
-import sys
 import psutil
 import re
 import signal
@@ -458,13 +465,11 @@ def run_benchmark(hash_modes):
     for mode in hash_modes or []:
         LOG.info('Benchmarking hash mode %s...', mode)
         try:
-            # stdout/stderr=PIPE (not capture_output=) so this works on Python 3.6,
-            # which agents in the field still run; capture_output was added in 3.7.
             # nosec B603 - fixed argv (no shell); binary is the operator-set
             # Config.HC_BIN_PATH and args are local config / numeric hash modes.
-            proc = subprocess.run(  # noqa: UP022  # nosec B603
+            proc = subprocess.run(  # nosec B603
                 [Config.HC_BIN_PATH, *hc_args, '-b', '-m', str(mode)],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                capture_output=True,
                 timeout=BENCHMARK_TIMEOUT)
         except Exception:
             LOG.exception('Benchmark failed for hash mode %s; skipping.', mode)

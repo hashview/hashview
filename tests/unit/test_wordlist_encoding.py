@@ -21,11 +21,14 @@ context and clean any .gz the ingest drops into the real control/wordlists dir.
 import gzip
 import io
 import os
+import time
 from pathlib import Path
 
 import pytest
 
 from hashview.models import Users, Wordlists, db
+from hashview.utils import wordlist_import as wli
+from hashview.utils.audit import configure_audit_logging
 from hashview.utils.utils import (
     get_filehash,
     get_linecount,
@@ -37,6 +40,10 @@ from hashview.utils.wordlist_import import looks_like_text_or_gz
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORDLISTS_DIR = REPO_ROOT / "hashview" / "control" / "wordlists"
 TMP_DIR = REPO_ROOT / "hashview" / "control" / "tmp"
+
+# Cookie domain must match the unit conftest's SERVER_NAME or Werkzeug won't
+# send the cookie (matches test_wordlist_gzip_storage.py).
+COOKIE_DOMAIN = "localhost.test"
 
 # UTF-8 BOM and a sampling of hashcat $HEX[] candidate lines. The $HEX[...] is
 # stored as the literal ASCII text hashcat reads back — hashview does NOT decode
@@ -69,9 +76,9 @@ def _clean_control_dirs():
                 pass
 
 
-def _make_user():
+def _make_user(api_key=None):
     u = Users(first_name="E", last_name="N", email_address="enc@e.com",
-              password="x" * 60, admin=True)
+              password="x" * 60, admin=True, api_key=api_key)
     db.session.add(u)
     db.session.commit()
     return u
@@ -83,10 +90,43 @@ def _login(client, user):
         sess["_fresh"] = True
 
 
+def _auth(client, api_key):
+    """Authenticate the API client by uuid cookie (matches the API upload route)."""
+    client.set_cookie("uuid", api_key, domain=COOKIE_DOMAIN)
+
+
+@pytest.fixture()
+def drop(app, tmp_path, monkeypatch):
+    """Isolated drop folder for run_import; also redirect audit logging into tmp
+    so the import's audit events never touch the repo's real logs dir."""
+    app.config["HASHVIEW_LOGS_DIR"] = str(tmp_path / "audit_logs")
+    configure_audit_logging(app)
+    d = tmp_path / "wordlists_import"
+    d.mkdir()
+    monkeypatch.setattr(wli, "import_dir", lambda app: str(d))
+    return d
+
+
+def _seed_drop(drop_dir, filename, content):
+    """Drop a file into the import folder and age its mtime past the quiescence
+    guard so run_import will process it."""
+    src = drop_dir / filename
+    src.write_bytes(content)
+    past = time.time() - (wli.QUIESCE_SECONDS + 60)
+    os.utime(src, (past, past))
+    return src
+
+
+def _write(tmp_path, content, name="upload.bin"):
+    """Write bytes to a temp file and return its path."""
+    src = tmp_path / name
+    src.write_bytes(content)
+    return src
+
+
 def _ingest(content, tmp_path, name="enc"):
     """Write ``content`` bytes to a temp file and ingest it; return the row."""
-    src = tmp_path / "upload.bin"
-    src.write_bytes(content)
+    src = _write(tmp_path, content)
     return ingest_static_wordlist_file(str(src), _make_user().id, name), src
 
 
@@ -271,3 +311,139 @@ def test_ui_upload_utf8_bom_roundtrips(app, client):
     assert wl is not None
     with gzip.open(wl.path, "rb") as f:
         assert f.read() == content                       # BOM preserved
+
+
+# ---------------------------------------------------------------------------
+# API upload route end-to-end: POST /v1/wordlists/add/<name> (raw bytes body)
+# ---------------------------------------------------------------------------
+
+def test_api_upload_utf16_accepted_and_roundtrips(app, client):
+    # The API body is read as raw bytes, so a NUL-containing UTF-16 list is
+    # accepted (no binary gate on this path) and stored verbatim.
+    _make_user(api_key="enc-utf16")
+    _auth(client, "enc-utf16")
+    content = "alpha\nbravo\ncharlie\n".encode("utf-16-le")
+    resp = client.post("/v1/wordlists/add/ApiUtf16", data=content,
+                       content_type="application/octet-stream")
+    body = resp.get_json()
+    assert body["status"] == 200
+    wl = Wordlists.query.get(body["wordlist_id"])
+    assert is_gzip(wl.path)
+    with gzip.open(wl.path, "rb") as f:
+        assert f.read() == content
+    assert wl.size == content.count(b"\n") + 1 == 4
+
+
+def test_api_upload_hashcat_hex_roundtrips(app, client):
+    _make_user(api_key="enc-hex")
+    _auth(client, "enc-hex")
+    resp = client.post("/v1/wordlists/add/ApiHex", data=HEX_LINES,
+                       content_type="text/plain")
+    body = resp.get_json()
+    assert body["status"] == 200
+    wl = Wordlists.query.get(body["wordlist_id"])
+    with gzip.open(wl.path, "rb") as f:
+        assert f.read() == HEX_LINES                      # literal, not decoded
+    assert wl.size == HEX_LINES.count(b"\n") + 1
+
+
+def test_api_upload_utf8_bom_preserved(app, client):
+    _make_user(api_key="enc-bom")
+    _auth(client, "enc-bom")
+    content = UTF8_BOM + b"p\xc3\xa4ssw\xc3\xb6rd\n"      # "pässwörd\n" utf-8 + BOM
+    resp = client.post("/v1/wordlists/add/ApiBom", data=content,
+                       content_type="application/octet-stream")
+    body = resp.get_json()
+    assert body["status"] == 200
+    wl = Wordlists.query.get(body["wordlist_id"])
+    with gzip.open(wl.path, "rb") as f:
+        assert f.read() == content                        # BOM not stripped
+
+
+# ---------------------------------------------------------------------------
+# ingest edge cases (degenerate inputs + binary the UI/API accept)
+# ---------------------------------------------------------------------------
+
+def test_ingest_empty_file(app, tmp_path):
+    # An empty wordlist stores empty bytes; get_linecount's (count + 1) reports 1.
+    wl, _ = _ingest(b"", tmp_path, "empty")
+    assert _stored_bytes(wl) == b""
+    assert wl.size == 1
+
+
+def test_ingest_only_newlines(app, tmp_path):
+    # Blank lines are real lines under the '\n'-count semantics.
+    content = b"\n\n\n"
+    wl, _ = _ingest(content, tmp_path, "blanks")
+    assert _stored_bytes(wl) == content
+    assert wl.size == 4                                    # 3 newlines + 1
+
+
+def test_ingest_bom_only_file(app, tmp_path):
+    # A file that is just a BOM (no newline) is one line and round-trips.
+    wl, _ = _ingest(UTF8_BOM, tmp_path, "bomonly")
+    assert _stored_bytes(wl) == UTF8_BOM
+    assert wl.size == 1
+
+
+def test_ingest_binary_with_nul_accepted_by_ingest(app, tmp_path):
+    # The UI/API ingest has no binary gate: NUL-containing bytes that the
+    # drop-folder importer would reject are accepted here and round-trip.
+    content = b"word1\n\x00\x01\x02binary\x00\nword3\n"
+    assert not looks_like_text_or_gz(str(_write(tmp_path, content)))  # drop-folder would refuse
+    wl, _ = _ingest(content, tmp_path, "binary")
+    assert _stored_bytes(wl) == content
+    assert wl.size == content.count(b"\n") + 1
+
+
+def test_ingest_mixed_lf_and_crlf(app, tmp_path):
+    # Mixed line endings: only '\n' bytes are counted; bytes are kept verbatim.
+    content = b"unix\nwindows\r\nunix2\n"
+    wl, _ = _ingest(content, tmp_path, "mixed")
+    assert _stored_bytes(wl) == content
+    assert wl.size == content.count(b"\n") + 1 == 4
+
+
+# ---------------------------------------------------------------------------
+# drop-folder import end-to-end: run_import per encoding (the NUL asymmetry)
+# ---------------------------------------------------------------------------
+
+def test_import_utf8_bom_succeeds(app, drop):
+    user = _make_user()
+    content = UTF8_BOM + b"password\nhunter2\n"
+    _seed_drop(drop, "bom.txt", content)
+    summary = wli.run_import(app, ["bom.txt"], user.id)
+    assert summary["imported"] == ["bom.txt"]
+    wl = Wordlists.query.filter_by(name="bom").first()
+    assert wl is not None and is_gzip(wl.path)
+    with gzip.open(wl.path, "rb") as f:
+        assert f.read() == content
+
+
+def test_import_utf16_rejected_to_failed(app, drop):
+    # UTF-16 (NUL bytes) is refused by the drop-folder gate and parked as .failed
+    # -- the same bytes upload fine via the UI/API (see the ingest/API tests).
+    user = _make_user()
+    _seed_drop(drop, "utf16.txt", "alpha\nbravo\n".encode("utf-16-le"))
+    summary = wli.run_import(app, ["utf16.txt"], user.id)
+    assert summary["failed"] == ["utf16.txt"]
+    assert Wordlists.query.filter_by(name="utf16").first() is None
+    assert (drop / "utf16.txt.failed").exists()
+
+
+def test_import_gzipped_utf16_succeeds(app, drop):
+    # Gzipping the UTF-16 list gets it past the gate (is_gzip wins) and the
+    # ingest round-trips the original bytes.
+    user = _make_user()
+    raw = "alpha\nbravo\ncharlie\n".encode("utf-16-le")
+    buf = drop / "utf16.gz"
+    with gzip.open(str(buf), "wb") as f:
+        f.write(raw)
+    past = time.time() - (wli.QUIESCE_SECONDS + 60)
+    os.utime(buf, (past, past))
+    summary = wli.run_import(app, ["utf16.gz"], user.id)
+    assert summary["imported"] == ["utf16.gz"]
+    wl = Wordlists.query.filter_by(name="utf16").first()
+    assert wl is not None and is_gzip(wl.path)
+    with gzip.open(wl.path, "rb") as f:
+        assert f.read() == raw

@@ -22,6 +22,7 @@ import gzip
 import hashlib
 import io
 import os
+import secrets
 import time
 from pathlib import Path
 
@@ -144,6 +145,21 @@ def _store_static(content, tmp_path, owner_id, name="DL"):
     """Ingest ``content`` and persist the static Wordlists row (for download tests)."""
     src = _write(tmp_path, content, name="src.bin")
     wl = ingest_static_wordlist_file(str(src), owner_id, name)
+    db.session.add(wl)
+    db.session.commit()
+    return wl
+
+
+def _store_dynamic(content, owner_id, name="(DYNAMIC) test"):
+    """Persist a dynamic wordlist: a verbatim .txt in control/wordlists with a
+    Wordlists row whose checksum is the plaintext hash (matches how dynamic
+    lists are stored before the agent download compresses them on the fly)."""
+    WORDLISTS_DIR.mkdir(parents=True, exist_ok=True)
+    txt = WORDLISTS_DIR / (secrets.token_hex(8) + ".txt")
+    txt.write_bytes(content)
+    wl = Wordlists(name=name, owner_id=owner_id, type="dynamic", path=str(txt),
+                   checksum=get_filehash(str(txt)), size=get_linecount(str(txt)),
+                   byte_size=os.path.getsize(txt))
     db.session.add(wl)
     db.session.commit()
     return wl
@@ -567,3 +583,90 @@ def test_api_upload_gzip_of_multibyte_roundtrips(app, client):
     wl = Wordlists.query.get(body["wordlist_id"])
     with gzip.open(wl.path, "rb") as f:
         assert f.read() == content
+
+
+# ---------------------------------------------------------------------------
+# dynamic wordlist download per encoding (stored .txt; gz'd on the fly)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("content", ENCODINGS)
+def test_agent_download_dynamic_compresses_encoding(app, client, content):
+    # Dynamic lists are stored uncompressed; the agent endpoint gzips the .txt
+    # on the fly. Whatever the encoding, the served .gz must decompress to the
+    # exact stored bytes.
+    user = _make_user(api_key="dyn-agent")
+    _auth(client, "dyn-agent")
+    wl = _store_dynamic(content, user.id)
+    resp = client.get(f"/v1/wordlists/{wl.id}")
+    assert resp.status_code == 200
+    assert resp.data[:2] == b"\x1f\x8b"                  # compressed on the fly
+    assert gzip.decompress(resp.data) == content
+
+
+@pytest.mark.parametrize("content", ENCODINGS)
+def test_ui_download_dynamic_served_verbatim_txt(app, client, content):
+    # The UI download serves a dynamic list's .txt verbatim (not gzipped), so
+    # the response body is the stored bytes unchanged.
+    user = _make_user()
+    _login(client, user)
+    wl = _store_dynamic(content, user.id)
+    resp = client.get(f"/wordlists/download/{wl.id}")
+    assert resp.status_code == 200
+    assert resp.data == content
+
+
+def test_dynamic_download_preserves_hashcat_hex_lines(app, client):
+    # The realistic case: a dynamic list built from cracked plaintexts that
+    # include $HEX[...] markers must reach the agent with those markers intact.
+    user = _make_user(api_key="dyn-hex")
+    _auth(client, "dyn-hex")
+    wl = _store_dynamic(HEX_LINES, user.id)
+    resp = client.get(f"/v1/wordlists/{wl.id}")
+    assert gzip.decompress(resp.data) == HEX_LINES
+    assert b"$HEX[70c3a4737377c3b67264]" in gzip.decompress(resp.data)
+
+
+# ---------------------------------------------------------------------------
+# duplicate name + collision safety (no unique constraint; token_hex paths)
+# ---------------------------------------------------------------------------
+
+def test_duplicate_name_creates_distinct_rows_and_files(app, tmp_path):
+    # Wordlists.name has no unique constraint: two uploads with the same name
+    # are independent rows backed by distinct random .gz files.
+    user = _make_user()
+    src = _write(tmp_path, b"alpha\nbravo\n")
+    wl1 = ingest_static_wordlist_file(str(src), user.id, "dupe")
+    wl2 = ingest_static_wordlist_file(str(src), user.id, "dupe")
+    db.session.add_all([wl1, wl2])
+    db.session.commit()
+    assert wl1.id != wl2.id
+    assert wl1.path != wl2.path                          # distinct on-disk files
+    assert os.path.exists(wl1.path) and os.path.exists(wl2.path)
+    assert Wordlists.query.filter_by(name="dupe").count() == 2
+
+
+def test_identical_content_uploads_do_not_collide(app, tmp_path):
+    # token_hex(8) names mean two ingests of identical bytes never share a path,
+    # so a concurrent/second upload can't overwrite the first; both round-trip.
+    user = _make_user()
+    content = b"same\ncontent\n"
+    a = ingest_static_wordlist_file(str(_write(tmp_path, content, "a")), user.id, "A")
+    b = ingest_static_wordlist_file(str(_write(tmp_path, content, "b")), user.id, "B")
+    assert a.path != b.path
+    assert _stored_bytes(a) == content
+    assert _stored_bytes(b) == content
+
+
+def test_ui_upload_duplicate_name_allowed(app, client):
+    user = _make_user()
+    _login(client, user)
+    for _ in range(2):
+        client.post(
+            "/wordlists/add",
+            data={"name": "DupUI", "wordlist": (io.BytesIO(b"x\ny\n"), "w.txt"),
+                  "submit": "upload"},
+            content_type="multipart/form-data",
+        )
+    rows = Wordlists.query.filter_by(name="DupUI").all()
+    assert len(rows) == 2
+    assert rows[0].path != rows[1].path

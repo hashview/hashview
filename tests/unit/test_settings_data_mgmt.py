@@ -11,7 +11,7 @@ read from the session (avoids rendering the whole settings page).
 
 from datetime import datetime
 
-from hashview.models import Hashes, Users, db
+from hashview.models import Hashes, Settings, Users, db
 
 
 def _admin(admin=True):
@@ -73,3 +73,43 @@ def test_clear_temp_flashes_success(app, client, monkeypatch):
     with client.session_transaction() as sess:
         flashes = sess.get("_flashes", [])
     assert any(cat == "success" and "Temp folder cleared" in msg for cat, msg in flashes)
+
+
+# --- send_test_admin_slack (administrative Slack room test button) ---------
+
+def _settings_row(channel=None):
+    s = Settings(retention_period=1, max_runtime_jobs=0, max_runtime_tasks=0,
+                 slack_enabled=True, slack_bot_token="xoxb-x", slack_admin_channel=channel)
+    db.session.add(s); db.session.commit()
+    return s
+
+
+def test_send_test_admin_slack_forbidden_for_non_admin(app, client):
+    user = _admin(admin=False); _login(client, user)
+    resp = client.get("/settings/send_test_admin_slack")
+    assert resp.status_code == 403
+
+
+def test_send_test_admin_slack_no_room_flashes(app, client, monkeypatch):
+    user = _admin(); _login(client, user)
+    _settings_row(channel=None)
+    calls = []
+    monkeypatch.setattr("hashview.settings.routes.send_slack_channel",
+                        lambda *a, **k: calls.append(a))
+    resp = client.get("/settings/send_test_admin_slack", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    assert calls == []          # no room configured -> nothing sent
+    with client.session_transaction() as sess:
+        flashes = sess.get("_flashes", [])
+    assert any(cat == "danger" for cat, _ in flashes)
+
+
+def test_send_test_admin_slack_posts_to_room(app, client, monkeypatch):
+    user = _admin(); _login(client, user)
+    _settings_row(channel="C0ADMIN")
+    calls = []
+    monkeypatch.setattr("hashview.settings.routes.send_slack_channel",
+                        lambda ch, sub, msg: calls.append(ch))
+    resp = client.get("/settings/send_test_admin_slack", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    assert calls == ["C0ADMIN"]

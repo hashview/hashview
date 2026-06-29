@@ -47,7 +47,7 @@ from hashview.utils.utils import send_email, send_pushover, send_slack, try_comm
 bcrypt = Bcrypt()
 
 
-def _safe_next(default_endpoint='users.profile'):
+def _safe_next(default_endpoint='main.home'):
     """Return a safe same-site redirect target from ?next= / form 'next', else the
     default endpoint. Lets the account-settings modal (in the layout) return the user
     to the page they opened it from. Guards against open-redirects."""
@@ -263,7 +263,11 @@ def users_delete(user_id):
 @users.route("/profile", methods=['GET', 'POST'])
 @login_required
 def profile():
-    """Function to display user profile"""
+    """Persist the account-settings modal (rendered in the layout, opened from the
+    bottom-left of every page). There is no standalone profile page anymore, so a
+    GET just redirects home; the modal POSTs here to save."""
+    if request.method == 'GET':
+        return redirect(url_for('main.home'))
 
     form = ProfileForm()
     if form.validate_on_submit():
@@ -276,14 +280,20 @@ def profile():
             current_user.pushover_app_id = form.pushover_app_id.data
         if form.slack_id.data:
             current_user.slack_id = form.slack_id.data
+        # Administrative notification prefs are admin-only; never let a non-admin
+        # POST set them.
+        if current_user.admin:
+            current_user.admin_notifications_enabled = form.admin_notifications_enabled.data
+            current_user.admin_notify_email = form.admin_notify_email.data
+            current_user.admin_notify_pushover = form.admin_notify_pushover.data
+            current_user.admin_notify_slack = form.admin_notify_slack.data
         db.session.commit()
         flash('Profile Updated!', 'success')
-        return redirect(_safe_next())
-    elif request.method == 'GET':
-        form.first_name.data = current_user.first_name
-        form.last_name.data = current_user.last_name
-        form.email.data = current_user.email_address
-    return render_template('profile.html.j2', title='Profile', form=form, current_user=current_user)
+    else:
+        for _field, _errs in form.errors.items():
+            for _e in _errs:
+                flash(_e, 'danger')
+    return redirect(_safe_next())
 
 @users.route("/profile/send_test_pushover", methods=['GET'])
 @login_required

@@ -500,11 +500,13 @@ class TestUsersDelete:
 # ---------------------------------------------------------------------------
 
 class TestProfile:
-    def test_get_renders_form(self, app, client):
+    def test_get_redirects_home(self, app, client):
+        # No standalone profile page anymore — editing lives in the layout's
+        # account-settings modal; GET /profile just redirects home.
         user = _make_user(app, email="profile_get@example.com")
         _login(client, user)
-        resp = client.get("/profile")
-        assert resp.status_code == 200
+        resp = client.get("/profile", follow_redirects=False)
+        assert resp.status_code in (301, 302)
 
     def test_post_updates_profile(self, app, client):
         user = _make_user(app, email="profile_post@example.com")

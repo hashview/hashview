@@ -322,6 +322,32 @@ details.job-card[open] > summary .chev { transform: rotate(90deg); }
 tr.selected .sel-box, .sel-box.on { background: var(--primary); border-color: var(--primary); color: var(--bg); }
 .tbl tbody tr.selected { background: rgba(var(--primary-rgb), 0.07); }
 
+/* Administrative-notification preferences table (account-settings modal): an
+   "Admin alerts" row with a checkbox-square per enabled channel. Columns are
+   rendered only for instance-enabled channels. :has() drives the checked look
+   (same pattern as .hex-salt-box / .notif-row). */
+.an-pref { width: 100%; border-collapse: collapse; }
+.an-pref th { padding: 8px 6px 12px; text-align: center; font-family: var(--mono); font-size: 10px;
+  letter-spacing: 1px; text-transform: uppercase; color: var(--text-mute); font-weight: 500; }
+.an-pref th svg { display: block; margin: 0 auto 5px; }
+.an-pref th:first-child { width: 99%; }
+.an-pref td { padding: 12px 6px; border-top: 1px solid var(--border-soft); text-align: center; vertical-align: middle; }
+.an-pref td:first-child { text-align: left; }
+.an-row-title { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; }
+.an-row-title svg { color: var(--text-dim); }
+.an-row-sub { color: var(--text-mute); font-size: 11.5px; margin-top: 3px; margin-left: 24px; }
+.an-box { position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border: 1px solid var(--border-bright); border-radius: 8px;
+  cursor: pointer; transition: border-color .12s, background .12s, box-shadow .12s; }
+.an-box input { position: absolute; opacity: 0; width: 0; height: 0; }
+/* unchecked: a faint centre dot */
+.an-box::before { content: ""; width: 6px; height: 6px; border-radius: 2px; background: var(--text-mute); }
+.an-box svg { position: absolute; opacity: 0; color: var(--primary); }
+/* checked: amber square + checkmark, dot hidden */
+.an-box:has(input:checked) { border-color: var(--primary); background: rgba(var(--primary-rgb), 0.10); box-shadow: var(--glow-sm); }
+.an-box:has(input:checked)::before { opacity: 0; }
+.an-box:has(input:checked) svg { opacity: 1; }
+
 /* dark custom checkbox (Alert Hashes step): dark inner box, phosphor fill when checked */
 input[type="checkbox"].hv-check {
   -webkit-appearance: none; appearance: none;

@@ -171,6 +171,48 @@
                 </div>
                 <span class="field-hint" style="margin-top:8px; display:block;">In Slack: your profile → ⋮ → Copy member ID (looks like U0123ABCD).</span>
                 {% endif %}
+
+                {# ADMINISTRATIVE NOTIFICATIONS — admins only (agent-error alerts) #}
+                {% if current_user.admin %}
+                <div class="as-sec">Administrative notifications</div>
+                <label style="display:flex; align-items:center; gap:12px; cursor:pointer;">
+                    <span class="switch"><input type="checkbox" name="admin_notifications_enabled" id="as-admin-notif" role="switch" onchange="hvSyncAdminNotif()"{% if current_user.admin_notifications_enabled %} checked{% endif %}><span class="track"></span></span>
+                    <span>
+                        <span style="display:block; font-size:13px; color:var(--text);">Receive administrative notifications</span>
+                        <span class="field-hint" style="margin-top:2px;">Hashview agent error alerts. Pick the channels below.</span>
+                    </span>
+                </label>
+                <div id="as-admin-notif-channels" style="margin-top:14px; display:{{ 'block' if current_user.admin_notifications_enabled else 'none' }};">
+                    {% if notify_channels.email or notify_channels.pushover or notify_channels.slack %}
+                    {# Pick which enabled channel(s) deliver administrative alerts. Columns
+                       reflect the instance master switches (Settings -> Notifications). #}
+                    <table class="an-pref">
+                        <thead>
+                            <tr>
+                                <th></th>
+                                {% if notify_channels.email %}<th>{{ icon('mail', size=16) }}<span>Email</span></th>{% endif %}
+                                {% if notify_channels.pushover %}<th>{{ icon('bell', size=16) }}<span>Pushover</span></th>{% endif %}
+                                {% if notify_channels.slack %}<th>{{ icon('slack', size=16) }}<span>Slack</span></th>{% endif %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>
+                                    <div class="an-row-title">{{ icon('shield', size=16) }} Admin alerts</div>
+                                    <div class="an-row-sub">Hashview agent errors &amp; system health{% if notify_channels.slack %} · Slack posts to the admin room{% endif %}</div>
+                                </td>
+                                {% if notify_channels.email %}<td><label class="an-box"><input type="checkbox" name="admin_notify_email"{% if current_user.admin_notify_email %} checked{% endif %}>{{ icon('check', size=16) }}</label></td>{% endif %}
+                                {% if notify_channels.pushover %}<td><label class="an-box"><input type="checkbox" name="admin_notify_pushover"{% if current_user.admin_notify_pushover %} checked{% endif %}>{{ icon('check', size=16) }}</label></td>{% endif %}
+                                {% if notify_channels.slack %}<td><label class="an-box"><input type="checkbox" name="admin_notify_slack"{% if current_user.admin_notify_slack %} checked{% endif %}>{{ icon('check', size=16) }}</label></td>{% endif %}
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="field-hint" style="margin-top:8px;">{{ icon('info', size=12) }} An event with no channel selected won't notify you at all.</div>
+                    {% else %}
+                    <span class="field-hint">No notification channels are enabled instance-wide.</span>
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
             <div class="hv-dialog-foot">
                 <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
@@ -189,6 +231,13 @@
         var full = i.getAttribute('data-full'); if (!full) return;
         if (navigator.clipboard) { navigator.clipboard.writeText(full); }
         else { var was = i.value; i.value = full; i.select(); document.execCommand('copy'); i.value = was; }
+    }
+    // Reveal the per-channel admin-notification options only when the master
+    // "Receive administrative notifications" switch is on (admins only).
+    function hvSyncAdminNotif() {
+        var on = document.getElementById('as-admin-notif');
+        var box = document.getElementById('as-admin-notif-channels');
+        if (box) box.style.display = (on && on.checked) ? 'block' : 'none';
     }
     </script>
 

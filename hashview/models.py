@@ -31,6 +31,14 @@ class Users(db.Model, UserMixin):
     pushover_app_id   = db.Column(db.String(50), nullable=True)
     pushover_user_key = db.Column(db.String(50), nullable=True)
     slack_id          = db.Column(db.String(50), nullable=True)   # per-user Slack Member ID (U…)
+    # Administrative notifications (agent errors): admins receive them by default
+    # (email + pushover, matching the pre-existing notify_admins behavior), and can
+    # tune the channels in their profile. Slack admin alerts go to the shared
+    # Settings.slack_admin_channel room, not a per-admin DM. See notify_admins.
+    admin_notifications_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    admin_notify_email          = db.Column(db.Boolean, nullable=False, default=True)
+    admin_notify_pushover       = db.Column(db.Boolean, nullable=False, default=True)
+    admin_notify_slack          = db.Column(db.Boolean, nullable=False, default=True)
     last_login_utc    = db.Column(db.DateTime,   nullable=True,  default=datetime.utcnow)
     api_key           = db.Column(db.String(60), nullable=True)
     # Auth provenance: 'local' (password) or 'azure' (Entra ID SSO). The setup
@@ -142,6 +150,9 @@ class Settings(db.Model):
     pushover_enabled = db.Column(db.Boolean, nullable=False, default=True)
     slack_enabled = db.Column(db.Boolean, nullable=False, default=False)
     slack_bot_token = db.Column(db.String(255), nullable=True)
+    # Slack room (channel id, e.g. C0123ABC) that administrative notifications
+    # (agent errors) are posted to; the bot must be in it (or have chat:write.public).
+    slack_admin_channel = db.Column(db.String(255), nullable=True)
     # One-time flag for the hex->UTF-8 backfill of legacy usernames/plaintext.
     # Model default True so FRESH installs (new Settings row) skip the backfill;
     # the migration adds it with server_default 0 so EXISTING rows get flagged

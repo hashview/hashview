@@ -34,6 +34,8 @@ class HashviewSettingsForm(FlaskForm):
     pushover_enabled = BooleanField('Enable Pushover notifications.')
     slack_enabled = BooleanField('Enable Slack notifications.')
     slack_bot_token = StringField('Slack bot token (xoxb-…)')
+    # Room (channel id) for administrative notifications (agent errors).
+    slack_admin_channel = StringField('Slack room for administrative messages')
     # Authentication — local (default) or Microsoft Entra ID SSO. No DataRequired
     # on the azure fields: local mode must validate with them blank. The route
     # enforces completeness when azure is selected. The client secret is a

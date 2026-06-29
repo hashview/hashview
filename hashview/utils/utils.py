@@ -198,20 +198,32 @@ def ingest_static_wordlist_file(src_path, owner_id, name):
     )
 
 def notify_admins(subject, message):
-    # Respect the instance-wide channel switches (Settings -> Notifications) so a
-    # disabled channel never sends, even for admin alerts. Defaults match the UI:
-    # email/pushover are on when there is no Settings row yet.
+    """Deliver an administrative notification (e.g. an agent error) to the admins
+    who opted in, over each channel they selected and that is instance-enabled.
+
+    Email/Pushover are delivered per-admin. Slack is different: admin alerts post
+    to the single shared room (Settings.slack_admin_channel), so we post there ONCE
+    when any opted-in admin selected Slack — never once per admin. Respects the
+    instance-wide master switches (a disabled channel never sends)."""
     settings = Settings.query.first()
     email_on = bool(settings.email_enabled) if settings else True
     push_on = bool(settings.pushover_enabled) if settings else True
+    slack_on = bool(settings.slack_enabled) if settings else False
+    room = settings.slack_admin_channel if settings else None
 
-    users = Users.query.filter_by(admin=True).all()
+    admins = Users.query.filter_by(admin=True, admin_notifications_enabled=True).all()
 
-    for user in users:
-        if push_on and user.pushover_app_id and user.pushover_user_key:
-            send_pushover(user, subject, message)
-        if email_on:
+    slack_wanted = False
+    for user in admins:
+        if email_on and user.admin_notify_email:
             send_email(user, subject, message)
+        if push_on and user.admin_notify_pushover and user.pushover_app_id and user.pushover_user_key:
+            send_pushover(user, subject, message)
+        if slack_on and user.admin_notify_slack and room:
+            slack_wanted = True
+
+    if slack_wanted:
+        send_slack_channel(room, subject, message)
 
 def send_email(user, subject, message):
     """Function to send email"""
@@ -259,25 +271,26 @@ def send_pushover(user, subject, message):
     current_app.logger.info('SendPushover is Complete with Success(%s).', response_json)
     return
 
-def send_slack(user, subject, message):
-    """Send a Slack DM to a user via the global bot, addressed by their Slack
-    Member ID (user.slack_id). Mirrors send_pushover: logs the outcome and never
+def _post_slack(channel, subject, message):
+    """Post a message to a Slack conversation (a user's Member ID -> DM, or a
+    channel id -> that room) via the global bot. Logs the outcome and never
     raises. No-ops (with a log line) when Slack is disabled/unconfigured globally
-    or the user has no Slack Member ID."""
+    or no target channel is given."""
 
     settings = Settings.query.first()
     if not settings or not settings.slack_enabled or not settings.slack_bot_token:
         current_app.logger.info('SendSlack is Complete with Failure(Slack not enabled/configured).')
         return
 
-    if not user.slack_id:
-        current_app.logger.info('SendSlack is Complete with Failure(User Slack ID not configured).')
+    if not channel:
+        current_app.logger.info('SendSlack is Complete with Failure(No Slack target configured).')
         return
 
-    # https://api.slack.com/methods/chat.postMessage - posting to a user's member
-    # ID DMs them (bot needs the chat:write scope).
+    # https://api.slack.com/methods/chat.postMessage - a user's member ID DMs them;
+    # a channel id posts to that room (bot needs chat:write, and to be in the
+    # channel or hold chat:write.public for public rooms).
     headers = {'Authorization': 'Bearer ' + settings.slack_bot_token}
-    payload = {'channel': user.slack_id, 'text': '*' + subject + '*\n' + message}
+    payload = {'channel': channel, 'text': '*' + subject + '*\n' + message}
     response = requests.post('https://slack.com/api/chat.postMessage', json=payload, headers=headers, timeout=30)
     response_json = response.json()
     if not response_json.get('ok'):
@@ -286,6 +299,19 @@ def send_slack(user, subject, message):
 
     current_app.logger.info('SendSlack is Complete with Success.')
     return
+
+def send_slack(user, subject, message):
+    """Send a Slack DM to a user via the global bot, addressed by their Slack
+    Member ID (user.slack_id). No-ops when the user has no Slack Member ID."""
+    if not user.slack_id:
+        current_app.logger.info('SendSlack is Complete with Failure(User Slack ID not configured).')
+        return
+    _post_slack(user.slack_id, subject, message)
+
+def send_slack_channel(channel, subject, message):
+    """Post to a Slack channel/room (e.g. the administrative-notifications room
+    Settings.slack_admin_channel) via the global bot."""
+    _post_slack(channel, subject, message)
 
 def deliver_user_notification(user, method, subject, message, html_message=None):
     """Dispatch one notification to `user` over a single `method`

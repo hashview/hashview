@@ -55,6 +55,12 @@ class ProfileForm(FlaskForm):
     pushover_user_key = StringField('Pushover User Key (optional)')
     pushover_app_id = StringField('Pushover App Id (optional)')
     slack_id = StringField('Slack Member ID (optional)')
+    # Administrative notifications (agent errors) — admin-only; the route ignores
+    # these for non-admins. The channel sub-options apply when the master is on.
+    admin_notifications_enabled = BooleanField('Receive administrative notifications')
+    admin_notify_email = BooleanField('Email')
+    admin_notify_pushover = BooleanField('Pushover')
+    admin_notify_slack = BooleanField('Slack')
     submit = SubmitField('Update')
 
 class RequestResetForm(FlaskForm):

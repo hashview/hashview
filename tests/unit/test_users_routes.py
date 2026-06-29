@@ -77,11 +77,13 @@ def test_users_add_non_admin_rejected(app, client):
 
 # --- profile ---------------------------------------------------------------
 
-def test_profile_get_renders(app, client):
+def test_profile_get_redirects_home(app, client):
+    """The standalone profile page is gone (editing lives in the layout modal);
+    a GET just redirects home."""
     admin = make_admin()
     login(client, admin)
-    resp = client.get("/profile")
-    assert resp.status_code == 200
+    resp = client.get("/profile", follow_redirects=False)
+    assert resp.status_code in (301, 302)
 
 
 def test_profile_post_updates_user(app, client):
@@ -117,6 +119,74 @@ def test_send_test_slack_invokes_sender(app, client, monkeypatch):
     resp = client.get("/profile/send_test_slack", follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert calls == [admin.id]
+
+
+# --- administrative-notification opt-in (profile) --------------------------
+
+def test_account_modal_shows_admin_optin_for_admin(app, client):
+    """The account-settings modal (in the layout, on every page) offers the
+    administrative-notification opt-in to admins."""
+    admin = make_admin()
+    login(client, admin)
+    html = client.get("/", follow_redirects=True).get_data(as_text=True)
+    # the actual control (the input is gated by current_user.admin; the prose
+    # also appears in an ungated JS comment, so assert on the input name).
+    assert 'name="admin_notifications_enabled"' in html
+
+
+def test_account_modal_hides_admin_optin_for_non_admin(app, client):
+    user = make_user()
+    login(client, user)
+    html = client.get("/", follow_redirects=True).get_data(as_text=True)
+    assert 'name="admin_notifications_enabled"' not in html
+
+
+def test_account_modal_admin_table_only_enabled_channels(app, client):
+    """The admin-alerts preferences table renders a column only for each
+    instance-enabled channel (email + slack on, pushover off here)."""
+    from hashview.models import Settings
+    s = Settings.query.first() or Settings(retention_period=1, max_runtime_jobs=0, max_runtime_tasks=0)
+    s.email_enabled, s.pushover_enabled, s.slack_enabled = True, False, True
+    db.session.add(s)
+    db.session.commit()
+    admin = make_admin()
+    login(client, admin)
+    html = client.get("/", follow_redirects=True).get_data(as_text=True)
+    assert 'class="an-pref"' in html                      # the table is rendered
+    assert 'name="admin_notify_email"' in html
+    assert 'name="admin_notify_slack"' in html
+    assert 'name="admin_notify_pushover"' not in html     # disabled channel column omitted
+
+
+def test_profile_post_saves_admin_notif_prefs(app, client):
+    """An admin's administrative-notification opt-in + channel choices persist."""
+    admin = make_admin()
+    login(client, admin)
+    resp = client.post("/profile", data={
+        "first_name": "A", "last_name": "D", "email": "admin@example.com",
+        "admin_notifications_enabled": "y", "admin_notify_email": "y",
+        "admin_notify_slack": "y", "submit": "Update",
+    }, follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    u = Users.query.get(admin.id)
+    assert u.admin_notifications_enabled and u.admin_notify_email and u.admin_notify_slack
+    assert not u.admin_notify_pushover          # unchecked stays off
+
+
+def test_profile_post_ignores_admin_prefs_for_non_admin(app, client):
+    """A non-admin POST can't change the admin-only notification fields."""
+    user = make_user()
+    user.admin_notifications_enabled = False      # known starting state
+    user.admin_notify_email = False
+    db.session.commit()
+    login(client, user)
+    resp = client.post("/profile", data={
+        "first_name": "U", "last_name": "Sr", "email": "user@example.com",
+        "admin_notifications_enabled": "y", "admin_notify_email": "y", "submit": "Update",
+    }, follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    u = Users.query.get(user.id)
+    assert not u.admin_notifications_enabled and not u.admin_notify_email   # POST ignored
 
 
 def test_send_test_email_success_flash(app, client, monkeypatch):

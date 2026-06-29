@@ -19,6 +19,7 @@ context and clean any .gz the ingest drops into the real control/wordlists dir.
 """
 
 import gzip
+import hashlib
 import io
 import os
 import time
@@ -57,6 +58,15 @@ HEX_LINES = (
     b"$HEX[]\n"                  # degenerate empty-hex line
     b"letmein\n"
 )
+
+# Shared encoding samples for the parametrized round-trip tests.
+ENCODINGS = [
+    pytest.param("café\nnaïve\n🔑emoji\n".encode(), id="utf8-multibyte"),
+    pytest.param("alpha\nbravo\ncharlie\n".encode("utf-16-le"), id="utf16le"),
+    pytest.param(HEX_LINES, id="hashcat-hex"),
+    pytest.param("café\nrésumé\n".encode("latin-1"), id="latin1"),
+    pytest.param(UTF8_BOM + b"password\nhunter2\n", id="utf8-bom"),
+]
 
 
 @pytest.fixture(autouse=True)
@@ -128,6 +138,15 @@ def _ingest(content, tmp_path, name="enc"):
     """Write ``content`` bytes to a temp file and ingest it; return the row."""
     src = _write(tmp_path, content)
     return ingest_static_wordlist_file(str(src), _make_user().id, name), src
+
+
+def _store_static(content, tmp_path, owner_id, name="DL"):
+    """Ingest ``content`` and persist the static Wordlists row (for download tests)."""
+    src = _write(tmp_path, content, name="src.bin")
+    wl = ingest_static_wordlist_file(str(src), owner_id, name)
+    db.session.add(wl)
+    db.session.commit()
+    return wl
 
 
 def _stored_bytes(wl):
@@ -447,3 +466,104 @@ def test_import_gzipped_utf16_succeeds(app, drop):
     assert wl is not None and is_gzip(wl.path)
     with gzip.open(wl.path, "rb") as f:
         assert f.read() == raw
+
+
+# ---------------------------------------------------------------------------
+# download round-trip per encoding: bytes reach the agent / browser intact
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("content", ENCODINGS)
+def test_agent_download_serves_encoding_verbatim(app, client, tmp_path, content):
+    # GET /v1/wordlists/<id> (agent sync) serves the stored .gz verbatim; the
+    # agent verifies sha256(body) against the catalog checksum, so the bytes --
+    # whatever the encoding -- must survive the round-trip exactly.
+    user = _make_user(api_key="dl-agent")
+    _auth(client, "dl-agent")
+    wl = _store_static(content, tmp_path, user.id)
+    resp = client.get(f"/v1/wordlists/{wl.id}")
+    assert resp.status_code == 200
+    body = resp.data
+    assert body[:2] == b"\x1f\x8b"                        # gzip on the wire
+    assert hashlib.sha256(body).hexdigest() == wl.checksum   # agent integrity check
+    assert gzip.decompress(body) == content               # original bytes recovered
+
+
+@pytest.mark.parametrize("content", ENCODINGS)
+def test_ui_download_attachment_roundtrips(app, client, tmp_path, content):
+    # GET /wordlists/download/<id> serves the static list as a .gz attachment;
+    # decompressing the response yields the original bytes for every encoding.
+    user = _make_user()
+    _login(client, user)
+    wl = _store_static(content, tmp_path, user.id)
+    resp = client.get(f"/wordlists/download/{wl.id}")
+    assert resp.status_code == 200
+    assert resp.headers["Content-Disposition"].startswith("attachment")
+    assert gzip.decompress(resp.data) == content
+
+
+# ---------------------------------------------------------------------------
+# AJAX upload path (X-Requested-With: fetch -> JSON) per encoding
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("content", ENCODINGS)
+def test_ui_ajax_upload_encoding_json_ok(app, client, content):
+    user = _make_user()
+    _login(client, user)
+    resp = client.post(
+        "/wordlists/add",
+        data={"name": "AjaxEnc", "wordlist": (io.BytesIO(content), "wl.txt"),
+              "submit": "upload"},
+        content_type="multipart/form-data",
+        headers={"X-Requested-With": "fetch"},
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["status"] == "ok"
+    wl = Wordlists.query.filter_by(name="AjaxEnc").first()
+    assert wl is not None and is_gzip(wl.path)
+    with gzip.open(wl.path, "rb") as f:
+        assert f.read() == content
+
+
+# ---------------------------------------------------------------------------
+# API route: remaining text encodings + gzip body of multibyte UTF-8
+# ---------------------------------------------------------------------------
+
+def test_api_upload_utf8_multibyte_roundtrips(app, client):
+    _make_user(api_key="enc-mb")
+    _auth(client, "enc-mb")
+    content = "café\nnaïve\n🔑emoji\nüber\n".encode()
+    resp = client.post("/v1/wordlists/add/ApiMB", data=content, content_type="text/plain")
+    body = resp.get_json()
+    assert body["status"] == 200
+    wl = Wordlists.query.get(body["wordlist_id"])
+    assert wl.size == content.count(b"\n") + 1
+    with gzip.open(wl.path, "rb") as f:
+        assert f.read() == content
+
+
+def test_api_upload_latin1_roundtrips(app, client):
+    _make_user(api_key="enc-l1")
+    _auth(client, "enc-l1")
+    content = "café\nrésumé\n".encode("latin-1")
+    resp = client.post("/v1/wordlists/add/ApiL1", data=content,
+                       content_type="application/octet-stream")
+    body = resp.get_json()
+    assert body["status"] == 200
+    wl = Wordlists.query.get(body["wordlist_id"])
+    with gzip.open(wl.path, "rb") as f:
+        assert f.read() == content
+
+
+def test_api_upload_gzip_of_multibyte_roundtrips(app, client):
+    # A gzipped multibyte-UTF-8 body is decompressed, counted, re-compressed at
+    # -9; the stored content must still decode to the original bytes.
+    _make_user(api_key="enc-gzmb")
+    _auth(client, "enc-gzmb")
+    content = "café\nnaïve\n🔑emoji\n".encode()
+    resp = client.post("/v1/wordlists/add/ApiGzMB", data=gzip.compress(content),
+                       content_type="application/octet-stream")
+    body = resp.get_json()
+    assert body["status"] == 200
+    wl = Wordlists.query.get(body["wordlist_id"])
+    with gzip.open(wl.path, "rb") as f:
+        assert f.read() == content

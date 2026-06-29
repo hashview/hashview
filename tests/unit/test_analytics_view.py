@@ -9,8 +9,6 @@ app from tests/unit/conftest.py.
 
 from datetime import datetime, timedelta
 
-import pytest
-
 from hashview.models import (
     Customers,
     Hashes,
@@ -292,7 +290,6 @@ def _seed_single_hex_password():
     return cust.id, hf.id
 
 
-@pytest.mark.xfail(reason="#291: analytics counts the $HEX[...] wrapper length", strict=True)
 def test_analytics_hex_length_uses_decoded_length(app, client):
     """The length-distribution chart must bucket the decoded password length
     (8 for 'pässwörd'), not the 26-char $HEX[...] wrapper."""
@@ -306,7 +303,6 @@ def test_analytics_hex_length_uses_decoded_length(app, client):
     assert "26 chars" not in html     # the $HEX[...] wrapper length
 
 
-@pytest.mark.xfail(reason="#291: analytics counts the $HEX[...] wrapper length", strict=True)
 def test_analytics_hex_not_overscored_as_long_strong(app, client):
     """An 8-char password must not be rated as if it were 26 chars: the
     raw $HEX[...] string should never leak into the rendered page."""

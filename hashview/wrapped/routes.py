@@ -5,6 +5,7 @@ from flask_login import current_user, login_required
 from sqlalchemy import func
 
 from hashview.models import Hashes, Tasks, Users, db
+from hashview.utils.utils import decode_hex_plain
 
 wrapped = Blueprint('wrapped', __name__)
 
@@ -29,24 +30,10 @@ def _rank_of(ordered_ids, user_id):
     return ordered_ids.index(user_id) + 1 if user_id in ordered_ids else None
 
 
-def _decode_plain(plaintext):
-    """Human plaintext used for length checks + display.
-
-    hashcat emits non-UTF-8 plaintexts as ``$HEX[..]``; decode those first so the
-    length reflects the real password rather than the wrapper (``$HEX[4142]`` is
-    8 chars on the wire but the password is just "AB"). A latin-1 fallback keeps
-    binary passwords displayable with a byte-accurate length.
-    """
-    if plaintext and plaintext.startswith('$HEX[') and plaintext.endswith(']'):
-        try:
-            raw = bytes.fromhex(plaintext[5:-1])
-        except ValueError:
-            return plaintext
-        try:
-            return raw.decode('utf-8')
-        except UnicodeDecodeError:
-            return raw.decode('latin-1')
-    return plaintext or ''
+# Human plaintext used for length checks + display: decode hashcat's `$HEX[..]`
+# marker so the length reflects the real password, not the wrapper. Shared with
+# Analytics via hashview.utils.utils.decode_hex_plain.
+_decode_plain = decode_hex_plain
 
 
 @wrapped.route("/wrapped", methods=['GET'])

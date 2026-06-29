@@ -47,6 +47,20 @@ def test_hexplain_to_text():
     assert U.hexplain_to_text('not-hex') == 'not-hex'            # defensive fallback
 
 
+@pytest.mark.security
+def test_decode_hex_plain():
+    # Inverse of the $HEX[...] marker, used so length/analytics measure the real
+    # password rather than the wrapper (issue #291).
+    assert U.decode_hex_plain('password') == 'password'           # plain passes through
+    assert U.decode_hex_plain('$HEX[' + 'pässwörd'.encode().hex() + ']') == 'pässwörd'
+    assert len(U.decode_hex_plain('$HEX[70c3a4737377c3b67264]')) == 8   # not 26
+    assert U.decode_hex_plain('$HEX[fffe]') == '\xff\xfe'         # binary -> latin-1 fallback
+    assert U.decode_hex_plain('$HEX[zz]') == '$HEX[zz]'           # bad hex -> unchanged
+    assert U.decode_hex_plain(None) == ''                         # None -> '' (safe for len())
+    # round-trips bytes_to_text for UTF-8 content
+    assert U.decode_hex_plain(U.bytes_to_text('café'.encode())) == 'café'
+
+
 # --------------------------------------------------------------------------
 # hashfile import (the reported crash)
 # --------------------------------------------------------------------------

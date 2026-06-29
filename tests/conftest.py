@@ -137,8 +137,16 @@ def test_user_credentials():
 def login(page, live_server, test_user_credentials):
     def _login():
         page.goto(f"{live_server}/login", wait_until="domcontentloaded")
-        page.get_by_label("Email").fill(test_user_credentials["email"])
-        page.get_by_label("Password").fill(test_user_credentials["password"])
+        # The first-run setup flow auto-logs-in the admin, and GET /login
+        # redirects an already-authenticated user straight to the dashboard, so
+        # there may be no form to fill. Detect that and short-circuit.
+        if page.get_by_role("link", name="Jobs").is_visible():
+            return page
+        # Target the login form's fields by id (not get_by_label("Email"), which
+        # also matches the hidden "Email address" field in the account-settings
+        # panel that the layout renders on authenticated pages).
+        page.locator("#email").fill(test_user_credentials["email"])
+        page.locator("#password").fill(test_user_credentials["password"])
         page.get_by_role("button", name="Crack the planet!").click()
         if not page.get_by_role("link", name="Jobs").is_visible():
             pytest.skip(

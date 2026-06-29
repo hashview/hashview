@@ -31,6 +31,18 @@ def test_login_get_renders_anonymous(app, client):
     assert resp.status_code == 200
 
 
+def test_login_get_authenticated_redirects_home(app, client):
+    # An already-authenticated user has no business on the login form. GET /login
+    # used to render the authenticated app shell with an empty content area (the
+    # form lives in the `content_anon` block, suppressed when logged in), which
+    # both looks broken and breaks the e2e login fixture. It must redirect home.
+    admin = make_admin()
+    login(client, admin)
+    resp = client.get("/login", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    assert "/login" not in resp.headers["Location"]
+
+
 def test_logout_redirects_and_clears_session(app, client):
     admin = make_admin()
     login(client, admin)

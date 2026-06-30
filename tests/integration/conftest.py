@@ -64,15 +64,40 @@ def mysql_app():
 
 @pytest.fixture()
 def mysql_session(mysql_app):
-    """A clean SQLAlchemy session on the MySQL app, rolled back after the test.
+    """A clean SQLAlchemy session on the MySQL app, fully reverted after the test.
 
-    Each test runs inside a transaction that is rolled back on teardown, so the
-    migration-created schema is never mutated permanently and tests don't leak
-    rows into each other.
+    Uses the classic SQLAlchemy "connection + outer transaction + SAVEPOINT"
+    isolation pattern so that even a test which calls ``session.commit()`` only
+    commits *within* the savepoint: on teardown we roll back the outer
+    transaction and close the connection, reverting everything. This keeps the
+    migration-created schema un-mutated and prevents row leakage between tests.
+
+    Implementation notes:
+    * We bind the scoped session to a dedicated connection that owns an explicit
+      outer transaction.
+    * ``join_transaction_mode="create_savepoint"`` makes the session emit a
+      SAVEPOINT for its work, so a ``commit()`` releases the savepoint rather
+      than committing the outer transaction.
     """
     from hashview.models import db as _db
 
     with mysql_app.app_context():
-        yield _db.session
-        _db.session.rollback()
+        engine = _db.engine
+        connection = engine.connect()
+        transaction = connection.begin()
+
         _db.session.remove()
+        _db.session.configure(
+            bind=connection,
+            join_transaction_mode="create_savepoint",
+        )
+
+        try:
+            yield _db.session
+        finally:
+            _db.session.remove()
+            if transaction.is_active:
+                transaction.rollback()
+            connection.close()
+            # Restore the session's default binding for any later fixtures/tests.
+            _db.session.configure(bind=engine)

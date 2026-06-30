@@ -25,6 +25,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask_migrate import upgrade  # noqa: E402
+from sqlalchemy.engine.url import make_url  # noqa: E402
 
 from hashview import create_app  # noqa: E402
 
@@ -58,7 +59,10 @@ def main() -> int:
     with app.app_context():
         upgrade(directory=migrations_dir)
 
-    print(f"Migration upgrade to head succeeded against {app.config['SQLALCHEMY_DATABASE_URI']}")
+    safe_uri = make_url(app.config["SQLALCHEMY_DATABASE_URI"]).render_as_string(
+        hide_password=True
+    )
+    print(f"Migration upgrade to head succeeded against {safe_uri}")
     return 0
 
 

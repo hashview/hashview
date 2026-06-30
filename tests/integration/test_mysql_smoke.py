@@ -88,6 +88,13 @@ def test_string_equality_is_case_insensitive_on_mysql(mysql_session):
     """
     from hashview.models import Users
 
+    collation = mysql_session.execute(text("SELECT @@collation_database")).scalar()
+    if collation and (collation.endswith("_bin") or "_cs" in collation):
+        pytest.skip(
+            f"Database collation {collation!r} is case-sensitive; this test only "
+            "holds under a case-insensitive (_ci) collation."
+        )
+
     email = "Case.Sensitive@Example.COM"
     _make_user(mysql_session, email)
     mysql_session.flush()

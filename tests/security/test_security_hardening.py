@@ -282,13 +282,6 @@ def _seed_job_with_task(attackmode, *, hc_mask=None, j_rule=None, k_rule=None,
     return job, task
 
 
-def _assert_no_raw_metachars(cmd, payload):
-    """A command-string built safely would NEVER contain the raw shell payload as
-    an active, unquoted/unescaped substring. shlex.quote()-style quoting or
-    rejection would change it. Returns True if the payload sits raw in the cmd."""
-    return payload in cmd
-
-
 @pytest.mark.security
 @pytest.mark.parametrize("payload", _SHELL_PAYLOADS)
 @pytest.mark.parametrize("attackmode", [3, 6, 7])
@@ -309,7 +302,7 @@ def test_mask_field_shell_injection(nocsrf_app, attackmode, payload):
     job, task = _seed_job_with_task(attackmode, hc_mask=payload)
     cmd = build_hashcat_command(job.id, task.id)
     # Safe code would not embed the live metacharacters verbatim.
-    assert not _assert_no_raw_metachars(cmd, payload), (
+    assert payload not in cmd, (
         f"mask payload {payload!r} reached the command string RAW: {cmd!r}"
     )
 
@@ -337,7 +330,7 @@ def test_combinator_rule_shell_injection(nocsrf_app, field, payload):
     cmd = build_hashcat_command(job.id, task.id)
     # A single-quote in the payload that survives into the command means the
     # quoting can be broken out of. Safe handling would escape it.
-    assert "'" not in payload or payload not in cmd, (
+    assert payload not in cmd, (
         f"{field} payload {payload!r} embedded raw in command (quote break-out): {cmd!r}"
     )
 
@@ -464,7 +457,9 @@ def test_idor_user_b_cannot_delete_user_a_hashfile(nocsrf_app):
 
     resp = client.post(f"/hashfiles/delete/{hf_id}", follow_redirects=False)
     # App pattern for denial here is a redirect (302) + flash, not 403.
-    assert resp.status_code in (302, 403, 404)
+    assert resp.status_code in (302, 403), (
+        f"expected redirect/forbidden for non-owner delete, got {resp.status_code}"
+    )
     db.session.expire_all()
     assert Hashfiles.query.get(hf_id) is not None, (
         "IDOR: user B deleted user A's hashfile"

@@ -7,6 +7,7 @@ The flow exercised:
     GET  /wordlists      -> verify the row is gone
 """
 
+import os
 import re
 import uuid
 from pathlib import Path
@@ -14,13 +15,29 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-
-EXAMPLE_WORDLIST = Path(__file__).parent / "example_wordlist.txt"
+# The small list bundled with the suite; used unless HASHVIEW_E2E_WORDLIST
+# overrides it (see the wordlist_file fixture).
+DEFAULT_WORDLIST = Path(__file__).parent / "example_wordlist.txt"
 
 # Form submits here POST then redirect+reload. Playwright's click auto-waits for
 # that navigation to finish; the default 5s action timeout is too tight on a
 # loaded CI runner, so give navigation-bound steps a generous explicit budget.
 NAV_TIMEOUT = 15_000
+
+
+@pytest.fixture()
+def wordlist_file() -> Path:
+    """File the lifecycle test uploads.
+
+    Defaults to the bundled example, but set HASHVIEW_E2E_WORDLIST to an
+    arbitrary file (plain text OR gzip) to exercise the upload path with a
+    real-world list. Skips cleanly if a configured path does not exist.
+    """
+    configured = os.getenv("HASHVIEW_E2E_WORDLIST")
+    path = Path(configured).expanduser() if configured else DEFAULT_WORDLIST
+    if not path.is_file():
+        pytest.skip(f"Wordlist file not found: {path} (set HASHVIEW_E2E_WORDLIST).")
+    return path
 
 
 def _open_wordlists_list(page, live_server):
@@ -33,11 +50,11 @@ def _row_for_wordlist(page, name: str):
     return page.locator("tr", has=page.locator("td", has_text=name)).first
 
 
-def _add_static_wordlist(page, live_server, name: str) -> None:
+def _add_static_wordlist(page, live_server, name: str, wordlist_path: Path) -> None:
     page.goto(f"{live_server}/wordlists/add", wait_until="domcontentloaded")
     expect(page.get_by_role("heading", name=re.compile(r"Add Wordlist"))).to_be_visible()
     page.locator("input[name='name']").fill(name)
-    page.set_input_files("input[name='wordlist']", str(EXAMPLE_WORDLIST))
+    page.set_input_files("input[name='wordlist']", str(wordlist_path))
     page.get_by_role("button", name="upload", exact=True).click(timeout=NAV_TIMEOUT)
     expect(page).to_have_url(re.compile(r".*/wordlists/?$"), timeout=NAV_TIMEOUT)
     expect(page.get_by_text("Wordlist created!", exact=False)).to_be_visible(timeout=NAV_TIMEOUT)
@@ -57,12 +74,12 @@ def _delete_wordlist_via_modal(page, name: str) -> None:
 
 
 @pytest.mark.e2e
-def test_static_wordlist_add_then_delete(page, live_server, login):
+def test_static_wordlist_add_then_delete(page, live_server, login, wordlist_file):
     """Upload a new static wordlist, then delete it and confirm it is gone."""
     login()
     name = f"e2e-wl-{uuid.uuid4().hex[:8]}"
 
-    _add_static_wordlist(page, live_server, name)
+    _add_static_wordlist(page, live_server, name, wordlist_file)
 
     _open_wordlists_list(page, live_server)
     expect(_row_for_wordlist(page, name)).to_be_visible()

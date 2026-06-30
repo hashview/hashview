@@ -85,6 +85,12 @@ def _azure_enabled():
 def login_get():
     """Function to present login page"""
 
+    # An authenticated user has no login form to fill: the layout only emits the
+    # `content_anon` block (which holds the form) when logged out, so rendering
+    # this page while authenticated yields a blank app shell. Send them home.
+    if current_user.is_authenticated:
+        return redirect(url_for('main.home'))
+
     form = LoginForm()
     return render_template('login.html.j2', title='Login', form=form,
                            azure_enabled=_azure_enabled())

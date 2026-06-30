@@ -168,7 +168,7 @@ def test_settings_ui_shows_and_saves_crawl_fields(app, client):
 
     resp = client.post("/settings", data={
         "retention_period": "30", "max_runtime_jobs": "0", "max_runtime_tasks": "0",
-        "chunk_target_duration": "3600",
+        "agent_timeout_minutes": "60", "chunk_target_duration": "3600",
         "crawl_min_word_length": "10", "crawl_user_agent": "MyUA/9",
         "crawl_force_lowercase": "y", "crawl_depth": "3", "crawl_threads": "7",
         "submit": "Update",

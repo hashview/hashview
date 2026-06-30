@@ -230,6 +230,97 @@ def _data_retention_cleanup_inner(db :SQLAlchemy, mailer :Mail, logger :Logger):
         )
 
 
+def _agent_health_check_inner(db :SQLAlchemy, logger :Logger):
+    """Notify admins when an agent stops checking in, and again when it recovers.
+
+    "Offline" = a stale check-in, older than Settings.agent_timeout_minutes (the
+    same cutoff the UI uses). The per-agent ``offline_notified`` flag makes this a
+    ONE-shot alert per offline episode (no repeats while it stays down) and lets us
+    fire a single "recovered" alert when it checks back in. Agents that never
+    checked in are skipped — they never "went offline"."""
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import text
+
+    from hashview.models import Agents
+    from hashview.utils.audit import log_event
+    from hashview.utils.utils import get_agent_timeout_minutes, notify_admins
+
+    # Derive the cutoff from the DB clock (last_checkin is stamped with func.now()),
+    # so the comparison is timezone-independent regardless of this process's TZ.
+    try:
+        db_now = db.session.execute(text("SELECT NOW()")).scalar()
+        if isinstance(db_now, str):
+            db_now = datetime.strptime(db_now[:19], '%Y-%m-%d %H:%M:%S')
+    except Exception:
+        db_now = None
+    cutoff = (db_now or datetime.utcnow()) - timedelta(minutes=get_agent_timeout_minutes())
+
+    for agent in Agents.query.filter(Agents.last_checkin.isnot(None)).all():
+        offline = agent.last_checkin < cutoff
+        if offline and not agent.offline_notified:
+            logger.info('AgentHealthCheck: agent %s is offline; notifying admins.', agent.name)
+            notify_admins(
+                'Agent offline: ' + str(agent.name),
+                'Hashview agent "' + str(agent.name) + '" has not checked in since '
+                + str(agent.last_checkin) + ' and is now considered offline.')
+            # System-generated event (no request actor) -> audit log.
+            log_event('agent.offline', target=f'agent:{agent.id} {agent.name!r}',
+                      detail=f'last_checkin={agent.last_checkin}', actor=('system', None))
+            agent.offline_notified = True
+            db.session.commit()
+        elif not offline and agent.offline_notified:
+            logger.info('AgentHealthCheck: agent %s recovered; notifying admins.', agent.name)
+            notify_admins(
+                'Agent recovered: ' + str(agent.name),
+                'Hashview agent "' + str(agent.name) + '" is back online (last check-in '
+                + str(agent.last_checkin) + ').')
+            log_event('agent.recovered', target=f'agent:{agent.id} {agent.name!r}',
+                      detail=f'last_checkin={agent.last_checkin}', actor=('system', None))
+            agent.offline_notified = False
+            db.session.commit()
+
+
+def register_default_jobs(app :Flask):
+    """Register Hashview's default scheduled jobs on the shared scheduler.
+
+    Single source of truth, called from BOTH create_app (setup_defaults_if_needed)
+    and the hashview.py entry point — keeping them in lockstep so a job can't be
+    registered in one place and silently wiped by the other's remove_all_jobs()
+    (which is exactly how AGENT_HEALTH went missing). ``app`` must be the real
+    Flask app object, not the current_app proxy: jobs run in a context-less
+    background thread, so the proxy would raise inside ``with app.app_context()``."""
+    scheduler.remove_all_jobs()
+    scheduler.add_job(
+        id='DATA_RETENTION',
+        func=partial(data_retention_cleanup, app),
+        trigger='cron',
+        hour='*',
+    )
+    # Agent offline / recovery admin alerts (one-shot per episode).
+    scheduler.add_job(
+        id='AGENT_HEALTH',
+        func=partial(agent_health_check, app),
+        trigger='interval',
+        minutes=5,
+    )
+
+
+def agent_health_check(app :Flask):
+    """Scheduled job: alert admins on agent offline / recovery (see inner)."""
+    with app.app_context():
+        try:
+            app.logger.info('AgentHealthCheck ScheduledJob Progressing.')
+            from hashview.models import db
+            _agent_health_check_inner(db, app.logger)
+        except Exception:
+            app.logger.exception(
+                'AgentHealthCheck ScheduledJob is Complete with Result(Failure).')
+        else:
+            app.logger.info(
+                'AgentHealthCheck ScheduledJob is Complete with Result(Success).')
+
+
 def data_retention_cleanup(app :Flask):
     """ Function to manage retention cleanup """
     with app.app_context():

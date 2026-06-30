@@ -134,14 +134,17 @@ def test_dispatcher_enabled_slack_missing_user_id_emails_fallback(app, monkeypat
 
 
 # --------------------------------------------------------------------------
-# process_recovered_hash_notifications (hash-recovery helper)
+# notify_admins (administrative alerts) + send_slack_channel
 # --------------------------------------------------------------------------
 
 @pytest.mark.security
 def test_notify_admins_respects_channel_flags(app, monkeypatch):
-    """Admin alerts (notify_admins) honour the global Email/Pushover switches."""
+    """An opted-in admin gets only their selected channels, gated by the global
+    Email/Pushover switches."""
     settings = _settings(enabled=False)            # slack off; email/pushover default ON
-    admin = _user(email='admin@x.test', slack_id=None)
+    admin = _user(email='admin@x.test', slack_id=None,
+                  admin_notifications_enabled=True,
+                  admin_notify_email=True, admin_notify_pushover=True)
     admin.pushover_app_id = 'a'
     admin.pushover_user_key = 'u'
     _db.session.commit()
@@ -150,7 +153,7 @@ def test_notify_admins_respects_channel_flags(app, monkeypatch):
     monkeypatch.setattr(utils_mod, 'send_pushover', lambda *a, **k: sent.__setitem__('push', sent['push'] + 1))
 
     utils_mod.notify_admins('S', 'M')
-    assert sent['email'] > 0 and sent['push'] > 0          # both channels on
+    assert sent['email'] > 0 and sent['push'] > 0          # both selected + on
 
     settings.email_enabled = False
     _db.session.commit()
@@ -163,6 +166,60 @@ def test_notify_admins_respects_channel_flags(app, monkeypatch):
     sent['email'] = sent['push'] = 0
     utils_mod.notify_admins('S', 'M')
     assert sent == {'email': 0, 'push': 0}                  # both off -> nothing
+
+
+@pytest.mark.security
+def test_notify_admins_requires_optin(app, monkeypatch):
+    """An admin who hasn't opted in (or selected no channels) gets nothing."""
+    _settings(enabled=True)
+    # opted out entirely (channels on, but master off)
+    _user(email='a1@x.test', slack_id=None, admin_notifications_enabled=False,
+          admin_notify_email=True, admin_notify_pushover=True)
+    # opted in but every channel explicitly off
+    _user(email='a2@x.test', slack_id=None, admin_notifications_enabled=True,
+          admin_notify_email=False, admin_notify_pushover=False, admin_notify_slack=False)
+    sent = {'email': 0, 'push': 0}
+    monkeypatch.setattr(utils_mod, 'send_email', lambda *a, **k: sent.__setitem__('email', sent['email'] + 1))
+    monkeypatch.setattr(utils_mod, 'send_pushover', lambda *a, **k: sent.__setitem__('push', sent['push'] + 1))
+    utils_mod.notify_admins('S', 'M')
+    assert sent == {'email': 0, 'push': 0}
+
+
+@pytest.mark.security
+def test_notify_admins_slack_posts_to_room_once(app, monkeypatch):
+    """When >=1 opted-in admin selects Slack and a room is set, the alert posts to
+    the shared room exactly ONCE (not per admin); no room -> no slack post."""
+    settings = _settings(enabled=True, token='xoxb-x')
+    settings.slack_admin_channel = 'C0ADMIN'
+    _db.session.commit()
+    _user(email='s1@x.test', slack_id='U1', admin_notifications_enabled=True, admin_notify_slack=True)
+    _user(email='s2@x.test', slack_id='U2', admin_notifications_enabled=True, admin_notify_slack=True)
+    posts = []
+    monkeypatch.setattr(utils_mod, 'send_slack_channel', lambda ch, s, m: posts.append((ch, s, m)))
+    monkeypatch.setattr(utils_mod, 'send_email', lambda *a, **k: None)
+
+    utils_mod.notify_admins('Agent down', 'Boom')
+    assert len(posts) == 1 and posts[0][0] == 'C0ADMIN'
+
+    settings.slack_admin_channel = None
+    _db.session.commit()
+    posts.clear()
+    utils_mod.notify_admins('Agent down', 'Boom')
+    assert posts == []
+
+
+@pytest.mark.security
+def test_send_slack_channel_posts_to_channel(app, monkeypatch):
+    """send_slack_channel posts chat.postMessage with channel set to the room."""
+    _settings(enabled=True, token='xoxb-room')
+    calls = {}
+    monkeypatch.setattr(utils_mod.requests, 'post',
+                        lambda url, json=None, headers=None, timeout=None, **kw:
+                        calls.update(url=url, json=json, headers=headers) or _FakeResp(ok=True))
+    utils_mod.send_slack_channel('C0ROOM', 'Subj', 'Body')
+    assert calls['json']['channel'] == 'C0ROOM'
+    assert calls['headers']['Authorization'] == 'Bearer xoxb-room'
+    assert 'Subj' in calls['json']['text']
 
 
 @pytest.mark.security

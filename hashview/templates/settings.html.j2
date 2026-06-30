@@ -122,6 +122,13 @@
                             </div>
                         </div>
 
+                        <div class="field" style="margin-top:16px; margin-bottom:0;">
+                            <label class="field-label" for="set-agent-timeout">Agent timeout <span class="mono" style="color:var(--text-mute); font-weight:400;">· minutes</span></label>
+                            {{ HashviewForm.agent_timeout_minutes(class="input", type="number", min="1", max="525600", id="set-agent-timeout", style="max-width:220px;") }}
+                            <span class="field-hint">How long should Hashview wait for an agent to check in before considering it offline.</span>
+                            {% for e in HashviewForm.agent_timeout_minutes.errors %}<div class="invalid-feedback" style="display:block;">{{ e }}</div>{% endfor %}
+                        </div>
+
                         <div style="display:flex; align-items:center; gap:12px; margin-top:20px;">
                             <div style="flex:1; min-width:0;">
                                 <div style="color:var(--text);">Job priority weighting</div>
@@ -203,9 +210,7 @@
                                 </div>
                                 <label class="switch">{{ HashviewForm.email_enabled(role="switch", onchange="hvSyncNotif('email')") }}<span class="track"></span></label>
                             </div>
-                            <div class="notif-body" style="margin-top:14px;">
-                                <a class="btn" href="{{ url_for('users.send_test_email') }}" role="button">{{ icon('mail', size=15) }} Send test email</a>
-                            </div>
+                            <div class="field-hint" style="margin-top:10px;">Users send test emails from their profile page.</div>
                         </div>
 
                         <div style="height:1px; background:var(--border-soft); margin:20px 0;"></div>
@@ -236,9 +241,20 @@
                                 <div class="field" style="margin-bottom:0;">
                                     <label class="field-label" for="set-slack-token">Bot user OAuth token</label>
                                     {{ HashviewForm.slack_bot_token(class="input mono", id="set-slack-token", placeholder="xoxb-…", autocomplete="off") }}
-                                    <span class="field-hint">Create a Slack app, add the <span class="mono">chat:write</span> + <span class="mono">im:write</span> bot scopes, install it to your workspace, and paste the Bot User OAuth Token here.</span>
+                                    <span class="field-hint">Create a Slack app, add the <span class="mono">chat:write</span> + <span class="mono">im:write</span> bot scopes (add <span class="mono">chat:write.public</span> to post to a public room the bot isn't in), install it to your workspace, and paste the Bot User OAuth Token here.</span>
                                     {% for e in HashviewForm.slack_bot_token.errors %}<div class="invalid-feedback" style="display:block;">{{ e }}</div>{% endfor %}
                                 </div>
+                                <div class="field" style="margin-bottom:0; margin-top:16px;">
+                                    <label class="field-label" for="set-slack-admin-channel">Administrative messages room</label>
+                                    {{ HashviewForm.slack_admin_channel(class="input mono", id="set-slack-admin-channel", placeholder="C0123ABC", autocomplete="off") }}
+                                    <span class="field-hint">Channel ID the Hashview bot posts administrative notifications (agent errors) to. Invite the bot to this channel. Admins opt in to these under their profile.</span>
+                                    {% for e in HashviewForm.slack_admin_channel.errors %}<div class="invalid-feedback" style="display:block;">{{ e }}</div>{% endfor %}
+                                </div>
+                                {% if settings and settings.slack_admin_channel %}
+                                <div style="margin-top:14px;">
+                                    <a class="btn" href="{{ url_for('settings.send_test_admin_slack') }}" role="button">{{ icon('slack', size=15) }} Send test to room</a>
+                                </div>
+                                {% endif %}
                             </div>
                         </div>
                     </div>

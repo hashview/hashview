@@ -26,6 +26,7 @@ from hashview.utils.backup import (
     create_encrypted_db_backup,
     purge_stale_backups,
 )
+from hashview.utils.utils import send_slack_channel
 
 # control/tmp filename of a generated backup, e.g. '1a2b3c4d5e6f7a8b.sql.gz.enc'
 _BACKUP_TOKEN_RE = re.compile(r'^[0-9a-f]{16}\.sql\.gz\.enc$')
@@ -73,6 +74,7 @@ def settings_list():
             settings.retention_period = hashview_form.retention_period.data
             settings.max_runtime_jobs = hashview_form.max_runtime_jobs.data
             settings.max_runtime_tasks = hashview_form.max_runtime_tasks.data
+            settings.agent_timeout_minutes = hashview_form.agent_timeout_minutes.data
             settings.enabled_job_weights = hashview_form.enabled_job_weights.data
             settings.enabled_chunking = hashview_form.enabled_chunking.data
             settings.chunk_target_duration = hashview_form.chunk_target_duration.data
@@ -85,6 +87,7 @@ def settings_list():
             settings.pushover_enabled = hashview_form.pushover_enabled.data
             settings.slack_enabled = hashview_form.slack_enabled.data
             settings.slack_bot_token = hashview_form.slack_bot_token.data
+            settings.slack_admin_channel = hashview_form.slack_admin_channel.data or None
             # --- Authentication (local / Azure Entra ID SSO) ---
             # Only assign when the POST carried a valid choice; otherwise keep
             # the stored value (a partial save must not silently flip modes).
@@ -114,6 +117,7 @@ def settings_list():
             hashview_form.retention_period.data = settings.retention_period
             hashview_form.max_runtime_jobs.data = settings.max_runtime_jobs
             hashview_form.max_runtime_tasks.data = settings.max_runtime_tasks
+            hashview_form.agent_timeout_minutes.data = settings.agent_timeout_minutes
             hashview_form.enabled_job_weights.data = settings.enabled_job_weights
             hashview_form.enabled_chunking.data = settings.enabled_chunking
             hashview_form.chunk_target_duration.data = settings.chunk_target_duration
@@ -126,6 +130,7 @@ def settings_list():
             hashview_form.pushover_enabled.data = settings.pushover_enabled
             hashview_form.slack_enabled.data = settings.slack_enabled
             hashview_form.slack_bot_token.data = settings.slack_bot_token
+            hashview_form.slack_admin_channel.data = settings.slack_admin_channel
             hashview_form.auth_method.data = settings.auth_method
             hashview_form.azure_tenant_id.data = settings.azure_tenant_id
             hashview_form.azure_client_id.data = settings.azure_client_id
@@ -156,6 +161,23 @@ def settings_list():
         )
 
     abort(403)
+
+
+@settings.route("/settings/send_test_admin_slack", methods=['GET'])
+@login_required
+def send_test_admin_slack():
+    """Send a test administrative notification to the configured Slack room."""
+    if not current_user.admin:
+        abort(403)
+    settings_row = Settings.query.first()
+    if not settings_row or not settings_row.slack_admin_channel:
+        flash('Set a Slack administrative room first.', 'danger')
+        return redirect(url_for('settings.settings_list'))
+    send_slack_channel(settings_row.slack_admin_channel,
+                        'Test Administrative Message From Hashview',
+                        'This is a test administrative Slack message from Hashview.')
+    flash('Test administrative Slack message sent.', 'success')
+    return redirect(url_for('settings.settings_list'))
 
 
 @settings.route("/settings/backup", methods=['POST'])

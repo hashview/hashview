@@ -62,17 +62,20 @@ def test_job_creation_flow(page, live_server, login):
     job_id = match.group(1)
 
     # The task library renders one POST form per available task inside the
-    # "Add Task" <details> drawer. Each form carries a CSRF token, so we must
-    # submit the real form through the UI rather than GET the POST-only route.
-    # Open the "Add Task" drawer so its forms become interactable.
-    page.get_by_role("button", name=re.compile(r"Add Task\b")).first.click()
-
-    # Match the exact form action using the concrete job_id/task_id so we don't
-    # ambiguously match a different task (e.g. /assign_task/1 vs /assign_task/11).
-    assign_form = page.locator(
-        f"form[action='/jobs/{job_id}/assign_task/{task_id}']"
-    )
+    # "Add Task" <details> drawer (the drawer toggle is a <summary>, not a
+    # button). Each form carries a CSRF token, so we submit the real form
+    # through the UI rather than GET the POST-only route. Match the exact form
+    # action via the concrete job_id/task_id so we never ambiguously match a
+    # different task (e.g. /assign_task/1 vs /assign_task/11).
+    assign_action = f"/jobs/{job_id}/assign_task/{task_id}"
+    assign_form = page.locator(f"form[action='{assign_action}']")
     expect(assign_form).to_be_attached()
+
+    # The form lives inside a closed <details>, so it's hidden until expanded.
+    # Open exactly the drawer that contains this task's form, then submit it.
+    page.locator(f"details:has(form[action='{assign_action}'])").evaluate(
+        "el => { el.open = true; }"
+    )
     assign_form.locator("button[type=submit]").first.click()
     page.wait_for_load_state("domcontentloaded")
 

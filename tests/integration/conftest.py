@@ -75,10 +75,17 @@ def mysql_session(mysql_app):
     Implementation notes:
     * We bind the scoped session to a dedicated connection that owns an explicit
       outer transaction.
-    * ``join_transaction_mode="create_savepoint"`` makes the session emit a
-      SAVEPOINT for its work, so a ``commit()`` releases the savepoint rather
-      than committing the outer transaction.
+    * The session opens a SAVEPOINT (``begin_nested()``); an
+      ``after_transaction_end`` event listener re-opens a fresh SAVEPOINT
+      whenever the active one ends, so a test that calls ``commit()`` merely
+      releases its savepoint while the session stays inside the outer
+      transaction. On teardown we roll back that outer transaction, reverting
+      everything. (This is the SQLAlchemy 1.4-compatible "join an external
+      transaction" recipe; the 2.0-only ``join_transaction_mode`` kwarg must NOT
+      be used here.)
     """
+    from sqlalchemy import event
+
     from hashview.models import db as _db
 
     with mysql_app.app_context():
@@ -87,14 +94,24 @@ def mysql_session(mysql_app):
         transaction = connection.begin()
 
         _db.session.remove()
-        _db.session.configure(
-            bind=connection,
-            join_transaction_mode="create_savepoint",
-        )
+        _db.session.configure(bind=connection)
+        # The actual Session object behind the scoped_session proxy; the event
+        # listener must be attached to it, not to the scoped_session registry.
+        sess = _db.session()
+        sess.begin_nested()  # open the first SAVEPOINT
+
+        @event.listens_for(sess, "after_transaction_end")
+        def _restart_savepoint(session, trans):
+            # When a SAVEPOINT (nested) transaction ends and its parent is the
+            # outer, non-nested transaction, open a new SAVEPOINT so the session
+            # always remains inside one — even after a test calls commit().
+            if trans.nested and not trans._parent.nested:
+                session.begin_nested()
 
         try:
             yield _db.session
         finally:
+            event.remove(sess, "after_transaction_end", _restart_savepoint)
             _db.session.remove()
             if transaction.is_active:
                 transaction.rollback()

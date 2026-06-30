@@ -60,8 +60,21 @@ def test_job_creation_flow(page, live_server, login):
     match = re.search(r"/jobs/(\d+)/tasks", page.url)
     assert match, f"Unexpected tasks URL: {page.url}"
     job_id = match.group(1)
-    page.goto(
-        f"{live_server}/jobs/{job_id}/assign_task/{task_id}",
-        wait_until="domcontentloaded",
+
+    # The task library renders one POST form per available task inside the
+    # "Add Task" <details> drawer. Each form carries a CSRF token, so we must
+    # submit the real form through the UI rather than GET the POST-only route.
+    # Open the "Add Task" drawer so its forms become interactable.
+    page.get_by_role("button", name=re.compile(r"Add Task\b")).first.click()
+
+    # Match the exact form action using the concrete job_id/task_id so we don't
+    # ambiguously match a different task (e.g. /assign_task/1 vs /assign_task/11).
+    assign_form = page.locator(
+        f"form[action='/jobs/{job_id}/assign_task/{task_id}']"
     )
+    expect(assign_form).to_be_attached()
+    assign_form.locator("button[type=submit]").first.click()
+    page.wait_for_load_state("domcontentloaded")
+
+    # After assignment, the task appears in the Task Queue table.
     expect(page.get_by_role("cell", name=task_name, exact=True)).to_be_visible()

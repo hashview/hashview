@@ -29,10 +29,13 @@ jobs:
       - name: Create runtime control dirs (gitignored, required by tests)
         run: mkdir -p hashview/control/{hashes,logs,rules,tmp,wordlists,wordlists_import}
       # Coverage ratchet: raise --cov-fail-under as coverage improves; never lower it.
+      # --cov-branch enables branch (decision) coverage in addition to line coverage,
+      # so the term-missing/xml/json reports now flag partially-covered branches.
+      # The 85% ratchet remains a LINE threshold and is intentionally unchanged.
       - name: Run unit + security + agent tests with coverage
         run: |
           python -m pytest tests/unit tests/security tests/agent_unit \
-            --cov=hashview --cov-report=term-missing --cov-report=xml \
+            --cov=hashview --cov-branch --cov-report=term-missing --cov-report=xml \
             --cov-report=json:coverage.json --cov-fail-under=85 -q
       # Enforce the function-level gate: fail if any function in hashview/ has
       # zero executed body lines (waivers live in the allowlist, kept empty).

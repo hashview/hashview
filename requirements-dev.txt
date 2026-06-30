@@ -13,3 +13,6 @@ PyYAML==6.0.3
 # come from .pylintrc). Requires Python >= 3.11.
 pylint==4.0.5
 hypothesis==6.155.2
+# Mutation testing — periodic quality signal only (weekly mutation.yml workflow),
+# never a push/PR gate. Config lives in [tool.mutmut] in pyproject.toml.
+mutmut==3.6.0

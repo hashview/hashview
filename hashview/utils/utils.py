@@ -440,6 +440,24 @@ def bytes_to_text(raw):
     except UnicodeDecodeError:
         return '$HEX[' + raw.hex() + ']'
 
+def decode_hex_plain(plaintext):
+    """Inverse of the ``$HEX[<hex>]`` marker produced by bytes_to_text: return the
+    human plaintext so length/character-class analysis reflects the real password
+    rather than the wrapper (``$HEX[4142]`` is 8 chars on the wire but the password
+    is just "AB"). A latin-1 fallback keeps arbitrary binary passwords measurable
+    and displayable. Non-marker text (and None) passes straight through as ''-safe
+    text, so callers can use the result directly."""
+    if plaintext and plaintext.startswith('$HEX[') and plaintext.endswith(']'):
+        try:
+            raw = bytes.fromhex(plaintext[5:-1])
+        except ValueError:
+            return plaintext
+        try:
+            return raw.decode('utf-8')
+        except UnicodeDecodeError:
+            return raw.decode('latin-1')
+    return plaintext or ''
+
 def text_from_field(value):
     """Normalise a str field read from a hashfile (opened with
     ``errors='surrogateescape'``) into storage text: valid UTF-8 stays text;

@@ -20,6 +20,7 @@ from sqlalchemy import func, select
 from werkzeug.utils import secure_filename
 
 from hashview.models import Customers, Hashes, HashfileHashes, Hashfiles, Jobs, Tasks, db
+from hashview.utils.utils import decode_hex_plain
 
 analytics = Blueprint('analytics', __name__)
 
@@ -293,8 +294,13 @@ def get_analytics():
 
     # ---- one recovered (plaintext, username) corpus query feeds every
     #      plaintext-derived chart below ----
-    corpus = (_scoped_hash_query(customer_id, hashfile_id, cracked=True)
-              .with_entities(Hashes.plaintext, HashfileHashes.username).all())
+    # Decode hashcat's `$HEX[...]` marker once here so every plaintext-derived
+    # chart below (length, strength, char-classes, masks, top passwords) measures
+    # the real password rather than the wrapper. Mirrors Wrapped's _decode_plain.
+    corpus = [(decode_hex_plain(plaintext), username)
+              for plaintext, username in
+              _scoped_hash_query(customer_id, hashfile_id, cracked=True)
+              .with_entities(Hashes.plaintext, HashfileHashes.username).all()]
     total_cracked = len(corpus)
 
     freq = Counter()

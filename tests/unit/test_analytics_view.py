@@ -262,3 +262,53 @@ def test_download_fig8_same_user_pass(app, client):
     resp = client.get(f"/analytics/download/fig8?customer_id={customer_id}&hashfile_id={hashfile_id}")
     assert resp.status_code == 200
     assert resp.headers["Content-Disposition"].startswith("attachment")
+
+
+# ---------------------------------------------------------------------------
+# $HEX[...] cracked passwords — length/strength analytics (issue #291)
+#
+# hashcat stores non-UTF-8 plaintexts as the lossless `$HEX[<hex>]` marker.
+# Analytics must decode that before measuring length, the way Wrapped already
+# does (tests/unit/test_wrapped_view.py). These are xfail until #291 lands.
+# ---------------------------------------------------------------------------
+
+# "pässwörd": 8 real characters, but the $HEX[...] wrapper is 26 chars wide.
+_HEX_PW = "$HEX[" + "pässwörd".encode().hex() + "]"
+
+
+def _seed_single_hex_password():
+    """A scope whose only cracked hash is a $HEX[...] (non-UTF-8) password."""
+    cust = Customers(name="Hex Corp")
+    db.session.add(cust)
+    db.session.commit()
+    hf = Hashfiles(name="hex_dump", customer_id=cust.id, owner_id=1, runtime=60)
+    db.session.add(hf)
+    db.session.commit()
+    h = _hash("hexct", _HEX_PW, True)
+    db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id, username="bob"))
+    db.session.commit()
+    return cust.id, hf.id
+
+
+def test_analytics_hex_length_uses_decoded_length(app, client):
+    """The length-distribution chart must bucket the decoded password length
+    (8 for 'pässwörd'), not the 26-char $HEX[...] wrapper."""
+    user = _admin(); _login(client, user)
+    customer_id, hashfile_id = _seed_single_hex_password()
+    html = client.get(
+        f"/analytics?customer_id={customer_id}&hashfile_id={hashfile_id}"
+    ).get_data(as_text=True)
+    # length_dist renders title="{len} chars: {n}" and a {len} label per bar.
+    assert "8 chars" in html          # decoded length
+    assert "26 chars" not in html     # the $HEX[...] wrapper length
+
+
+def test_analytics_hex_not_overscored_as_long_strong(app, client):
+    """An 8-char password must not be rated as if it were 26 chars: the
+    raw $HEX[...] string should never leak into the rendered page."""
+    user = _admin(); _login(client, user)
+    customer_id, hashfile_id = _seed_single_hex_password()
+    html = client.get(
+        f"/analytics?customer_id={customer_id}&hashfile_id={hashfile_id}"
+    ).get_data(as_text=True)
+    assert _HEX_PW not in html        # wrapper must not appear in top passwords/masks

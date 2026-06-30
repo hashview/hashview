@@ -25,7 +25,8 @@ def _skip_or_fail(reason: str) -> None:
     """Skip in local/dev mode; hard-fail under strict mode so CI surfaces it."""
     if _e2e_strict():
         pytest.fail(reason)
-    pytest.skip(reason)
+    else:
+        pytest.skip(reason)
 
 
 def _get_setup_value(key: str, fallback: str) -> str:
@@ -183,11 +184,14 @@ def configure_page(page):
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
-    """Under strict mode, fail the session if too many e2e tests skipped.
+    """Under strict mode, report skipped e2e tests (the gate runs separately).
 
     Skips read as passes in CI, which masks regressions (the whole point of
     strict mode). The open-redirect test is a plain assertion, not a skip/xfail,
     so it doesn't factor in here — only genuine ``pytest.skip`` outcomes count.
+
+    This hook is reporting-only; the actual fail decision and exit-code write
+    live in :func:`pytest_sessionfinish`, which receives a public ``session``.
     """
     if not _e2e_strict():
         return
@@ -200,17 +204,35 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         {getattr(rep, "nodeid", str(rep)) for rep in skipped}
     )
     terminalreporter.write_sep(
-        "=", f"HASHVIEW_E2E_STRICT: {len(nodeids)} skipped test(s)"
+        "=", f"HASHVIEW_E2E_STRICT: {len(skipped)} skipped result(s)"
     )
     for nodeid in nodeids:
         terminalreporter.write_line(f"  SKIPPED {nodeid}")
 
-    if len(nodeids) > STRICT_MAX_SKIPS:
+    if len(skipped) > STRICT_MAX_SKIPS:
         terminalreporter.write_sep(
             "=",
-            f"STRICT FAIL: {len(nodeids)} skipped exceeds allowed {STRICT_MAX_SKIPS}",
+            f"STRICT FAIL: {len(skipped)} skipped exceeds allowed {STRICT_MAX_SKIPS}",
             red=True,
         )
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Under strict mode, fail the session if too many e2e tests skipped.
+
+    Counts the RAW number of skip results (``len(skipped)``), so a parametrized
+    test skipped N times counts as N — not as a single deduplicated nodeid.
+    The exit-code write uses the public ``session`` argument rather than any
+    private ``terminalreporter`` internals.
+    """
+    if not _e2e_strict():
+        return
+
+    terminalreporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    if terminalreporter is None:
+        return
+
+    skipped = terminalreporter.stats.get("skipped", [])
+    if len(skipped) > STRICT_MAX_SKIPS:
         # Force a nonzero session exit without masking a real failure exit code.
-        session = terminalreporter._session
         session.exitstatus = pytest.ExitCode.TESTS_FAILED

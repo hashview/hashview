@@ -98,6 +98,27 @@ def test_agent_health_check_wrapper_runs_and_notifies(app, monkeypatch):
 
 
 @pytest.mark.security
+def test_offline_and_recovery_write_audit_events(app, monkeypatch):
+    """Offline + recovery are recorded in the audit log (agent.offline /
+    agent.recovered), so they show up in Settings -> audit log."""
+    import hashview.utils.audit as audit_mod
+    events = []
+    monkeypatch.setattr(audit_mod, "log_event", lambda event, **kw: events.append(event))
+    monkeypatch.setattr(utils_mod, "notify_admins", lambda *a, **k: None)
+    _settings(timeout=10)
+    a = _agent("rigA", minutes_ago=30)
+
+    _agent_health_check_inner(db, _LOG)                  # detected offline
+    assert "agent.offline" in events
+
+    a.last_checkin = datetime.utcnow()                   # agent checks back in
+    db.session.commit()
+    events.clear()
+    _agent_health_check_inner(db, _LOG)                  # detected recovery
+    assert "agent.recovered" in events
+
+
+@pytest.mark.security
 def test_register_default_jobs_includes_agent_health(app):
     """Regression: both create_app and the hashview.py entry point register jobs
     via this one helper, so AGENT_HEALTH can't be dropped while DATA_RETENTION

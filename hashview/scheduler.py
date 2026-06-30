@@ -243,6 +243,7 @@ def _agent_health_check_inner(db :SQLAlchemy, logger :Logger):
     from sqlalchemy import text
 
     from hashview.models import Agents
+    from hashview.utils.audit import log_event
     from hashview.utils.utils import get_agent_timeout_minutes, notify_admins
 
     # Derive the cutoff from the DB clock (last_checkin is stamped with func.now()),
@@ -263,6 +264,9 @@ def _agent_health_check_inner(db :SQLAlchemy, logger :Logger):
                 'Agent offline: ' + str(agent.name),
                 'Hashview agent "' + str(agent.name) + '" has not checked in since '
                 + str(agent.last_checkin) + ' and is now considered offline.')
+            # System-generated event (no request actor) -> audit log.
+            log_event('agent.offline', target=f'agent:{agent.id} {agent.name!r}',
+                      detail=f'last_checkin={agent.last_checkin}', actor=('system', None))
             agent.offline_notified = True
             db.session.commit()
         elif not offline and agent.offline_notified:
@@ -271,6 +275,8 @@ def _agent_health_check_inner(db :SQLAlchemy, logger :Logger):
                 'Agent recovered: ' + str(agent.name),
                 'Hashview agent "' + str(agent.name) + '" is back online (last check-in '
                 + str(agent.last_checkin) + ').')
+            log_event('agent.recovered', target=f'agent:{agent.id} {agent.name!r}',
+                      detail=f'last_checkin={agent.last_checkin}', actor=('system', None))
             agent.offline_notified = False
             db.session.commit()
 

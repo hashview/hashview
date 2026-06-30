@@ -31,4 +31,25 @@ jobs:
       - name: Run e2e harness
         env:
           DOCKER_PLATFORM: linux/amd64
+          # Deterministic e2e env. The app under test is a fresh container, so we
+          # own its admin credentials via the setup flow + seeder. Exporting a
+          # complete HASHVIEW_E2E_* block makes run_e2e_compose.sh seed the DB and
+          # keeps data-dependent tests from skipping. STRICT=1 turns skips into
+          # hard failures so a green job actually means the suite ran.
+          HASHVIEW_E2E_STRICT: "1"
+          HASHVIEW_E2E_BASE_URL: "http://127.0.0.1:5000"
+          HASHVIEW_E2E_EMAIL: "admin@example.com"
+          HASHVIEW_E2E_PASSWORD: "supersecretpassword"
+          HASHVIEW_E2E_API_KEY: "e2e-deterministic-api-key"
+          HASHVIEW_E2E_SETUP_EMAIL: "admin@example.com"
+          HASHVIEW_E2E_SETUP_PASSWORD: "supersecretpassword"
+          HASHVIEW_E2E_TASK_ID: "1"
+          HASHVIEW_E2E_JOB_ID: "1"
+          HASHVIEW_E2E_CUSTOMER_ID: "1"
+          HASHVIEW_E2E_HASHFILE_ID: "1"
+          HASHVIEW_E2E_TASK_NAME: "Rockyou Wordlist"
+          # Provision a non-admin second user so the job-IDOR security test runs
+          # instead of skipping.
+          HASHVIEW_E2E_SECOND_EMAIL: "user@example.com"
+          HASHVIEW_E2E_SECOND_PASSWORD: "supersecretpassword2"
         run: ./tests/run_e2e_compose.sh

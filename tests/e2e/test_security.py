@@ -183,11 +183,23 @@ def test_job_idor_access_denied_for_other_user(
     # job (the jobs list is org-wide), so authorization is enforced on
     # MUTATIONS, not views. The IDOR check therefore verifies a non-owner,
     # non-admin user cannot STOP another user's job. jobs_stop gates on
-    # `current_user.admin or job.owner_id == current_user.id`, is a GET (no CSRF
-    # token needed), and is reachable for any existing job, so a successful
+    # `current_user.admin or job.owner_id == current_user.id`, so a successful
     # denial proves the ownership guard holds.
-    page.goto(f"{live_server}/jobs/stop/{job_id}", wait_until="domcontentloaded")
-    body = page.content().lower()
+    #
+    # jobs_stop is declared methods=['POST'] (hashview/jobs/routes.py:952) and
+    # calls FlaskForm().validate_on_submit(), so a GET would 405 and a POST
+    # without a valid CSRF token would be rejected before the ownership guard is
+    # ever reached. We therefore scrape a session-bound CSRF token from the
+    # rendered /jobs list (jobs.html.j2 renders
+    # `<input type="hidden" name="csrf_token" ...>`) and POST as the non-owner
+    # via page.request, which shares this browser context's session cookies.
+    page.goto(f"{live_server}/jobs", wait_until="domcontentloaded")
+    token = page.locator("input[name='csrf_token']").first.get_attribute("value")
+    resp = page.request.post(
+        f"{live_server}/jobs/stop/{job_id}",
+        form={"csrf_token": token},
+    )
+    body = resp.text().lower()
     assert "do not have rights to stop this job" in body, (
         "Second user was not denied when stopping another user's job; possible IDOR."
     )

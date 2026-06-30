@@ -189,6 +189,18 @@ def parse_args(argv):
 
 
 def main(argv):
+    if "-b" in argv or "--benchmark" in argv:
+        # Benchmark mode: the real agent runs ``hashcat -b -m <mode>`` and feeds
+        # the output to agent/bench.parse_benchmark_speed, which looks for a
+        # per-device line ``Speed.#<n>...: <num> <unit>H/s``. Emit one so the
+        # agent records a speed and proceeds to actual cracking instead of
+        # re-benchmarking forever (no hashfile/wordlist positionals are passed
+        # in this mode).
+        print(
+            "Speed.#1.........:  1000.0 MH/s (0.50ms) @ Accel:1 Loops:1 Thr:1 Vec:1",
+            flush=True,
+        )
+        return 0
     mode, outfile, _fmt, rules, positionals = parse_args(argv)
     if len(positionals) < 2:
         sys.stderr.write("hcshim: expected hashfile and wordlist positionals\n")

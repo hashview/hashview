@@ -393,9 +393,19 @@ def test_jobs_start_success_queues_tasks(client, admin_user, monkeypatch):
     against re-queuing), so a startable job is seeded as 'Ready' -- the status a
     freshly-created job carries before it is started.
     """
+    # jobs_start calls build_job_task_commands(job) (not build_hashcat_command),
+    # which stamps each JobTasks row's status/priority/command in place. Stub it
+    # to mirror that contract so we assert the route's queue-and-build behavior
+    # without invoking the real command builder.
+    def _fake_build_job_task_commands(job):
+        for task_row in JobTasks.query.filter_by(job_id=job.id).all():
+            task_row.status = "Queued"
+            task_row.priority = job.priority
+            task_row.command = f"hashcat -j{job.id} -t{task_row.task_id}"
+
     monkeypatch.setattr(
-        "hashview.api.routes.build_hashcat_command",
-        lambda job_id, task_id: f"hashcat -j{job_id} -t{task_id}",
+        "hashview.api.routes.build_job_task_commands",
+        _fake_build_job_task_commands,
     )
     job, jt = _seed_startable_job(admin_user, status="Ready")
 

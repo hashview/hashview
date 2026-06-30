@@ -1,0 +1,56 @@
+name: Mutation Testing
+
+# Mutation testing is a PERIODIC QUALITY SIGNAL, not a CI gate. A full mutmut
+# campaign is far too slow to run on every push/PR, so this workflow runs only on
+# a weekly schedule and on-demand via manual dispatch. Surviving mutants never
+# fail the workflow (continue-on-error) — the value is the uploaded report, which
+# reviewers inspect to find well-covered-but-weakly-asserted code.
+on:
+  schedule:
+    # 06:00 UTC every Monday.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    # A bounded ceiling so a runaway campaign can't burn the whole budget; the
+    # job is non-blocking regardless since it never runs on push/PR.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Create runtime control dirs (gitignored, required by tests)
+        run: mkdir -p hashview/control/{hashes,logs,rules,tmp,wordlists,wordlists_import}
+      # mutmut config lives in [tool.mutmut] in pyproject.toml (source_paths,
+      # test selection, exclusions). Surviving mutants must NOT fail the job, so
+      # the report always uploads — this is a quality signal, not a gate.
+      - name: Run mutation testing (non-blocking)
+        continue-on-error: true
+        run: |
+          mutmut run || true
+          # Human-readable survivor list and machine-readable CI/CD stats.
+          mutmut results > mutmut-results.txt 2>&1 || true
+          mutmut export-cicd-stats || true
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: |
+            mutmut-results.txt
+            mutants/mutmut-cicd-stats.json
+          if-no-files-found: warn

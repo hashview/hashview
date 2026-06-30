@@ -1,0 +1,67 @@
+name: DB Parity (MariaDB)
+
+# Closes the gap left by the SQLite-only unit suite: the Alembic chain's
+# MySQL-only DDL (create_foreign_key / alter_column) is NEVER executed in the
+# unit tests (see tests/unit/test_migration_smoke.py). This job runs the real
+# migration chain from an empty schema to head against a real MariaDB service,
+# then runs the `mysql`-marked integration tests against that migration-built DB.
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  mariadb-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: hashview
+          MARIADB_DATABASE: hashview
+        ports:
+          - 3306:3306
+        # Health-check so steps don't start until the server accepts connections.
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      # mysql-connector-python (the dialect the app uses, see hashview/config.py)
+      # so the migration + integration runs hit MySQL through the exact same
+      # driver/dialect as production. charset=utf8mb4 mirrors the app's URL.
+      HASHVIEW_TEST_DATABASE_URI: "mysql+mysqlconnector://root:hashview@127.0.0.1:3306/hashview?charset=utf8mb4"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # mysql-connector-python is already pinned in requirements.txt, so the
+          # MySQL driver the app imports is installed here without extra deps.
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Create runtime control dirs (gitignored, required by tests)
+        run: mkdir -p hashview/control/{hashes,logs,rules,tmp,wordlists,wordlists_import}
+
+      # Core deliverable: run the REAL migration chain from an empty schema to
+      # head against MariaDB. Fails the job (non-zero exit) if any migration
+      # errors — which is precisely the class of bug the SQLite suite can't see.
+      - name: Run Alembic migration chain against MariaDB (upgrade head)
+        run: python scripts/run_migrations.py
+
+      # Integration tests against the migration-built MariaDB schema. -m mysql
+      # selects only the marked tests; they fail the job if any assertion fails.
+      - name: Run MySQL integration tests
+        run: python -m pytest tests/integration -m mysql -q

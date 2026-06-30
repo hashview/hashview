@@ -69,12 +69,14 @@ agent_main = _load_agent_main()
 # ---------------------------------------------------------------------------
 # #280 A — api.* must not crash with a raw TypeError on a non-200 (None) reply
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, raises=TypeError,
-                   reason="#280 A: heartbeat() does json.loads(None) when the "
-                          "server returns a non-200 (http.post -> None)")
 def test_heartbeat_handles_non_200_without_typeerror(monkeypatch):
+    # #280 A is FIXED on this dev line: heartbeat() now guards json.loads(None)
+    # (http.post returns None on a non-200) and returns a graceful sentinel
+    # instead of raising TypeError. This is now a regression guard, not an xfail.
     monkeypatch.setattr(http, "post", lambda path, body: None)   # non-200 -> None
-    api.heartbeat("Idle", "")   # desired: graceful (e.g. return None), not TypeError
+    result = api.heartbeat("Idle", "")   # must not raise
+    # Graceful sentinel carries no actionable message.
+    assert result is None or result.get("msg") is None
 
 
 # ---------------------------------------------------------------------------

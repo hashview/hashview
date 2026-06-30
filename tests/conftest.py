@@ -9,6 +9,25 @@ TEST_USER_EMAIL = "admin@example.com"
 TEST_USER_PASSWORD = "supersecretpassword"
 _SETUP_COMPLETED = False
 
+# Max number of SKIPPED e2e tests tolerated under strict mode before the
+# session is failed. A handful of tests skip for legitimately-optional data
+# (e.g. attack-mode selectors that may be absent on a given build), so this is
+# a small, deliberate allowance rather than zero. Bump only with justification.
+STRICT_MAX_SKIPS = 4
+
+
+def _e2e_strict() -> bool:
+    """True when HASHVIEW_E2E_STRICT is truthy (CI). Off by default (local dev)."""
+    return os.getenv("HASHVIEW_E2E_STRICT", "").strip().lower() in {"1", "true"}
+
+
+def _skip_or_fail(reason: str) -> None:
+    """Skip in local/dev mode; hard-fail under strict mode so CI surfaces it."""
+    if _e2e_strict():
+        pytest.fail(reason)
+    else:
+        pytest.skip(reason)
+
 
 def _get_setup_value(key: str, fallback: str) -> str:
     value = os.getenv(key)
@@ -64,13 +83,13 @@ def app_config(tmp_path_factory):
 def live_server():
     base_url = os.getenv("HASHVIEW_E2E_BASE_URL")
     if not base_url:
-        pytest.skip("Set HASHVIEW_E2E_BASE_URL to run e2e tests against a live host.")
+        _skip_or_fail("Set HASHVIEW_E2E_BASE_URL to run e2e tests against a live host.")
     base_url = base_url.rstrip("/")
     try:
         with urlopen(f"{base_url}/login", timeout=2):
             pass
     except URLError:
-        pytest.skip(
+        _skip_or_fail(
             "External server not reachable; start it or check HASHVIEW_E2E_BASE_URL."
         )
     yield base_url
@@ -119,7 +138,7 @@ def ensure_setup(page, live_server, request):
 
     page.goto(f"{live_server}/login", wait_until="domcontentloaded")
     if "/setup/" in page.url:
-        pytest.skip(
+        _skip_or_fail(
             "Live host is in setup flow; complete setup before running e2e tests."
         )
 
@@ -149,7 +168,7 @@ def login(page, live_server, test_user_credentials):
         page.locator("#password").fill(test_user_credentials["password"])
         page.get_by_role("button", name="Crack the planet!").click()
         if not page.get_by_role("link", name="Jobs").is_visible():
-            pytest.skip(
+            _skip_or_fail(
                 "Login failed against external server; set HASHVIEW_E2E_EMAIL/PASSWORD."
             )
         return page
@@ -162,3 +181,58 @@ def configure_page(page):
     page.set_default_timeout(5000)
     page.set_default_navigation_timeout(10000)
     return page
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """Under strict mode, report skipped e2e tests (the gate runs separately).
+
+    Skips read as passes in CI, which masks regressions (the whole point of
+    strict mode). The open-redirect test is a plain assertion, not a skip/xfail,
+    so it doesn't factor in here — only genuine ``pytest.skip`` outcomes count.
+
+    This hook is reporting-only; the actual fail decision and exit-code write
+    live in :func:`pytest_sessionfinish`, which receives a public ``session``.
+    """
+    if not _e2e_strict():
+        return
+
+    skipped = terminalreporter.stats.get("skipped", [])
+    if not skipped:
+        return
+
+    nodeids = sorted(
+        {getattr(rep, "nodeid", str(rep)) for rep in skipped}
+    )
+    terminalreporter.write_sep(
+        "=", f"HASHVIEW_E2E_STRICT: {len(skipped)} skipped result(s)"
+    )
+    for nodeid in nodeids:
+        terminalreporter.write_line(f"  SKIPPED {nodeid}")
+
+    if len(skipped) > STRICT_MAX_SKIPS:
+        terminalreporter.write_sep(
+            "=",
+            f"STRICT FAIL: {len(skipped)} skipped exceeds allowed {STRICT_MAX_SKIPS}",
+            red=True,
+        )
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Under strict mode, fail the session if too many e2e tests skipped.
+
+    Counts the RAW number of skip results (``len(skipped)``), so a parametrized
+    test skipped N times counts as N — not as a single deduplicated nodeid.
+    The exit-code write uses the public ``session`` argument rather than any
+    private ``terminalreporter`` internals.
+    """
+    if not _e2e_strict():
+        return
+
+    terminalreporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    if terminalreporter is None:
+        return
+
+    skipped = terminalreporter.stats.get("skipped", [])
+    if len(skipped) > STRICT_MAX_SKIPS:
+        # Force a nonzero session exit without masking a real failure exit code.
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED

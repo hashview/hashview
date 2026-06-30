@@ -60,8 +60,30 @@ def test_job_creation_flow(page, live_server, login):
     match = re.search(r"/jobs/(\d+)/tasks", page.url)
     assert match, f"Unexpected tasks URL: {page.url}"
     job_id = match.group(1)
-    page.goto(
-        f"{live_server}/jobs/{job_id}/assign_task/{task_id}",
-        wait_until="domcontentloaded",
+
+    # The task library renders one POST form per available task inside the
+    # "Add Task" <details> drawer (the drawer toggle is a <summary>, not a
+    # button). Each form carries a CSRF token, so we submit the real form
+    # through the UI rather than GET the POST-only route. Match the exact form
+    # action via the concrete job_id/task_id so we never ambiguously match a
+    # different task (e.g. /assign_task/1 vs /assign_task/11).
+    assign_action = f"/jobs/{job_id}/assign_task/{task_id}"
+    assign_form = page.locator(f"form[action='{assign_action}']")
+    expect(assign_form).to_be_attached()
+
+    # The form lives inside a closed <details>, so it's hidden until expanded.
+    # Open exactly the drawer that contains this task's form, then submit it.
+    page.locator(f"details:has(form[action='{assign_action}'])").evaluate(
+        "el => { el.open = true; }"
     )
-    expect(page.get_by_role("cell", name=task_name, exact=True)).to_be_visible()
+    assign_form.locator("button[type=submit]").first.click()
+    page.wait_for_load_state("domcontentloaded")
+
+    # After assignment, the task appears in the Task Queue. Since the
+    # dynamic-job-task-layout change, the queue renders each assigned task as a
+    # drag-to-reorder card (`#task-queue .tq-item[data-task-id]` with a
+    # `.tq-name`), not a table cell. Match by the task id (robust) and confirm
+    # the card shows the task's name.
+    queued = page.locator(f"#task-queue .tq-item[data-task-id='{task_id}']")
+    expect(queued).to_be_visible()
+    expect(queued.locator(".tq-name")).to_contain_text(task_name)

@@ -62,25 +62,35 @@ def configure_page():
 def _build_test_app():
     # Import lazily so this module remains importable in envs without
     # Flask (paired with the ``collect_ignore_glob`` above).
+    import os
+
     from hashview import create_app
 
-    app = create_app(
-        testing=True,
-        config_overrides={
-            "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
-            "SQLALCHEMY_TRACK_MODIFICATIONS": False,
-            "SQLALCHEMY_ENGINE_OPTIONS": {
-                "connect_args": {"check_same_thread": False},
-            },
-            "WTF_CSRF_ENABLED": False,
-            "MAIL_SUPPRESS_SEND": True,
-            "SECRET_KEY": "unit-test-secret",
-            "SERVER_NAME": "localhost.test",
-            "HASHVIEW_SKIP_SETUP": True,
-            "HASHVIEW_SKIP_GUI_SETUP": True,
-            "HASHVIEW_DISABLE_SCHEDULER": True,
+    overrides = {
+        "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+        "SQLALCHEMY_TRACK_MODIFICATIONS": False,
+        "SQLALCHEMY_ENGINE_OPTIONS": {
+            "connect_args": {"check_same_thread": False},
         },
-    )
+        "WTF_CSRF_ENABLED": False,
+        "MAIL_SUPPRESS_SEND": True,
+        "SECRET_KEY": "unit-test-secret",
+        "SERVER_NAME": "localhost.test",
+        "HASHVIEW_SKIP_SETUP": True,
+        "HASHVIEW_SKIP_GUI_SETUP": True,
+        "HASHVIEW_DISABLE_SCHEDULER": True,
+    }
+
+    # CI MySQL/MariaDB parity: when HASHVIEW_TEST_DATABASE_URI is set the test
+    # app talks to that database instead of in-memory SQLite. Unset (the local
+    # default), behaviour is unchanged. The SQLite-only check_same_thread
+    # connect_arg is meaningless to other dialects, so drop it then.
+    test_db_uri = os.environ.get("HASHVIEW_TEST_DATABASE_URI")
+    if test_db_uri:
+        overrides["SQLALCHEMY_DATABASE_URI"] = test_db_uri
+        overrides["SQLALCHEMY_ENGINE_OPTIONS"] = {}
+
+    app = create_app(testing=True, config_overrides=overrides)
     return app
 
 

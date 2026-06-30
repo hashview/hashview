@@ -1,6 +1,5 @@
 import datetime
 import logging
-from functools import partial
 from logging.config import dictConfig as loggingDictConfig
 
 from flask import Flask, redirect, request, url_for
@@ -69,16 +68,13 @@ def setup_defaults_if_needed():
         logger.exception('Upgrading Database failed.')
 
     try:
-        from hashview.scheduler import data_retention_cleanup, scheduler
-        logger.info('Clearing Scheduled Jobs.')
-        scheduler.remove_all_jobs()
+        from hashview.scheduler import register_default_jobs
         logger.info('Adding Default Scheduled Jobs Progressing.')
-        scheduler.add_job(
-            id='DATA_RETENTION',
-            func=partial(data_retention_cleanup, current_app),
-            trigger='cron',
-            hour='*',
-        )
+        # Bind the REAL app object, not the current_app proxy: flask-apscheduler
+        # runs jobs in a background thread with no application context, so a
+        # LocalProxy would raise "Working outside of application context" when the
+        # job does `with app.app_context()` — the job would silently never run.
+        register_default_jobs(current_app._get_current_object())
         logger.info('Adding Default Scheduled Jobs is Complete.')
     except Exception:
         logger.exception('Adding Default Scheduled Jobs failed.')
@@ -365,7 +361,11 @@ def create_app(testing=False, config_overrides=None):
                     db_now = datetime.strptime(db_now[:19], '%Y-%m-%d %H:%M:%S')
             except Exception:
                 db_now = None
-            cutoff = (db_now or datetime.utcnow()) - timedelta(hours=1)
+            # Configurable per Settings.agent_timeout_minutes (default 60 = the old
+            # hardcoded 1-hour cutoff). function-local import dodges a load-time
+            # circular import on the package root (same as fmt_hps/parse_hps above).
+            from hashview.utils.utils import get_agent_timeout_minutes
+            cutoff = (db_now or datetime.utcnow()) - timedelta(minutes=get_agent_timeout_minutes())
 
             # An agent is "up" when it's connected (recent check-in) and in a
             # running or idle/ready state; the speed total only counts agents actively

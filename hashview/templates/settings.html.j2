@@ -122,6 +122,13 @@
                             </div>
                         </div>
 
+                        <div class="field" style="margin-top:16px; margin-bottom:0;">
+                            <label class="field-label" for="set-agent-timeout">Agent timeout <span class="mono" style="color:var(--text-mute); font-weight:400;">· minutes</span></label>
+                            {{ HashviewForm.agent_timeout_minutes(class="input", type="number", min="1", max="525600", id="set-agent-timeout", style="max-width:220px;") }}
+                            <span class="field-hint">How long should Hashview wait for an agent to check in before considering it offline.</span>
+                            {% for e in HashviewForm.agent_timeout_minutes.errors %}<div class="invalid-feedback" style="display:block;">{{ e }}</div>{% endfor %}
+                        </div>
+
                         <div style="display:flex; align-items:center; gap:12px; margin-top:20px;">
                             <div style="flex:1; min-width:0;">
                                 <div style="color:var(--text);">Job priority weighting</div>

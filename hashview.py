@@ -7,7 +7,6 @@ import os
 import sys
 import time
 import traceback
-from functools import partial
 from pathlib import Path
 
 from hashview import create_app
@@ -419,7 +418,7 @@ def cli(args) -> int:
         app = create_app()
         with app.app_context():
             from hashview.models import db
-            from hashview.scheduler import data_retention_cleanup
+            from hashview.scheduler import register_default_jobs
             from hashview.users.routes import bcrypt
 
             ensure_settings_cli(db)
@@ -427,14 +426,9 @@ def cli(args) -> int:
 
             print('Done! Running Hashview! Enjoy.')
 
-            scheduler = app.apscheduler
-            scheduler.remove_all_jobs()
-            scheduler.add_job(
-                id='DATA_RETENTION',
-                func=partial(data_retention_cleanup, app),
-                trigger='cron',
-                hour='*',
-            )
+            # Register all default scheduled jobs (DATA_RETENTION + AGENT_HEALTH)
+            # from the single source so the entry point and create_app can't drift.
+            register_default_jobs(app)
 
         if parsed_args.debug:
             builtins.state = 'debug'

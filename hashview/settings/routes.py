@@ -74,6 +74,7 @@ def settings_list():
             settings.retention_period = hashview_form.retention_period.data
             settings.max_runtime_jobs = hashview_form.max_runtime_jobs.data
             settings.max_runtime_tasks = hashview_form.max_runtime_tasks.data
+            settings.agent_timeout_minutes = hashview_form.agent_timeout_minutes.data
             settings.enabled_job_weights = hashview_form.enabled_job_weights.data
             settings.enabled_chunking = hashview_form.enabled_chunking.data
             settings.chunk_target_duration = hashview_form.chunk_target_duration.data
@@ -116,6 +117,7 @@ def settings_list():
             hashview_form.retention_period.data = settings.retention_period
             hashview_form.max_runtime_jobs.data = settings.max_runtime_jobs
             hashview_form.max_runtime_tasks.data = settings.max_runtime_tasks
+            hashview_form.agent_timeout_minutes.data = settings.agent_timeout_minutes
             hashview_form.enabled_job_weights.data = settings.enabled_job_weights
             hashview_form.enabled_chunking.data = settings.enabled_chunking
             hashview_form.chunk_target_duration.data = settings.chunk_target_duration

@@ -128,6 +128,10 @@ class Settings(db.Model):
     retention_period = db.Column(db.Integer)
     max_runtime_jobs = db.Column(db.Integer)                    # Time will be measured in hours
     max_runtime_tasks = db.Column(db.Integer)                   # Time will be measured in hours
+    # Minutes Hashview waits for an agent check-in before considering it offline
+    # (sidebar/agents page/dashboard + the agent-health scheduler). Default 60 keeps
+    # the previously-hardcoded 1-hour cutoff.
+    agent_timeout_minutes = db.Column(db.Integer, nullable=False, default=60)
     enabled_job_weights = db.Column(db.Boolean, nullable=False, default=False)
     # Task chunking (Settings -> Jobs). When enabled, eligible tasks (everything
     # except those using a dynamic wordlist) are split into smaller per-agent
@@ -256,6 +260,10 @@ class Agents(db.Model):
     status = db.Column(db.String(20), nullable=False)        # Pending, Syncing, Working, Idle
     hc_status = db.Column(db.String(6000))
     last_checkin = db.Column(db.DateTime)
+    # True once an "agent offline" admin alert has been sent; reset when the agent
+    # checks back in (so we notify once per offline episode + on recovery). See
+    # scheduler.agent_health_check.
+    offline_notified = db.Column(db.Boolean, nullable=False, default=False)
     benchmark = db.Column(db.String(20))
     cpu_count = db.Column(db.Integer)
     gpu_count = db.Column(db.Integer)

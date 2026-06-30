@@ -197,6 +197,18 @@ def ingest_static_wordlist_file(src_path, owner_id, name):
         byte_size=get_filesize(final_gz),
     )
 
+def get_agent_timeout_minutes():
+    """Minutes Hashview waits for an agent check-in before considering it offline.
+    Single source for the UI cutoff (inject_nav_counts) and the agent-health
+    scheduler. Defaults to 60 on a missing Settings row / pre-migration DB."""
+    try:
+        settings = Settings.query.first()
+        if settings and settings.agent_timeout_minutes:
+            return settings.agent_timeout_minutes
+    except Exception:  # pragma: no cover - pre-migration / no DB
+        pass
+    return 60
+
 def notify_admins(subject, message):
     """Deliver an administrative notification (e.g. an agent error) to the admins
     who opted in, over each channel they selected and that is instance-enabled.

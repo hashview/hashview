@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Agent image for the multi-agent crack e2e test: the real hashview agent plus a
 # real-cracking hashcat shim (no GPU/engine). Used only by docker-compose.e2e.yml.
-FROM python:3.8-slim
+FROM python:3.11-slim
 WORKDIR /agent
 
 # gzip + coreutils: the agent shells out to `gunzip` / `mv` during rules sync.

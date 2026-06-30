@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1
+# Agent image for the multi-agent crack e2e test: the real hashview agent plus a
+# real-cracking hashcat shim (no GPU/engine). Used only by docker-compose.e2e.yml.
+FROM python:3.8-slim
+WORKDIR /agent
+
+# gzip + coreutils: the agent shells out to `gunzip` / `mv` during rules sync.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gzip coreutils \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir requests psutil
+
+# Real agent code (includes its own agent/ package + control/ dirs).
+COPY install/hashview-agent/ /agent/
+
+# Real-cracking shim; HC_BIN_PATH points here.
+COPY tests/e2e/crack/shim/ /opt/hcshim/
+RUN chmod +x /opt/hcshim/hashcat
+
+COPY tests/e2e/crack/agent-entrypoint.sh /agent-entrypoint.sh
+RUN chmod +x /agent-entrypoint.sh
+
+# VERSION.TXT must be >= the server's __version__ or the server returns 426.
+# Derive it from the server package so the two never drift.
+COPY hashview/__init__.py /tmp/hv_init.py
+RUN python -c "import re; m=re.search(r'__version__\s*=\s*[\'\"]([^\'\"]+)', open('/tmp/hv_init.py').read()); open('/agent/VERSION.TXT','w').write(m.group(1)+'\n')"
+
+RUN mkdir -p control/tmp control/hashes control/outfiles control/wordlists control/rules
+
+ENTRYPOINT ["/agent-entrypoint.sh"]

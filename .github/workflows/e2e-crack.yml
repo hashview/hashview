@@ -1,0 +1,46 @@
+name: E2E Crack
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-crack:
+    runs-on: ubuntu-latest
+    # Builds the app image + two agent images and runs a full multi-agent
+    # compose stack, so it needs more headroom than the Playwright e2e job.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Fetch rockyou wordlist (SecLists, pinned + checksummed)
+        env:
+          # Pin to an immutable SecLists release tag, not master. The runner
+          # has no rockyou preinstalled (the apt `wordlists` package isn't in
+          # Ubuntu's repos), so pull the compressed copy SecLists ships and
+          # verify it before trusting it.
+          SECLISTS_TAG: "2024.3"
+          ROCKYOU_TGZ_SHA256: "47c070a029bcdb4cbd0e02c69fed136ef46dce4048ddbadf177daa5e885b8172"
+        run: |
+          url="https://github.com/danielmiessler/SecLists/raw/refs/tags/${SECLISTS_TAG}/Passwords/Leaked-Databases/rockyou.txt.tar.gz"
+          curl -fsSL -o /tmp/rockyou.txt.tar.gz "$url"
+          echo "${ROCKYOU_TGZ_SHA256}  /tmp/rockyou.txt.tar.gz" | sha256sum -c -
+          tar xzf /tmp/rockyou.txt.tar.gz -C /tmp
+          test -f /tmp/rockyou.txt
+          wc -l /tmp/rockyou.txt
+
+      - name: Run multi-agent crack e2e
+        env:
+          DOCKER_PLATFORM: linux/amd64
+          ROCKYOU_PATH: /tmp/rockyou.txt
+        run: ./tests/run_e2e_crack_compose.sh

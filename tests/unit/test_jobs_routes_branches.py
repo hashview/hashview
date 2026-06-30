@@ -641,10 +641,10 @@ def test_jobs_assign_task_duplicate_with_no_wordlist_flashes(app, client):
     db.session.commit()
     _login(client, user)
 
-    # Assign again — should flash "Task already assigned"
+    # Assign again — should be rejected (no dynamic wordlist) and flash a warning
     resp = client.post(f"/jobs/{job.id}/assign_task/{task.id}",
                        follow_redirects=True)
-    assert b"Task already assigned to the job." in resp.data
+    assert b"already assigned" in resp.data
     assert JobTasks.query.filter_by(job_id=job.id, task_id=task.id).count() == 1
 
 
@@ -838,11 +838,11 @@ def test_jobs_notifications_hash_slack_redirects_to_hashes(app, client):
 
 
 # ---------------------------------------------------------------------------
-# jobs_move_task_down with 3 tasks — hits the else branch (line 624)
+# jobs_reorder_tasks — reorder a 3-task queue to an arbitrary permutation
 # ---------------------------------------------------------------------------
 
-def test_jobs_move_task_down_three_tasks_else_branch(app, client):
-    """Moving task_1 down in a 3-task list exercises the else-append branch."""
+def test_jobs_reorder_tasks_three_tasks(app, client):
+    """Reorder a 3-task queue to [t2, t1, t3] via the drag-drop reorder route."""
     user = _nonadmin()
     customer = _make_customer()
     job = _make_job(user.id, customer.id)
@@ -856,9 +856,8 @@ def test_jobs_move_task_down_three_tasks_else_branch(app, client):
     db.session.commit()
     _login(client, user)
 
-    # Move t1 down: order should become [t2, t1, t3]
-    resp = client.post(f"/jobs/{job.id}/move_task_down/{t1.id}",
-                       follow_redirects=False)
+    resp = client.post(f"/jobs/{job.id}/reorder_tasks",
+                       data={"order": f"{t2.id},{t1.id},{t3.id}"}, follow_redirects=False)
     assert resp.status_code in (301, 302)
     order = [jt.task_id for jt in
              JobTasks.query.filter_by(job_id=job.id).order_by(JobTasks.id).all()]

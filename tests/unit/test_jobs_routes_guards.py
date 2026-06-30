@@ -135,7 +135,8 @@ def test_jobs_assign_duplicate_static_wordlist_task_rejected(app, client):
     client.post(f"/jobs/{job.id}/assign_task/{task.id}")
     resp = client.post(f"/jobs/{job.id}/assign_task/{task.id}",
                       follow_redirects=True)
-    assert b"Task already assigned to the job." in resp.data
+    assert b"already assigned" in resp.data
+    assert JobTasks.query.filter_by(job_id=job.id, task_id=task.id).count() == 1  # no dupe
     assert JobTasks.query.filter_by(job_id=job.id, task_id=task.id).count() == 1
 
 
@@ -348,7 +349,7 @@ def test_jobs_assign_task_group_assigns_all_and_skips_static_dupes(app, client):
     assert JobTasks.query.filter_by(job_id=job.id).count() == 2
 
 
-# ------------------------------------------------- jobs_move_task_up / _down
+# ------------------------------------------------------- jobs_reorder_tasks
 
 def _job_with_two_tasks(user):
     customer = _make_customer()
@@ -367,48 +368,71 @@ def _task_order(job_id):
             JobTasks.query.filter_by(job_id=job_id).order_by(JobTasks.id).all()]
 
 
-def test_jobs_move_task_up_swaps_order(app, client):
+def test_jobs_reorder_tasks_reorders(app, client):
     user = _nonadmin()
     job, t1, t2 = _job_with_two_tasks(user)
     _login(client, user)
 
-    resp = client.post(f"/jobs/{job.id}/move_task_up/{t2.id}",
-                      follow_redirects=False)
+    resp = client.post(f"/jobs/{job.id}/reorder_tasks",
+                       data={"order": f"{t2.id},{t1.id}"}, follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert _task_order(job.id) == [t2.id, t1.id]
 
 
-def test_jobs_move_task_up_already_top_warns(app, client):
+def test_jobs_reorder_tasks_rejects_non_permutation(app, client):
+    """A submitted order that isn't a permutation of the job's rows (stale page /
+    tampering) is rejected and the queue is left unchanged."""
     user = _nonadmin()
     job, t1, t2 = _job_with_two_tasks(user)
     _login(client, user)
 
-    resp = client.post(f"/jobs/{job.id}/move_task_up/{t1.id}",
-                      follow_redirects=True)
-    assert b"already at the top" in resp.data
+    resp = client.post(f"/jobs/{job.id}/reorder_tasks",
+                       data={"order": f"{t1.id},999999"}, follow_redirects=True)
+    assert b"out of date" in resp.data
     assert _task_order(job.id) == [t1.id, t2.id]  # unchanged
 
 
-def test_jobs_move_task_down_swaps_order(app, client):
+def test_add_task_dropdown_drops_assigned_static_keeps_dynamic(app, client):
+    """The Add-Task dropdown removes an assigned task unless it uses a dynamic
+    wordlist (so a non-dynamic task can't be added twice). The assign_task form
+    only appears in the dropdown, so its presence/absence is the signal."""
     user = _nonadmin()
-    job, t1, t2 = _job_with_two_tasks(user)
+    customer = _make_customer()
+    job = _make_job(user.id, customer.id)
+    static_wl = _make_wordlist(user.id, name="static-wl", wl_type="static")
+    dynamic_wl = _make_wordlist(user.id, name="dyn-wl", wl_type="dynamic")
+    t_static = _make_task(user.id, static_wl.id, name="static-task")
+    t_dynamic = _make_task(user.id, dynamic_wl.id, name="dynamic-task")
+    t_unassigned = _make_task(user.id, static_wl.id, name="unassigned-task")
+    # assign the static + dynamic tasks; leave t_unassigned off the job
+    db.session.add(JobTasks(job_id=job.id, task_id=t_static.id, status="Not Started"))
+    db.session.add(JobTasks(job_id=job.id, task_id=t_dynamic.id, status="Not Started"))
+    db.session.commit()
     _login(client, user)
 
-    resp = client.post(f"/jobs/{job.id}/move_task_down/{t1.id}",
-                      follow_redirects=False)
-    assert resp.status_code in (301, 302)
-    assert _task_order(job.id) == [t2.id, t1.id]
+    html = client.get(f"/jobs/{job.id}/tasks").get_data(as_text=True)
+    assert f"/assign_task/{t_static.id}" not in html       # assigned + static -> dropped
+    assert f"/assign_task/{t_dynamic.id}" in html          # assigned + dynamic -> stays
+    assert f"/assign_task/{t_unassigned.id}" in html       # unassigned -> shown
 
 
-def test_jobs_move_task_down_already_bottom_warns(app, client):
+def test_task_queue_renders_cards_with_meta(app, client):
+    """The queue renders draggable .tq-item cards with the task name + a
+    type-and-wordlist subtitle (mode-0 no-rule task -> 'Dictionary')."""
     user = _nonadmin()
-    job, t1, t2 = _job_with_two_tasks(user)
+    customer = _make_customer()
+    job = _make_job(user.id, customer.id)
+    wl = _make_wordlist(user.id, name="rockyou", wl_type="static")
+    t = _make_task(user.id, wl.id, name="rockyou-dict")   # hc_attackmode 0, rule_id None
+    db.session.add(JobTasks(job_id=job.id, task_id=t.id, status="Not Started"))
+    db.session.commit()
     _login(client, user)
 
-    resp = client.post(f"/jobs/{job.id}/move_task_down/{t2.id}",
-                      follow_redirects=True)
-    assert b"already at the bottom" in resp.data
-    assert _task_order(job.id) == [t1.id, t2.id]  # unchanged
+    html = client.get(f"/jobs/{job.id}/tasks").get_data(as_text=True)
+    assert 'class="tq-item"' in html and 'draggable="true"' in html
+    assert "rockyou-dict" in html        # task name
+    assert "Dictionary" in html          # type label (mode 0, no rule)
+    assert "rockyou" in html             # wordlist name in the subtitle
 
 
 # ---------------------------------------------------- notifications wizard step

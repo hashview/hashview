@@ -32,34 +32,16 @@
                     </summary>
                     <div class="card" style="margin-top:8px; max-height:300px; overflow-y:auto;">
                         <div class="card-body" style="padding:6px;">
-                            {% set any_task = namespace(value=0) %}
-                            {% for task in tasks %}
-                                {% set already_assigned = namespace(value=0) %}
-                                {% for job_task in job_tasks %}
-                                    {% if job_task.task_id == task.id %}
-                                        {% if task.hc_attackmode == 0 or task.hc_attackmode == 1 or task.hc_attackmode == 6 or task.hc_attackmode == 7 %}
-                                            {% for wordlist in wordlists %}
-                                                {% if wordlist.id == task.wordlist_id and wordlist.type == 'static' %}
-                                                    {% set already_assigned.value = 1 %}
-                                                {% endif %}
-                                            {% endfor %}
-                                        {% else %}
-                                            {% set already_assigned.value = 1 %}
-                                        {% endif %}
-                                    {% endif %}
-                                {% endfor %}
-                                {% if already_assigned.value == 0 %}
-                                    {% set any_task.value = 1 %}
-                                    <!-- TODO: filter out tasks already assigned to the job -->
-                                    <form method="POST" action="/jobs/{{job.id}}/assign_task/{{task.id}}">
-                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                        <button type="submit" class="btn btn-ghost btn-block" style="justify-content:flex-start;">{{ icon('task', size=14) }} {{task.name}}</button>
-                                    </form>
-                                {% endif %}
-                            {% endfor %}
-                            {% if any_task.value == 0 %}
+                            {# assignable_tasks (computed in the route): an assigned task drops out
+                               unless it uses a dynamic wordlist, so a non-dynamic task can't be added twice. #}
+                            {% for task in assignable_tasks %}
+                                <form method="POST" action="/jobs/{{job.id}}/assign_task/{{task.id}}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-ghost btn-block" style="justify-content:flex-start;">{{ icon('task', size=14) }} {{task.name}}</button>
+                                </form>
+                            {% else %}
                                 <div class="page-sub" style="padding:8px 10px;">No tasks available.</div>
-                            {% endif %}
+                            {% endfor %}
                         </div>
                     </div>
                 </details>
@@ -97,79 +79,138 @@
     {# ============ Task Queue ============ #}
     <div class="card">
         <div class="card-head">
-            {{ icon('list', size=16) }}
+            <span class="dot-led {% if (job_tasks is defined) and job_tasks.count() > 0 %}on{% else %}idle{% endif %}"></span>
             <h3>Task Queue</h3>
             {% if (job_tasks is defined) and job_tasks.count() > 0 %}
-                <button type="button" id="remove_all" class="btn btn-danger btn-sm" style="margin-left:auto;" title="Remove all assigned tasks for this Job" onclick="document.getElementById('deleteModal').showModal()">{{ icon('trash', size=14) }} Remove All</button>
+                <a href="#" id="clear_all" style="margin-left:auto; color:var(--text-mute); font-size:12px; font-family:var(--mono);" title="Remove all assigned tasks for this job" onclick="document.getElementById('deleteModal').showModal(); return false;">clear all</a>
             {% endif %}
         </div>
         <div class="card-body" style="padding:0;">
-            <table class="tbl">
-                <thead>
-                    <tr>
-                        <th>Task Name</th>
-                        <th>Type</th>
-                        <th class="center">Control</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for job_task in job_tasks %}
-                        <tr>
-                            <td style="font-weight:500;">
-                                {% for task in tasks %}
-                                    {% if task.id == job_task.task_id %}
-                                        {{task.name}}
-                                    {% endif %}
-                                {% endfor %}
-                            </td>
-                            <td style="color:var(--text-dim);">
-                                {% for task in tasks %}
-                                    {% if task.id == job_task.task_id %}
-                                        {% if task.hc_attackmode == 0 %}
-                                            Straight (Wordlist + Rules)
-                                        {% elif task.hc_attackmode == 1 %}
-                                            Combination (Wordlist1, Rule1, Wordlist2, Rule2)
-                                        {% elif task.hc_attackmode == 3 %}
-                                            Brute-force (Maskmode)
-                                        {% elif task.hc_attackmode == 6 %}
-                                            Hybrid (Wordlist + Mask)
-                                        {% elif task.hc_attackmode == 7 %}
-                                            Hybrid (Mask + wordlist)
-                                        {% else %}
-                                            UNDEF?
-                                        {% endif %}
-                                    {% endif %}
-                                {% endfor %}
-                            </td>
-                            <td class="center">
-                                <div style="display:flex; gap:4px; justify-content:center;">
-                                    <form method="POST" action="/jobs/{{job.id}}/move_task_up/{{job_task.task_id}}" style="display:contents">
-                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                        <button type="submit" class="icon-btn" title="Move Up">{{ icon('arrowUp', size=15) }}</button>
-                                    </form>
-                                    <form method="POST" action="/jobs/{{job.id}}/move_task_down/{{job_task.task_id}}" style="display:contents">
-                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                        <button type="submit" class="icon-btn" title="Move Down">{{ icon('arrowDown', size=15) }}</button>
-                                    </form>
-                                    <form method="POST" action="/jobs/{{job.id}}/remove_task/{{job_task.task_id}}" style="display:contents">
-                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                        <button type="submit" class="icon-btn act-del" title="Delete">{{ icon('trash', size=15) }}</button>
-                                    </form>
-                                </div>
-                            </td>
-                        </tr>
-                    {% else %}
-                        <tr>
-                            <td colspan="3" style="text-align:center; padding:32px 16px; color:var(--text-dim);">
-                                No tasks assigned yet. Add some from the library.
-                            </td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+            {# Drag a card to reorder; siblings slide out of the way (FLIP). On drop
+               the new task-id order is posted to jobs_reorder_tasks (POST+redirect). #}
+            <form id="reorder-form" method="POST" action="/jobs/{{job.id}}/reorder_tasks">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="order" id="reorder-order">
+            </form>
+            <div id="task-queue">
+                {% for job_task in job_tasks %}
+                    {% set m = task_meta.get(job_task.task_id) if task_meta is defined else none %}
+                    <div class="tq-item" draggable="true" data-task-id="{{ job_task.task_id }}">
+                        <span class="tq-index">{{ '%02d' % loop.index }}</span>
+                        <span class="tq-grip" title="Drag to reorder">{{ icon('drag', size=16) }}</span>
+                        <div class="tq-body">
+                            <div class="tq-name">{{ m.name if m else 'Unknown task' }}</div>
+                            <div class="tq-sub">{{ m.type if m else 'Task' }}{% if m and m.wordlist %} · {{ m.wordlist }}{% endif %}</div>
+                        </div>
+                        <div class="tq-controls">
+                            <form method="POST" action="/jobs/{{job.id}}/remove_task/{{job_task.task_id}}" style="display:contents">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="icon-btn act-del" title="Remove task">{{ icon('trash', size=15) }}</button>
+                            </form>
+                        </div>
+                    </div>
+                {% else %}
+                    <div class="tq-empty">No tasks assigned yet. Add some from the library.</div>
+                {% endfor %}
+            </div>
         </div>
     </div>
 </div>
+
+<style>
+    #task-queue { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+    .tq-item {
+        display: flex; align-items: center; gap: 14px; padding: 14px 16px;
+        border: 1px solid var(--border); border-radius: var(--radius-lg);
+        background: var(--surface-2);
+        transition: transform .18s ease, opacity .15s ease, border-color .15s ease;
+    }
+    .tq-item:hover { border-color: var(--border-bright); }
+    .tq-item.tq-dragging { opacity: 0.4; }
+    .tq-index { font-family: var(--mono); color: var(--primary); font-size: 13px; min-width: 22px; text-align: right; }
+    .tq-grip { color: var(--text-mute); cursor: grab; display: inline-flex; }
+    .tq-item:hover .tq-grip { color: var(--text-dim); }
+    .tq-item.tq-dragging .tq-grip { cursor: grabbing; }
+    .tq-body { flex: 1; min-width: 0; }
+    .tq-name { color: var(--text); font-family: var(--mono); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tq-sub { color: var(--text-mute); font-family: var(--mono); font-size: 11.5px; margin-top: 3px; }
+    .tq-controls { display: flex; gap: 6px; flex: none; }
+    .tq-empty { padding: 32px 16px; text-align: center; color: var(--text-dim); }
+</style>
+<script>
+    // Drag-to-reorder the task queue. While dragging, siblings animate out of the
+    // way (FLIP: measure -> reorder -> invert -> play). On drop, the new task-id
+    // order is submitted to jobs_reorder_tasks (the server rebuilds the order).
+    (function () {
+        var list = document.getElementById('task-queue');
+        if (!list) return;
+        var dragEl = null;
+
+        function itemAfter(y) {
+            var items = Array.prototype.slice.call(
+                list.querySelectorAll('.tq-item:not(.tq-dragging)'));
+            var best = { offset: -Infinity, el: null };
+            items.forEach(function (el) {
+                var box = el.getBoundingClientRect();
+                var offset = y - box.top - box.height / 2;
+                if (offset < 0 && offset > best.offset) best = { offset: offset, el: el };
+            });
+            return best.el;
+        }
+
+        // Animate the move: record current tops, run the DOM reorder, then slide
+        // each shifted sibling from its old position to its new one.
+        function flipReorder(reorder) {
+            var items = Array.prototype.slice.call(list.querySelectorAll('.tq-item'));
+            var firstTop = items.map(function (el) { return el.getBoundingClientRect().top; });
+            reorder();
+            items.forEach(function (el, i) {
+                if (el === dragEl) return;
+                var dy = firstTop[i] - el.getBoundingClientRect().top;
+                if (!dy) return;
+                el.style.transition = 'none';
+                el.style.transform = 'translateY(' + dy + 'px)';
+                requestAnimationFrame(function () {
+                    el.style.transition = '';
+                    el.style.transform = '';
+                });
+            });
+        }
+
+        list.addEventListener('dragstart', function (e) {
+            dragEl = e.target.closest('.tq-item');
+            if (!dragEl) return;
+            e.dataTransfer.effectAllowed = 'move';
+            try { e.dataTransfer.setData('text/plain', ''); } catch (_) {}
+            // defer so the drag image captures the full-opacity card, then fade it
+            setTimeout(function () { if (dragEl) dragEl.classList.add('tq-dragging'); }, 0);
+        });
+        list.addEventListener('dragend', function () {
+            if (dragEl) dragEl.classList.remove('tq-dragging');
+            dragEl = null;
+        });
+        list.addEventListener('dragover', function (e) {
+            if (!dragEl) return;
+            e.preventDefault();
+            var after = itemAfter(e.clientY);
+            if (after === dragEl) return;
+            if (after == null) {
+                if (list.lastElementChild !== dragEl) flipReorder(function () { list.appendChild(dragEl); });
+            } else if (dragEl.nextElementSibling !== after) {
+                flipReorder(function () { list.insertBefore(dragEl, after); });
+            }
+        });
+        list.addEventListener('drop', function (e) {
+            e.preventDefault();
+            if (!dragEl) return;
+            var ids = Array.prototype.map.call(
+                list.querySelectorAll('.tq-item[data-task-id]'),
+                function (el) { return el.getAttribute('data-task-id'); });
+            document.getElementById('reorder-order').value = ids.join(',');
+            document.getElementById('reorder-form').submit();
+        });
+    })();
+</script>
 
 <div class="wizard-nav" style="margin-top:20px;">
     <a class="btn" href="{{ url_for('jobs.jobs_assign_notifications', job_id = job.id) }}">{{ icon('arrowLeft', size=15) }} Back</a>

@@ -81,10 +81,17 @@ def test_two_agents_really_crack_ntlm_job():
     assert cracked == expected_plaintexts, (
         f"recovered {cracked!r}, expected {expected_plaintexts!r}; state={state}")
 
-    # 2. Job + both job_tasks Completed.
+    # 2. Job completed and both job_tasks reached a terminal state.
+    #    The two tasks share one hashfile; once it is FULLY recovered the server
+    #    cancels any still-running/remaining tasks ("hashfile fully recovered",
+    #    the one-and-done optimization), so a task may finish as Completed OR
+    #    Canceled depending on the race between its own completion and that
+    #    server-side cancel. Both are valid terminal outcomes here — what matters
+    #    is the job completed with every hash recovered (asserted above).
+    terminal_statuses = {"Completed", "Canceled"}
     assert state["job_status"] == "Completed", state
     assert len(state["job_tasks"]) == 2, state
-    assert all(jt["status"] == "Completed" for jt in state["job_tasks"]), state
+    assert all(jt["status"] in terminal_statuses for jt in state["job_tasks"]), state
 
     # 3. Real concurrent distribution: both job_tasks were observed assigned to
     #    agents, and the two were handled by two DISTINCT agents.

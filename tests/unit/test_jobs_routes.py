@@ -187,7 +187,7 @@ def _ordered_task_ids(job):
             JobTasks.query.filter_by(job_id=job.id).order_by(JobTasks.id).all()]
 
 
-def test_jobs_move_task_up_swaps_order(app, client):
+def test_jobs_reorder_tasks_swaps_order(app, client):
     admin = make_admin()
     login(client, admin)
     cust = make_customer()
@@ -196,12 +196,13 @@ def test_jobs_move_task_up_swaps_order(app, client):
     _assign(job, t1)
     _assign(job, t2)
     assert _ordered_task_ids(job) == [t1.id, t2.id]
-    resp = client.post(f"/jobs/{job.id}/move_task_up/{t2.id}", follow_redirects=False)
+    resp = client.post(f"/jobs/{job.id}/reorder_tasks",
+                       data={"order": f"{t2.id},{t1.id}"}, follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert _ordered_task_ids(job) == [t2.id, t1.id]
 
 
-def test_jobs_move_task_up_top_is_noop(app, client):
+def test_jobs_reorder_tasks_bad_order_is_noop(app, client):
     admin = make_admin()
     login(client, admin)
     cust = make_customer()
@@ -209,21 +210,10 @@ def test_jobs_move_task_up_top_is_noop(app, client):
     t1, t2 = _task(admin, name="first"), _task(admin, name="second")
     _assign(job, t1)
     _assign(job, t2)
-    client.post(f"/jobs/{job.id}/move_task_up/{t1.id}", follow_redirects=False)
+    # not a permutation of the job's rows -> rejected, order unchanged
+    client.post(f"/jobs/{job.id}/reorder_tasks",
+                data={"order": f"{t1.id}"}, follow_redirects=False)
     assert _ordered_task_ids(job) == [t1.id, t2.id]
-
-
-def test_jobs_move_task_down_swaps_order(app, client):
-    admin = make_admin()
-    login(client, admin)
-    cust = make_customer()
-    job = _job(admin, cust)
-    t1, t2 = _task(admin, name="first"), _task(admin, name="second")
-    _assign(job, t1)
-    _assign(job, t2)
-    resp = client.post(f"/jobs/{job.id}/move_task_down/{t1.id}", follow_redirects=False)
-    assert resp.status_code in (301, 302)
-    assert _ordered_task_ids(job) == [t2.id, t1.id]
 
 
 def test_jobs_remove_all_tasks_clears(app, client):

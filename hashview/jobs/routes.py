@@ -43,6 +43,7 @@ from hashview.models import (
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
     build_job_task_commands,
+    dynamic_wordlist_ids,
     import_hashfilehashes,
     save_file,
     try_commit,
@@ -482,14 +483,39 @@ def jobs_list_tasks(job_id):
     job_tasks = JobTasks.query.filter_by(job_id=job_id)
     task_groups = TaskGroups.query.all()
     wordlists = Wordlists.query.all()
-    # Right now we're doing nested loops in the template, this could probably be solved with a left/join select
+
+    # Tasks offered in the "Add Task" dropdown: a task drops out once it's
+    # assigned UNLESS it uses a dynamic wordlist (those may be added more than
+    # once). Mirrors jobs_assign_task's wl_id-based static/dynamic check so a job
+    # can't be configured with two of the same non-dynamic task.
+    dynamic_wl_ids = dynamic_wordlist_ids()
+    assigned_task_ids = {jt.task_id for jt in job_tasks}
+    assignable_tasks = [t for t in tasks
+                        if t.id not in assigned_task_ids or t.wl_id in dynamic_wl_ids]
+
+    # Per-task display metadata for the queue cards (keyed by task id; duplicate
+    # dynamic-task rows share the same task id, so one entry serves all its rows).
+    wl_names = {w.id: w.name for w in wordlists}
+    task_meta = {}
+    for t in tasks:
+        if t.hc_attackmode == 0:
+            label = 'Dict + Rule' if t.rule_id else 'Dictionary'
+        elif t.hc_attackmode == 1:
+            label = 'Combination'
+        elif t.hc_attackmode == 3:
+            label = 'Brute-force'
+        elif t.hc_attackmode in (6, 7):
+            label = 'Hybrid'
+        else:
+            label = 'Task'
+        task_meta[t.id] = {'name': t.name, 'type': label, 'wordlist': wl_names.get(t.wl_id)}
 
     # Does this job have per-hash alerts? Drives the conditional "Alert Hashes" wizard step.
     alert_hashes = False
     if job.hashfile_id:
         alert_hashes = db.session.query(HashNotifications).join(HashfileHashes, HashNotifications.hash_id == HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id == job.hashfile_id).first() is not None
 
-    return render_template('jobs_assigned_tasks.html.j2', title='Jobs Assigned Tasks', job=job, tasks=tasks, job_tasks=job_tasks, task_groups=task_groups, wordlists=wordlists, alert_hashes=alert_hashes, website=_job_uses_website_keywords(job_id))
+    return render_template('jobs_assigned_tasks.html.j2', title='Jobs Assigned Tasks', job=job, tasks=tasks, job_tasks=job_tasks, assignable_tasks=assignable_tasks, task_meta=task_meta, task_groups=task_groups, wordlists=wordlists, alert_hashes=alert_hashes, website=_job_uses_website_keywords(job_id))
 
 @jobs.route("/jobs/<int:job_id>/assign_task/<int:task_id>", methods=['POST'])
 @login_required
@@ -502,25 +528,19 @@ def jobs_assign_task(job_id, task_id):
         flash('Security check failed (invalid or missing CSRF token).', 'danger')
         return redirect("/jobs/" + str(job_id) + "/tasks")
 
-    # Someone smarter than me can turn this into a single DB Query
+    # A task may be assigned more than once ONLY when it uses a dynamic wordlist.
+    # Check for a dynamic wordlist explicitly (not "anything that isn't static") so
+    # a missing wordlist or odd `type` casing can't slip a duplicate through — this
+    # matches the Add-Task dropdown's dynamic_wordlist_ids() filter.
+    task = Tasks.query.get(task_id)
+    wordlist = Wordlists.query.get(task.wl_id) if task else None
+    is_dynamic = wordlist is not None and wordlist.type == 'dynamic'
     jobtask_exists = JobTasks.query.filter_by(job_id=job_id, task_id=task_id).first()
-    wordlist = Wordlists.query.get(Tasks.query.get(task_id).wl_id)
-    # hc_attackmode = Tasks.query.get(task_id).hc_attackmode
-    
-    if jobtask_exists:
-        #if hc_attackmode == '0' or hc_attackmode == '1' or hc_attackmode == '6' or hc_attackmode == '7':
-        if wordlist:
-            if wordlist.type == 'static':
-                flash('Task already assigned to the job.', 'warning')
-            else:
-                job_task = JobTasks(job_id=job_id, task_id=task_id, status='Not Started')
-                db.session.add(job_task)
-                db.session.commit() 
-        else:
-            flash('Task already assigned to the job.', 'warning')
+
+    if jobtask_exists and not is_dynamic:
+        flash('That task is already assigned. Only tasks using a dynamic wordlist can be added more than once.', 'warning')
     else:
-        job_task = JobTasks(job_id=job_id, task_id=task_id, status='Not Started')
-        db.session.add(job_task)
+        db.session.add(JobTasks(job_id=job_id, task_id=task_id, status='Not Started'))
         db.session.commit()
 
     return redirect("/jobs/"+str(job_id)+"/tasks")
@@ -537,29 +557,17 @@ def jobs_assign_task_group(job_id, task_group_id):
     task_group = TaskGroups.query.get(task_group_id)
 
     for task_group_entry in json.loads(task_group.tasks):
-        # Check if task.hc_attackmode = 0, 1, 6, or 7. If so allow duplicates
+        # As in jobs_assign_task: only a dynamic-wordlist task may be added again;
+        # an already-assigned non-dynamic task in the group is skipped.
+        task = Tasks.query.get(task_group_entry)
+        wordlist = Wordlists.query.get(task.wl_id) if task else None
+        is_dynamic = wordlist is not None and wordlist.type == 'dynamic'
         jobtask_exists = JobTasks.query.filter_by(job_id=job_id, task_id=task_group_entry).first()
-        wordlist = Wordlists.query.get(Tasks.query.get(task_group_entry).wl_id)
 
-        if jobtask_exists:
-            if wordlist:
-                if wordlist.type == 'static':
-                    continue
-                else:
-                    job_task = JobTasks(job_id=job_id, task_id=task_group_entry, status='Not Started')
-                    db.session.add(job_task)
-                    db.session.commit()
-            else:
-                continue
-        else:
-            job_task = JobTasks(job_id=job_id, task_id=task_group_entry, status='Not Started')
-            db.session.add(job_task)
-            db.session.commit()
-
-
-        # job_task = JobTasks(job_id=job_id, task_id=task_group_entry, status='Not Started')
-        # db.session.add(job_task)
-        # db.session.commit()
+        if jobtask_exists and not is_dynamic:
+            continue
+        db.session.add(JobTasks(job_id=job_id, task_id=task_group_entry, status='Not Started'))
+        db.session.commit()
 
     return redirect("/jobs/" + str(job_id) + "/tasks")
 
@@ -602,85 +610,39 @@ def jobs_assign_lucky_task_group(job_id):
         flash('Successfully Added Top 10 Tasks', 'success')
     return redirect("/jobs/" + str(job_id) + "/tasks")
 
-@jobs.route("/jobs/<int:job_id>/move_task_up/<int:task_id>", methods=['POST'])
+@jobs.route("/jobs/<int:job_id>/reorder_tasks", methods=['POST'])
 @login_required
-def jobs_move_task_up(job_id, task_id):
-    """Function to move assigned task up on task list for job"""
+def jobs_reorder_tasks(job_id):
+    """Reorder a job's task queue from a drag-and-drop submission.
+
+    ``order`` is the new task-id sequence (comma-joined, one entry per queue row;
+    duplicates are allowed for dynamic-wordlist tasks). The submission must be a
+    permutation of the job's current rows (multiset equality) — otherwise it's a
+    stale/tampered page and is rejected. Rebuilds the queue by deleting and
+    recreating the rows in the new order, the same delete-and-recreate the old
+    move-up/down arrows used (order is JobTasks insertion order)."""
 
     if not FlaskForm().validate_on_submit():
         flash('Security check failed (invalid or missing CSRF token).', 'danger')
         return redirect("/jobs/" + str(job_id) + "/tasks")
 
-    job_tasks = JobTasks.query.filter_by(job_id=job_id).all()
+    current = [jt.task_id for jt in JobTasks.query.filter_by(job_id=job_id).all()]
+    try:
+        submitted = [int(x) for x in request.form.get('order', '').split(',') if x != '']
+    except ValueError:
+        submitted = []
 
-    # We create an array of all related jobtasks, remove existing jobtasks, re-arrange, and create new jobtasks (this way we dont have to worry about non-contigous jobtasks ids)
-    temp_jobtasks = []
-    new_jobtasks = []
-
-    for entry in job_tasks:
-        temp_jobtasks.append(str(entry.task_id))
-
-    if temp_jobtasks[0] == str(task_id):
-        flash('Task is already at the top', 'warning')
-        return redirect("/jobs/"+str(job_id)+"/tasks")
-
-    element_index = temp_jobtasks.index(str(task_id))
-    temp_value = temp_jobtasks[element_index - 1]
-    temp_jobtasks[element_index - 1] = str(task_id)
-    temp_jobtasks[element_index] = str(temp_value)
-
-    new_jobtasks = temp_jobtasks
-
-    JobTasks.query.filter_by(job_id=job_id).delete()
-    db.session.commit()
-
-    for entry in new_jobtasks:
-        job_task = JobTasks(job_id=job_id, task_id=entry, status='Not Started')
-        db.session.add(job_task)
-        db.session.commit()
-
-    return redirect("/jobs/"+str(job_id)+"/tasks")
-
-@jobs.route("/jobs/<int:job_id>/move_task_down/<int:task_id>", methods=['POST'])
-@login_required
-def jobs_move_task_down(job_id, task_id):
-    """Function to move assigned task down on task list for job"""
-
-    if not FlaskForm().validate_on_submit():
-        flash('Security check failed (invalid or missing CSRF token).', 'danger')
+    if sorted(submitted) != sorted(current):
+        flash('Task order was out of date; nothing changed. Please try again.', 'danger')
         return redirect("/jobs/" + str(job_id) + "/tasks")
 
-    job_tasks = JobTasks.query.filter_by(job_id=job_id).all()
-
-    # We create an array of all related jobtasks, remove existing jobtasks, re-arrange, and create new jobtasks (this way we dont have to worry about non-contigous jobtasks ids)
-    temp_jobtasks = []
-    new_jobtasks = []
-
-    for entry in job_tasks:
-        temp_jobtasks.append(str(entry.task_id))
-
-    if temp_jobtasks[-1] == str(task_id):
-        flash('Task is already at the bottom', 'warning')
-        return redirect("/jobs/"+str(job_id)+"/tasks")
-
-    for index in range(len(temp_jobtasks)):
-        if int(index+1) <= len(temp_jobtasks):
-            if  temp_jobtasks[int(index)] == str(task_id):
-                new_jobtasks.append(temp_jobtasks[int(index+1)])
-                new_jobtasks.append(str(task_id))
-                del temp_jobtasks[int(index+1)]
-            else:
-                new_jobtasks.append(temp_jobtasks[int(index)])
-
     JobTasks.query.filter_by(job_id=job_id).delete()
     db.session.commit()
+    for task_id in submitted:
+        db.session.add(JobTasks(job_id=job_id, task_id=task_id, status='Not Started'))
+    db.session.commit()
 
-    for entry in new_jobtasks:
-        job_task = JobTasks(job_id=job_id, task_id=entry, status='Not Started')
-        db.session.add(job_task)
-        db.session.commit()
-
-    return redirect("/jobs/"+str(job_id)+"/tasks")
+    return redirect("/jobs/" + str(job_id) + "/tasks")
 
 @jobs.route("/jobs/<int:job_id>/remove_task/<int:task_id>", methods=['POST'])
 @login_required

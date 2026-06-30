@@ -4,15 +4,25 @@ These guard the e2e CI hardening: under HASHVIEW_E2E_STRICT the prerequisite
 fixtures must hard-fail (not skip), and the skip-count gate has a named
 threshold. No live server is needed — we test the pure helper logic directly.
 """
-import importlib
+import importlib.util
+from pathlib import Path
 
 import pytest
 
 
 def _load_root_conftest():
-    # tests/conftest.py is importable as the `conftest` module once pytest has
-    # collected it; importlib keeps this resilient to import ordering.
-    return importlib.import_module("conftest")
+    # Load tests/conftest.py by explicit file path under a unique module name.
+    # Several conftest.py files (tests/, tests/unit/, tests/security/,
+    # tests/agent_unit/) have no __init__.py, so pytest registers them all under
+    # the bare module name "conftest". In the combined CI run
+    # importlib.import_module("conftest") could return the wrong one (lacking
+    # _e2e_strict/_skip_or_fail). Loading by path under a collision-free name
+    # guarantees we get the ROOT conftest.
+    path = Path(__file__).resolve().parents[1] / "conftest.py"  # tests/conftest.py
+    spec = importlib.util.spec_from_file_location("hashview_root_conftest", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 @pytest.mark.parametrize(

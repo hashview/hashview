@@ -79,5 +79,11 @@ def test_job_creation_flow(page, live_server, login):
     assign_form.locator("button[type=submit]").first.click()
     page.wait_for_load_state("domcontentloaded")
 
-    # After assignment, the task appears in the Task Queue table.
-    expect(page.get_by_role("cell", name=task_name, exact=True)).to_be_visible()
+    # After assignment, the task appears in the Task Queue. Since the
+    # dynamic-job-task-layout change, the queue renders each assigned task as a
+    # drag-to-reorder card (`#task-queue .tq-item[data-task-id]` with a
+    # `.tq-name`), not a table cell. Match by the task id (robust) and confirm
+    # the card shows the task's name.
+    queued = page.locator(f"#task-queue .tq-item[data-task-id='{task_id}']")
+    expect(queued).to_be_visible()
+    expect(queued.locator(".tq-name")).to_contain_text(task_name)

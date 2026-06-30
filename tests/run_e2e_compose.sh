@@ -57,7 +57,9 @@ cleanup() {
     echo "Keeping containers running (HASHVIEW_E2E_KEEP_CONTAINERS=1)."
   else
     echo "Stopping docker compose services..."
-    $COMPOSE_BIN down -v
+    # Include the test override + profile so the agent-test sim is torn down too.
+    $COMPOSE_BIN -f docker-compose.yml -f docker-compose.test.yml --profile test \
+      down -v
   fi
 }
 trap cleanup EXIT
@@ -88,6 +90,16 @@ if ! curl -fsS "$BASE_URL/login" >/dev/null 2>&1; then
 fi
 
 export HASHVIEW_E2E_BASE_URL="$BASE_URL"
+
+# Bring up the heartbeat-only agent simulator (docker-compose.test.yml, `test`
+# profile) now that the app is healthy. It's fire-and-forget: the sim polls
+# /v1/agents/heartbeat for HASHVIEW_AGENT_MAX_SECONDS then exits, so we start it
+# detached and never block the suite on it. `|| true` keeps a sim launch hiccup
+# from aborting the harness under `set -e` — the dedicated test_agent_sim.py
+# still exercises the heartbeat path directly.
+echo "Starting agent simulator (test profile, fire-and-forget)..."
+$COMPOSE_BIN -f docker-compose.yml -f docker-compose.test.yml --profile test \
+  up -d --no-deps agent-test || true
 
 # Seed the database to the state the suite pins via env vars: the admin user
 # (id=1) gets the e2e email/password/api_key, a Settings row exists, and the

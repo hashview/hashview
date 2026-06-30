@@ -206,7 +206,7 @@ def get_agent_timeout_minutes():
         if settings and settings.agent_timeout_minutes:
             return settings.agent_timeout_minutes
     except Exception:  # pragma: no cover - pre-migration / no DB
-        pass
+        return 60
     return 60
 
 def notify_admins(subject, message):

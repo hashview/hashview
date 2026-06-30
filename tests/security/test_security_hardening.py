@@ -1,44 +1,27 @@
 """Security-depth regression tests for Hashview.
 
-Covers four areas the existing single PoC did not:
+Covers three areas the existing single PoC did not:
 
-1. CSRF — a dedicated CSRF-ENABLED app (the shared unit app disables CSRF) that
-   logs a user in and asserts the per-form ``validate_on_submit()`` gate on a
-   real create route (``/customers/add``) rejects a token-less POST (no row
-   created) and accepts a POST carrying a valid token.
-2. Command construction safety — feeds shell metacharacters through the
-   user-controlled task fields (``hc_mask``, ``j_rule``, ``k_rule``) that
-   ``build_hashcat_command`` interpolates RAW into the command string the agent
-   later runs via ``subprocess.Popen(..., shell=True)``. These are STRICT XFAILS
-   that document a real, confirmed injection (see module docstring "FINDINGS").
-3. Path traversal — wordlist / rule names that contain ``../`` or absolute paths
+1. CSRF (positive) — a dedicated CSRF-ENABLED app (the shared unit app disables
+   CSRF) that logs a user in and asserts the per-form ``validate_on_submit()``
+   gate on a real create route (``/customers/add``) rejects a token-less POST (no
+   row created) and accepts a POST carrying a valid token. Also pins the only
+   live ``os.system`` sink (agent download) to a version-templated, non-user
+   command.
+2. Path traversal — wordlist / rule names that contain ``../`` or absolute paths
    must collapse to a bare basename inside the control dir.
-4. IDOR — a second, non-owner, non-admin user must not be able to delete another
-   user's hashfile.
+3. IDOR — a second, non-owner, non-admin user must not be able to delete another
+   user's hashfile (plus an owner control case).
 
-================================ FINDINGS ================================
+NOTE — two confirmed findings that were originally proven here as strict xfails
+now live in their own per-issue PRs/branches so each tracks a GitHub issue:
 
-[F1 — HIGH] Command injection via task fields -> agent shell.
-  hashview/utils/utils.py:902,905,907  (build_hashcat_command, mask)
-  hashview/utils/utils.py:891,896      (build_hashcat_command, j_rule/k_rule)
-  task.hc_mask / task.j_rule / task.k_rule are free-form StringFields
-  (hashview/tasks/forms.py — NO validators) and are concatenated UNQUOTED /
-  single-quoted into the command string stored on JobTasks.command. The agent
-  executes that exact string with shell=True
-  (install/hashview-agent/hashview-agent.py:130), so `; whoami #`, `$(...)`,
-  backticks, `&&`, single-quote-break-out, and newlines in those fields run on
-  the agent host. Encoded below as strict xfails.
+  - FINDING #297 (HIGH) command injection via task fields -> agent shell:
+    tests/security/test_command_injection_xfail.py
+  - FINDING #298 (MEDIUM) missing CSRF on form-reading routes:
+    tests/security/test_csrf_xfail.py
 
-[F2 — MEDIUM] State-changing POST routes with NO CSRF protection.
-  No global CSRFProtect is installed (hashview/__init__.py:321). Routes that read
-  request.form directly instead of calling form.validate_on_submit() are NOT
-  CSRF-protected, e.g.:
-    - hashview/customers/routes.py:102  /customers/edit   (request.form)
-    - hashview/customers/routes.py:159  /customers/delete (request.form)
-    - hashview/hashfiles/routes.py:133  /hashfiles/delete (no token check)
-    - hashview/agents/routes.py          GET state-changers (authorize/deauthorize/delete)
-  Documented by test_csrf_unprotected_edit_route_is_a_finding (strict xfail).
-=========================================================================
+This module deliberately contains only PASSING security tests.
 """
 
 import os
@@ -175,62 +158,10 @@ def test_csrf_protected_create_rejects_without_token_and_accepts_with(csrf_app):
     )
 
 
-@pytest.mark.security
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "FINDING F2 (MEDIUM): /customers/edit reads request.form directly and "
-        "there is no global CSRFProtect, so a token-less cross-site POST mutates "
-        "state. This strict-xfail PROVES the gap: the edit succeeds with no token. "
-        "It will flip to a failure (alerting the maintainer) once the route is "
-        "CSRF-protected."
-    ),
-)
-def test_csrf_unprotected_edit_route_is_a_finding(csrf_app):
-    """Document that /customers/edit is NOT CSRF protected.
-
-    We assert the route IS protected (rename rejected without a token). Because it
-    is actually unprotected, the rename goes through and this assertion fails ->
-    strict xfail flags the real, open finding.
-    """
-    app = csrf_app
-    user = _seed_user()
-    cust = Customers(name="OrigName")
-    db.session.add(cust)
-    db.session.commit()
-    cust_id = cust.id
-
-    client = app.test_client()
-    _login(client, user)
-
-    client.post(
-        "/customers/edit",
-        data={"customer_id": cust_id, "name": "HijackedName"},
-    )
-    db.session.expire_all()
-    renamed = Customers.query.get(cust_id).name
-    # If the route were CSRF protected, the token-less edit would be rejected and
-    # the name would still be 'OrigName'. Asserting that here makes the test FAIL
-    # under the current (unprotected) code -> strict xfail = documented finding.
-    assert renamed == "OrigName", (
-        "CSRF-unprotected: /customers/edit mutated state without a token "
-        f"(name is now {renamed!r})"
-    )
-
-
 # --------------------------------------------------------------------------- #
-# 2. Command construction safety                                              #
+# 2. Command construction safety (the os.system sink; the user-controlled       #
+#    injection findings are split out — see module docstring)                  #
 # --------------------------------------------------------------------------- #
-
-# Shell metacharacters that, reaching a shell=True execution, would execute.
-_SHELL_PAYLOADS = [
-    "; whoami #",
-    "$(whoami)",
-    "`whoami`",
-    "&& whoami",
-    "| whoami",
-    "x\nwhoami",
-]
 
 
 def _seed_job_with_task(attackmode, *, hc_mask=None, j_rule=None, k_rule=None,
@@ -280,59 +211,6 @@ def _seed_job_with_task(attackmode, *, hc_mask=None, j_rule=None, k_rule=None,
     db.session.add(job)
     db.session.commit()
     return job, task
-
-
-@pytest.mark.security
-@pytest.mark.parametrize("payload", _SHELL_PAYLOADS)
-@pytest.mark.parametrize("attackmode", [3, 6, 7])
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "FINDING F1 (HIGH): task.hc_mask is concatenated UNQUOTED into the hashcat "
-        "command (build_hashcat_command -a 3/6/7) and the agent runs that string "
-        "with subprocess.Popen(shell=True) (hashview-agent.py:130). Shell "
-        "metacharacters in the mask therefore execute on the agent host. This "
-        "strict-xfail asserts the payload is neutralized; it is NOT, proving the "
-        "injection. Flips to a real failure once the mask is quoted/validated."
-    ),
-)
-def test_mask_field_shell_injection(nocsrf_app, attackmode, payload):
-    from hashview.utils.utils import build_hashcat_command
-
-    job, task = _seed_job_with_task(attackmode, hc_mask=payload)
-    cmd = build_hashcat_command(job.id, task.id)
-    # Safe code would not embed the live metacharacters verbatim.
-    assert payload not in cmd, (
-        f"mask payload {payload!r} reached the command string RAW: {cmd!r}"
-    )
-
-
-@pytest.mark.security
-# Only quote-break-out payloads belong here: j_rule/k_rule are single-quoted, so a
-# literal single quote is what escapes the quoting and turns the rest into shell.
-@pytest.mark.parametrize("payload", ["'; whoami #", "'`whoami`'", "' && whoami #"])
-@pytest.mark.parametrize("field", ["j_rule", "k_rule"])
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "FINDING F1 (HIGH): task.j_rule / task.k_rule are wrapped in SINGLE quotes "
-        "in build_hashcat_command (attackmode 1) but never escaped, so a literal "
-        "single quote breaks out of the quoting and the rest executes under the "
-        "agent's shell=True. This strict-xfail asserts break-out is impossible; it "
-        "is not, proving the injection."
-    ),
-)
-def test_combinator_rule_shell_injection(nocsrf_app, field, payload):
-    from hashview.utils.utils import build_hashcat_command
-
-    kwargs = {field: payload}
-    job, task = _seed_job_with_task(1, **kwargs)
-    cmd = build_hashcat_command(job.id, task.id)
-    # A single-quote in the payload that survives into the command means the
-    # quoting can be broken out of. Safe handling would escape it.
-    assert payload not in cmd, (
-        f"{field} payload {payload!r} embedded raw in command (quote break-out): {cmd!r}"
-    )
 
 
 @pytest.mark.security

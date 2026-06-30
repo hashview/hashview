@@ -158,22 +158,26 @@ genuinely runs instead of skipping almost everything (its previous behavior).
 
 ## Security suite
 
-`tests/security/` holds two files:
+`tests/security/` holds:
 
 - `test_command_injection_poc.py` — command-injection regression proof-of-concept
   tests.
-- `test_security_hardening.py` — depth coverage for CSRF, command injection,
-  path traversal, and IDOR. Two of these are **real, open findings** tracked as
-  strict `xfail`s for the maintainer (the test asserts the safe behavior, the
-  strict xfail proves it does not yet hold, and the test flips to a hard failure
-  the moment the issue is fixed):
-  - **Command injection (HIGH):** task mask / rule fields (`hc_mask`, `j_rule`,
-    `k_rule`) flow unquoted/unescaped into the hashcat command built by
-    `build_hashcat_command`, which the agent runs via `subprocess.Popen(shell=True)` —
-    so shell metacharacters execute on the agent host.
-  - **Missing CSRF (MEDIUM):** there is no global `CSRFProtect`, so
-    state-changing POST routes that read their form without
-    `validate_on_submit()` (e.g. `/customers/edit`) mutate state with no token.
+- `test_security_hardening.py` — passing depth coverage for CSRF (positive), the
+  agent-download `os.system` sink, path traversal, and IDOR.
+
+Two **real, open findings** are tracked as strict-`xfail` regression tests in
+their own per-issue files/PRs (the test asserts the safe behavior, the strict
+xfail proves it does not yet hold, and it flips to a hard failure the moment the
+issue is fixed — at which point the `xfail` marker should be removed):
+
+- `test_command_injection_xfail.py` — **command injection (HIGH), issue #297:**
+  task mask / rule fields (`hc_mask`, `j_rule`, `k_rule`) flow unquoted/unescaped
+  into the hashcat command built by `build_hashcat_command`, which the agent runs
+  via `subprocess.Popen(shell=True)` — so shell metacharacters execute on the
+  agent host.
+- `test_csrf_xfail.py` — **missing CSRF (MEDIUM), issue #298:** there is no global
+  `CSRFProtect`, so state-changing POST routes that read their form without
+  `validate_on_submit()` (e.g. `/customers/edit`) mutate state with no token.
 
 Run it locally with the app deps installed:
 

@@ -376,6 +376,43 @@ def test_hashes_import_ntlm_marks_hash_cracked(
 
 
 @pytest.mark.security
+def test_hashes_import_ntlm_lowercase_hash_marks_cracked(
+    client, app, admin_user, tmp_path, monkeypatch
+):
+    """Regression: a lowercase hash (as hashcat emits) must verify and import.
+
+    ntlm_hash_hex returns uppercase hex, so a case-sensitive compare rejected
+    every real hashcat upload with 'Plaintext ... was found to be invalid.'
+    Hashview stores/serves NTLM hashes in lowercase, so seed lowercase here.
+    """
+    from hashview.utils.utils import get_md5_hash
+
+    _import_dirs(app, tmp_path, monkeypatch)
+    lower_hash = NTLM_PASSWORD_HASH.lower()
+    record = Hashes(
+        sub_ciphertext=get_md5_hash(lower_hash),
+        ciphertext=lower_hash,
+        hash_type=1000,
+        cracked=False,
+    )
+    _db.session.add(record)
+    _db.session.commit()
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.post(
+        "/v1/hashes/import/1000",
+        data=f"{lower_hash}:password",
+        content_type="text/plain",
+    )
+
+    body = _json_body(resp)
+    assert body["status"] == 200, body
+    assert body["msg"] == "OK"
+    assert record.cracked
+    assert record.recovered_by == admin_user.id
+
+
+@pytest.mark.security
 def test_hashes_import_invalid_plaintext_returns_500(
     client, app, admin_user, tmp_path, monkeypatch
 ):

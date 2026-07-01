@@ -803,6 +803,64 @@ def v1_api_get_hashfile(hashfile_id):
 
     return send_from_directory('control/tmp/', random_hex)
 
+# List hashfiles that contain hashes of a given hash_type, with per-file
+# total/cracked counts scoped to that type. Lets API clients pick a hashfile
+# to build a job against without hardcoding an ID.
+@api.route('/v1/hashfiles/hash_type/<int:hash_type>', methods=['GET'])
+def v1_api_get_hashfiles_by_hash_type(hash_type):
+    if not is_authorized(user=True, agent=False, request=request):
+        return redirect("/v1/not_authorized")
+
+    uuid = request.cookies.get('uuid')
+    user = Users.query.filter_by(api_key=uuid).first()
+    if not user:
+        return jsonify({
+            'status': 403,
+            'type': 'Error',
+            'msg': 'User not found'
+        })
+
+    # hash_type lives on Hashes (per-hash), not on Hashfiles: a file can hold
+    # mixed types, so match via the HashfileHashes junction and scope the
+    # counts to THIS hash_type within each file.
+    matching_ids = [row[0] for row in
+                    db.session.query(HashfileHashes.hashfile_id)
+                    .join(Hashes, Hashes.id == HashfileHashes.hash_id)
+                    .filter(Hashes.hash_type == hash_type)
+                    .distinct().all()]
+
+    results = []
+    for hashfile_id in matching_ids:
+        hashfile = Hashfiles.query.get(hashfile_id)
+        if hashfile is None:
+            continue
+        base = db.session.query(Hashes.id) \
+            .join(HashfileHashes, HashfileHashes.hash_id == Hashes.id) \
+            .filter(HashfileHashes.hashfile_id == hashfile_id) \
+            .filter(Hashes.hash_type == hash_type)
+        total = base.count()
+        cracked = base.filter(Hashes.cracked == '1').count()
+        results.append({
+            'id': hashfile.id,
+            'name': hashfile.name,
+            'customer_id': hashfile.customer_id,
+            'owner_id': hashfile.owner_id,
+            'uploaded_at': hashfile.uploaded_at.isoformat() if hashfile.uploaded_at else None,
+            'hash_type': hash_type,
+            'total_hashes': total,
+            'cracked_hashes': cracked,
+        })
+
+    # Structured list (not AlchemyEncoder) because the count fields are
+    # derived, not model columns. An empty list with status 200 is the valid
+    # "no hashfiles of this type" answer.
+    message = {
+        'status': 200,
+        'type': 'message',
+        'hashfiles': results
+    }
+    return jsonify(message)
+
 # Upload Cracked Hashes
 # old and probably unused
 @api.route('/v1/uploadCrackFile/<int:task_id>/<int:hash_type>', methods=['POST'])

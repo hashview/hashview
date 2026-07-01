@@ -1146,7 +1146,7 @@ def v1_api_search():
 @api.route('/v1/error', methods=['POST'])
 def v1_api_error():
     if not is_authorized(user=False, agent=True, request=request):
-        return redirect("/vi/not_authorized")
+        return redirect("/v1/not_authorized")
 
     uuid = request.cookies.get('uuid')
     agent = Agents.query.filter_by(uuid=uuid).first()
@@ -1167,7 +1167,7 @@ def v1_api_error():
 @api.route('/v1/hashes/import/<int:hash_type>', methods=['POST'])
 def v1_api_hashes_import(hash_type):
     if not is_authorized(user=True, agent=False, request=request):
-        return redirect("/vi/not_authorized")    
+        return redirect("/v1/not_authorized")    
     
     if hash_type == '1000':
     

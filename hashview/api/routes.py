@@ -1730,7 +1730,6 @@ def v1_api_hashes_import(hash_type):
     try:
         with open(file_path, 'w') as f:
             f.write(raw_content)
-        f.close()
     except Exception:
         current_app.logger.exception('API: failed to write file')
         return jsonify({
@@ -1740,53 +1739,66 @@ def v1_api_hashes_import(hash_type):
         })
 
 
-    # import contents from file
+    # import contents from file. The import is atomic: all verified records are
+    # mutated in the session and committed ONCE after the loop completes. Any
+    # verification failure rolls back so nothing from this request persists.
     try:
-        with open(file_path, encoding='utf-8', errors='surrogateescape') as f:
-            for line in f:
-                line = line.rstrip('\r\n')
-                if not line:
-                    continue
-                parts = line.split(':')
-                ciphertext = parts[0]
-                # everything after the first ':' is the plaintext (it may itself contain ':')
-                plaintext = ':'.join(parts[1:])
+        try:
+            with open(file_path, encoding='utf-8', errors='surrogateescape') as f:
+                for line in f:
+                    line = line.rstrip('\r\n')
+                    if not line:
+                        continue
+                    parts = line.split(':')
+                    ciphertext = parts[0]
+                    # everything after the first ':' is the plaintext (it may itself contain ':')
+                    plaintext = ':'.join(parts[1:])
 
-                # Recompute the digest from the submitted plaintext (plus any salt
-                # embedded in the ciphertext) and compare case-insensitively.
-                # Never trust unverified plaintext.
-                if verifier(plaintext, ciphertext):
-                    # valid hash:plaintext. Hashfile imports store hex hashes
-                    # lowercased and key sub_ciphertext off the lowercased value,
-                    # so look up on ciphertext.lower() to actually hit the record.
-                    record = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(ciphertext.lower()), cracked='0').first()
-                    if record:
-                        try:
+                    # Recompute the digest from the submitted plaintext (plus any salt
+                    # embedded in the ciphertext) and compare case-insensitively.
+                    # Never trust unverified plaintext.
+                    if verifier(plaintext, ciphertext):
+                        # valid hash:plaintext. Hashfile imports store hex hashes
+                        # lowercased and key sub_ciphertext off the lowercased value,
+                        # so look up on ciphertext.lower() to actually hit the record.
+                        record = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(ciphertext.lower()), cracked='0').first()
+                        if record:
+                            # Mutate in the session; commit happens once after the loop.
                             record.plaintext = text_from_field(plaintext)
                             record.cracked = 1
                             record.recovered_at = datetime.today()
                             record.recovered_by = user.id
-                            db.session.commit()
-                        except Exception:
-                            current_app.logger.exception('API: failed to import cracked hash %s', ciphertext)
-                            return jsonify({
-                                'status': 500,
-                                'type': 'Error',
-                                'msg': 'Failed to import cracked hash.'
-                            })
-                else:
-                    return jsonify({
-                        'status': 500,
-                        'type': 'Error',
-                        'msg': f'Plaintext for hash {ciphertext}, was found to be invalid.'
-                    })
-    except Exception:
-        current_app.logger.exception('API: failed to open/parse uploaded file')
-        return jsonify({
-            'status': 500,
-            'type': 'Error',
-            'msg': 'Failed to open file.'
-        })
+                    else:
+                        # A single bad line invalidates the whole request; roll back
+                        # any pending changes so nothing persists.
+                        db.session.rollback()
+                        return jsonify({
+                            'status': 500,
+                            'type': 'Error',
+                            'msg': f'Plaintext for hash {ciphertext}, was found to be invalid.'
+                        })
+
+            # All lines verified. Commit the whole batch atomically.
+            try:
+                db.session.commit()
+            except Exception:
+                current_app.logger.exception('API: failed to import cracked hashes')
+                db.session.rollback()
+                return jsonify({
+                    'status': 500,
+                    'type': 'Error',
+                    'msg': 'Failed to import cracked hash.'
+                })
+        except Exception:
+            current_app.logger.exception('API: failed to open/parse uploaded file')
+            db.session.rollback()
+            return jsonify({
+                'status': 500,
+                'type': 'Error',
+                'msg': 'Failed to open file.'
+            })
+    finally:
+        _remove_file(file_path)
 
     # Send per-hash "recovered" notifications (email/push/slack) for any now-cracked watched hash.
     process_recovered_hash_notifications()

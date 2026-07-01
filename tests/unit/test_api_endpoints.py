@@ -509,6 +509,72 @@ def test_hashes_import_supported_types_mark_cracked(
 
 
 @pytest.mark.security
+@pytest.mark.parametrize(
+    "hash_type, ciphertext",
+    [
+        (0, MD5_PASSWORD),
+        (100, SHA1_PASSWORD),
+    ],
+)
+def test_hashes_import_wrong_plaintext_new_type_returns_500(
+    client, app, admin_user, tmp_path, monkeypatch, hash_type, ciphertext
+):
+    """A wrong plaintext for a newly-supported type (MD5/SHA1) is rejected with a
+    500 'invalid' error and the record stays uncracked."""
+    record, body = _seed_and_import(
+        client, app, admin_user, tmp_path, monkeypatch,
+        hash_type, ciphertext, "not-the-password",
+    )
+    assert body["status"] == 500
+    assert "invalid" in body["msg"].lower()
+    assert not record.cracked
+
+
+@pytest.mark.security
+def test_hashes_import_is_atomic_on_partial_failure(
+    client, app, admin_user, tmp_path, monkeypatch
+):
+    """A two-line body where line 1 is valid and line 2 is invalid must roll back
+    entirely: the response is 500 and the line-1 record stays uncracked."""
+    from hashview.utils.utils import get_md5_hash
+
+    _import_dirs(app, tmp_path, monkeypatch)
+
+    # Line 1: a valid, seeded, uncracked MD5 pair (should get committed only if
+    # the whole batch succeeds).
+    good = Hashes(
+        sub_ciphertext=get_md5_hash(MD5_PASSWORD.lower()),
+        ciphertext=MD5_PASSWORD.lower(),
+        hash_type=0,
+        cracked=False,
+    )
+    # Line 2: another seeded MD5 record, but we submit a wrong plaintext for it.
+    bad = Hashes(
+        sub_ciphertext=get_md5_hash(SHA256_PASSWORD.lower()),
+        ciphertext=SHA256_PASSWORD.lower(),
+        hash_type=0,
+        cracked=False,
+    )
+    _db.session.add_all([good, bad])
+    _db.session.commit()
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.post(
+        "/v1/hashes/import/0",
+        data=f"{MD5_PASSWORD}:password\n{SHA256_PASSWORD}:not-the-password",
+        content_type="text/plain",
+    )
+    body = _json_body(resp)
+    assert body["status"] == 500
+    assert "invalid" in body["msg"].lower()
+
+    # Rollback proof: line-1 record must NOT have been committed.
+    _db.session.refresh(good)
+    assert not good.cracked
+    assert not bad.cracked
+
+
+@pytest.mark.security
 def test_hashes_import_plaintext_with_colon_stored_intact(
     client, app, admin_user, tmp_path, monkeypatch
 ):
@@ -534,7 +600,7 @@ def test_hashes_import_blank_line_skipped(
 
     _import_dirs(app, tmp_path, monkeypatch)
     record = Hashes(
-        sub_ciphertext=get_md5_hash(MD5_PASSWORD),
+        sub_ciphertext=get_md5_hash(MD5_PASSWORD.lower()),
         ciphertext=MD5_PASSWORD,
         hash_type=0,
         cracked=False,

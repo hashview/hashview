@@ -452,6 +452,85 @@ def ntlm_hash_hex(plaintext):
         digest = _md4_pure(pw_bytes)
     return binascii.hexlify(digest).decode('ascii').upper()
 
+def _u8(plaintext):
+    """Encode plaintext to bytes for the raw-byte hash families (MD5/SHA1/SHA2/
+    MD4-of-UTF8/MySQL). Uses UTF-8 + surrogateescape so undecodable bytes read
+    from the import file (opened with errors='surrogateescape') round-trip
+    losslessly. NTLM/MSSQL use UTF-16LE instead (see their helpers)."""
+    return plaintext.encode('utf-8', 'surrogateescape')
+
+def md4_hex(plaintext):
+    """Lowercase hex MD4 over the UTF-8 bytes of a plaintext string (hashcat mode
+    900 -- raw MD4, NOT the UTF-16LE NTLM variant). Mirrors ntlm_hash_hex's
+    hashlib-then-pure-Python fallback, since OpenSSL 3.x may drop md4."""
+    pw_bytes = _u8(plaintext)
+    try:
+        # MD4 here IS the algorithm being verified, not a security control.
+        digest = hashlib.new('md4', pw_bytes).digest()  # nosec B324
+    except ValueError:
+        digest = _md4_pure(pw_bytes)
+    return binascii.hexlify(digest).decode('ascii').lower()
+
+def mssql2012_hash_hex(plaintext, salt_bytes):
+    """Lowercase hex SHA-512 of UTF-16LE(plaintext) + salt (hashcat mode 1731,
+    MSSQL 2012/2014). surrogatepass mirrors ntlm_hash_hex so undecodable bytes
+    round-trip; salt_bytes is the raw 4-byte salt extracted from the ciphertext."""
+    return hashlib.sha512(plaintext.encode('utf-16le', 'surrogatepass') + salt_bytes).hexdigest()
+
+def _verify_ntlm(pt, ct):
+    """Case-insensitive verify of a plaintext against an NTLM (mode 1000) hash."""
+    return ntlm_hash_hex(pt).lower() == ct.lower()
+
+def _verify_md4(pt, ct):
+    """Case-insensitive verify of a plaintext against a raw MD4 (mode 900) hash."""
+    return md4_hex(pt) == ct.lower()
+
+def _verify_md5(pt, ct):
+    """Case-insensitive verify of a plaintext against an MD5 (mode 0) hash. md5
+    here is the algorithm being verified, not a security control."""
+    return hashlib.md5(_u8(pt)).hexdigest() == ct.lower()  # nosec B324
+
+def _verify_sha1(pt, ct):
+    """Case-insensitive verify of a plaintext against a SHA1 (mode 100) hash. sha1
+    here is the algorithm being verified, not a security control."""
+    return hashlib.sha1(_u8(pt)).hexdigest() == ct.lower()  # nosec B324
+
+def _verify_sha256(pt, ct):
+    """Case-insensitive verify of a plaintext against a SHA2-256 (mode 1400) hash."""
+    return hashlib.sha256(_u8(pt)).hexdigest() == ct.lower()
+
+def _verify_mysql41(pt, ct):
+    """Case-insensitive verify against a MySQL4.1/5 (mode 300) hash:
+    SHA1(SHA1(pw)). sha1 here is the algorithm being verified, not a control."""
+    return hashlib.sha1(hashlib.sha1(_u8(pt)).digest()).hexdigest() == ct.lower()  # nosec B324
+
+def _verify_mssql2012(pt, ct):
+    """Case-insensitive verify against an MSSQL 2012/2014 (mode 1731) hash. The
+    ciphertext is ``0x0200`` + 4-byte salt (8 hex) + SHA-512 digest (128 hex);
+    the salt is embedded in the ciphertext and fed back into the recompute.
+    Returns False (never raises) on any malformed ciphertext."""
+    c = ct.lower()
+    if not c.startswith('0x0200') or len(c) != 6 + 8 + 128:
+        return False
+    try:
+        salt = bytes.fromhex(c[6:14])
+    except ValueError:
+        return False
+    return mssql2012_hash_hex(pt, salt) == c[14:]
+
+# Maps hashcat mode -> verifier(plaintext, ciphertext)->bool for the hash types
+# the server can LOCALLY recompute. LM (3000) is intentionally excluded.
+CRACKED_HASH_VERIFIERS = {
+    0: _verify_md5, 100: _verify_sha1, 300: _verify_mysql41,
+    900: _verify_md4, 1000: _verify_ntlm, 1400: _verify_sha256,
+    1731: _verify_mssql2012,
+}
+
+def get_cracked_hash_verifier(hash_type):
+    """Return verifier fn (plaintext, ciphertext)->bool for a hashcat mode, or
+    None if the server cannot locally recompute it (=> reject the import)."""
+    return CRACKED_HASH_VERIFIERS.get(int(hash_type))
+
 def import_hash_only(line, hash_type):
     """Function to import single hash"""
 

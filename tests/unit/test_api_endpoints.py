@@ -351,9 +351,13 @@ def test_hashes_import_ntlm_marks_hash_cracked(
     from hashview.utils.utils import get_md5_hash
 
     _import_dirs(app, tmp_path, monkeypatch)
+    # Real hashfile imports store hex hashes LOWERCASED and key sub_ciphertext
+    # off the lowercased value. Seed that way, then submit the UPPERCASE hash in
+    # the POST body to prove the case-insensitive verify + lowercased lookup fix.
+    lower_hash = NTLM_PASSWORD_HASH.lower()
     record = Hashes(
-        sub_ciphertext=get_md5_hash(NTLM_PASSWORD_HASH),
-        ciphertext=NTLM_PASSWORD_HASH,
+        sub_ciphertext=get_md5_hash(lower_hash),
+        ciphertext=lower_hash,
         hash_type=1000,
         cracked=False,
     )
@@ -385,6 +389,188 @@ def test_hashes_import_invalid_plaintext_returns_500(
     resp = client.post(
         "/v1/hashes/import/1000",
         data=f"{NTLM_PASSWORD_HASH}:not-the-password",
+        content_type="text/plain",
+    )
+    body = _json_body(resp)
+    assert body["status"] == 500
+    assert "invalid" in body["msg"].lower()
+
+
+# Known-answer vectors for the cracked-hash verifiers (all over UTF-8 bytes,
+# except NTLM/MSSQL which use UTF-16LE). Computed and pinned by hand.
+MD4_PASSWORD = "8a9d093f14f8701df17732b2bb182c74"          # MD4(b'password')
+MD5_PASSWORD = "5f4dcc3b5aa765d61d8327deb882cf99"          # MD5(b'password')
+SHA1_PASSWORD = "5baa61e4c9b93f3f0682250b6cf8331b7ee68fd8"  # SHA1(b'password')
+SHA256_PASSWORD = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"
+MYSQL41_PASSWORD = "2470c0c06dee42fd1618bb99005adca2ec9d1e19"  # SHA1(SHA1(b'password'))
+# MSSQL 2012/2014 of 'Password1' with salt 1234abcd; SHA512(utf16le(pw)+salt).
+MSSQL_PASSWORD1 = (
+    "0x02001234abcd7e4913c2b5c68839b47533dabb696065dc8a67938aad08ffee049633"
+    "c034bd1ce2a3cc474dd7b0095cf6f81a304f976764be5ba86909b0cb7b9540ee19128441"
+)
+
+
+@pytest.mark.security
+def test_md4_hex_known_vectors_and_case_insensitive():
+    """md4_hex is raw MD4 over UTF-8 bytes (mode 900), returned lowercase, and
+    the verifier is case-insensitive."""
+    from hashview.utils.utils import _verify_md4, md4_hex
+
+    assert md4_hex("password") == MD4_PASSWORD
+    assert md4_hex("") == "31d6cfe0d16ae931b73c59d7e0c089c0"
+    assert _verify_md4("password", MD4_PASSWORD)
+    assert _verify_md4("password", MD4_PASSWORD.upper())
+    assert not _verify_md4("wrong", MD4_PASSWORD)
+
+
+@pytest.mark.security
+def test_mssql2012_hash_hex_and_verifier():
+    """mssql2012_hash_hex + _verify_mssql2012 against a pinned vector, and the
+    verifier rejects malformed ciphertext without raising."""
+    from hashview.utils.utils import _verify_mssql2012, mssql2012_hash_hex
+
+    salt = bytes.fromhex("1234abcd")
+    assert mssql2012_hash_hex("Password1", salt) == MSSQL_PASSWORD1[14:]
+    assert _verify_mssql2012("Password1", MSSQL_PASSWORD1)
+    # Case-insensitive: uppercase ciphertext still verifies.
+    assert _verify_mssql2012("Password1", MSSQL_PASSWORD1.upper())
+    assert not _verify_mssql2012("wrong", MSSQL_PASSWORD1)
+    # Malformed ciphertext -> False, never raises.
+    assert not _verify_mssql2012("Password1", "0x0100" + MSSQL_PASSWORD1[6:])  # bad prefix
+    assert not _verify_mssql2012("Password1", MSSQL_PASSWORD1[:-2])  # wrong length
+    bad_salt = "0x0200zzzzzzzz" + MSSQL_PASSWORD1[14:]  # non-hex salt
+    assert not _verify_mssql2012("Password1", bad_salt)
+
+
+@pytest.mark.security
+def test_get_cracked_hash_verifier_registry():
+    """Supported modes resolve to a verifier; unsupported (incl. LM 3000) None."""
+    from hashview.utils.utils import get_cracked_hash_verifier
+
+    for mode in (0, 100, 300, 900, 1000, 1400, 1731):
+        assert get_cracked_hash_verifier(mode) is not None
+    for mode in (3000, 500, 3200, 99999):
+        assert get_cracked_hash_verifier(mode) is None
+
+
+def _seed_and_import(client, app, admin_user, tmp_path, monkeypatch,
+                     hash_type, ciphertext, plaintext):
+    """Seed an uncracked Hashes record (lowercased ciphertext, mirroring real
+    imports) then POST ciphertext:plaintext and return (record, body)."""
+    from hashview.utils.utils import get_md5_hash
+
+    _import_dirs(app, tmp_path, monkeypatch)
+    lower = ciphertext.lower()
+    record = Hashes(
+        sub_ciphertext=get_md5_hash(lower),
+        ciphertext=lower,
+        hash_type=hash_type,
+        cracked=False,
+    )
+    _db.session.add(record)
+    _db.session.commit()
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.post(
+        f"/v1/hashes/import/{hash_type}",
+        data=f"{ciphertext}:{plaintext}",
+        content_type="text/plain",
+    )
+    return record, _json_body(resp)
+
+
+@pytest.mark.security
+@pytest.mark.parametrize(
+    "hash_type, ciphertext, plaintext",
+    [
+        (0, MD5_PASSWORD, "password"),
+        (100, SHA1_PASSWORD, "password"),
+        (300, MYSQL41_PASSWORD, "password"),
+        (900, MD4_PASSWORD, "password"),
+        (1400, SHA256_PASSWORD, "password"),
+        (1731, MSSQL_PASSWORD1, "Password1"),
+        # Mixed-case ciphertext variant proves case-insensitive verify + lookup.
+        (0, MD5_PASSWORD.upper(), "password"),
+    ],
+)
+def test_hashes_import_supported_types_mark_cracked(
+    client, app, admin_user, tmp_path, monkeypatch, hash_type, ciphertext, plaintext
+):
+    """POST /v1/hashes/import/<mode> verifies and marks the record cracked for
+    every locally-recomputable hash type."""
+    record, body = _seed_and_import(
+        client, app, admin_user, tmp_path, monkeypatch, hash_type, ciphertext, plaintext
+    )
+    assert body["status"] == 200
+    assert body["msg"] == "OK"
+    assert record.cracked
+    assert record.plaintext == plaintext
+    assert record.recovered_by == admin_user.id
+
+
+@pytest.mark.security
+def test_hashes_import_plaintext_with_colon_stored_intact(
+    client, app, admin_user, tmp_path, monkeypatch
+):
+    """A ':' inside the plaintext is preserved (everything after the first ':')."""
+    import hashlib
+
+    plaintext = "pass:word"
+    ct = hashlib.md5(plaintext.encode("utf-8")).hexdigest()
+    record, body = _seed_and_import(
+        client, app, admin_user, tmp_path, monkeypatch, 0, ct, plaintext
+    )
+    assert body["status"] == 200
+    assert record.cracked
+    assert record.plaintext == "pass:word"
+
+
+@pytest.mark.security
+def test_hashes_import_blank_line_skipped(
+    client, app, admin_user, tmp_path, monkeypatch
+):
+    """A blank line in the body is skipped, not treated as an invalid pair."""
+    from hashview.utils.utils import get_md5_hash
+
+    _import_dirs(app, tmp_path, monkeypatch)
+    record = Hashes(
+        sub_ciphertext=get_md5_hash(MD5_PASSWORD),
+        ciphertext=MD5_PASSWORD,
+        hash_type=0,
+        cracked=False,
+    )
+    _db.session.add(record)
+    _db.session.commit()
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.post(
+        "/v1/hashes/import/0",
+        data=f"\n{MD5_PASSWORD}:password\n\n",
+        content_type="text/plain",
+    )
+    body = _json_body(resp)
+    assert body["status"] == 200
+    assert record.cracked
+
+
+@pytest.mark.security
+@pytest.mark.parametrize(
+    "bad_ct",
+    [
+        "0x0100" + MSSQL_PASSWORD1[6:],  # bad prefix
+        MSSQL_PASSWORD1[:-2],            # wrong length
+        "0x0200zzzzzzzz" + MSSQL_PASSWORD1[14:],  # non-hex salt
+    ],
+)
+def test_hashes_import_malformed_mssql_returns_500(
+    client, app, admin_user, tmp_path, monkeypatch, bad_ct
+):
+    """Malformed MSSQL ciphertext fails verification (500) without crashing."""
+    _import_dirs(app, tmp_path, monkeypatch)
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.post(
+        "/v1/hashes/import/1731",
+        data=f"{bad_ct}:Password1",
         content_type="text/plain",
     )
     body = _json_body(resp)

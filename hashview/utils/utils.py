@@ -3,6 +3,8 @@ import os
 import secrets
 import hashlib
 import re
+import struct
+import binascii
 import _md5
 import requests
 from datetime import datetime
@@ -105,6 +107,70 @@ def get_md5_hash(string):
 
     m = _md5.md5(string.encode('utf-8'))
     return m.hexdigest()
+
+def _md4_pure(data):
+    """Pure-Python MD4 (RFC 1320). Returns the 16-byte digest.
+
+    Fallback for systems whose OpenSSL 3.x build ships MD4 only in the
+    (disabled-by-default) legacy provider, where hashlib.new('md4') raises
+    ValueError. Used to verify NTLM plaintexts one line at a time — not a
+    hot path, so pure Python is fine.
+    """
+    def lrot(x, n):
+        x &= 0xFFFFFFFF
+        return ((x << n) | (x >> (32 - n))) & 0xFFFFFFFF
+
+    msg = bytearray(data)
+    bit_len = (8 * len(msg)) & 0xFFFFFFFFFFFFFFFF
+    msg.append(0x80)
+    while len(msg) % 64 != 56:
+        msg.append(0)
+    msg += struct.pack('<Q', bit_len)
+
+    A, B, C, D = 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476
+    for off in range(0, len(msg), 64):
+        X = struct.unpack('<16I', msg[off:off + 64])
+        a, b, c, d = A, B, C, D
+        # Round 1: F = (b & c) | (~b & d)
+        for i in (0, 4, 8, 12):
+            a = lrot(a + ((b & c) | (~b & d)) + X[i], 3)
+            d = lrot(d + ((a & b) | (~a & c)) + X[i + 1], 7)
+            c = lrot(c + ((d & a) | (~d & b)) + X[i + 2], 11)
+            b = lrot(b + ((c & d) | (~c & a)) + X[i + 3], 19)
+        # Round 2: G = majority(b, c, d), constant 0x5A827999
+        for i in (0, 1, 2, 3):
+            a = lrot(a + ((b & c) | (b & d) | (c & d)) + X[i] + 0x5A827999, 3)
+            d = lrot(d + ((a & b) | (a & c) | (b & c)) + X[i + 4] + 0x5A827999, 5)
+            c = lrot(c + ((d & a) | (d & b) | (a & b)) + X[i + 8] + 0x5A827999, 9)
+            b = lrot(b + ((c & d) | (c & a) | (d & a)) + X[i + 12] + 0x5A827999, 13)
+        # Round 3: H = b ^ c ^ d, constant 0x6ED9EBA1
+        for i in (0, 2, 1, 3):
+            a = lrot(a + (b ^ c ^ d) + X[i] + 0x6ED9EBA1, 3)
+            d = lrot(d + (a ^ b ^ c) + X[i + 8] + 0x6ED9EBA1, 9)
+            c = lrot(c + (d ^ a ^ b) + X[i + 4] + 0x6ED9EBA1, 11)
+            b = lrot(b + (c ^ d ^ a) + X[i + 12] + 0x6ED9EBA1, 15)
+        A = (A + a) & 0xFFFFFFFF
+        B = (B + b) & 0xFFFFFFFF
+        C = (C + c) & 0xFFFFFFFF
+        D = (D + d) & 0xFFFFFFFF
+
+    return struct.pack('<4I', A, B, C, D)
+
+def ntlm_hash_hex(plaintext):
+    """Uppercase hex NTLM hash (MD4 over UTF-16LE) of a plaintext string.
+
+    Tries hashlib first (fast, available when OpenSSL still provides md4);
+    falls back to the pure-Python MD4 above. surrogatepass mirrors the
+    surrogateescape file read in the import endpoint so undecodable bytes
+    round-trip.
+    """
+    pw_bytes = plaintext.encode('utf-16le', 'surrogatepass')
+    try:
+        # MD4 here IS the NTLM algorithm being verified, not a security control.
+        digest = hashlib.new('md4', pw_bytes).digest()  # nosec B324
+    except ValueError:
+        digest = _md4_pure(pw_bytes)
+    return binascii.hexlify(digest).decode('ascii').upper()
 
 def import_hash_only(line, hash_type):
     """Function to import single hash"""

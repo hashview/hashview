@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, redirect, request, send_from_directory, current_app, url_for
 from hashview.models import Agents, JobTasks, Tasks, Wordlists, Rules, Jobs, Hashes, Hashfiles, HashfileHashes, Users, HashNotifications, Settings, JobNotifications, Customers
-from hashview.utils.utils import get_md5_hash, get_linecount, get_filehash, update_dynamic_wordlist, update_job_task_status, import_hashfilehashes, validate_pwdump_hashfile, validate_netntlm_hashfile, validate_kerberos_hashfile, validate_shadow_hashfile, validate_user_hash_hashfile, validate_hash_only_hashfile, send_email, send_pushover, notify_admins, build_hashcat_command
+from hashview.utils.utils import get_md5_hash, get_linecount, get_filehash, update_dynamic_wordlist, update_job_task_status, import_hashfilehashes, validate_pwdump_hashfile, validate_netntlm_hashfile, validate_kerberos_hashfile, validate_shadow_hashfile, validate_user_hash_hashfile, validate_hash_only_hashfile, send_email, send_pushover, notify_admins, build_hashcat_command, ntlm_hash_hex
 from hashview.models import db
 from sqlalchemy.ext.declarative import DeclarativeMeta
 from sqlalchemy import func
@@ -1169,8 +1169,11 @@ def v1_api_hashes_import(hash_type):
     if not is_authorized(user=True, agent=False, request=request):
         return redirect("/v1/not_authorized")    
     
-    if hash_type == '1000':
-    
+    # The route converter yields an int; comparing to the string '1000' made
+    # this branch unreachable (every request fell through to 'Unsupported
+    # Hashtype'), so NTLM import silently did nothing. Compare as int.
+    if hash_type == 1000:
+
         # Expect raw plain‑text body (Content‑Type: text/plain)
         raw_content = request.get_data(as_text=True)
         if not raw_content:
@@ -1211,15 +1214,18 @@ def v1_api_hashes_import(hash_type):
         try:
             with open(file_path, 'r') as f:
                 for line in f:
-                    ciphertext = line.split(':')[0]
-                    plaintext = line.split(':')[1:]
+                    line = line.rstrip('\r\n')
+                    if not line:
+                        continue
+                    parts = line.split(':')
+                    ciphertext = parts[0]
+                    # everything after the first ':' is the plaintext (it may
+                    # itself contain ':')
+                    plaintext = ':'.join(parts[1:])
 
-                    # encipher plaintext and compare cipher text
-                    pw_bytes = plaintext.encode('utf-16le')
-                    md4_hasher = hashlib.new('md4', pw_bytes)
-                    digest = md4_hasher.digest()
-
-                    if ciphertext == binascii.hexlify(digest).decode('ascii').upper():
+                    # NTLM = MD4(UTF-16LE(pw)); ntlm_hash_hex falls back to a
+                    # pure-Python MD4 where OpenSSL 3.x drops md4 from hashlib.
+                    if ciphertext == ntlm_hash_hex(plaintext):
                         # valid hash:plaintext
                         record = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(ciphertext), cracked='0').first()
                         if record:

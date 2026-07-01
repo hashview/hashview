@@ -18,12 +18,29 @@ tests/unit/ tree at collection time instead of erroring on imports.
 """
 
 import importlib.util
+from pathlib import Path
 
 import pytest
 
 
 if importlib.util.find_spec("flask") is None:
     collect_ignore_glob = ["test_*.py"]
+
+
+# The hashview package dir; used as the app root_path so current_app.root_path
+# (and thus control/tmp, control/wordlists, …) matches the real application.
+_HASHVIEW_DIR = Path(__file__).resolve().parents[2] / "hashview"
+
+
+@pytest.fixture(autouse=True, scope="session")
+def control_dirs():
+    """Create the runtime control dirs the Dockerfile/setup guarantee. They're
+    gitignored, so a fresh clone lacks them; some routes write real files there
+    (e.g. the cracked-hash import endpoint writes to control/tmp)."""
+    import os
+
+    for sub in ("rules", "wordlists", "tmp", "hashes"):
+        os.makedirs(_HASHVIEW_DIR / "control" / sub, exist_ok=True)
 
 
 @pytest.fixture(autouse=True)
@@ -47,7 +64,7 @@ def _build_api_app():
     from hashview.models import db
     from hashview.api.routes import api
 
-    app = Flask(__name__)
+    app = Flask(__name__, root_path=str(_HASHVIEW_DIR))
     app.config.update(
         SQLALCHEMY_DATABASE_URI="sqlite://",
         SQLALCHEMY_TRACK_MODIFICATIONS=False,

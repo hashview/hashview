@@ -1225,7 +1225,9 @@ def v1_api_hashes_import(hash_type):
 
                     # NTLM = MD4(UTF-16LE(pw)); ntlm_hash_hex falls back to a
                     # pure-Python MD4 where OpenSSL 3.x drops md4 from hashlib.
-                    if ciphertext == ntlm_hash_hex(plaintext):
+                    # Compare case-insensitively: hashcat/Hashview store hashes
+                    # in lowercase hex while ntlm_hash_hex returns uppercase.
+                    if ciphertext.lower() == ntlm_hash_hex(plaintext).lower():
                         # valid hash:plaintext
                         record = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(ciphertext), cracked='0').first()
                         if record:

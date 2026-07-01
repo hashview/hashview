@@ -536,14 +536,32 @@ def v1_api_post_add_job():
                     db.session.add(job_task)
                     db.session.commit()      
 
-        # job notification
-        job_notification = JobNotifications(
-            job_id=job_entry.id,
-            notify_email=job_data.get('notify_email', False),
-            notify_pushover=job_data.get('notify_pushover', False)
-        )
-        db.session.add(job_notification)
-        db.session.commit()
+        # Job notifications: one row per (job, owner, channel), using the same
+        # method tokens as the web UI ('email'/'push'/'slack'), de-duped the
+        # same way. The old code passed notify_email/notify_pushover kwargs that
+        # don't exist on JobNotifications (its columns are owner_id, job_id,
+        # method) and omitted the required owner_id, so every jobs/add 500'd
+        # here after the job had already been committed. Any notification
+        # failure is now rolled back and logged so it can't undo a created job.
+        try:
+            notify_map = [
+                ('email', job_data.get('notify_email', False)),
+                ('push', job_data.get('notify_pushover', False)),
+                ('slack', job_data.get('notify_slack', False)),
+            ]
+            for method, requested in notify_map:
+                if requested:
+                    exists = JobNotifications.query.filter_by(
+                        job_id=job_entry.id, owner_id=user.id, method=method).first()
+                    if not exists:
+                        db.session.add(JobNotifications(
+                            owner_id=user.id, job_id=job_entry.id, method=method))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception(
+                'API /v1/jobs: job %s created but notification setup failed',
+                job_entry.id)
 
         message = {
             'status': 200,

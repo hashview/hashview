@@ -18,7 +18,7 @@ matching uncracked hash as cracked.
 
 import pytest
 
-from hashview.models import db, Hashes, Users
+from hashview.models import db, Hashes, Users, HashNotifications
 from hashview.utils.utils import ntlm_hash_hex, get_md5_hash
 
 
@@ -131,6 +131,41 @@ def test_import_marks_hash_cracked_lowercase_hash(client, seeded_lowercase, app)
         h = Hashes.query.get(seeded_lowercase["hash_id"])
         assert h.cracked
         assert h.recovered_by == seeded_lowercase["user_id"]
+
+
+def test_import_survives_orphaned_hash_notification(client, seeded, app):
+    """Regression: an orphaned HashNotifications row must not 500 the import.
+
+    The post-import "Send Hash Completion Notifications" sweep did
+    ``hash = Hashes.query.get(hash_notification.hash_id)`` then ``if hash.cracked:``
+    with no None-check. A notification pointing at a hash_id that no longer
+    resolves made ``.get()`` return None, so ``if hash.cracked:`` raised
+    ``AttributeError: 'NoneType' object has no attribute 'cracked'`` -> HTTP 500,
+    regardless of what the client submitted.
+    """
+    with app.app_context():
+        db.session.add(
+            HashNotifications(
+                owner_id=seeded["user_id"],
+                hash_id=999999,  # no such hash
+                method="email",
+            )
+        )
+        db.session.commit()
+
+    client.set_cookie("uuid", seeded["api_key"])
+    resp = client.post(
+        "/v1/hashes/import/1000",
+        data=f"{KNOWN_NTLM}:{KNOWN_PLAINTEXT}\n",
+        content_type="text/plain",
+    )
+    body = resp.get_json()
+    assert body["status"] == 200, body
+    assert body["msg"] == "OK"
+    with app.app_context():
+        # The legitimate hash still gets marked cracked; the orphaned
+        # notification is simply skipped instead of crashing the request.
+        assert Hashes.query.get(seeded["hash_id"]).cracked
 
 
 def test_import_rejects_unsupported_hash_type(client, seeded):

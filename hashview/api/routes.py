@@ -912,7 +912,7 @@ def v1_api_put_jobtask_crackfile_upload(task_id, hash_type):
 
         # Check if hash is cracked
         hash = Hashes.query.get(hash_notification.hash_id)
-        if hash.cracked:
+        if hash and hash.cracked:
 
             message += 'You can check the results using the following link: ' + "\n"
             message += url_for('searches.searches_list', hash_id=hash.id, _external=True)
@@ -1265,7 +1265,7 @@ def v1_api_hashes_import(hash_type):
 
             # Check if hash is cracked
             hash = Hashes.query.get(hash_notification.hash_id)
-            if hash.cracked:
+            if hash and hash.cracked:
 
                 message += 'You can check the results using the following link: ' + "\n"
                 message += url_for('searches.searches_list', hash_id=hash.id, _external=True)

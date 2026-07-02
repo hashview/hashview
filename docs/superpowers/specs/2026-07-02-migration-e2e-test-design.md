@@ -110,7 +110,7 @@ latin-1 / raw-bytes **hex strings**.
 | `c3a9` (UTF-8 `é`) | `é` | valid multibyte UTF-8 → text |
 | `ff01` (non-UTF-8 bytes) | `$HEX[ff01]` | invalid UTF-8 → `$HEX[...]` marker |
 | an already-plain-text value (not valid hex) | unchanged | not-hex guard / idempotent re-run |
-| (optional) hex whose decoded form exceeds the column width | left hex-encoded | overflow guard |
+| hex whose decoded form exceeds the column width | left hex-encoded | overflow guard (`max_len`) |
 
 ### DDL-affected rows
 
@@ -135,8 +135,23 @@ Asserts against the migrated `db`:
 - DDL-added columns present with expected server-defaults on the pre-existing
   rows.
 - **Schema parity:** the migrated `db` schema equals the `db-fresh`
-  (dev-from-empty) schema — compare `information_schema` for tables, columns,
-  types, nullability, defaults, indexes, and foreign keys.
+  (dev-from-empty) schema. Compare `information_schema` comprehensively:
+  - tables (set equality, including `alembic_version`);
+  - per column: data type, length/precision, nullability, default,
+    **character set + collation**, `EXTRA` (e.g. `auto_increment`), and
+    ordinal position;
+  - indexes: name, uniqueness, column set + order;
+  - foreign keys: referenced table/columns and `ON DELETE` / `ON UPDATE`
+    rules;
+  - per table: engine and default charset/collation.
+- **Explicit type assertions on the migration-touched columns** (belt-and-
+  suspenders on top of parity, so a failure names the exact column):
+  - `hashes.ciphertext` is `TEXT` with charset `utf8mb4`
+    (widen-ciphertext migration);
+  - `hashfile_hashes.username` and `hashes.plaintext` are `utf8mb4`
+    (unicode-storage migration);
+  - `hashfiles.hex_salt`, `wordlists.byte_size`, the new `agents`, `settings`,
+    and `tasks` columns exist with the expected type + server-default.
 
 ## Files to add
 

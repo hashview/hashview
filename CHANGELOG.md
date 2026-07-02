@@ -2,6 +2,19 @@
 Notable changes will be documented here
 
 ## Current Release
+## [v0.8.3-Beta] - 2026-07-02
+
+### Added
+
+**API Expansion**
+- `POST /v1/hashes/import/<hash_type>` now imports cracked hashes for any hash type the server can recompute locally, not just NTLM: MD5 (0), SHA1 (100), MySQL4.1/5 (300), MD4 (900), NTLM (1000), SHA2-256 (1400), and MSSQL 2012/2014 (1731). Each submitted `HASH:plaintext` pair is still verified server-side; unverifiable plaintext is never trusted.
+
+### Changed
+- `POST /v1/hashes/import/<hash_type>` imports are now atomic: a single failing line rolls back the entire request so no partial results are committed. Submitted hashes are matched case-insensitively.
+
+### Fixed
+- `POST /v1/hashes/import/<hash_type>` looked up records using the raw submitted ciphertext, which missed hashes stored (lowercased) by the hashfile import path. The lookup is now normalized so cracked-hash imports match regardless of the submitted hash's case.
+
 ## [v0.8.2-Beta] - 2026-06-01
 
 ### Added

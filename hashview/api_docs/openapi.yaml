@@ -9,7 +9,7 @@ openapi: 3.0.3
 
 info:
   title: Hashview API
-  version: 0.8.2
+  version: 0.8.3
   description: >-
     The `/v1` API shared by Hashview's human consumers (scripting against the
     server with a personal API key) and the distributed cracking agents.
@@ -1017,17 +1017,22 @@ paths:
   /v1/hashes/import/{hash_type}:
     post:
       tags: [Hashes]
-      summary: Import cracked NTLM material
+      summary: Import cracked hashes
       description: >-
-        User-only bulk import of already-cracked hashes. Only `hash_type`
-        1000 (NTLM) is supported — anything else answers body status 403
-        "Unsupported Hashtype" (with `type: message`). The body is plain
-        text, one `HASH:plaintext` pair per line; the hash must be UPPERCASE
-        hex. Every pair is verified server-side (MD4 over UTF-16LE of the
-        plaintext must reproduce the hash); the first failing line aborts the
-        import with body status 500, but previously processed lines remain
-        committed. Matching uncracked hashes are marked cracked and credited
-        to the calling user, and per-hash recovery notifications fire.
+        User-only bulk import of already-cracked hashes for any hash type the
+        server can recompute locally. Supported `hash_type` values are 0 (MD5),
+        100 (SHA1), 300 (MySQL4.1/5), 900 (MD4), 1000 (NTLM), 1400 (SHA2-256),
+        and 1731 (MSSQL 2012/2014); any other type answers body status 403
+        "Unsupported Hashtype" (with `type: message`). The body is plain text,
+        one `HASH:plaintext` pair per line (the plaintext may itself contain
+        `:`); the hash is matched case-insensitively. Every pair is verified
+        server-side by recomputing the digest from the submitted plaintext
+        (plus any salt embedded in the ciphertext, e.g. MSSQL) and comparing —
+        unverifiable plaintext is never trusted. The import is atomic: a single
+        failing line aborts the whole request with body status 500 and rolls
+        back, so no lines are committed unless every line verifies. Matching
+        uncracked hashes are marked cracked and credited to the calling user,
+        and per-hash recovery notifications fire.
       operationId: importCrackedHashes
       x-audience: user
       security:
@@ -1037,7 +1042,9 @@ paths:
           in: path
           required: true
           schema: {type: integer}
-          description: Only 1000 (NTLM) is currently supported.
+          description: >-
+            Hashcat mode. Supported: 0 (MD5), 100 (SHA1), 300 (MySQL4.1/5),
+            900 (MD4), 1000 (NTLM), 1400 (SHA2-256), 1731 (MSSQL 2012/2014).
       requestBody:
         required: true
         content:

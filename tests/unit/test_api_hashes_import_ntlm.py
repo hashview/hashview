@@ -25,6 +25,10 @@ from hashview.utils.utils import ntlm_hash_hex, get_md5_hash
 # NTLM("password") — canonical test vector.
 KNOWN_PLAINTEXT = "password"
 KNOWN_NTLM = "8846F7EAEE8FB117AD06BDD830B7586C"
+# hashcat emits NTLM hashes in lowercase hex; Hashview stores/serves them the
+# same way. The import compare must be case-insensitive against ntlm_hash_hex,
+# which returns uppercase.
+KNOWN_NTLM_LOWER = KNOWN_NTLM.lower()
 
 
 def test_ntlm_hash_hex_matches_known_vector():
@@ -80,6 +84,53 @@ def test_import_marks_hash_cracked(client, seeded, app):
         assert h.recovered_by == seeded["user_id"]
         # main stores plaintext as latin-1 hex; decode to verify round-trip.
         assert bytes.fromhex(h.plaintext).decode("latin-1") == KNOWN_PLAINTEXT
+
+
+@pytest.fixture()
+def seeded_lowercase(app):
+    """One uncracked NTLM hash stored in lowercase hex, as hashcat/Hashview do."""
+    with app.app_context():
+        user = Users(
+            first_name="Api",
+            last_name="User",
+            email_address="lower@example.com",
+            password="x",
+            admin=True,
+            api_key="test-api-key-lower",
+        )
+        db.session.add(user)
+        db.session.commit()
+
+        h = Hashes(
+            sub_ciphertext=get_md5_hash(KNOWN_NTLM_LOWER),
+            ciphertext=KNOWN_NTLM_LOWER,
+            hash_type=1000,
+            cracked=False,
+        )
+        db.session.add(h)
+        db.session.commit()
+        return {"api_key": user.api_key, "hash_id": h.id, "user_id": user.id}
+
+
+def test_import_marks_hash_cracked_lowercase_hash(client, seeded_lowercase, app):
+    """Regression: a lowercase hash (as hashcat emits) must verify and import.
+
+    ntlm_hash_hex returns uppercase hex, so a case-sensitive compare rejected
+    every real hashcat upload with 'Plaintext ... was found to be invalid.'
+    """
+    client.set_cookie("uuid", seeded_lowercase["api_key"])
+    resp = client.post(
+        "/v1/hashes/import/1000",
+        data=f"{KNOWN_NTLM_LOWER}:{KNOWN_PLAINTEXT}\n",
+        content_type="text/plain",
+    )
+    body = resp.get_json()
+    assert body["status"] == 200, body
+    assert body["msg"] == "OK"
+    with app.app_context():
+        h = Hashes.query.get(seeded_lowercase["hash_id"])
+        assert h.cracked
+        assert h.recovered_by == seeded_lowercase["user_id"]
 
 
 def test_import_rejects_unsupported_hash_type(client, seeded):

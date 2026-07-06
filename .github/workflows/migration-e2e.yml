@@ -11,8 +11,9 @@ jobs:
   migration-e2e:
     runs-on: ubuntu-latest
     # Builds two app images (hashview:main from origin/main + hashview:dev from
-    # the checkout) and cycles a MySQL compose stack, so it needs headroom.
-    timeout-minutes: 25
+    # the checkout) and cycles a MySQL compose stack. Two cold docker builds +
+    # two MySQL boots + a venv install need headroom on a fresh runner.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:

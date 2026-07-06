@@ -85,6 +85,7 @@ echo "== app-main: create + migrate the main-era schema =="
 $COMPOSE up -d app-main
 # app-main runs its migrations during create_app (before serving); wait until the
 # alembic bookkeeping table has a revision recorded.
+rev=""
 for _ in $(seq 1 80); do
   rev="$(db_exec db "SELECT version_num FROM alembic_version" 2>/dev/null | tr -d '[:space:]' || true)"
   [ -n "$rev" ] && break
@@ -94,8 +95,7 @@ done
 echo "  main schema at revision: $rev"
 
 echo "== Load main-era seed =="
-$COMPOSE cp tests/migration/seed_main.sql db:/tmp/seed_main.sql
-$COMPOSE exec -T db sh -c "mysql -h127.0.0.1 -uhashview -phashview hashview < /tmp/seed_main.sql"
+$COMPOSE exec -T db mysql -h127.0.0.1 -uhashview -phashview hashview < tests/migration/seed_main.sql
 echo "  seeded rows: hashfile_hashes=$(db_exec db 'SELECT COUNT(*) FROM hashfile_hashes'), hashes=$(db_exec db 'SELECT COUNT(*) FROM hashes'), settings=$(db_exec db 'SELECT COUNT(*) FROM settings')"
 
 echo "== Stop app-main; boot app-dev to migrate + backfill the same db =="

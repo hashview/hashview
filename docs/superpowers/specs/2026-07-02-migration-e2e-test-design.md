@@ -110,7 +110,12 @@ latin-1 / raw-bytes **hex strings**.
 | `c3a9` (UTF-8 `é`) | `é` | valid multibyte UTF-8 → text |
 | `ff01` (non-UTF-8 bytes) | `$HEX[ff01]` | invalid UTF-8 → `$HEX[...]` marker |
 | an already-plain-text value (not valid hex) | unchanged | not-hex guard / idempotent re-run |
-| hex whose decoded form exceeds the column width | left hex-encoded | overflow guard (`max_len`) |
+
+> **Overflow guard (`max_len`) — out of scope, by necessity.** Both
+> `username` and `plaintext` are `VARCHAR(256)`. Any hex string that fits in a
+> 256-char column decodes to ≤128 chars, so the decoded form can never exceed
+> 256 — the guard is unreachable end-to-end and cannot be seeded. It is left to
+> unit coverage. (Discovered during implementation against main's real schema.)
 
 ### DDL-affected rows
 

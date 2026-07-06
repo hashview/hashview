@@ -110,12 +110,17 @@ latin-1 / raw-bytes **hex strings**.
 | `c3a9` (UTF-8 `é`) | `é` | valid multibyte UTF-8 → text |
 | `ff01` (non-UTF-8 bytes) | `$HEX[ff01]` | invalid UTF-8 → `$HEX[...]` marker |
 | an already-plain-text value (not valid hex) | unchanged | not-hex guard / idempotent re-run |
+| `ff`×126 (252 chars, non-UTF-8) | unchanged (stays hex) | **overflow guard (`max_len`)** |
 
-> **Overflow guard (`max_len`) — out of scope, by necessity.** Both
-> `username` and `plaintext` are `VARCHAR(256)`. Any hex string that fits in a
-> 256-char column decodes to ≤128 chars, so the decoded form can never exceed
-> 256 — the guard is unreachable end-to-end and cannot be seeded. It is left to
-> unit coverage. (Discovered during implementation against main's real schema.)
+> **Overflow guard (`max_len`) — reachable, and covered.** A non-UTF-8 value
+> decodes to `$HEX[<hex>]`, which is **6 chars longer** than the stored hex. So
+> a 252-char hex of non-UTF-8 bytes (fits in `VARCHAR(256)`) decodes to a
+> 258-char marker that exceeds the column; `_decode_hex_column` leaves it
+> hex-encoded rather than overflow. The `u_overflow` row above exercises this
+> end-to-end (an earlier draft wrongly assumed the decoded form was always
+> shorter than the input and dropped the case; the `$HEX[...]` expansion makes
+> it reachable). The unit test `test_backfill_leaves_oversized_hex_untouched`
+> covers the same branch.
 
 ### DDL-affected rows
 

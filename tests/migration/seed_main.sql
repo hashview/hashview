@@ -37,10 +37,11 @@ INSERT INTO hashes (id, sub_ciphertext, ciphertext, cracked, plaintext, hash_typ
 -- hashfile_hashes.username legacy-hex cases (markers align with expected_hex.USERNAME_CASES).
 -- hash_id points at a seeded hashes row; hashfile_id at the seeded hashfile.
 INSERT INTO hashfile_hashes (id, hash_id, username, hashfile_id) VALUES
-  (9001, 9001, '41646d696e',   900),   -- u_ascii     -> 'Admin'
-  (9002, 9001, 'c3a9',         900),   -- u_utf8      -> 'é'
-  (9003, 9001, 'ff01',         900),   -- u_nonutf8   -> '$HEX[ff01]'
-  (9004, 9001, 'already-text', 900);   -- u_plaintext -> unchanged (not valid hex)
+  (9001, 9001, '41646d696e',    900),  -- u_ascii     -> 'Admin'
+  (9002, 9001, 'c3a9',          900),  -- u_utf8      -> 'é'
+  (9003, 9001, 'ff01',          900),  -- u_nonutf8   -> '$HEX[ff01]'
+  (9004, 9001, 'already-text',  900),  -- u_plaintext -> unchanged (not valid hex)
+  (9005, 9001, REPEAT('ff', 126), 900);-- u_overflow  -> unchanged ($HEX[...] form 258 > 256)
 
 -- An agent (dev adds offline_notified/gpu telemetry/agent_timeout columns).
 INSERT INTO agents (id, name, src_ip, uuid, status, hc_status, benchmark, cpu_count, gpu_count, last_checkin)

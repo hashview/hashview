@@ -47,7 +47,8 @@ def test_passwords_decoded_flag_flipped(migrated):
 
 
 @pytest.mark.parametrize("row_id,marker", [(9001, "u_ascii"), (9002, "u_utf8"),
-                                           (9003, "u_nonutf8"), (9004, "u_plaintext")])
+                                           (9003, "u_nonutf8"), (9004, "u_plaintext"),
+                                           (9005, "u_overflow")])
 def test_username_hex_backfill(migrated, row_id, marker):
     _seeded, expected = USERNAME_CASES[marker]
     got = _scalar(migrated, "SELECT username FROM hashfile_hashes WHERE id=:i", i=row_id)

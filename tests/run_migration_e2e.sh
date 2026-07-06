@@ -110,7 +110,7 @@ echo "== Build dev-from-empty schema in db-fresh (parity oracle) =="
 if [ -z "${PYTHON:-}" ]; then
   echo "  creating temp venv (set PYTHON=... to reuse an existing env)"
   python3 -m venv "$VENV_DIR"
-  "$VENV_DIR/bin/pip" install -q -r requirements.txt
+  "$VENV_DIR/bin/pip" install -q -r requirements.txt -r requirements-dev.txt
   PYTHON="$VENV_DIR/bin/python"
 fi
 HASHVIEW_TEST_DATABASE_URI="mysql+mysqlconnector://hashview:hashview@127.0.0.1:3307/hashview?charset=utf8mb4" \

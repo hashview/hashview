@@ -14,12 +14,12 @@ USERNAME_CASES = {
     "u_plaintext": ("already-text", "already-text"),  # not valid hex -> untouched
 }
 
-# For the overflow guard: a hex string whose decoded UTF-8 form is > 256 chars
-# stays hex-encoded (column is VARCHAR(256)). 260 'A's = 520 hex chars.
-_OVERFLOW_HEX = "41" * 260
+# NOTE: the ``_decode_hex_column`` max_len/overflow guard is intentionally NOT
+# exercised here. Both columns are VARCHAR(256), so any hex string that fits in
+# the column decodes to <=128 chars -- the decoded form can never exceed 256,
+# making the guard unreachable end-to-end. It is left to unit coverage.
 PLAINTEXT_CASES = {
     "p_ascii":    ("70617373", "pass"),               # 'pass'
     "p_utf8":     ("f09f9880", "\U0001f600"),          # 😀 emoji (4-byte) -> text
     "p_nonutf8":  ("ff",       "$HEX[ff]"),            # invalid UTF-8 -> $HEX[...]
-    "p_overflow": (_OVERFLOW_HEX, _OVERFLOW_HEX),      # decoded > 256 -> left hex
 }

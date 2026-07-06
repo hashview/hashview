@@ -72,20 +72,24 @@ def test_ddl_backfills_on_preexisting_rows(migrated):
 
 
 def _col(engine, table, col):
+    """Return (data_type, character_set_name) for a column. Uses positional
+    access -- information_schema column labels don't resolve via SQLAlchemy 1.4
+    Row attribute access, and MySQL may vary their case."""
     with engine.connect() as c:
-        return c.execute(text(
-            "SELECT data_type, character_set_name, is_nullable, column_default "
+        row = c.execute(text(
+            "SELECT data_type, character_set_name "
             "FROM information_schema.columns "
             "WHERE table_schema=DATABASE() AND table_name=:t AND column_name=:c"),
             {"t": table, "c": col}).fetchone()
+    return {"data_type": row[0], "character_set_name": row[1]}
 
 
 def test_explicit_type_assertions(migrated):
     ciphertext = _col(migrated, "hashes", "ciphertext")
-    assert ciphertext.data_type == "text"
-    assert ciphertext.character_set_name == "utf8mb4"
-    assert _col(migrated, "hashes", "plaintext").character_set_name == "utf8mb4"
-    assert _col(migrated, "hashfile_hashes", "username").character_set_name == "utf8mb4"
+    assert ciphertext["data_type"] == "text"
+    assert ciphertext["character_set_name"] == "utf8mb4"
+    assert _col(migrated, "hashes", "plaintext")["character_set_name"] == "utf8mb4"
+    assert _col(migrated, "hashfile_hashes", "username")["character_set_name"] == "utf8mb4"
 
 
 def _schema_snapshot(engine):

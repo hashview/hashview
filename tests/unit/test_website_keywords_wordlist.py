@@ -38,7 +38,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTROL = REPO_ROOT / "hashview" / "control"
 WORDLISTS_DIR = CONTROL / "wordlists"
 TMP_DIR = CONTROL / "tmp"
-MIGRATION = REPO_ROOT / "migrations" / "versions" / "5c2e1f4a9d37_add_crawl_settings_and_job_url.py"
+# The crawl_* / jobs.crawl_url DDL that used to live in its own migration
+# (5c2e1f4a9d37) is now part of the v0.8.3-dev squash migration; this test
+# exercises the crawl columns + existing-row backfill through that squash.
+MIGRATION = REPO_ROOT / "migrations" / "versions" / "c8b3f0a14d27_squash_v0_8_3_dev_schema_delta.py"
 WL_NAME = "(DYNAMIC) Website Keywords"
 COOKIE_DOMAIN = "localhost.test"
 
@@ -104,18 +107,38 @@ def test_seed_creates_and_is_idempotent(app, tmp_path, monkeypatch):
 # 2. Migration (isolated, SQLite batch mode)
 # ---------------------------------------------------------------------------
 
+# Minimal base tables the v0.8.3-dev squash touches on SQLite (the MySQL-only
+# CHARACTER SET widenings are dialect-guarded and skipped here). Enough to let
+# the squash's batch_alter_table / create_index / create_table ops run.
+_SQUASH_BASE_TABLES = (
+    "CREATE TABLE wordlists (id INTEGER PRIMARY KEY)",
+    "CREATE TABLE settings (id INTEGER PRIMARY KEY, enabled_job_weights BOOLEAN)",
+    "CREATE TABLE jobs (id INTEGER PRIMARY KEY, name VARCHAR(50))",
+    "CREATE TABLE users (id INTEGER PRIMARY KEY, first_name VARCHAR(50), "
+    "last_name VARCHAR(50), email_address VARCHAR(50))",
+    "CREATE TABLE tasks (id INTEGER PRIMARY KEY)",
+    "CREATE TABLE hashfile_hashes (id INTEGER PRIMARY KEY, hashfile_id INTEGER)",
+    "CREATE TABLE agents (id INTEGER PRIMARY KEY)",
+    "CREATE TABLE job_tasks (id INTEGER PRIMARY KEY)",
+    "CREATE TABLE hashfiles (id INTEGER PRIMARY KEY)",
+)
+
+
 def test_migration_adds_columns_and_backfills(tmp_path):
-    spec = importlib.util.spec_from_file_location("m_crawl", MIGRATION)
+    # The crawl_* columns now ship inside the squashed v0.8.3-dev migration,
+    # which sits directly on top of the last released head.
+    spec = importlib.util.spec_from_file_location("m_squash", MIGRATION)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    assert mod.down_revision == "3f9c1d2a7b04"
+    assert mod.revision == "c8b3f0a14d27"
+    assert mod.down_revision == "8a5b0fff063d"
 
     dbfile = tmp_path / "m.sqlite"
     eng = create_engine(f"sqlite:///{dbfile}")
     with eng.begin() as conn:
-        conn.execute(text("CREATE TABLE settings (id INTEGER PRIMARY KEY, enabled_job_weights BOOLEAN)"))
+        for stmt in _SQUASH_BASE_TABLES:
+            conn.execute(text(stmt))
         conn.execute(text("INSERT INTO settings (id, enabled_job_weights) VALUES (1, 0)"))
-        conn.execute(text("CREATE TABLE jobs (id INTEGER PRIMARY KEY, name VARCHAR(50))"))
         conn.execute(text("INSERT INTO jobs (id, name) VALUES (1, 'j')"))
 
     with eng.begin() as conn:

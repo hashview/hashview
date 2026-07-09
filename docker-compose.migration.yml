@@ -1,0 +1,62 @@
+# End-to-end main->dev migration stack. Orchestrated by
+# tests/run_migration_e2e.sh. `db` is the DB under test (main creates+seeds it,
+# then dev migrates it); `db-fresh` is the dev-from-empty parity oracle. app-main
+# and app-dev are built by the runner and tagged hashview:main / hashview:dev.
+services:
+  db:
+    image: "mysql:8"
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    environment:
+      MYSQL_DATABASE: hashview
+      MYSQL_USER: hashview
+      MYSQL_PASSWORD: hashview
+      MYSQL_RANDOM_ROOT_PASSWORD: yes
+    ports:
+      - '3306:3306'
+    healthcheck:
+      # TCP + query gate on the REAL server (not the unix socket, which answers
+      # during MySQL's temporary init server) -- see docker-compose.yml.
+      test: ["CMD-SHELL", "mysql -h 127.0.0.1 -u hashview -phashview -e 'SELECT 1' hashview || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  db-fresh:
+    image: "mysql:8"
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    environment:
+      MYSQL_DATABASE: hashview
+      MYSQL_USER: hashview
+      MYSQL_PASSWORD: hashview
+      MYSQL_RANDOM_ROOT_PASSWORD: yes
+    ports:
+      - '3307:3306'
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h 127.0.0.1 -u hashview -phashview -e 'SELECT 1' hashview || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  app-main:
+    image: hashview:main
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    links:
+      - db
+    ports:
+      - "5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app-dev:
+    image: hashview:dev
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    links:
+      - db
+    ports:
+      - "5001:5000"
+    depends_on:
+      db:
+        condition: service_healthy

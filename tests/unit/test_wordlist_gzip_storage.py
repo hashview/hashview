@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import secrets
+import sys
 from pathlib import Path
 
 import pytest
@@ -45,7 +46,11 @@ from hashview.setup import compress_existing_wordlists_if_needed
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CONTROL = REPO_ROOT / "hashview" / "control"
+PKG_ROOT = REPO_ROOT / "hashview"
+CONTROL = PKG_ROOT / "control"
+# WORDLISTS_DIR / TMP_DIR are repointed at a per-test isolated root by the
+# autouse ``_isolated_control_root`` fixture below; the module-level values are
+# only placeholders so imports resolve.
 WORDLISTS_DIR = CONTROL / "wordlists"
 TMP_DIR = CONTROL / "tmp"
 AGENT_SCRIPT = REPO_ROOT / "install" / "hashview-agent" / "hashview-agent.py"
@@ -56,21 +61,30 @@ COOKIE_DOMAIN = "localhost.test"
 
 
 @pytest.fixture(autouse=True)
-def _clean_control_dirs():
-    """Remove any files these tests create under the real control dirs."""
-    def snapshot(d):
-        return set(os.listdir(d)) if d.exists() else set()
-    before_wl = snapshot(WORDLISTS_DIR)
-    before_tmp = snapshot(TMP_DIR)
-    yield
-    for d, before in ((WORDLISTS_DIR, before_wl), (TMP_DIR, before_tmp)):
-        if not d.exists():
-            continue
-        for name in set(os.listdir(d)) - before:
-            try:
-                os.remove(d / name)
-            except OSError:
-                pass
+def _isolated_control_root(app, tmp_path, monkeypatch):
+    """Give each test a private hashview root so wordlist files never touch the
+    shared real ``hashview/control/`` tree.
+
+    These tests write real files under ``control/{wordlists,tmp}``. Deriving
+    that location from the package dir made every test in the process share one
+    mutable directory: a slow teardown, an errored test, or a stray background
+    file operation could delete or collide with another test's in-flight file
+    (a rare source of ``os.path.exists`` flakiness), and the snapshot-diff
+    cleanup leaked orphaned ``.gz`` files over time. Pointing ``app.root_path``
+    at a per-test ``tmp_path`` isolates all of it (pytest cleans tmp_path up);
+    ``templates``/``static`` are symlinked back so render paths still resolve.
+    """
+    root = tmp_path / "hvroot"
+    root.mkdir()
+    for name in ("templates", "static"):
+        os.symlink(PKG_ROOT / name, root / name)
+    for sub in ("wordlists", "tmp", "hashes", "rules", "logs", "wordlists_import"):
+        (root / "control" / sub).mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(app, "root_path", str(root))
+    # Tests that write dynamic wordlists reference these module globals directly;
+    # repoint them at the isolated dirs so they match app.root_path.
+    monkeypatch.setattr(sys.modules[__name__], "WORDLISTS_DIR", root / "control" / "wordlists")
+    monkeypatch.setattr(sys.modules[__name__], "TMP_DIR", root / "control" / "tmp")
 
 
 def _make_user(api_key="testapikey"):

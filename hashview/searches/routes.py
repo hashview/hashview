@@ -35,7 +35,6 @@ def searches_list():
     # We should be able to include Customers and Hashfiles in the following queries
     if searchForm.validate_on_submit():
         if searchForm.search_type.data == 'hash':
-            print(f"[DEBUG] {searchForm.query.data}")
             # can be found in hashfiles, or not, or both?
             hash_results = db.session.query(Hashes).filter(Hashes.ciphertext==searchForm.query.data).all()
             hashfile_results = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.ciphertext==searchForm.query.data).all()

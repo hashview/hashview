@@ -866,7 +866,7 @@ def jobs_summary(job_id):
 
         flash('Job created and queued', 'success')
 
-        return redirect(url_for('jobs.jobs_list'))
+        return redirect(url_for('main.home'))
 
     return render_template('jobs_summary.html.j2', title='Job Summary', job=job, form=form, job_notification=job_notification, cracked_rate=cracked_rate, cracked_cnt=cracked_cnt, hash_total=hash_total, hashfile_hash_type=hashfile_hash_type, job_tasks=job_tasks, hash_notification_cnt=hash_notification_cnt, customer=customer, hashfile=hashfile, tasks=tasks, hash_notification=hash_notification, settings=settings, website=_job_uses_website_keywords(job_id))
 

@@ -552,6 +552,8 @@ def test_jobs_summary_post_queues_job_and_tasks(app, client):
     resp = client.post(f"/jobs/{job.id}/summary", data={"submit": "Create & Queue Job"},
                        follow_redirects=False)
     assert resp.status_code in (301, 302)
+    # Create & Queue lands on the dashboard ("/"), not the jobs listing ("/jobs").
+    assert resp.headers.get("Location", "").endswith("/")
     db.session.expire_all()
     job = Jobs.query.get(job.id)
     jt = JobTasks.query.filter_by(job_id=job.id).first()

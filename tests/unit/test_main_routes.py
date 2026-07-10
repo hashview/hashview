@@ -29,6 +29,21 @@ def test_home_renders_with_recovery_feed(app, client):
     assert b"Summer2024" in resp.data
 
 
+def test_profile_api_key_copy_shows_feedback(app, client):
+    """Issue #303: the account-settings API-key Copy button gives a momentary
+    'Copied!' confirmation (Clipboard API with a legacy fallback)."""
+    admin = make_admin()
+    login(client, admin)
+    body = client.get("/").get_data(as_text=True)
+    assert 'onclick="hvApiCopy(this)"' in body        # button hands itself to the handler
+    assert 'function hvApiCopy(btn)' in body
+    assert '✓ Copied!' in body                        # momentary confirmation text
+    assert 'navigator.clipboard.writeText' in body    # Clipboard API path
+    assert "document.execCommand('copy')" in body     # legacy fallback
+    # After Generate, the layout reopens the account modal + reveals the new key.
+    assert 'apikey_generated' in body
+
+
 def test_stop_job_task_cancels(app, client):
     from hashview.models import Hashfiles
     admin = make_admin()

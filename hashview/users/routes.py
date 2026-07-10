@@ -362,8 +362,12 @@ def generate_api_key():
     user = Users.query.get(current_user.id)
     user.api_key = str(uuid.uuid4())
     db.session.commit()
-    flash('New API Key Set', 'success')
-    return redirect(_safe_next())
+    # Return to the page the account-settings modal was opened from, tagged so the
+    # layout reopens the modal and reveals the freshly generated key (the page has
+    # re-rendered with the new value) rather than dropping the user on a blank page.
+    target = _safe_next()
+    target += ('&' if '?' in target else '?') + 'apikey_generated=1'
+    return redirect(target)
 
 @users.route("/reset_password", methods=['GET', 'POST'])
 def reset_request():

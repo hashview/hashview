@@ -303,7 +303,7 @@ def test_validate_job_rejects_duplicate_name(app):
 
     form = JobsForm()
     with pytest.raises(ValidationError):
-        form.validate_job(_Field())
+        form.validate_name(_Field())
 
 
 def test_validate_job_allows_unique_name(app):
@@ -313,4 +313,4 @@ def test_validate_job_allows_unique_name(app):
         data = "TotallyUniqueName"
 
     # No exception -> passes
-    assert form.validate_job(_Field()) is None
+    assert form.validate_name(_Field()) is None

@@ -1,5 +1,6 @@
 {% extends "layout.html.j2" %}
 {% from "icons.html.j2" import icon %}
+{% from "macros.html.j2" import modal_errors %}
 {% block title %}Rules · Hashview{% endblock %}
 {% block content %}
 {% macro rcount(n) -%}
@@ -77,8 +78,10 @@
     </div>
     <form method="POST" action="{{ url_for('rules.rules_add') }}" enctype="multipart/form-data">
         {{ rulesForm.hidden_tag() }}
+        <input type="hidden" name="from_modal" value="1">
         {{ rulesForm.name(id="rule-up-name", style="display:none;") }}
         <div class="hv-dialog-body">
+            {{ modal_errors(form_err, 'upload-rule-modal') }}
             <div class="dropzone" id="rule-dropzone" onclick="document.getElementById('rule-up-file').click()"
                  ondragover="event.preventDefault(); this.classList.add('drag');"
                  ondragleave="this.classList.remove('drag');"
@@ -207,5 +210,17 @@ function hvFilterRules(q){
     if (none) none.style.display = shown === 0 ? '' : 'none';
 }
 </script>
+
+{# Reopen the Upload-rule modal after a failed submit, error shown inside it. #}
+{% if form_err %}
+<script>
+(function () {
+    var fe = {{ form_err | tojson }};
+    if (fe.modal !== 'upload-rule-modal') return;
+    var dlg = document.getElementById('upload-rule-modal');
+    if (dlg) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
+})();
+</script>
+{% endif %}
 
 {% endblock content %}

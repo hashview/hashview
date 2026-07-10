@@ -34,7 +34,9 @@ class JobsForm(FlaskForm):
 	limit_recovered = BooleanField('Stop job after single hash has been recovered.')
 	submit = SubmitField('Next')
 
-	def validate_job(self, name):
+	def validate_name(self, name):
+		# Named validate_name (not validate_job) so WTForms actually runs it —
+		# inline validators must be validate_<fieldname>, and the field is `name`.
 		job = Jobs.query.filter_by(name = name.data).first()
 		if job:
 			raise ValidationError('That job name is taken. Please choose a different one.')

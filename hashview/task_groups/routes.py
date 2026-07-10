@@ -1,7 +1,7 @@
 """Flask routes to handle Task Groups"""
 import json
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required
 
 from hashview.models import Hashes, TaskGroups, Tasks, Users, db
@@ -47,12 +47,14 @@ def task_groups_list():
     return render_template('task_groups.html.j2', title='Task Groups', task_groups=task_groups,
                            users=users, tasks=tasks, group_tasks=group_tasks,
                            group_hits=group_hits, group_owner=group_owner,
-                           task_group_form=TaskGroupsForm())
+                           task_group_form=TaskGroupsForm(),
+                           form_err=session.pop('task_groups_form_err', None))
 
 @task_groups.route("/task_groups/add", methods=['GET', 'POST'])
 @login_required
 def task_groups_add():
-    """Function to add task group"""
+    """Add a task group. Reached two ways: the New-group modal on the listing
+    (posts from_modal=1) and the legacy standalone /task_groups/add page."""
 
     task_group_form = TaskGroupsForm()
     tasks = Tasks.query
@@ -81,6 +83,16 @@ def task_groups_add():
         log_event('task_group.create', target=f'task_group:{task_group.id} {task_group.name!r}')
         flash(f'Task {task_group_form.name.data} created!', 'success')
         return redirect("assigned_tasks/"+str(task_group.id))
+    # Validation failed. From the modal → reopen it on the listing with the error
+    # inside and the typed name preserved; from the legacy standalone page →
+    # re-render that page.
+    if request.form.get('from_modal'):
+        session['task_groups_form_err'] = {
+            'modal': 'new-group-modal',
+            'values': {'name': task_group_form.name.data or ''},
+            'errors': [e for errs in task_group_form.errors.values() for e in errs],
+        }
+        return redirect(url_for('task_groups.task_groups_list'))
     return render_template('task_groups_add.html.j2', title='Tasks Add', tasks=tasks, task_group_form=task_group_form)
 
 @task_groups.route("/task_groups/edit", methods=['POST'])
@@ -94,6 +106,8 @@ def task_groups_edit():
     if not (current_user.admin or task_group.owner_id == current_user.id):
         abort(403)
     task_group_form = TaskGroupsForm()
+    # Keeping this group's own name must not trip the uniqueness validator.
+    task_group_form._editing_id = task_group.id
     if task_group_form.validate_on_submit():
         valid_ids = {t.id for t in Tasks.query.all()}
         ordered = []
@@ -108,8 +122,18 @@ def task_groups_edit():
         db.session.commit()
         log_event('task_group.edit', target=f'task_group:{task_group.id} {task_group.name!r}')
         flash(f'Task group {task_group_form.name.data} updated!', 'success')
-    else:
-        flash('Could not update task group.', 'danger')
+        return redirect(url_for('task_groups.task_groups_list'))
+    # Validation failed — reopen the Edit-group modal for this group with the
+    # specific error inside it (was: a generic flash over the listing).
+    session['task_groups_form_err'] = {
+        'modal': 'edit-group-modal',
+        'values': {
+            'name': task_group_form.name.data or '',
+            'group_id': task_group.id,
+            'task_ids': request.form.get('task_ids', ''),
+        },
+        'errors': [e for errs in task_group_form.errors.values() for e in errs] or ['Could not update task group.'],
+    }
     return redirect(url_for('task_groups.task_groups_list'))
 
 @task_groups.route("/task_groups/assigned_tasks/<int:task_group_id>", methods=['GET', 'POST'])

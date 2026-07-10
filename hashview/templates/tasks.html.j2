@@ -1,6 +1,6 @@
 {% extends "layout.html.j2" %}
 {% from "icons.html.j2" import icon %}
-{% from "macros.html.j2" import status_badge %}
+{% from "macros.html.j2" import status_badge, modal_errors %}
 {% block title %}Tasks · Hashview{% endblock %}
 {% block content %}
 {% macro hcount(n) -%}
@@ -253,6 +253,8 @@ function hvFilterTasks(q){
     </div>
     <form method="POST" action="{{ url_for('tasks.tasks_add') }}" id="atk-form">
         {{ tasksForm.hidden_tag() }}
+        <input type="hidden" name="from_modal" value="1">
+        {{ modal_errors(form_err, 'add-task-modal') }}
         {{ task_modal_body('atk', wordlists, rules) }}
         <div class="hv-dialog-foot">
             <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
@@ -428,5 +430,18 @@ function hvFilterTasks(q){
     </div>
 </dialog>
 {% endfor %}
+
+{# Reopen the Add-task modal after a failed submit, error shown inside it. #}
+{% if form_err %}
+<script>
+(function () {
+    var fe = {{ form_err | tojson }};
+    if (fe.modal !== 'add-task-modal') return;
+    var n = document.getElementById('atk-name'); if (n) n.value = (fe.values && fe.values.name) || '';
+    var dlg = document.getElementById('add-task-modal');
+    if (dlg) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
+})();
+</script>
+{% endif %}
 
 {% endblock content %}

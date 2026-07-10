@@ -22,9 +22,14 @@ class TasksForm(FlaskForm):
     loopback = BooleanField('Enable loopback')
     submit = SubmitField('Create')
 
-    def validate_task(self, name):
-        """Function to validate Task name group"""
+    def validate_name(self, name):
+        """Reject a duplicate task name.
 
+        Named validate_name (not validate_task) so WTForms actually invokes it —
+        inline validators must be validate_<fieldname>, and the field is `name`.
+        On edit, set ``form._editing_id`` to the task's id so keeping its own name
+        isn't flagged as a collision with itself.
+        """
         task = Tasks.query.filter_by(name = name.data).first()
-        if task:
+        if task and task.id != getattr(self, '_editing_id', None):
             raise ValidationError('That task name is taken. Please choose a different one.')

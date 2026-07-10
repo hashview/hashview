@@ -11,6 +11,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    session,
     url_for,
 )
 from flask_bcrypt import Bcrypt
@@ -165,36 +166,59 @@ def users_list():
     task_groups = TaskGroups.query.all()
     hashfiles = Hashfiles.query.all()
     customers = Customers.query.all()
-    return render_template('users.html.j2', title='Users', users=users, jobs=jobs, wordlists=wordlists, rules=rules, tasks=tasks, task_groups=task_groups, hashfiles=hashfiles, customers=customers, usersForm=UsersForm())
+    # If a previous add-user attempt failed validation, users_add stashed what
+    # was typed so the modal can be reopened pre-filled (passwords excepted).
+    add_form_data = session.pop('add_user_form', None)
+    return render_template('users.html.j2', title='Users', users=users, jobs=jobs, wordlists=wordlists, rules=rules, tasks=tasks, task_groups=task_groups, hashfiles=hashfiles, customers=customers, usersForm=UsersForm(), add_form_data=add_form_data)
 
-@users.route("/users/add", methods=['GET', 'POST'])
+@users.route("/users/add", methods=['POST'])
 @login_required
 def users_add():
-    """Function to add new user"""
+    """Create a new user from the add-user modal on the users list page.
 
-    if current_user.admin:
-        form = UsersForm()
-        if form.validate_on_submit():
-            hashed_password = bcrypt.generate_password_hash(form.password.data).decode('latin-1')
-            if form.pushover_app_id.data and form.pushover_user_key.data:
-                user = Users(first_name=form.first_name.data, last_name=form.last_name.data, email_address=form.email.data, admin=form.is_admin.data, password=hashed_password, pushover_app_id=form.pushover_app_id.data, pushover_user_key=form.pushover_user_key.data)
-            else:
-                user = Users(first_name=form.first_name.data, last_name=form.last_name.data, email_address=form.email.data, admin=form.is_admin.data, password=hashed_password)
-            db.session.add(user)
-            db.session.commit()
-            # Optional "send invite email" toggle from the add-user modal. Best-effort:
-            # send_email already swallows errors / returns False if mail isn't configured.
-            if request.form.get('send_invite'):
-                send_email(user, 'Your Hashview account',
-                           f'An account has been created for you on Hashview. '
-                           f'Sign in with your email address ({user.email_address}).')
-            log_event('user.create', target=f'user:{user.id} {user.email_address}')
-            flash(f'Account created for {form.email.data}!', 'success')
-            return redirect(url_for('users.users_list'))
-        return render_template('users_add.html.j2', title='User Add', form=form)
-    else:
+    POST-only: the add-user form lives in a modal on /users, so there is no
+    standalone add page to render. On success *and* on any validation error we
+    return to /users (keeping the admin on the list); validation errors — e.g.
+    a duplicate email — are surfaced there as flash messages.
+    """
+    if not current_user.admin:
         flash('Unauthorized to add users account.', 'danger')
         return redirect(url_for('users.users_list'))
+
+    form = UsersForm()
+    if form.validate_on_submit():
+        hashed_password = bcrypt.generate_password_hash(form.password.data).decode('latin-1')
+        # Pushover isn't collected at creation — the user sets it themselves from
+        # their profile after logging in.
+        user = Users(first_name=form.first_name.data, last_name=form.last_name.data, email_address=form.email.data, admin=form.is_admin.data, password=hashed_password)
+        db.session.add(user)
+        db.session.commit()
+        # Optional "send invite email" toggle from the add-user modal. Best-effort:
+        # send_email already swallows errors / returns False if mail isn't configured.
+        if request.form.get('send_invite'):
+            send_email(user, 'Your Hashview account',
+                       f'An account has been created for you on Hashview. '
+                       f'Sign in with your email address ({user.email_address}).')
+        log_event('user.create', target=f'user:{user.id} {user.email_address}')
+        flash(f'Account created for {form.email.data}!', 'success')
+        return redirect(url_for('users.users_list'))
+
+    # Validation failed (bad input, or an email that already exists). Preserve
+    # what was typed — minus the passwords — so the users list can reopen the
+    # add-user modal pre-filled, then flash each error and redirect there rather
+    # than to a bare /users/add page.
+    session['add_user_form'] = {
+        'first_name': form.first_name.data or '',
+        'last_name': form.last_name.data or '',
+        'email': form.email.data or '',
+        'is_admin': bool(form.is_admin.data),
+    }
+    for field, errors in form.errors.items():
+        label = getattr(getattr(form, field, None), 'label', None)
+        prefix = f'{label.text}: ' if label is not None and label.text else ''
+        for error in errors:
+            flash(f'{prefix}{error}', 'danger')
+    return redirect(url_for('users.users_list'))
 
 @users.route("/users/edit/<int:user_id>", methods=['POST'])
 @login_required

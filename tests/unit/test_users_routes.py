@@ -279,20 +279,3 @@ def test_validate_email_rejects_duplicate(app):
 
     with pytest.raises(ValidationError):
         form.validate_email(_Field())
-
-
-def test_validate_pushover_requires_both(app):
-    form = UsersForm()
-
-    class _App:
-        data = "appid"
-
-    class _Empty:
-        data = ""
-
-    with pytest.raises(ValidationError):
-        form.validate_pushover(_App(), _Empty())
-    with pytest.raises(ValidationError):
-        form.validate_pushover(_Empty(), _App())
-    # both empty -> OK
-    assert form.validate_pushover(_Empty(), _Empty()) is None

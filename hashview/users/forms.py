@@ -21,22 +21,17 @@ class UsersForm(FlaskForm):
     is_admin = BooleanField('Is Admin')
     password = PasswordField('Password', validators=[DataRequired(), Length(min=14)])
     confirm_password = PasswordField('Confirm Password', validators=[DataRequired(), EqualTo('password')])
-    pushover_app_id = StringField('Pushover App Token (optional)')
-    pushover_user_key = StringField('Pushover User Key (optional)')
     submit = SubmitField('Register')
+
+    # Pushover is intentionally NOT collected when creating a user: each user
+    # sets their own Pushover app token / user key from their profile after
+    # logging in (see ProfileForm).
 
     def validate_email(self, email):
         """Function to validate email address"""
         user = Users.query.filter_by(email_address = email.data).first()
         if user:
             raise ValidationError('That email address is taken. Please choose a different one.')
-
-    def validate_pushover(self, pushover_app_id, pushover_user_key):
-        """Function to validate pushover"""
-        if len(pushover_app_id.data) > 0 and len(pushover_user_key.data) == 0:
-            raise ValidationError('You must supply both options to use.')
-        if len(pushover_app_id.data) == 0 and len(pushover_user_key.data) > 0:
-            raise ValidationError('You must supply both options to use.')
 
 class LoginForm(FlaskForm):
     """Class representing Login Form"""

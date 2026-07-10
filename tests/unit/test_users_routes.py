@@ -223,9 +223,11 @@ def test_generate_api_key_sets_key(app, client):
     admin = make_admin()
     login(client, admin)
     assert admin.api_key is None
-    resp = client.get("/profile/generate_api_key", follow_redirects=False)
+    resp = client.get("/profile/generate_api_key?next=/", follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert Users.query.get(admin.id).api_key is not None
+    # Redirect back tagged so the layout reopens the account modal + shows the key.
+    assert "apikey_generated=1" in resp.headers.get("Location", "")
 
 
 # --- admin reset / promote / demote ----------------------------------------

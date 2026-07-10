@@ -40,6 +40,8 @@ def test_profile_api_key_copy_shows_feedback(app, client):
     assert '✓ Copied!' in body                        # momentary confirmation text
     assert 'navigator.clipboard.writeText' in body    # Clipboard API path
     assert "document.execCommand('copy')" in body     # legacy fallback
+    # After Generate, the layout reopens the account modal + reveals the new key.
+    assert 'apikey_generated' in body
 
 
 def test_stop_job_task_cancels(app, client):

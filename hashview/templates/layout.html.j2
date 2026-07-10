@@ -253,6 +253,20 @@
             legacy(); flash();
         }
     }
+    // After regenerating the key, generate_api_key redirects back with
+    // ?apikey_generated=1 — reopen the account modal and reveal the new key
+    // (the page re-rendered with it), then strip the marker from the URL.
+    document.addEventListener('DOMContentLoaded', function () {
+        var params = new URLSearchParams(window.location.search);
+        if (!params.has('apikey_generated')) return;
+        var modal = document.getElementById('account-settings-modal');
+        if (modal) { try { modal.showModal(); } catch (e) { modal.setAttribute('open', ''); } }
+        var i = document.getElementById('as-apikey');
+        if (i) { var full = i.getAttribute('data-full'); if (full) { i.value = full; } }
+        params.delete('apikey_generated');
+        var qs = params.toString();
+        history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : '') + window.location.hash);
+    });
     // Reveal the per-channel admin-notification options only when the master
     // "Receive administrative notifications" switch is on (admins only).
     function hvSyncAdminNotif() {

@@ -215,19 +215,26 @@
         {{ usersForm.hidden_tag() }}
         <input type="checkbox" name="is_admin" id="nu-is-admin" style="display:none;">
         <div class="hv-dialog-body" style="max-height:74vh; overflow-y:auto;">
+            {% if add_form_data and add_form_data['errors'] %}
+            <div id="nu-errors" class="flash flash-danger" style="margin-bottom:16px;">
+                {% for error in add_form_data['errors'] %}
+                <div>{{ error }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
             <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
                 <div class="field" style="margin-bottom:0;">
                     <label class="field-label" for="nu-first">First name <span class="req">*</span></label>
-                    <input class="input" type="text" name="first_name" id="nu-first" placeholder="e.g. Alice" autocomplete="off" required oninput="hvUserMeta('nu')">
+                    <input class="input" type="text" name="first_name" id="nu-first" placeholder="e.g. Alice" autocomplete="off" required oninput="hvUserMeta('nu')" value="{{ add_form_data['first_name'] if add_form_data else '' }}">
                 </div>
                 <div class="field" style="margin-bottom:0;">
                     <label class="field-label" for="nu-last">Last name <span class="req">*</span></label>
-                    <input class="input" type="text" name="last_name" id="nu-last" placeholder="e.g. Smith" autocomplete="off" required oninput="hvUserMeta('nu')">
+                    <input class="input" type="text" name="last_name" id="nu-last" placeholder="e.g. Smith" autocomplete="off" required oninput="hvUserMeta('nu')" value="{{ add_form_data['last_name'] if add_form_data else '' }}">
                 </div>
             </div>
             <div class="field" style="margin-top:16px;">
                 <label class="field-label" for="nu-email">Email <span class="req">*</span></label>
-                <input class="input" type="email" name="email" id="nu-email" placeholder="name@redteam.io" autocomplete="off" required oninput="hvUserMeta('nu')">
+                <input class="input" type="email" name="email" id="nu-email" placeholder="name@redteam.io" autocomplete="off" required oninput="hvUserMeta('nu')" value="{{ add_form_data['email'] if add_form_data else '' }}">
             </div>
 
             {# Role — Administrator / Operator, centered #}
@@ -375,6 +382,20 @@
     };
 })();
 </script>
+
+{% if add_form_data %}
+{# A prior add-user attempt failed validation: reopen the modal with what was
+   typed (server-flashed the error) so the admin can fix it in place. #}
+<script>
+(function () {
+    var dlg = document.getElementById('add-user-modal');
+    if (!dlg) return;
+    if (window.hvUserRole) hvUserRole('nu', {{ 'true' if add_form_data['is_admin'] else 'false' }});
+    if (window.hvUserMeta) hvUserMeta('nu');
+    try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); }
+})();
+</script>
+{% endif %}
 
 <script>
 (function () {

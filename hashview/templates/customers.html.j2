@@ -1,5 +1,6 @@
 {% extends "layout.html.j2" %}
 {% from "icons.html.j2" import icon %}
+{% from "macros.html.j2" import modal_errors %}
 {% block title %}Customers · Hashview{% endblock %}
 {% block content %}
 <style>.customers-tbl thead th { padding-top: 14px; padding-bottom: 14px; }</style>
@@ -97,6 +98,7 @@ function hvCustomerInfo(id) {
     <form method="POST" action="{{ url_for('customers.customers_add') }}">
         {{ customersForm.hidden_tag() }}
         <div class="hv-dialog-body">
+            {{ modal_errors(form_err, 'add-customer-modal') }}
             <div class="field" style="margin-bottom:0;">
                 <label class="field-label" for="cu-name">Customer name <span class="req">*</span></label>
                 <input class="input" type="text" name="name" id="cu-name" placeholder="e.g. Acme Corp" autocomplete="off" required>
@@ -122,6 +124,7 @@ function hvCustomerInfo(id) {
         {{ customersForm.hidden_tag() }}
         <input type="hidden" name="customer_id" id="ec-id" value="">
         <div class="hv-dialog-body">
+            {{ modal_errors(form_err, 'edit-customer-modal') }}
             <div class="field" style="margin-bottom:0;">
                 <label class="field-label" for="ec-name">Customer name <span class="req">*</span></label>
                 <input class="input" type="text" name="name" id="ec-name" autocomplete="off" required>
@@ -154,5 +157,22 @@ function hvEditCustomer(id, name) {
     </div>
 </dialog>
 {% endfor %}
+
+{# Reopen the add/edit modal after a failed submit, with the error shown inside it. #}
+{% if form_err %}
+<script>
+(function () {
+    var fe = {{ form_err | tojson }};
+    var vals = fe.values || {};
+    if (fe.modal === 'add-customer-modal') {
+        var n = document.getElementById('cu-name'); if (n) n.value = vals.name || '';
+        var dlg = document.getElementById('add-customer-modal');
+        if (dlg) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
+    } else if (fe.modal === 'edit-customer-modal' && window.hvEditCustomer) {
+        hvEditCustomer(vals.customer_id, vals.name || '');
+    }
+})();
+</script>
+{% endif %}
 
 {% endblock content %}

@@ -80,4 +80,4 @@ def test_validate_task_rejects_duplicate(app):
         data = "Dup"
 
     with pytest.raises(ValidationError):
-        form.validate_task(_Field())
+        form.validate_name(_Field())

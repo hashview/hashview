@@ -1,5 +1,5 @@
 """Flask routes to handle Customers"""
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import case, func
 
@@ -77,7 +77,8 @@ def customers_list():
 
     return render_template('customers.html.j2', title='Customers', customers=customers, jobs=jobs,
                            hashfiles=hashfiles, customer_stats=customer_stats,
-                           customersForm=CustomersForm())
+                           customersForm=CustomersForm(),
+                           form_err=session.pop('customers_form_err', None))
 
 @customers.route("/customers/add", methods=['POST'])
 @login_required
@@ -90,13 +91,14 @@ def customers_add():
         db.session.commit()
         log_event('customer.create', target=f'customer:{customer.id} {customer.name!r}')
         flash(f'Customer {form.name.data} added!', 'success')
-    else:
-        msg = 'Could not add customer.'
-        for errs in form.errors.values():
-            if errs:
-                msg = errs[0]
-                break
-        flash(msg, 'danger')
+        return redirect(url_for('customers.customers_list'))
+    # Validation failed — reopen the Add modal on the listing with the error
+    # shown inside it and the typed name preserved (not a flash over the listing).
+    session['customers_form_err'] = {
+        'modal': 'add-customer-modal',
+        'values': {'name': form.name.data or ''},
+        'errors': [e for errs in form.errors.values() for e in errs],
+    }
     return redirect(url_for('customers.customers_list'))
 
 @customers.route("/customers/edit", methods=['POST'])
@@ -108,13 +110,21 @@ def customers_edit():
         flash('Customer not found — it may have already been deleted.', 'warning')
         return redirect(url_for('customers.customers_list'))
     name = (request.form.get('name') or '').strip()
-    if not name:
-        flash('Customer name is required.', 'danger')
+
+    def _edit_error(message):
+        # Reopen the Edit modal for this customer with the error inside it.
+        session['customers_form_err'] = {
+            'modal': 'edit-customer-modal',
+            'values': {'name': name, 'customer_id': customer.id},
+            'errors': [message],
+        }
         return redirect(url_for('customers.customers_list'))
+
+    if not name:
+        return _edit_error('Customer name is required.')
     clash = Customers.query.filter_by(name=name).first()
     if clash and clash.id != customer.id:
-        flash('That customer already exists. Please choose a different one.', 'danger')
-        return redirect(url_for('customers.customers_list'))
+        return _edit_error('That customer already exists. Please choose a different one.')
     customer.name = name
     db.session.commit()
     log_event('customer.edit', target=f'customer:{customer.id} {customer.name!r}')

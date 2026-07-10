@@ -1,5 +1,6 @@
 {% extends "layout.html.j2" %}
 {% from "icons.html.j2" import icon %}
+{% from "macros.html.j2" import modal_errors %}
 {% block title %}Task Groups · Hashview{% endblock %}
 {% block content %}
 {% macro ttype(t) -%}
@@ -146,7 +147,9 @@
     </div>
     <form method="POST" action="{{ url_for('task_groups.task_groups_add') }}">
         {{ task_group_form.hidden_tag() }}
+        <input type="hidden" name="from_modal" value="1">
         <input type="hidden" name="task_ids" id="ng-task-ids" value="">
+        {{ modal_errors(form_err, 'new-group-modal') }}
         {{ gm_inner('ng', 'Create group', tasks) }}
     </form>
 </dialog>
@@ -164,6 +167,7 @@
         {{ task_group_form.hidden_tag() }}
         <input type="hidden" name="group_id" id="eg-group-id" value="">
         <input type="hidden" name="task_ids" id="eg-task-ids" value="">
+        {{ modal_errors(form_err, 'edit-group-modal') }}
         {{ gm_inner('eg', 'Save changes', tasks) }}
     </form>
 </dialog>
@@ -259,5 +263,23 @@
     </div>
 </dialog>
 {% endfor %}
+
+{# Reopen the New/Edit group modal after a failed submit, error shown inside it. #}
+{% if form_err %}
+<script>
+(function () {
+    var fe = {{ form_err | tojson }};
+    var vals = fe.values || {};
+    if (fe.modal === 'new-group-modal') {
+        var n = document.getElementById('ng-name'); if (n) n.value = vals.name || '';
+        var dlg = document.getElementById('new-group-modal');
+        if (dlg) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
+    } else if (fe.modal === 'edit-group-modal' && window.hvEditGroup) {
+        var ids = (vals.task_ids || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+        hvEditGroup(vals.group_id, vals.name || '', ids);
+    }
+})();
+</script>
+{% endif %}
 
 {% endblock content %}

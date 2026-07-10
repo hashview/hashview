@@ -1,7 +1,7 @@
 """Flask routes to handle Tasks"""
 import os
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required
 
 from hashview.models import (
@@ -113,12 +113,13 @@ def tasks_list():
     # too); the list view uses this to disable the edit button for those tasks.
     tasks_in_jobs = {jt.task_id for jt in job_tasks}
 
-    return render_template('tasks.html.j2', title='tasks', tasks=tasks, users=users, jobs=jobs, job_tasks=job_tasks, wordlists=wordlists, task_groups=task_groups, task_recovery_performance=task_recovery_performance, pagination=pagination, sort_by=sort_by, sort_order=sort_order, rules=Rules.query.all(), wl_filesize=wl_filesize, tasks_in_jobs=tasks_in_jobs, tasksForm=TasksForm())
+    return render_template('tasks.html.j2', title='tasks', tasks=tasks, users=users, jobs=jobs, job_tasks=job_tasks, wordlists=wordlists, task_groups=task_groups, task_recovery_performance=task_recovery_performance, pagination=pagination, sort_by=sort_by, sort_order=sort_order, rules=Rules.query.all(), wl_filesize=wl_filesize, tasks_in_jobs=tasks_in_jobs, tasksForm=TasksForm(), form_err=session.pop('tasks_form_err', None))
 
 @tasks.route("/tasks/add", methods=['GET', 'POST'])
 @login_required
 def tasks_add():
-    """Function to add a new task"""
+    """Add a new task. Reached two ways: the Add-task modal on the listing
+    (posts from_modal=1) and the legacy standalone /tasks/add page."""
 
     tasksForm = TasksForm()
 
@@ -220,6 +221,16 @@ def tasks_add():
         if task is not None:
             log_event('task.create', target=f'task:{task.id} {task.name!r}')
         return redirect(url_for('tasks.tasks_list'))
+    # Validation failed. From the modal → reopen it on the listing with the error
+    # shown inside and the typed name preserved; from the legacy standalone page →
+    # re-render that page (WTForms preserves values + shows field errors inline).
+    if request.form.get('from_modal'):
+        session['tasks_form_err'] = {
+            'modal': 'add-task-modal',
+            'values': {'name': tasksForm.name.data or ''},
+            'errors': [e for errs in tasksForm.errors.values() for e in errs],
+        }
+        return redirect(url_for('tasks.tasks_list'))
     return render_template('tasks_add.html.j2', title='Tasks Add', tasksForm=tasksForm)
 
 @tasks.route("/tasks/edit/<int:task_id>", methods=['GET', 'POST'])
@@ -273,6 +284,8 @@ def task_edit(task_id):
             tasksForm.rule_id.choices += [(rule.id, rule.name)]
         
         tasksForm.submit.label.text = 'Update'
+        # Keeping this task's own name must not trip the uniqueness validator.
+        tasksForm._editing_id = task.id
 
         if tasksForm.validate_on_submit():
 

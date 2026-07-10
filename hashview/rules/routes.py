@@ -8,6 +8,7 @@ from flask import (
     render_template,
     request,
     send_from_directory,
+    session,
     url_for,
 )
 from flask_login import current_user, login_required
@@ -89,26 +90,41 @@ def rules_list():
     return render_template('rules.html.j2', title='Rules', rules=rules, tasks=tasks, jobs=jobs,
                            jobtasks=jobtasks, users=users, rule_used_tasks=rule_used_tasks,
                            rule_hits=rule_hits, rule_task_count=rule_task_count,
-                           rule_job_count=rule_job_count, rule_owner=rule_owner, rulesForm=RulesForm())
+                           rule_job_count=rule_job_count, rule_owner=rule_owner, rulesForm=RulesForm(),
+                           form_err=session.pop('rules_form_err', None))
 
 @rules.route("/rules/add", methods=['GET', 'POST'])
 @login_required
 def rules_add():
+    """Add a rule. Reached two ways: the Upload-rule modal on the listing (posts
+    from_modal=1) and the legacy standalone /rules/add page."""
     form = RulesForm()
-    if form.validate_on_submit():
-        if form.rules.data:
-            rules_path = os.path.join(current_app.root_path, save_file('control/rules', form.rules.data))
+    if form.validate_on_submit() and form.rules.data:
+        rules_path = os.path.join(current_app.root_path, save_file('control/rules', form.rules.data))
 
-            rule = Rules(   name=form.name.data,
-                            owner_id=current_user.id,
-                            path=rules_path,
-                            size=get_linecount(rules_path),
-                            checksum=get_filehash(rules_path))
-            db.session.add(rule)
-            db.session.commit()
-            log_event('rule.create', target=f'rule:{rule.id} {rule.name!r}')
-            flash('Rules File created!', 'success')
-            return redirect(url_for('rules.rules_list'))
+        rule = Rules(   name=form.name.data,
+                        owner_id=current_user.id,
+                        path=rules_path,
+                        size=get_linecount(rules_path),
+                        checksum=get_filehash(rules_path))
+        db.session.add(rule)
+        db.session.commit()
+        log_event('rule.create', target=f'rule:{rule.id} {rule.name!r}')
+        flash('Rules File created!', 'success')
+        return redirect(url_for('rules.rules_list'))
+    # Validation failed (or no file chosen). From the modal → reopen it on the
+    # listing with the error inside (the file input can't be re-populated, so the
+    # user re-picks it); from the legacy standalone page → re-render that page.
+    if request.form.get('from_modal'):
+        errors = [e for errs in form.errors.values() for e in errs]
+        if not form.rules.data:
+            errors.append('Please choose a .rule file to upload.')
+        session['rules_form_err'] = {
+            'modal': 'upload-rule-modal',
+            'values': {},
+            'errors': errors,
+        }
+        return redirect(url_for('rules.rules_list'))
     return render_template('rules_add.html.j2', title='Rules Add', form=form)
 
 @rules.route("/rules/edit/<int:rule_id>", methods=['GET', 'POST'])

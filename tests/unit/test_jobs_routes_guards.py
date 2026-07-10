@@ -306,6 +306,27 @@ def test_jobs_assigned_hashfile_cracked_flashes_instacracks(app, client):
     assert b"instacracked" in resp.data
 
 
+def test_jobs_assigned_hashfile_cracked_scrollable_filter_box(app, client):
+    """Instacrack results render in a scrollable box with a name/hash/plaintext
+    filter, so the wizard Next button stays reachable for large result sets."""
+    user = _nonadmin()
+    customer = _make_customer()
+    job = _make_job(user.id, customer.id)
+    hf, h = _attach_hashfile(job, user.id, cracked=True)
+    _login(client, user)
+
+    body = client.get(f"/jobs/{job.id}/assigned_hashfile/{hf.id}").get_data(as_text=True)
+    assert 'InstaCrack!' in body and 'Local Check' not in body   # renamed title
+    assert 'id="ic-scroll"' in body                       # scrollable results box
+    assert 'id="ic-filter"' in body                       # filter input in the header
+    assert 'Filter by name, hash, or plaintext' in body   # filters name/hash/plaintext
+    assert 'position: sticky' in body                     # column headers stay visible
+    assert 'id="ic-no-match"' in body                     # shown when nothing matches
+    assert 'function hvIcFilter' in body                  # client-side filtering
+    assert 'function hvIcResize' in body                  # box sized to keep Next on-screen
+    assert 'data-search="' in body                        # each row is searchable
+
+
 # ------------------------------------------------------------ jobs_list_tasks
 
 def test_jobs_list_tasks_renders(app, client):

@@ -28,20 +28,14 @@ def do_gui_setup_if_needed():
     from hashview.models import db
     from hashview.setup import admin_pass_needs_changed
     from hashview.users.routes import bcrypt
-    if not admin_pass_needs_changed(db, bcrypt):
-        logger.info('Admin password does not need changed.')
-
-    else:
+    if admin_pass_needs_changed(db, bcrypt):
         logger.info('Admin password needs changed.')
         if url_for('setup.admin_pass_get') != parsed_url.path:
             return redirect(url_for('setup.admin_pass_get'))
         return None
 
     from hashview.setup import settings_needs_added
-    if not settings_needs_added(db):
-        logger.info('Settings does not need created.')
-
-    else:
+    if settings_needs_added(db):
         logger.info('Settings needs created.')
         if url_for('setup.settings_get') != parsed_url.path:
             return redirect(url_for('setup.settings_get'))

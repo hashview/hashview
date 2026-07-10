@@ -443,18 +443,8 @@ def jobs_assigned_hashfile(job_id):
                 msgs.extend(str(m) for m in _field.errors)
             return jsonify({'status': 'error',
                             'msg': '; '.join(msgs) or 'Invalid upload request.'}), 400
-        for error in jobs_new_hashfile_form.name.errors:
-            print(str(error))
-        for error in jobs_new_hashfile_form.file_type.errors:
-            print(str(error))
-        for error in jobs_new_hashfile_form.hash_type.errors:
-            print(str(error))
-        for error in jobs_new_hashfile_form.hashfile.errors:
-            print(str(error))
-        for error in jobs_new_hashfile_form.hashfilehashes.errors:
-            print(str(error))
-        for error in jobs_new_hashfile_form.submit.errors:
-            print(str(error))
+        # Non-AJAX submit: fall through and re-render the page — WTForms shows the
+        # field errors inline, so there's nothing to print to the console.
 
     return render_template('jobs_assigned_hashfiles.html.j2', title='Jobs Assigned Hashfiles', hashfiles=hashfiles, job=job, jobsNewHashFileForm=jobs_new_hashfile_form, hashfile_cracked_rate=hashfile_cracked_rate, hashfile_info=hashfile_info)
 

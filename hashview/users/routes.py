@@ -204,20 +204,17 @@ def users_add():
         return redirect(url_for('users.users_list'))
 
     # Validation failed (bad input, or an email that already exists). Preserve
-    # what was typed — minus the passwords — so the users list can reopen the
-    # add-user modal pre-filled, then flash each error and redirect there rather
-    # than to a bare /users/add page.
+    # what was typed — minus the passwords — plus the error messages, and redirect
+    # to the users list, which reopens the add-user modal pre-filled with the
+    # errors shown *inside the modal* (not flashed over the listing).
+    field_errors = [error for errors in form.errors.values() for error in errors]
     session['add_user_form'] = {
         'first_name': form.first_name.data or '',
         'last_name': form.last_name.data or '',
         'email': form.email.data or '',
         'is_admin': bool(form.is_admin.data),
+        'errors': field_errors,
     }
-    for field, errors in form.errors.items():
-        label = getattr(getattr(form, field, None), 'label', None)
-        prefix = f'{label.text}: ' if label is not None and label.text else ''
-        for error in errors:
-            flash(f'{prefix}{error}', 'danger')
     return redirect(url_for('users.users_list'))
 
 @users.route("/users/edit/<int:user_id>", methods=['POST'])

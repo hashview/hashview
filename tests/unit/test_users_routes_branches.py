@@ -262,10 +262,10 @@ class TestUsersAdd:
         )
         assert resp.status_code in (200, 301, 302)
 
-    def test_duplicate_email_redirects_to_users_with_error(self, app, client):
-        """A duplicate email is a validation error: redirect back to /users
-        (the add-user modal lives there), not the old /users/add page, and the
-        error is surfaced as a flash message."""
+    def test_duplicate_email_shows_error_inside_modal(self, app, client):
+        """A duplicate email is a validation error: redirect back to /users (not
+        the old /users/add page) with the error rendered inside the add-user
+        modal — NOT flashed over the listing."""
         admin = _make_user(app, email="dupe_admin@example.com", admin=True)
         _make_user(app, email="taken@example.com", admin=False)
         _login(client, admin)
@@ -284,19 +284,13 @@ class TestUsersAdd:
         assert resp.headers.get("Location", "").endswith("/users")
         # No second account was created for the taken email.
         assert Users.query.filter_by(email_address="taken@example.com").count() == 1
-        # The validation error is flashed on the followed page.
-        followed = client.post(
-            "/users/add",
-            data={
-                "first_name": "Dupe",
-                "last_name": "User",
-                "email": "taken@example.com",
-                "password": "DupeUserPass1234!",
-                "confirm_password": "DupeUserPass1234!",
-            },
-            follow_redirects=True,
-        )
-        assert b"That email address is taken" in followed.data
+        # The error is NOT flashed (nothing queued for the listing's flash area).
+        with client.session_transaction() as sess:
+            assert not sess.get("_flashes")
+        # It renders inside the add-user modal's error block instead.
+        body = client.get("/users").data
+        assert b'id="nu-errors"' in body
+        assert b"That email address is taken" in body
 
     def test_failed_add_repopulates_modal(self, app, client):
         """After a validation failure the users page reopens the add-user modal

@@ -215,6 +215,13 @@
         {{ usersForm.hidden_tag() }}
         <input type="checkbox" name="is_admin" id="nu-is-admin" style="display:none;">
         <div class="hv-dialog-body" style="max-height:74vh; overflow-y:auto;">
+            {% if add_form_data and add_form_data['errors'] %}
+            <div id="nu-errors" class="flash flash-danger" style="margin-bottom:16px;">
+                {% for error in add_form_data['errors'] %}
+                <div>{{ error }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
             <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
                 <div class="field" style="margin-bottom:0;">
                     <label class="field-label" for="nu-first">First name <span class="req">*</span></label>

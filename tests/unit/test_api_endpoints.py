@@ -1007,3 +1007,106 @@ def test_jobs_add_creates_notification_rows(client, admin_user):
     rows = JobNotifications.query.filter_by(job_id=body["job_id"]).all()
     assert {r.method for r in rows} == {"email", "slack"}
     assert all(r.owner_id == admin_user.id for r in rows)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /v1/hashfiles/<hashfile_id>
+# ---------------------------------------------------------------------------
+
+
+def _seed_hashfile(owner, name="doomed-hf"):
+    """Seed a customer + hashfile owned by *owner*."""
+    cust = Customers(name="HFDelCo-" + name)
+    _db.session.add(cust)
+    _db.session.commit()
+    hf = Hashfiles(name=name, customer_id=cust.id, owner_id=owner.id)
+    _db.session.add(hf)
+    _db.session.commit()
+    return hf
+
+
+@pytest.mark.security
+def test_hashfiles_delete_cascades_and_keeps_cracked(client, admin_user):
+    """DELETE /v1/hashfiles/<id> removes the hashfile + its links; orphaned
+    uncracked hashes are deleted, cracked hashes are kept (web-UI cascade)."""
+    hf = _seed_hashfile(admin_user)
+    hf_id = hf.id
+    uncracked_id = _seed_hash(hf_id, 1000, False).id
+    cracked_id = _seed_hash(hf_id, 1000, True).id
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.delete(f"/v1/hashfiles/{hf_id}")
+
+    body = _json_body(resp)
+    assert body["status"] == 200
+    assert body["msg"] == "Hashfile deleted"
+    assert body["hashfile_id"] == hf_id
+    # Bulk cascade deletes use synchronize_session=False; expire cached state so
+    # the assertions below read the committed rows rather than stale objects.
+    _db.session.expire_all()
+    assert Hashfiles.query.get(hf_id) is None
+    assert HashfileHashes.query.filter_by(hashfile_id=hf_id).count() == 0
+    assert Hashes.query.get(uncracked_id) is None       # orphaned uncracked hash removed
+    assert Hashes.query.get(cracked_id) is not None     # cracked hash retained
+
+
+@pytest.mark.security
+def test_hashfiles_delete_missing_returns_404(client, admin_user):
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.delete("/v1/hashfiles/424242")
+    assert resp.status_code == 404
+    body = _json_body(resp)
+    assert body["status"] == 404
+    assert "not found" in body["msg"].lower()
+
+
+@pytest.mark.security
+def test_hashfiles_delete_rejects_agent_cookie(client, authorized_agent):
+    """User-only: a valid agent uuid is refused with the not-authorized redirect."""
+    client.set_cookie("uuid", authorized_agent.uuid, domain="localhost.test")
+    resp = client.delete("/v1/hashfiles/1")
+    assert 300 <= resp.status_code < 400
+    assert "not_authorized" in resp.headers.get("Location", "")
+
+
+@pytest.mark.security
+def test_hashfiles_delete_non_owner_returns_403(client, admin_user, regular_user):
+    """A non-admin cannot delete another user's hashfile."""
+    hf = _seed_hashfile(admin_user)
+    hf_id = hf.id
+    client.set_cookie("uuid", regular_user.api_key, domain="localhost.test")
+    resp = client.delete(f"/v1/hashfiles/{hf_id}")
+    body = _json_body(resp)
+    assert body["status"] == 403
+    assert Hashfiles.query.get(hf_id) is not None       # not deleted
+
+
+@pytest.mark.security
+def test_hashfiles_delete_refuses_when_assigned_to_job(client, admin_user):
+    """A hashfile still attached to a job cannot be deleted (409)."""
+    hf = _seed_hashfile(admin_user)
+    hf_id = hf.id
+    job = Jobs(name="uses-hf", status="Ready", customer_id=hf.customer_id,
+               owner_id=admin_user.id, hashfile_id=hf_id)
+    _db.session.add(job)
+    _db.session.commit()
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.delete(f"/v1/hashfiles/{hf_id}")
+    assert resp.status_code == 409
+    body = _json_body(resp)
+    assert body["status"] == 409
+    assert "associated with a job" in body["msg"].lower()
+    assert Hashfiles.query.get(hf_id) is not None       # not deleted
+
+
+@pytest.mark.security
+def test_hashfiles_delete_admin_can_delete_others(client, admin_user, regular_user):
+    """An admin can delete a hashfile owned by another user."""
+    hf = _seed_hashfile(regular_user)
+    hf_id = hf.id
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.delete(f"/v1/hashfiles/{hf_id}")
+    body = _json_body(resp)
+    assert body["status"] == 200
+    assert Hashfiles.query.get(hf_id) is None

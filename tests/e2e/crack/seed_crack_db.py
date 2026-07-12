@@ -125,7 +125,9 @@ def seed(app, manifest):
             jt = JobTasks(job_id=job.id, task_id=task.id, status="Queued", priority=3)
             db.session.add(jt)
             db.session.flush()
-            jt.command = build_hashcat_command(job.id, task.id)
+            # build_hashcat_command returns an argv list; the command column stores
+            # it as JSON (same as _set_job_task_command), which the agent decodes.
+            jt.command = json.dumps(build_hashcat_command(job.id, task.id))
 
         _authorize_agents(manifest)
         db.session.commit()

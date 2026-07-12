@@ -33,6 +33,13 @@ from hashview.models import (
 )
 from hashview.utils.utils import build_hashcat_command, ingest_static_wordlist_file
 
+
+def _cmd_str(*args, **kwargs):
+    """build_hashcat_command returns an argv list; join it for the substring
+    assertions here (token order/presence is preserved by the join)."""
+    return " ".join(build_hashcat_command(*args, **kwargs))
+
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTROL = REPO_ROOT / "hashview" / "control"
 WORDLISTS_DIR = CONTROL / "wordlists"
@@ -106,7 +113,7 @@ def _build(user, *, attackmode, wl=None, wl_id_2=None, rule_id=None,
                  hc_mask=mask, loopback=loopback)
     db.session.add(task)
     db.session.commit()
-    cmd = build_hashcat_command(job.id, task.id)
+    cmd = _cmd_str(job.id, task.id)
     return cmd, job, task
 
 
@@ -198,10 +205,10 @@ def test_no_loopback_when_chunked(app):
     rule = _rule(user)
     _, job, task = _build(user, attackmode=0, wl=wl, rule_id=rule.id, loopback=True)
     # whole task still emits --loopback
-    assert "--loopback" in build_hashcat_command(job.id, task.id)
+    assert "--loopback" in _cmd_str(job.id, task.id)
     # a chunk slice drops --loopback and adds --skip/--limit
-    chunked = build_hashcat_command(job.id, task.id, chunk={"skip": 0, "limit": 50},
-                                    job_task_id=999)
+    chunked = _cmd_str(job.id, task.id, chunk={"skip": 0, "limit": 50},
+                       job_task_id=999)
     assert "--loopback" not in chunked
     assert "--skip 0 --limit 50" in chunked
 
@@ -218,10 +225,10 @@ def test_mask_chunk_overrides_task_mask(app):
     task_mask = "?d?d?d?d"
     _, job, task = _build(user, attackmode=3, mask=task_mask)
     # whole task runs the task's own mask
-    assert build_hashcat_command(job.id, task.id).endswith(task_mask)
+    assert _cmd_str(job.id, task.id).endswith(task_mask)
     # a mask chunk substitutes its sub-mask for the task mask
-    chunked = build_hashcat_command(job.id, task.id, chunk={"mask": "00?d?d"},
-                                    job_task_id=42)
+    chunked = _cmd_str(job.id, task.id, chunk={"mask": "00?d?d"},
+                       job_task_id=42)
     assert chunked.endswith("00?d?d")
     assert "-a 3 " in chunked
     assert task_mask not in chunked          # original mask fully replaced
@@ -276,7 +283,7 @@ def _build_hex(user, *, hex_salt, hash_type, ciphertext="abcd:cafe"):
                  wl_id=wl.id, rule_id=None, hc_mask=None, loopback=False)
     db.session.add(task)
     db.session.commit()
-    return build_hashcat_command(job.id, task.id)
+    return _cmd_str(job.id, task.id)
 
 
 @pytest.mark.security

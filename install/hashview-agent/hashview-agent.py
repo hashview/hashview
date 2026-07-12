@@ -433,19 +433,50 @@ def download_hashfile(job_id, jobtask_id, hashfile_id):
     hashfile.write(hashfile_content)
     hashfile.close()
 
-def replaceHashcatBinPath(cmd):
-    from agent.config import Config
-    # HC_BIN_PATH is the bare binary; append any host-specific HC_EXTRA_ARGS
-    # (e.g. '-d 3,4') after it. The crack command runs via shell=True, so the
-    # shell re-parses this string into binary + flags.
-    binpath = Config.HC_BIN_PATH
-    extra = (getattr(Config, 'HC_EXTRA_ARGS', '') or '').strip()
-    if extra:
-        binpath = binpath + ' ' + extra
-    return cmd.replace('@HASHCATBINPATH@', binpath)
+def build_hashcat_argv(command):
+    """Decode the server's stored command (a JSON argv list) into a real argv.
 
-def run_hashcat(cmd):
-    run_command(cmd)
+    Expands the @HASHCATBINPATH@ placeholder token into the operator-configured
+    hashcat binary plus any host-specific HC_EXTRA_ARGS (e.g. '-d 3,4', split into
+    its own tokens). Returns list[str] to run with shell=False — free-form task
+    fields (mask, j/k rules) stay literal argv elements, never shell-parsed
+    (issue #297).
+    """
+    from agent.bench import parse_hc_extra_args
+    from agent.config import Config
+    extra = parse_hc_extra_args(getattr(Config, 'HC_EXTRA_ARGS', ''))
+    argv = []
+    for token in json.loads(command):
+        if token == '@HASHCATBINPATH@':
+            argv.append(Config.HC_BIN_PATH)
+            argv.extend(extra)
+        else:
+            argv.append(str(token))
+    return argv
+
+def run_hashcat(argv, output_file):
+    """Run hashcat directly, no shell, so task fields can't inject shell commands
+    (issue #297). hashcat's --status-json stream is redirected to output_file,
+    which monitor_hashcat tails (replaces the old '<cmd> | tee <file>' pipe)."""
+    try:
+        with open(output_file, 'wb') as out:
+            # nosec B603 - shell=False; argv[0] is the operator-set HC_BIN_PATH and
+            # every other element is a server-built token passed literally to hashcat.
+            proc = subprocess.Popen(argv, shell=False, stdout=out,  # nosec B603
+                                    stderr=subprocess.PIPE)
+            _output, error = proc.communicate()
+        if error:
+            LOG.error('Command stderr: %s', error.decode('utf-8', 'replace').strip())
+            if 'hashfile is empty or corrupt' not in str(error):
+                if 'Terminated' in str(error):
+                    sys.exit()
+                else:
+                    api.sendError(str(error))
+                    os.kill(os.getpid(), signal.SIGINT)
+    except OSError as e:
+        LOG.error('Command failed to execute: %s', e)
+        api.sendError(str(e))
+        os.kill(os.getpid(), signal.SIGINT)
 
 BENCHMARK_TIMEOUT = 1200  # seconds, per hash mode
 
@@ -708,13 +739,14 @@ def run_assigned_task(job_task_id):
     file_key = job_task['id'] if job_task.get('chunk_total') else job_task['task_id']
     download_hashfile(job['id'], file_key, job['hashfile_id'])
 
-    cmd = (replaceHashcatBinPath(job_task['command'])
-           + ' --status-json | tee control/outfiles/hcoutput_'
-           + str(job['id']) + '_' + str(job_task['id']) + '.txt')
-    LOG.debug('hashcat command: %s', cmd)
+    output_file = ('control/outfiles/hcoutput_'
+                   + str(job['id']) + '_' + str(job_task['id']) + '.txt')
+    argv = build_hashcat_argv(job_task['command'])
+    argv.append('--status-json')      # hashcat writes status JSON to stdout -> output_file
+    LOG.debug('hashcat argv: %s', argv)
 
     LOG.info('Running hashcat for job task %s...', job_task['id'])
-    thread = Thread(target=run_hashcat, args=(cmd,))
+    thread = Thread(target=run_hashcat, args=(argv, output_file))
     thread.start()
     monitor_hashcat(thread, job, job_task)
     LOG.info('hashcat completed for job task %s; uploading final results.', job_task['id'])

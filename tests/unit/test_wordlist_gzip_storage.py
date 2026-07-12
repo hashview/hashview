@@ -576,7 +576,7 @@ def test_build_hashcat_command_combinator_uses_second_wordlist(app, tmp_path):
     task.wl_id_2 = wl2.id
     db.session.commit()
 
-    cmd = build_hashcat_command(job.id, task.id)
+    cmd = " ".join(build_hashcat_command(job.id, task.id))   # argv list -> joined for substring checks
     assert " -a 1 " in cmd
     assert gz1 in cmd                      # left dictionary
     assert gz2 in cmd                      # right dictionary — the bug dropped this
@@ -595,7 +595,7 @@ def test_build_hashcat_command_static_dict_plus_rule(app, tmp_path):
     db.session.add(rule)
     db.session.commit()
     job, task = _setup_job_for_wordlist(user, wl, attackmode=0, rule_id=rule.id)
-    cmd = build_hashcat_command(job.id, task.id)
+    cmd = " ".join(build_hashcat_command(job.id, task.id))   # argv list -> joined for substring checks
     assert "-r control/rules/best64.rule" in cmd
     assert "control/wordlists/" + gz_basename in cmd
 

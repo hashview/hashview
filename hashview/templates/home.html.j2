@@ -256,4 +256,13 @@
     if (!document.hidden) { startPolling(); }
 })();
 </script>
+{% if dash_autoplay %}<script>window.HV_DASH_AUTOPLAY = true;</script>{% endif %}
+<script>
+window.HV_FX = {
+    cat:     "{{ url_for('static', filename='img/dash-cat.png') }}",
+    catSpin: "{{ url_for('static', filename='img/dash-cat-spin.gif') }}",
+    song:    "{{ url_for('static', filename='audio/dash-song.mp3') }}"
+};
+</script>
+<script src="{{ url_for('static', filename='js/dash-fx.js') }}"></script>
 {% endblock %}

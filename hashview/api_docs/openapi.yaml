@@ -954,6 +954,55 @@ paths:
               schema: {type: string}
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
+    delete:
+      tags: [Hashfiles]
+      summary: Delete a hashfile
+      description: >-
+        Owner or admin only. Refuses (409) while the hashfile is still
+        assigned to a job. On success cascades like the web UI: removes the
+        hashfile-hash links, the hashfile, and any uncracked hashes / hash
+        notifications it orphans, in one transaction.
+      operationId: deleteHashfile
+      x-audience: user
+      security:
+        - userApiKey: []
+      parameters:
+        - name: hashfile_id
+          in: path
+          required: true
+          schema: {type: integer}
+      responses:
+        '200':
+          description: >-
+            HTTP 200; body status 200 on success, 403 when not owner or
+            admin, 500 on a database error.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/HashfileDeletedResponse'
+                  - $ref: '#/components/schemas/ApiError'
+              examples:
+                deleted: {value: {status: 200, type: message, msg: Hashfile deleted, hashfile_id: 12}}
+                forbidden: {value: {status: 403, type: Error, msg: You do not have rights to delete this hashfile}}
+        '404':
+          description: Real HTTP 404 — unknown hashfile id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example: {status: 404, type: Error, msg: Hashfile not found}
+        '409':
+          description: >-
+            Real HTTP 409 — the hashfile is still associated with a job and
+            cannot be deleted until that job is removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example: {status: 409, type: Error, msg: Hashfile is currently associated with a job}
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
 
   /v1/hashfiles/hash_type/{hash_type}:
     get:
@@ -1750,6 +1799,14 @@ components:
           required: [job_id]
           properties:
             job_id: {type: integer}
+
+    HashfileDeletedResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMessage'
+        - type: object
+          required: [hashfile_id]
+          properties:
+            hashfile_id: {type: integer}
 
     TaskAddedResponse:
       allOf:

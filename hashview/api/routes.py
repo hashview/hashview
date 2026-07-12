@@ -12,7 +12,7 @@ from flask import (
     send_from_directory,
 )
 from packaging import version
-from sqlalchemy import func
+from sqlalchemy import exists, func
 from sqlalchemy.ext.declarative import DeclarativeMeta
 
 import hashview
@@ -23,6 +23,7 @@ from hashview.models import (
     Hashes,
     HashfileHashes,
     Hashfiles,
+    HashNotifications,
     JobNotifications,
     Jobs,
     JobTasks,
@@ -1393,6 +1394,70 @@ def v1_api_get_hashfile(hashfile_id):
             file_object.write(result[0].ciphertext + '\n')
 
     return _send_generated_file(tmp_dir, random_hex)
+
+@api.route('/v1/hashfiles/<int:hashfile_id>', methods=['DELETE'])
+def v1_api_delete_hashfile(hashfile_id):
+    if not is_authorized(user=True, agent=False, request=request):
+        return redirect("/v1/not_authorized")
+
+    uuid = request.cookies.get('uuid')
+    user = Users.query.filter_by(api_key=uuid).first()
+    if not user:
+        return jsonify({
+            'status': 403,
+            'type': 'Error',
+            'msg': 'User not found'
+        })
+
+    hashfile = Hashfiles.query.get(hashfile_id)
+    if hashfile is None:
+        return jsonify({'status': 404, 'type': 'Error', 'msg': 'Hashfile not found'}), 404
+
+    if not (user.admin or hashfile.owner_id == user.id):
+        return jsonify({
+            'status': 403,
+            'type': 'Error',
+            'msg': 'You do not have rights to delete this hashfile'
+        })
+
+    # Refuse while the hashfile is still assigned to a job — the web UI does the
+    # same (hashfiles_delete) and does NOT cascade job deletion from a hashfile.
+    if Jobs.query.filter_by(hashfile_id=hashfile_id).first():
+        return jsonify({
+            'status': 409,
+            'type': 'Error',
+            'msg': 'Hashfile is currently associated with a job'
+        }), 409
+
+    # Mirror the web UI's hashfiles_delete cascade, atomically: the hashfile-hash
+    # links, the hashfile, then any uncracked hashes / notifications it orphans.
+    hashfile_target = f'hashfile:{hashfile.id} {hashfile.name!r}'
+    try:
+        HashfileHashes.query.filter_by(hashfile_id=hashfile.id).delete(synchronize_session=False)
+        db.session.delete(hashfile)
+        Hashes.query.filter(Hashes.cracked == 0).filter(
+            ~exists().where(HashfileHashes.hash_id == Hashes.id)
+        ).delete(synchronize_session=False)
+        HashNotifications.query.filter(
+            ~exists().where(Hashes.id == HashNotifications.hash_id)
+        ).delete(synchronize_session=False)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('API /v1/hashfiles: failed to delete hashfile')
+        return jsonify({
+            'status': 500,
+            'type': 'Error',
+            'msg': 'Failed to delete hashfile.'
+        })
+
+    log_event('hashfile.delete', actor=(user.email_address, user.id), target=hashfile_target)
+    return jsonify({
+        'status': 200,
+        'type': 'message',
+        'msg': 'Hashfile deleted',
+        'hashfile_id': hashfile_id
+    })
 
 # List hashfiles containing at least one hash of the given hash type.
 # No collision with /v1/hashfiles/<int:hashfile_id>: the static 'hash_type/'

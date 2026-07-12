@@ -19,6 +19,7 @@ from hashview.models import (
     HashfileHashes,
     Hashes,
     Hashfiles,
+    Jobs,
     Users,
     db,
 )
@@ -35,6 +36,14 @@ def _make_admin():
     db.session.add(admin)
     db.session.commit()
     return admin
+
+
+def _make_user(email="user@example.com"):
+    u = Users(first_name="U", last_name="U", email_address=email,
+              password="x" * 60, admin=False)
+    db.session.add(u)
+    db.session.commit()
+    return u
 
 
 def _make_customer():
@@ -112,3 +121,93 @@ def test_hashfile_delete_keeps_shared_hash_and_cracked_hash(app, client):
 
     # The orphan uncracked hash that A solely owned should be pruned.
     assert Hashes.query.get(only_a_id) is None
+
+
+# ---------------------------------------------------------------------------
+# Bulk delete (issue #311)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.security
+def test_bulk_delete_deletes_free_and_skips_in_job(app, client):
+    """Free hashfiles are deleted; one attached to a job is skipped, and the
+    flash reports a per-outcome summary (batch not aborted on the skip)."""
+    admin = _make_admin()
+    cust = _make_customer()
+    free = Hashfiles(name="free", customer_id=cust.id, owner_id=admin.id)
+    locked = Hashfiles(name="locked", customer_id=cust.id, owner_id=admin.id)
+    db.session.add_all([free, locked])
+    db.session.commit()
+    db.session.add(Jobs(name="j", status="Running", customer_id=cust.id,
+                        owner_id=admin.id, hashfile_id=locked.id))
+    db.session.commit()
+    free_id, locked_id = free.id, locked.id
+
+    _login(client, admin.id)
+    resp = client.post("/hashfiles/bulk_delete",
+                       data={"hashfile_ids": [str(free_id), str(locked_id)]},
+                       follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"1 deleted" in resp.data
+    assert b"associated with a job" in resp.data
+    assert Hashfiles.query.get(free_id) is None          # free deleted
+    assert Hashfiles.query.get(locked_id) is not None    # in-job retained
+
+
+@pytest.mark.security
+def test_bulk_delete_reuses_cascade(app, client):
+    """Bulk delete applies the same cascade as single delete: orphaned uncracked
+    hashes pruned, cracked hashes retained."""
+    admin = _make_admin()
+    cust = _make_customer()
+    hf = Hashfiles(name="bulk", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+    unc = Hashes(sub_ciphertext="0" * 32, ciphertext="a", hash_type=0, cracked=False)
+    crk = Hashes(sub_ciphertext="1" * 32, ciphertext="b", hash_type=0,
+                 cracked=True, plaintext="70617373")
+    db.session.add_all([unc, crk])
+    db.session.commit()
+    db.session.add_all([
+        HashfileHashes(hashfile_id=hf.id, hash_id=unc.id),
+        HashfileHashes(hashfile_id=hf.id, hash_id=crk.id),
+    ])
+    db.session.commit()
+    hf_id, unc_id, crk_id = hf.id, unc.id, crk.id
+
+    _login(client, admin.id)
+    resp = client.post("/hashfiles/bulk_delete",
+                       data={"hashfile_ids": [str(hf_id)]}, follow_redirects=True)
+    assert resp.status_code == 200
+    assert Hashfiles.query.get(hf_id) is None
+    assert Hashes.query.get(unc_id) is None       # orphaned uncracked pruned
+    assert Hashes.query.get(crk_id) is not None    # cracked retained
+
+
+@pytest.mark.security
+def test_bulk_delete_skips_non_owned(app, client):
+    """A non-admin cannot bulk-delete a hashfile they don't own."""
+    admin = _make_admin()
+    cust = _make_customer()
+    other = _make_user("other@example.com")
+    hf = Hashfiles(name="admins", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+    hf_id = hf.id
+
+    _login(client, other.id)
+    resp = client.post("/hashfiles/bulk_delete",
+                       data={"hashfile_ids": [str(hf_id)]}, follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"insufficient rights" in resp.data
+    assert Hashfiles.query.get(hf_id) is not None
+
+
+@pytest.mark.security
+def test_bulk_delete_empty_selection(app, client):
+    """Posting no ids reports nothing to do rather than erroring."""
+    admin = _make_admin()
+    _login(client, admin.id)
+    resp = client.post("/hashfiles/bulk_delete", data={}, follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"No hashfiles selected" in resp.data

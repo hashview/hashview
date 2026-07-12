@@ -2,7 +2,7 @@
 import io
 from datetime import datetime
 
-from flask import Blueprint, abort, flash, redirect, render_template, send_file, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import case, func
 from sqlalchemy.sql import exists
@@ -130,6 +130,26 @@ def hashfiles_list():
                            total_hashes=total_hashes, total_recovered=total_recovered,
                            overall_rate=overall_rate, hashfile_jobs=hashfile_jobs)
 
+def _cascade_delete_hashfile(hashfile):
+    """Cascade-delete one hashfile in a single transaction: the hashfile-hash
+    links, the hashfile, then any uncracked hashes / notifications left orphaned
+    by it. The caller must have already checked ownership and that the hashfile
+    is not associated with a job. Returns True on a successful commit.
+
+    Shared by the single-file (hashfiles_delete) and bulk (hashfiles_bulk_delete)
+    delete paths so both apply the exact same cleanup.
+    """
+    HashfileHashes.query.filter_by(hashfile_id=hashfile.id).delete(synchronize_session=False)
+    db.session.delete(hashfile)
+    Hashes.query.filter(Hashes.cracked == 0).filter(
+        ~exists().where(HashfileHashes.hash_id == Hashes.id)
+    ).delete(synchronize_session=False)
+    HashNotifications.query.filter(
+        ~exists().where(Hashes.id == HashNotifications.hash_id)
+    ).delete(synchronize_session=False)
+    return try_commit(f'delete hashfile {hashfile.id}')
+
+
 @hashfiles.route("/hashfiles/delete/<int:hashfile_id>", methods=['GET', 'POST'])
 @login_required
 def hashfiles_delete(hashfile_id):
@@ -145,23 +165,75 @@ def hashfiles_delete(hashfile_id):
         flash('Error: Hashfile currently associated with a job.', 'danger')
         return redirect(url_for('hashfiles.hashfiles_list'))
 
-    # Cascade in a single transaction (atomic): the hashfile-hash links, the
-    # hashfile, then any uncracked hashes / notifications left orphaned by it.
     hashfile_target = f'hashfile:{hashfile.id} {hashfile.name!r}'
-    HashfileHashes.query.filter_by(hashfile_id=hashfile.id).delete(synchronize_session=False)
-    db.session.delete(hashfile)
-    Hashes.query.filter(Hashes.cracked == 0).filter(
-        ~exists().where(HashfileHashes.hash_id == Hashes.id)
-    ).delete(synchronize_session=False)
-    HashNotifications.query.filter(
-        ~exists().where(Hashes.id == HashNotifications.hash_id)
-    ).delete(synchronize_session=False)
-    if not try_commit(f'delete hashfile {hashfile_id}'):
+    if not _cascade_delete_hashfile(hashfile):
         flash('Hashfile could not be deleted — it may have already been removed.', 'danger')
         return redirect(url_for('hashfiles.hashfiles_list'))
 
     log_event('hashfile.delete', target=hashfile_target)
     flash('Hashfile has been deleted!', 'success')
+    return redirect(url_for('hashfiles.hashfiles_list'))
+
+
+@hashfiles.route("/hashfiles/bulk_delete", methods=['POST'])
+@login_required
+def hashfiles_bulk_delete():
+    """Delete several hashfiles at once (from the list's bulk-select bar).
+
+    Applies the SAME per-file rules as hashfiles_delete to each submitted id —
+    ownership, the not-associated-with-a-job guard, and the shared cascade — and
+    reuses _cascade_delete_hashfile. A skip/failure on one file does not abort the
+    batch; the flash reports a per-outcome summary.
+    """
+    deleted = skipped_job = skipped_rights = skipped_missing = failed = 0
+    seen = set()
+    for raw in request.form.getlist('hashfile_ids'):
+        try:
+            hashfile_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if hashfile_id in seen:
+            continue
+        seen.add(hashfile_id)
+
+        hashfile = Hashfiles.query.get(hashfile_id)
+        if hashfile is None:
+            skipped_missing += 1
+            continue
+        if not (current_user.admin or hashfile.owner_id == current_user.id):
+            skipped_rights += 1
+            continue
+        if Jobs.query.filter_by(hashfile_id=hashfile_id).first():
+            skipped_job += 1
+            continue
+
+        hashfile_target = f'hashfile:{hashfile.id} {hashfile.name!r}'
+        if _cascade_delete_hashfile(hashfile):
+            log_event('hashfile.delete', target=hashfile_target)
+            deleted += 1
+        else:
+            failed += 1
+
+    parts = []
+    if deleted:
+        parts.append(f'{deleted} deleted')
+    if skipped_job:
+        parts.append(f'{skipped_job} skipped — associated with a job')
+    if skipped_rights:
+        parts.append(f'{skipped_rights} skipped — insufficient rights')
+    if skipped_missing:
+        parts.append(f'{skipped_missing} skipped — not found')
+    if failed:
+        parts.append(f'{failed} failed')
+
+    if not parts:
+        flash('No hashfiles selected for deletion.', 'warning')
+    elif deleted and not (skipped_job or skipped_rights or skipped_missing or failed):
+        flash(', '.join(parts) + '.', 'success')
+    elif deleted:
+        flash(', '.join(parts) + '.', 'warning')
+    else:
+        flash(', '.join(parts) + '.', 'danger')
     return redirect(url_for('hashfiles.hashfiles_list'))
 
 

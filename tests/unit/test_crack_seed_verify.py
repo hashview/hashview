@@ -69,8 +69,9 @@ def test_seed_creates_full_job_and_authorizes_agents(tmp_path):
         jts = JobTasks.query.filter_by(job_id=job.id).all()
         assert len(jts) == 2
         assert all(jt.status == "Queued" for jt in jts)
-        # Each command references the agent control paths the server built.
-        cmds = " ".join(jt.command for jt in jts)
+        # Each command is a JSON argv list; decode + join the tokens to inspect
+        # the agent control paths the server built.
+        cmds = " ".join(tok for jt in jts for tok in json.loads(jt.command))
         assert "-m 1000" in cmds
         assert "control/hashes/hashfile_" in cmds
         assert "control/wordlists/" in cmds

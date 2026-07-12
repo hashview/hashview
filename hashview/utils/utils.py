@@ -3,6 +3,7 @@ import _md5
 import binascii
 import gzip
 import hashlib
+import json
 import os
 import re
 import secrets
@@ -839,7 +840,14 @@ def agent_telemetry(agents):
 
 
 def build_hashcat_command(job_id, task_id, chunk=None, job_task_id=None):
-    """Function to build the main hashcat cmd we use to crack.
+    """Build the hashcat crack invocation as an argv LIST (list[str]).
+
+    Returned as a token list — not a shell string — so free-form task fields
+    (``hc_mask``, ``j_rule``, ``k_rule``) are literal argv elements the agent
+    passes to ``subprocess`` with ``shell=False``; shell metacharacters in them
+    cannot be interpreted (issue #297). Element 0 is the ``@HASHCATBINPATH@``
+    placeholder the agent expands to its configured binary at run time.
+
 
     ``chunk`` (optional) is a chunk spec from
     ``hashview.utils.chunking.plan_chunks``:
@@ -905,19 +913,23 @@ def build_hashcat_command(job_id, task_id, chunk=None, job_task_id=None):
 
     session = secrets.token_hex(4)
 
-    # Build cmd
-    cmd = hc_binpath
-    cmd += ' -O -w 3'
-    cmd += ' --session ' + session
-    cmd += ' -m ' + str(hash_type)
-    cmd += ' --potfile-path ' + potfile
-    cmd += ' --status --status-timer=15'
-    cmd += ' --outfile-format 1,3'
-    cmd += ' --outfile ' + crack_file
+    # Build the invocation as an argv LIST, never a shell string: the free-form
+    # task fields (mask, j/k rules) become literal argv elements, so shell
+    # metacharacters in them cannot be interpreted — the agent runs this with
+    # shell=False (issue #297). Element 0 stays the @HASHCATBINPATH@ placeholder
+    # the agent expands to its configured binary (+ HC_EXTRA_ARGS) at run time.
+    argv = [hc_binpath,
+            '-O', '-w', '3',
+            '--session', session,
+            '-m', str(hash_type),
+            '--potfile-path', potfile,
+            '--status', '--status-timer=15',
+            '--outfile-format', '1,3',
+            '--outfile', crack_file]
     # Chunk slice for wordlist base-loop modes: restrict this run to a word range.
     is_chunk_slice = 'skip' in chunk and 'limit' in chunk
     if is_chunk_slice:
-        cmd += ' --skip ' + str(chunk['skip']) + ' --limit ' + str(chunk['limit'])
+        argv += ['--skip', str(chunk['skip']), '--limit', str(chunk['limit'])]
 
     # Loopback only applies to straight mode (-a 0) with a rule; hashcat rejects
     # it for other attack modes. It is ALSO mutually exclusive with --limit, so a
@@ -925,7 +937,7 @@ def build_hashcat_command(job_id, task_id, chunk=None, job_task_id=None):
     # chunk runs as a plain dict+rules slice instead. The server-side gate also
     # means a task flipped away from dict+rules never emits a stray --loopback.
     if attackmode == 0 and isinstance(task.rule_id, int) and task.loopback and not is_chunk_slice:
-        cmd += ' --loopback'
+        argv.append('--loopback')
 
     # --hex-salt: the hashfile was marked as carrying hex-encoded salts. Gated on
     # a salted mode so we never pass it to an unsalted mode (hashcat would reject
@@ -933,49 +945,35 @@ def build_hashcat_command(job_id, task_id, chunk=None, job_task_id=None):
     # formats, whose ciphertext keeps the colon-delimited salt hashcat parses.
     hashfile = Hashfiles.query.get(job.hashfile_id)
     if hashfile and hashfile.hex_salt and hash_type_uses_salt(hash_type):
-        cmd += ' --hex-salt'
+        argv.append('--hex-salt')
 
     # Dictionary with optional rules
     if attackmode == 0:
         if isinstance(task.rule_id, int):
-            cmd += ' -r ' + relative_rules_path + ' ' + target_file + ' ' + relative_wordlist_path
+            argv += ['-r', relative_rules_path, target_file, relative_wordlist_path]
         else:
-            cmd += ' ' + target_file + ' ' + relative_wordlist_path
-    # combinator
+            argv += [target_file, relative_wordlist_path]
+    # Combinator — j/k rules are literal argv elements (previously single-quoted
+    # into the shell string, which a `'` in the field could break out of).
     elif attackmode == 1:
+        argv += ['-a', '1', target_file, relative_wordlist_path]
         if isinstance(task.j_rule, str):
-            j_rule = " -j '" + task.j_rule + "' "
-        else:
-            j_rule = ' '
-        
+            argv += ['-j', task.j_rule]
+        argv.append(relative_wordlist_2_path)
         if isinstance(task.k_rule, str):
-            k_rule = " -k '" + task.k_rule + "' "
-        else:
-            k_rule = ' '
-        cmd += ' ' + ' -a 1 ' + target_file + ' ' + relative_wordlist_path + j_rule + relative_wordlist_2_path + k_rule
-    # maskmode
+            argv += ['-k', task.k_rule]
+    # Maskmode — the mask is a literal argv element (previously unquoted in the
+    # shell string).
     elif attackmode == 3:
-        cmd += ' ' + ' -a 3 ' + target_file + ' ' + mask
+        argv += ['-a', '3', target_file, mask]
     # Hybrid (Wordlist + Mask)
     elif attackmode == 6:
-        cmd += ' ' + ' -a 6 ' + target_file + ' ' + relative_wordlist_path + ' ' + mask
+        argv += ['-a', '6', target_file, relative_wordlist_path, mask]
+    # Hybrid (Mask + Wordlist)
     elif attackmode == 7:
-        cmd += ' ' + ' -a 7 ' + target_file + ' ' + mask + ' ' + relative_wordlist_path
+        argv += ['-a', '7', target_file, mask, relative_wordlist_path]
 
-    # Mask mode
-    #if attackmode == 'bruteforce':
-    #    cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -a 3 ' + target_file
-    # elif attackmode == 'maskmode':
-    #     cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -a 3 ' + target_file + ' ' + mask
-    # elif attackmode == 'dictionary':
-    #     if isinstance(task.rule_id, int):
-    #         cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -r ' + relative_rules_path + ' ' + target_file + ' ' + relative_wordlist_path
-    #     else:
-    #         cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + target_file + ' ' + relative_wordlist_path
-    # elif attackmode == 'combinator':
-    #   cmd = hc_binpath + ' -O -w 3 ' + ' --session ' + session + ' -m ' + str(hash_type) + ' --potfile-disable' + ' --status --status-timer=15' + ' --outfile-format 1,3' + ' --outfile ' + crack_file + ' ' + ' -a 1 ' + target_file + ' ' + wordlist_one.path + ' ' + ' ' + wordlist_two.path + ' ' + relative_rules_path
-
-    return cmd
+    return argv
 
 def _chunk_spec_from_row(job_task):
     """Reconstruct a chunk spec dict from a JobTasks row's stored slice."""
@@ -1008,7 +1006,9 @@ def _set_job_task_command(job, row, spec, chunk_no=None, chunk_total=None):
     # existing agents keep working without an upgrade; only chunks need the
     # per-jobtask naming to avoid collisions between chunks of the same task.
     job_task_id = row.id if chunk_total else None
-    row.command = build_hashcat_command(job.id, row.task_id, chunk=spec, job_task_id=job_task_id)
+    # build_hashcat_command returns an argv list; persist it as JSON so the agent
+    # can json.loads it back into a token list and run it with shell=False.
+    row.command = json.dumps(build_hashcat_command(job.id, row.task_id, chunk=spec, job_task_id=job_task_id))
 
 
 def build_job_task_commands(job):

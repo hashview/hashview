@@ -1,7 +1,9 @@
 """Regression tests for main routes (function-coverage batch: main)."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
+from unittest import mock
 
+import hashview.main.routes as main_routes
 from hashview.models import (
     Hashes,
     HashfileHashes,
@@ -27,6 +29,70 @@ def test_home_renders_with_recovery_feed(app, client):
     resp = client.get("/")
     assert resp.status_code == 200
     assert b"Summer2024" in resp.data
+
+
+def _seed_recovered(admin, *, delta, plaintext, username):
+    """A cracked hash recovered `delta` ago, wired into the recovery feed."""
+    h = Hashes(sub_ciphertext="0" * 8, ciphertext=plaintext[::-1], hash_type=1000,
+               cracked=True, plaintext=plaintext,
+               recovered_at=datetime.now() - delta, recovered_by=admin.id)
+    db.session.add(h)
+    db.session.commit()
+    db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=1, username=username))
+    db.session.commit()
+    return h
+
+
+def test_recovery_feed_time_is_relative(app, client):
+    """The feed's Time column shows 'N <unit> ago' (seconds/minutes/hours under
+    24h, days beyond) instead of a wall-clock time."""
+    admin = make_admin()
+    login(client, admin)
+    _seed_recovered(admin, delta=timedelta(hours=2, minutes=5), plaintext="RecentPw", username="bob")
+    _seed_recovered(admin, delta=timedelta(days=3), plaintext="OldPw", username="carol")
+    body = client.get("/").get_data(as_text=True)
+    assert "2 hours ago" in body
+    assert "3 days ago" in body
+
+
+def test_relative_time_units_and_pluralization():
+    now = datetime.now()
+    rt = main_routes._relative_time
+    assert rt(now - timedelta(seconds=1)) == "1 second ago"
+    assert rt(now - timedelta(seconds=30)) == "30 seconds ago"
+    assert rt(now - timedelta(minutes=1)) == "1 minute ago"
+    assert rt(now - timedelta(hours=5)) == "5 hours ago"
+    assert rt(now - timedelta(hours=23, minutes=59)) == "23 hours ago"
+    assert rt(now - timedelta(days=1)) == "1 day ago"
+    assert rt(now - timedelta(days=10)) == "10 days ago"
+    assert rt(None) == "—"
+
+
+def _fixed_now(month, day, year=2026):
+    class _D(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(year, month, day, 12, 0, 0)
+    return _D
+
+
+def test_dashboard_flourish_autoplays_once_on_april_first(app, client):
+    """The dashboard flourish auto-runs only on April 1 (server time) and only
+    once per user per year (a cookie records that it has run)."""
+    admin = make_admin()
+    login(client, admin)
+
+    # A normal day: no autoplay.
+    with mock.patch.object(main_routes, "datetime", _fixed_now(3, 15)):
+        assert b"HV_DASH_AUTOPLAY" not in client.get("/").data
+
+    # April 1, first visit: autoplay + a cookie is set.
+    with mock.patch.object(main_routes, "datetime", _fixed_now(4, 1)):
+        resp = client.get("/")
+        assert b"HV_DASH_AUTOPLAY = true" in resp.data
+        assert "hv_dash=2026" in resp.headers.get("Set-Cookie", "")
+        # Second visit the same day (cookie now present): no repeat.
+        assert b"HV_DASH_AUTOPLAY" not in client.get("/").data
 
 
 def test_profile_api_key_copy_shows_feedback(app, client):

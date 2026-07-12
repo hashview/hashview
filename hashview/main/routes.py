@@ -3,7 +3,7 @@ import json
 import re
 from datetime import datetime, timedelta
 
-from flask import Blueprint, flash, jsonify, redirect, render_template
+from flask import Blueprint, flash, jsonify, make_response, redirect, render_template, request
 from flask_login import current_user, login_required
 from sqlalchemy import and_
 
@@ -53,6 +53,30 @@ def _chart_data():
     return labels, values
 
 
+def _relative_time(dt):
+    """Human 'N <unit> ago' for the recovery feed's Time column.
+
+    Under 24h shows the largest fitting unit (seconds / minutes / hours); at or
+    beyond 24h shows days. ``dt`` is the naive local ``recovered_at`` (set with
+    datetime.today()), so it is compared against a naive local ``now`` from the
+    same host.
+    """
+    if not dt:
+        return '—'
+    secs = int((datetime.now() - dt).total_seconds())
+    if secs < 0:
+        secs = 0
+    if secs < 60:
+        n, unit = secs, 'second'
+    elif secs < 3600:
+        n, unit = secs // 60, 'minute'
+    elif secs < 86400:
+        n, unit = secs // 3600, 'hour'
+    else:
+        n, unit = secs // 86400, 'day'
+    return '%d %s%s ago' % (n, unit, '' if n == 1 else 's')
+
+
 def _recovery_feed():
     """Most-recent recovered passwords for the live feed (max 10, deduped)."""
     from hashview.jobs.forms import JobsNewHashFileForm
@@ -91,7 +115,7 @@ def _recovery_feed():
         seen.add(key)
         recovery_feed.append({
             'key': f'{h.id}:{username}',
-            'time': h.recovered_at.strftime('%H:%M:%S') if h.recovered_at else '—',
+            'time': _relative_time(h.recovered_at),
             # usernames/plaintexts are stored as plain text now; use as-is.
             'account': (username or '') or '—',
             'plaintext': h.plaintext or '',
@@ -308,13 +332,22 @@ def _jobs_ctx():
 def home():
     """Render the operations dashboard."""
     fig1_labels, fig1_values = _chart_data()
-    return render_template(
+    now = datetime.now()
+    # Dashboard flourish: auto-runs once per user on the first visit of April 1
+    # (server time); the cookie records it so it doesn't repeat that year.
+    dash_autoplay = (now.month == 4 and now.day == 1
+                     and request.cookies.get('hv_dash') != str(now.year))
+    resp = make_response(render_template(
         'home.html.j2',
         fig1_labels=fig1_labels,
         fig1_values=fig1_values,
         recovery_feed=_recovery_feed(),
+        dash_autoplay=dash_autoplay,
         **_jobs_ctx(),
-    )
+    ))
+    if dash_autoplay:
+        resp.set_cookie('hv_dash', str(now.year), max_age=60 * 60 * 24 * 2, samesite='Lax')
+    return resp
 
 
 @main.route("/dashboard/jobs")

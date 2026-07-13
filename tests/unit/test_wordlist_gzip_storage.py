@@ -428,6 +428,25 @@ def test_download_missing_wordlist_404(app, client):
     assert resp.status_code == 404
 
 
+def test_download_static_missing_file_returns_json_404(app, client):
+    # Regression: a static row that outlived its file on disk (e.g. a wordlist
+    # stranded across an upgrade, with a relative legacy path) must return a
+    # clean, parseable JSON 404 -- not send_from_directory's bare HTML page.
+    user = _make_user(api_key="dlmiss")
+    _auth(client, "dlmiss")
+    wl = Wordlists(name="Stranded", owner_id=user.id, type="static",
+                   path="hashview/control/wordlists/deadbeefdeadbeef.gz",
+                   checksum="0" * 64, size=0, byte_size=1)
+    db.session.add(wl)
+    db.session.commit()
+
+    resp = client.get(f"/v1/wordlists/{wl.id}")
+    assert resp.status_code == 404
+    data = resp.get_json()
+    assert data and data["type"] == "Error"
+    assert "missing on disk" in data["msg"]
+
+
 # ---------------------------------------------------------------------------
 # Launch migration: compress_existing_wordlists_if_needed
 # ---------------------------------------------------------------------------
@@ -511,6 +530,62 @@ def test_launch_migration(app, tmp_path):
     static_wl = Wordlists.query.get(ids[0])
     assert static_wl.path == path_after
     assert static_wl.checksum == checksum_after
+
+
+def test_migration_normalizes_relative_wordlist_path(app, client, tmp_path):
+    # A legacy row with a RELATIVE .gz path whose file IS present in the
+    # wordlists dir (the exact shape that stranded wordlist 6) gets its path
+    # rewritten to absolute, so the download route and cracking commands find it
+    # regardless of the process CWD.
+    user = _make_user(api_key="relkey")
+    _auth(client, "relkey")
+    content = b"one\ntwo\n"
+    gzname = secrets.token_hex(8) + ".gz"
+    abs_gz = WORDLISTS_DIR / gzname
+    with gzip.open(str(abs_gz), "wb", compresslevel=9) as f:
+        f.write(content)
+    rel_path = os.path.join("hashview", "control", "wordlists", gzname)   # legacy relative form
+    wl = Wordlists(name="RelPath", owner_id=user.id, type="static",
+                   path=rel_path, checksum=get_filehash(str(abs_gz)), size=2, byte_size=None)
+    db.session.add(wl)
+    db.session.commit()
+    wl_id = wl.id
+
+    compress_existing_wordlists_if_needed(db)
+
+    wl = Wordlists.query.get(wl_id)
+    assert os.path.isabs(wl.path)
+    assert os.path.abspath(wl.path) == os.path.abspath(str(abs_gz))
+    assert wl.byte_size == os.path.getsize(str(abs_gz))
+    # end-to-end: it now serves
+    resp = client.get(f"/v1/wordlists/{wl_id}")
+    assert resp.status_code == 200
+    assert gzip.decompress(resp.data) == content
+
+
+def test_migration_compresses_into_wordlists_dir(app, tmp_path):
+    # A static, uncompressed legacy file living OUTSIDE the wordlists dir must be
+    # compressed INTO the absolute wordlists dir (not next to the source), so it
+    # lands where the download route serves from.
+    user = _make_user(api_key="cmpkey")
+    content = b"aa\nbb\ncc\n"
+    src = tmp_path / "legacy_plain.txt"
+    src.write_bytes(content)
+    wl = Wordlists(name="LegacyPlain", owner_id=user.id, type="static",
+                   path=str(src), checksum=get_filehash(str(src)), size=3)
+    db.session.add(wl)
+    db.session.commit()
+    wl_id = wl.id
+
+    compress_existing_wordlists_if_needed(db)
+
+    wl = Wordlists.query.get(wl_id)
+    assert os.path.isabs(wl.path)
+    assert os.path.dirname(os.path.abspath(wl.path)) == os.path.abspath(str(WORDLISTS_DIR))
+    assert is_gzip(wl.path)
+    assert not src.exists()   # old plaintext removed after the durable commit
+    with gzip.open(wl.path, "rb") as f:
+        assert f.read() == content
 
 
 # ---------------------------------------------------------------------------

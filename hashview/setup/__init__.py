@@ -110,41 +110,74 @@ def compress_existing_wordlists_if_needed(db :SQLAlchemy):
       - dynamic -> never compressed (kept uncompressed on the server); only
         backfill byte_size if NULL.
 
+    Also self-heals path drift from older installs: a wordlist.path may be
+    RELATIVE (e.g. 'hashview/control/wordlists/<hex>.gz'), which only resolves
+    when the process CWD happens to be the repo root. Such a path is normalized
+    to its absolute on-disk location, and newly-compressed files are written
+    into the absolute wordlists dir (never derived from a possibly-relative
+    dirname), so a wordlist can't get stranded where the download route -- which
+    serves by basename from the wordlists dir -- can't find it.
+
     Idempotent (the gzip magic-byte check makes re-runs no-ops) and resilient:
-    each row is handled in its own try/except with a per-row commit, a missing
-    file is logged and skipped (never deletes the DB row), and any failure is
-    contained so it can never abort startup.
+    each row is handled in its own try/except with a per-row commit, a truly
+    missing file is logged and skipped (never deletes the DB row), and any
+    failure is contained so it can never abort startup.
     """
     from flask import current_app
     logger = current_app.logger
+    wordlists_dir = os.path.join(current_app.root_path, 'control/wordlists')
+
+    def _resolve(path):
+        """Locate a wordlist file, tolerating a relative/legacy stored path.
+        Prefer the canonical wordlists dir (where the download route serves
+        from); fall back to the path as-stored. Returns an absolute path, or
+        None when the file genuinely can't be found."""
+        if not path:
+            return None
+        for cand in (os.path.join(wordlists_dir, os.path.basename(path)), path):
+            if os.path.exists(cand):
+                return os.path.abspath(cand)
+        return None
 
     for wordlist in db.session.query(Wordlists).all():
         try:
-            path = wordlist.path
-            if not path or not os.path.exists(path):
-                logger.warning('Wordlist %s file missing (%s); skipping compression.', wordlist.id, path)
+            resolved = _resolve(wordlist.path)
+            if resolved is None:
+                logger.warning('Wordlist %s file not found (path=%s); leaving the DB row '
+                               'untouched. Re-upload the wordlist to restore it.',
+                               wordlist.id, wordlist.path)
                 continue
+
+            # Normalize a relative/legacy path to the absolute on-disk location so
+            # the download route and cracking commands find it regardless of the
+            # process CWD.
+            if wordlist.path != resolved:
+                logger.info('Normalized wordlist %s path %r -> %r', wordlist.id, wordlist.path, resolved)
+                wordlist.path = resolved
+                db.session.commit()
 
             if wordlist.type == 'dynamic':
                 # Dynamic wordlists stay uncompressed; just backfill byte_size.
                 if wordlist.byte_size is None:
-                    wordlist.byte_size = get_filesize(path)
+                    wordlist.byte_size = get_filesize(resolved)
                     db.session.commit()
                 continue
 
             # static
-            if is_gzip(path):
+            if is_gzip(resolved):
                 # Already compressed (new uploads, or a prior run). No-op aside
                 # from backfilling byte_size if it was never recorded.
                 if wordlist.byte_size is None:
-                    wordlist.byte_size = get_filesize(path)
+                    wordlist.byte_size = get_filesize(resolved)
                     db.session.commit()
                 continue
 
-            # static + uncompressed: compress in place (new file in same dir).
-            line_count = get_linecount(path)
-            new_gz = os.path.join(os.path.dirname(path), secrets.token_hex(8) + '.gz')
-            compress_to_gz(path, new_gz, 9)
+            # static + uncompressed: compress into the absolute wordlists dir (so
+            # the file always lands where the download route serves from) and
+            # store an absolute path.
+            line_count = get_linecount(resolved)
+            new_gz = os.path.join(wordlists_dir, secrets.token_hex(8) + '.gz')
+            compress_to_gz(resolved, new_gz, 9)
 
             # write -> commit -> delete: only remove the old plaintext after the
             # new path/checksum are durably committed.
@@ -154,12 +187,12 @@ def compress_existing_wordlists_if_needed(db :SQLAlchemy):
             wordlist.byte_size = get_filesize(new_gz)
             db.session.commit()
 
-            if os.path.exists(path):
-                os.remove(path)
+            if os.path.exists(resolved) and os.path.abspath(resolved) != os.path.abspath(new_gz):
+                os.remove(resolved)
             logger.info('Compressed static wordlist %s -> %s', wordlist.id, new_gz)
         except Exception:
             db.session.rollback()
-            logger.exception('Failed to compress wordlist %s; leaving it untouched.', getattr(wordlist, 'id', '?'))
+            logger.exception('Failed to process wordlist %s; leaving it untouched.', getattr(wordlist, 'id', '?'))
 
 
 def _decode_hex_column(db, model, col_name, logger):

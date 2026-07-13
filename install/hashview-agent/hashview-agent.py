@@ -196,6 +196,9 @@ def sync_rules():
                 # Download and verify new file
                 random_hex = secrets.token_hex(8)
                 compressed = api.get_rules_file(entry['id'])
+                if not compressed:
+                    LOG.warning('No data received for rule %s; will retry next sync.', rule_id)
+                    continue
                 tmp_gz = os.path.join('control/tmp', f'{random_hex}.gz')
                 with open(tmp_gz, 'wb') as f:
                     f.write(compressed)
@@ -224,6 +227,9 @@ def sync_rules():
             LOG.info('Downloading new rule %s.', rule_id)
             random_hex = secrets.token_hex(8)
             compressed = api.get_rules_file(entry['id'])
+            if not compressed:
+                LOG.warning('No data received for new rule %s; will retry next sync.', rule_id)
+                continue
             tmp_gz = os.path.join('control/tmp', f'{random_hex}.gz')
             with open(tmp_gz, 'wb') as f:
                 f.write(compressed)
@@ -429,9 +435,16 @@ def updateDynamicWordlists(wordlist_id):
 def download_hashfile(job_id, jobtask_id, hashfile_id):
     # Note we are not compressing our hashfile
     hashfile_content = api.get_hashfile(hashfile_id)
-    hashfile = open('control/hashes/hashfile_' + str(job_id) + '_' + str(jobtask_id) + '.txt', 'wb')
-    hashfile.write(hashfile_content)
-    hashfile.close()
+    if not hashfile_content:
+        # A non-200 / missing hashfile yields None; writing that straight to disk
+        # would raise. Report False so the caller skips launching hashcat against a
+        # missing target rather than crashing the cycle.
+        LOG.warning('No hashfile received for hashfile %s (job %s); skipping this task run.',
+                    hashfile_id, job_id)
+        return False
+    with open('control/hashes/hashfile_' + str(job_id) + '_' + str(jobtask_id) + '.txt', 'wb') as hashfile:
+        hashfile.write(hashfile_content)
+    return True
 
 def build_hashcat_argv(command):
     """Decode the server's stored command (a JSON argv list) into a real argv.
@@ -666,7 +679,8 @@ def maybe_update_dynamic_wordlist(task):
     for wordlist in server_wordlists:
         if wordlist['id'] == task['wl_id'] and wordlist['type'] == 'dynamic':
             LOG.info('Task uses a dynamic wordlist; requesting a server-side update.')
-            if updateDynamicWordlists(wordlist['id'])['msg'] != 'OK':
+            result = updateDynamicWordlists(wordlist['id'])
+            if not result or result.get('msg') != 'OK':
                 LOG.warning('Dynamic wordlist update failed for wordlist %s.', wordlist['id'])
             else:
                 LOG.info('Dynamic wordlist update complete.')
@@ -683,9 +697,13 @@ def upload_cracks(job, job_task):
     if not os.path.exists(crack_file):
         LOG.debug('No results yet for job task %s; nothing to upload.', job_task['id'])
         return
-    if getHashType(job['hashfile_id'])['msg'] != 'OK':
+    hash_type = getHashType(job['hashfile_id'])
+    if not hash_type or hash_type.get('msg') != 'OK':
+        LOG.warning('Could not confirm the hash type for job task %s; deferring crack upload.',
+                    job_task['id'])
         return
-    if uploadCrackFile(crack_file, str(job_task['id']))['msg'] == 'OK':
+    result = uploadCrackFile(crack_file, str(job_task['id']))
+    if result and result.get('msg') == 'OK':
         LOG.info('Uploaded recovered hashes to the server.')
 
 
@@ -727,17 +745,32 @@ def run_assigned_task(job_task_id):
     sync_rules()
     sync_wordlists()
 
+    # Any of these fetches can return None (server mid-restart, missing row,
+    # unexpected body). Bail with a clear message instead of crashing on a None
+    # subscript; the server keeps the task assigned and its runtime reaper (or a
+    # later reassignment) recovers it. We deliberately do NOT reset the status
+    # here -- a persistent failure (e.g. a genuinely missing hashfile) would then
+    # re-dispatch in a hot loop.
     job_task = jobTasks(job_task_id)
+    if not job_task:
+        LOG.warning('Could not fetch job task %s; skipping this run.', job_task_id)
+        return
+    task = tasks(job_task['task_id'])
+    job = jobs(job_task['job_id'])
+    if not task or not job:
+        LOG.warning('Could not fetch the task/job for job task %s; skipping this run.', job_task_id)
+        return
+
     # Defensive: the server occasionally misses flipping this to Running.
     updateJobTask(job_task['id'], 'Running')
-    maybe_update_dynamic_wordlist(tasks(job_task['task_id']))
+    maybe_update_dynamic_wordlist(task)
 
-    job = jobs(job_task['job_id'])
     # Name the hashfile to match the server-built command's target file: chunks
     # are keyed by JobTask id (so chunks of one task never collide); whole tasks
     # keep the legacy job+task id naming so existing agents stay compatible.
     file_key = job_task['id'] if job_task.get('chunk_total') else job_task['task_id']
-    download_hashfile(job['id'], file_key, job['hashfile_id'])
+    if not download_hashfile(job['id'], file_key, job['hashfile_id']):
+        return
 
     output_file = ('control/outfiles/hcoutput_'
                    + str(job['id']) + '_' + str(job_task['id']) + '.txt')
@@ -753,7 +786,8 @@ def run_assigned_task(job_task_id):
 
     upload_cracks(job, job_task)
 
-    if updateJobTask(job_task['id'], 'Completed')['msg'] == 'OK':
+    completed = updateJobTask(job_task['id'], 'Completed')
+    if completed and completed.get('msg') == 'OK':
         LOG.info('Job task %s set to Completed.', job_task['id'])
 
 
@@ -764,17 +798,21 @@ def handle_heartbeat():
         # We're not monitoring that process here, so we have no hc_status to report
         # -- send an empty one (the server skips the telemetry parse for a blank
         # value) rather than a placeholder it would fail to JSON-decode.
-        if send_heartbeat('Working', '')['msg'] == 'Canceled':
+        response = send_heartbeat('Working', '')
+        if response and response.get('msg') == 'Canceled':
             LOG.info('Server canceled the running task.')
         return
 
     response = send_heartbeat('Idle', '')
-    if response['msg'] == 'Go Away':
+    if not response:
+        # No usable reply this beat (server mid-restart / non-200); retry next cycle.
+        return
+    if response.get('msg') == 'Go Away':
         LOG.warning('This agent is not authorized on the server. Ask a Hashview admin to approve it.')
-    elif response['msg'] == 'BENCHMARK':
+    elif response.get('msg') == 'BENCHMARK':
         run_benchmark(response.get('hash_modes', []))
-    elif response['msg'] == 'START':
-        run_assigned_task(response['job_task_id'])
+    elif response.get('msg') == 'START':
+        run_assigned_task(response.get('job_task_id'))
 
 
 def main():

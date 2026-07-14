@@ -49,7 +49,6 @@ from hashview.utils.utils import (
     ingest_static_wordlist_file,
     is_gzip,
     notify_admins,
-    ntlm_hash_hex,
     process_recovered_hash_notifications,
     rechunk_queued_tasks_for_hashtype,
     slowest_benchmark,

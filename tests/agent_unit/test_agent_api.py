@@ -147,12 +147,12 @@ def test_get_wordlists_file_passes_through_http_get(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# jobTasks (payload value is itself JSON-encoded)
+# jobTasks (native JSON object; single-parse -- issue #229)
 # ---------------------------------------------------------------------------
 
-def test_jobtasks_double_decodes_job_task(monkeypatch):
+def test_jobtasks_returns_job_task(monkeypatch):
     job_task = {"id": 11, "job_id": 5, "task_id": 9, "status": "Queued"}
-    payload = {"status": 200, "job_task": json.dumps(job_task)}
+    payload = {"status": 200, "job_task": job_task}
     monkeypatch.setattr(http, "get", lambda path: json.dumps(payload))
     assert api.jobTasks(11) == job_task
 
@@ -164,12 +164,12 @@ def test_jobtasks_exits_on_426(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# jobs (payload value is itself JSON-encoded)
+# jobs (native JSON object; single-parse -- issue #229)
 # ---------------------------------------------------------------------------
 
-def test_jobs_double_decodes_job(monkeypatch):
+def test_jobs_returns_job(monkeypatch):
     job = {"id": 5, "name": "test job", "hashfile_id": 2}
-    payload = {"status": 200, "job": json.dumps(job)}
+    payload = {"status": 200, "job": job}
     monkeypatch.setattr(http, "get", lambda path: json.dumps(payload))
     assert api.jobs(5) == job
 
@@ -181,12 +181,12 @@ def test_jobs_exits_on_426(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# tasks (payload value is itself JSON-encoded)
+# tasks (native JSON object; single-parse -- issue #229)
 # ---------------------------------------------------------------------------
 
-def test_tasks_double_decodes_task(monkeypatch):
+def test_tasks_returns_task(monkeypatch):
     task = {"id": 9, "name": "rockyou + best64", "hc_attackmode": "dictionary"}
-    payload = {"status": 200, "task": json.dumps(task)}
+    payload = {"status": 200, "task": task}
     monkeypatch.setattr(http, "get", lambda path: json.dumps(payload))
     assert api.tasks(9) == task
 

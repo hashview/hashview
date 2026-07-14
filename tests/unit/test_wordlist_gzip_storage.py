@@ -635,7 +635,8 @@ class _FakeApi:
         self.download_calls = []
 
     def getWordlists(self):
-        return json.dumps(self._entries)
+        # Native list, matching the server's post-#229 response (no double-encode).
+        return self._entries
 
     def get_wordlists_file(self, wid):
         self.download_calls.append(wid)

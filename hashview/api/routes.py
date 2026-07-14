@@ -101,6 +101,19 @@ class AlchemyEncoder(json.JSONEncoder):
 
         return json.JSONEncoder.default(self, obj)
 
+def alchemy_to_native(obj):
+    """Serialize SQLAlchemy row(s) to native Python (list/dict) using the same
+    field selection as AlchemyEncoder, so jsonify encodes the response body
+    exactly once. This replaces the `json.dumps(rows, cls=AlchemyEncoder)`
+    inside `jsonify({...})` pattern, which nested a JSON-encoded string in the
+    response and forced clients to double-parse (issue #229). None passes
+    through (-> JSON null)."""
+    if isinstance(obj, (list, tuple)):
+        return [alchemy_to_native(item) for item in obj]
+    if isinstance(obj.__class__, DeclarativeMeta):
+        return AlchemyEncoder().default(obj)
+    return obj
+
 def is_authorized(user, agent, request):
     # Honor the caller's user/agent flags so each route enforces its own
     # privilege boundary: a user-only route (user=True, agent=False) must
@@ -204,7 +217,7 @@ def v1_api_get_admin_settings():
     settings = Settings.query.all()
     message = {
         'status': 200,
-        'settings': json.dumps(settings, cls=AlchemyEncoder)
+        'settings': alchemy_to_native(settings)
     }
     return jsonify(message)
 
@@ -575,7 +588,7 @@ def v1_api_get_customers():
     customers = Customers.query.all()
     message = {
         'status': 200,
-        'users': json.dumps(customers, cls=AlchemyEncoder)
+        'users': alchemy_to_native(customers)
     }
     return jsonify(message)
 
@@ -628,7 +641,7 @@ def v1_api_get_rules():
     rules = Rules.query.all()
     message = {
         'status': 200,
-        'rules': json.dumps(rules, cls=AlchemyEncoder)
+        'rules': alchemy_to_native(rules)
     }
     return jsonify(message)
 
@@ -744,7 +757,7 @@ def v1_api_get_wordlist():
     wordlists = Wordlists.query.all()
     message = {
         'status': 200,
-        'wordlists': json.dumps(wordlists, cls=AlchemyEncoder)
+        'wordlists': alchemy_to_native(wordlists)
     }
     return jsonify(message)
 
@@ -882,7 +895,7 @@ def v1_api_get_queue_assignment(job_task_id):
 
     message = {
         'status': 200,
-        'job_task': json.dumps(job_task, cls=AlchemyEncoder)
+        'job_task': alchemy_to_native(job_task)
     }
     return jsonify(message)
 
@@ -897,7 +910,7 @@ def v1_api_get_job(job_id):
 
     message = {
         'status': 200,
-        'job': json.dumps(job, cls=AlchemyEncoder)
+        'job': alchemy_to_native(job)
     }
     return jsonify(message)
 
@@ -1111,7 +1124,7 @@ def v1_api_get_task(task_id):
     task = Tasks.query.get(task_id)
     message = {
         'status': 200,
-        'task': json.dumps(task, cls=AlchemyEncoder)
+        'task': alchemy_to_native(task)
     }
     return jsonify(message)
 

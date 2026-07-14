@@ -400,8 +400,8 @@ def test_227_hashfile_download_uses_root_path(client, app, admin_user, tmp_path,
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="#229: payload is json.dumps()'d into a string, forcing clients to double-parse")
 def test_229_rules_list_is_native_json(client, admin_user):
+    # #229 FIXED: list endpoints return native JSON, not a json.dumps'd string.
     _auth(client, admin_user.api_key)
     resp = client.get("/v1/rules")
     body = _json_body(resp)

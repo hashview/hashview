@@ -110,7 +110,7 @@ def test_admin_settings_no_cookie_redirects_to_not_authorized(client):
 
 @pytest.mark.security
 def test_customers_list_authorized_returns_seeded_customer(client, admin_user):
-    """GET /v1/customers returns the seeded Customer in the JSON-string body."""
+    """GET /v1/customers returns the seeded Customer as a native JSON array."""
     cust = Customers(name="Acme")
     _db.session.add(cust)
     _db.session.commit()
@@ -120,9 +120,9 @@ def test_customers_list_authorized_returns_seeded_customer(client, admin_user):
 
     assert resp.status_code == 200
     body = _json_body(resp)
-    # Route returns the customer collection serialized as a JSON string under
-    # the (oddly named) "users" key.
-    assert "Acme" in body["users"]
+    # Route returns the customer collection as a native JSON array under the
+    # (oddly named) "users" key.
+    assert any(c["name"] == "Acme" for c in body["users"])
 
 
 @pytest.mark.security

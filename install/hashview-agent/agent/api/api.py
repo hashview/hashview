@@ -81,7 +81,7 @@ def jobTasks(job_task_id):
         print('[ERROR] Our agent version is older than the servers. You need to upgrade your agent before continuing.')
         exit()
     else:    
-        decoded_response = json.loads(json.loads(response)['job_task'])
+        decoded_response = json.loads(response)['job_task']
         return decoded_response
 
 def jobs(job_id):
@@ -90,7 +90,7 @@ def jobs(job_id):
         print('[ERROR] Our agent version is older than the servers. You need to upgrade your agent before continuing.')
         exit()
     else:    
-        decoded_response = json.loads(json.loads(response)['job'])
+        decoded_response = json.loads(response)['job']
         return decoded_response
 
 def tasks(task_id):
@@ -99,7 +99,7 @@ def tasks(task_id):
         print('[ERROR] Our agent version is older than the servers. You need to upgrade your agent before continuing.')
         exit()
     else:    
-        decoded_response = json.loads(json.loads(response)['task'])
+        decoded_response = json.loads(response)['task']
         return decoded_response
 
 def updateDynamicWordlists(wordlist_id):

@@ -12,7 +12,7 @@ from flask import (
     send_from_directory,
 )
 from packaging import version
-from sqlalchemy import func
+from sqlalchemy import exists, func
 from sqlalchemy.ext.declarative import DeclarativeMeta
 
 import hashview
@@ -23,6 +23,7 @@ from hashview.models import (
     Hashes,
     HashfileHashes,
     Hashfiles,
+    HashNotifications,
     JobNotifications,
     Jobs,
     JobTasks,
@@ -100,6 +101,19 @@ class AlchemyEncoder(json.JSONEncoder):
             return fields
 
         return json.JSONEncoder.default(self, obj)
+
+def alchemy_to_native(obj):
+    """Serialize SQLAlchemy row(s) to native Python (list/dict) using the same
+    field selection as AlchemyEncoder, so jsonify encodes the response body
+    exactly once. This replaces the `json.dumps(rows, cls=AlchemyEncoder)`
+    inside `jsonify({...})` pattern, which nested a JSON-encoded string in the
+    response and forced clients to double-parse (issue #229). None passes
+    through (-> JSON null)."""
+    if isinstance(obj, list | tuple):
+        return [alchemy_to_native(item) for item in obj]
+    if isinstance(obj.__class__, DeclarativeMeta):
+        return AlchemyEncoder().default(obj)
+    return obj
 
 def is_authorized(user, agent, request):
     # Honor the caller's user/agent flags so each route enforces its own
@@ -204,7 +218,7 @@ def v1_api_get_admin_settings():
     settings = Settings.query.all()
     message = {
         'status': 200,
-        'settings': json.dumps(settings, cls=AlchemyEncoder)
+        'settings': alchemy_to_native(settings)
     }
     return jsonify(message)
 
@@ -575,7 +589,7 @@ def v1_api_get_customers():
     customers = Customers.query.all()
     message = {
         'status': 200,
-        'users': json.dumps(customers, cls=AlchemyEncoder)
+        'users': alchemy_to_native(customers)
     }
     return jsonify(message)
 
@@ -628,7 +642,7 @@ def v1_api_get_rules():
     rules = Rules.query.all()
     message = {
         'status': 200,
-        'rules': json.dumps(rules, cls=AlchemyEncoder)
+        'rules': alchemy_to_native(rules)
     }
     return jsonify(message)
 
@@ -744,7 +758,7 @@ def v1_api_get_wordlist():
     wordlists = Wordlists.query.all()
     message = {
         'status': 200,
-        'wordlists': json.dumps(wordlists, cls=AlchemyEncoder)
+        'wordlists': alchemy_to_native(wordlists)
     }
     return jsonify(message)
 
@@ -761,7 +775,17 @@ def v1_api_get_wordlist_download(wordlist_id):
 
     wordlists_dir = os.path.join(current_app.root_path, 'control/wordlists')
     tmp_dir = os.path.join(current_app.root_path, 'control/tmp')
-    wordlist_name = wordlist.path.split('/')[-1]
+    # Resolve by basename against the wordlists dir rather than trusting a
+    # possibly-relative wordlist.path against the CWD (legacy rows can hold a
+    # relative path). When the row outlives its file -- e.g. a wordlist stranded
+    # by an upgrade -- return a clear JSON 404 instead of send_from_directory's
+    # bare HTML page, so the agent logs an actionable body and the operator knows
+    # to re-upload. (Mirrors the /v1/rules/<id> download handler.)
+    wordlist_name = os.path.basename(wordlist.path or '')
+    src_path = os.path.join(wordlists_dir, wordlist_name)
+    if not wordlist_name or not os.path.exists(src_path):
+        return jsonify({'status': 404, 'type': 'Error',
+                        'msg': 'Wordlist file missing on disk: ' + (wordlist_name or '(no path)')}), 404
 
     if wordlist.type == 'static':
         # Stored compressed at rest: serve the .gz directly. The stored bytes
@@ -772,7 +796,7 @@ def v1_api_get_wordlist_download(wordlist_id):
     # DB via /v1/updateWordlist). Compress the current .txt into control/tmp
     # and serve that. No shell; pure-Python streamed gzip -9.
     tmp_gz = os.path.join(tmp_dir, secrets.token_hex(8) + '.gz')
-    compress_to_gz(wordlist.path, tmp_gz, 9)
+    compress_to_gz(src_path, tmp_gz, 9)
     return _send_generated_file(
         tmp_dir, os.path.basename(tmp_gz), mimetype='application/octet-stream')
 
@@ -882,7 +906,7 @@ def v1_api_get_queue_assignment(job_task_id):
 
     message = {
         'status': 200,
-        'job_task': json.dumps(job_task, cls=AlchemyEncoder)
+        'job_task': alchemy_to_native(job_task)
     }
     return jsonify(message)
 
@@ -897,7 +921,7 @@ def v1_api_get_job(job_id):
 
     message = {
         'status': 200,
-        'job': json.dumps(job, cls=AlchemyEncoder)
+        'job': alchemy_to_native(job)
     }
     return jsonify(message)
 
@@ -1111,7 +1135,7 @@ def v1_api_get_task(task_id):
     task = Tasks.query.get(task_id)
     message = {
         'status': 200,
-        'task': json.dumps(task, cls=AlchemyEncoder)
+        'task': alchemy_to_native(task)
     }
     return jsonify(message)
 
@@ -1394,6 +1418,70 @@ def v1_api_get_hashfile(hashfile_id):
             file_object.write(result[0].ciphertext + '\n')
 
     return _send_generated_file(tmp_dir, random_hex)
+
+@api.route('/v1/hashfiles/<int:hashfile_id>', methods=['DELETE'])
+def v1_api_delete_hashfile(hashfile_id):
+    if not is_authorized(user=True, agent=False, request=request):
+        return redirect("/v1/not_authorized")
+
+    uuid = request.cookies.get('uuid')
+    user = Users.query.filter_by(api_key=uuid).first()
+    if not user:
+        return jsonify({
+            'status': 403,
+            'type': 'Error',
+            'msg': 'User not found'
+        })
+
+    hashfile = Hashfiles.query.get(hashfile_id)
+    if hashfile is None:
+        return jsonify({'status': 404, 'type': 'Error', 'msg': 'Hashfile not found'}), 404
+
+    if not (user.admin or hashfile.owner_id == user.id):
+        return jsonify({
+            'status': 403,
+            'type': 'Error',
+            'msg': 'You do not have rights to delete this hashfile'
+        })
+
+    # Refuse while the hashfile is still assigned to a job — the web UI does the
+    # same (hashfiles_delete) and does NOT cascade job deletion from a hashfile.
+    if Jobs.query.filter_by(hashfile_id=hashfile_id).first():
+        return jsonify({
+            'status': 409,
+            'type': 'Error',
+            'msg': 'Hashfile is currently associated with a job'
+        }), 409
+
+    # Mirror the web UI's hashfiles_delete cascade, atomically: the hashfile-hash
+    # links, the hashfile, then any uncracked hashes / notifications it orphans.
+    hashfile_target = f'hashfile:{hashfile.id} {hashfile.name!r}'
+    try:
+        HashfileHashes.query.filter_by(hashfile_id=hashfile.id).delete(synchronize_session=False)
+        db.session.delete(hashfile)
+        Hashes.query.filter(Hashes.cracked == 0).filter(
+            ~exists().where(HashfileHashes.hash_id == Hashes.id)
+        ).delete(synchronize_session=False)
+        HashNotifications.query.filter(
+            ~exists().where(Hashes.id == HashNotifications.hash_id)
+        ).delete(synchronize_session=False)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('API /v1/hashfiles: failed to delete hashfile')
+        return jsonify({
+            'status': 500,
+            'type': 'Error',
+            'msg': 'Failed to delete hashfile.'
+        })
+
+    log_event('hashfile.delete', actor=(user.email_address, user.id), target=hashfile_target)
+    return jsonify({
+        'status': 200,
+        'type': 'message',
+        'msg': 'Hashfile deleted',
+        'hashfile_id': hashfile_id
+    })
 
 # List hashfiles containing at least one hash of the given hash type.
 # No collision with /v1/hashfiles/<int:hashfile_id>: the static 'hash_type/'

@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import secrets
+import sys
 from pathlib import Path
 
 import pytest
@@ -45,7 +46,11 @@ from hashview.setup import compress_existing_wordlists_if_needed
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CONTROL = REPO_ROOT / "hashview" / "control"
+PKG_ROOT = REPO_ROOT / "hashview"
+CONTROL = PKG_ROOT / "control"
+# WORDLISTS_DIR / TMP_DIR are repointed at a per-test isolated root by the
+# autouse ``_isolated_control_root`` fixture below; the module-level values are
+# only placeholders so imports resolve.
 WORDLISTS_DIR = CONTROL / "wordlists"
 TMP_DIR = CONTROL / "tmp"
 AGENT_SCRIPT = REPO_ROOT / "install" / "hashview-agent" / "hashview-agent.py"
@@ -56,21 +61,30 @@ COOKIE_DOMAIN = "localhost.test"
 
 
 @pytest.fixture(autouse=True)
-def _clean_control_dirs():
-    """Remove any files these tests create under the real control dirs."""
-    def snapshot(d):
-        return set(os.listdir(d)) if d.exists() else set()
-    before_wl = snapshot(WORDLISTS_DIR)
-    before_tmp = snapshot(TMP_DIR)
-    yield
-    for d, before in ((WORDLISTS_DIR, before_wl), (TMP_DIR, before_tmp)):
-        if not d.exists():
-            continue
-        for name in set(os.listdir(d)) - before:
-            try:
-                os.remove(d / name)
-            except OSError:
-                pass
+def _isolated_control_root(app, tmp_path, monkeypatch):
+    """Give each test a private hashview root so wordlist files never touch the
+    shared real ``hashview/control/`` tree.
+
+    These tests write real files under ``control/{wordlists,tmp}``. Deriving
+    that location from the package dir made every test in the process share one
+    mutable directory: a slow teardown, an errored test, or a stray background
+    file operation could delete or collide with another test's in-flight file
+    (a rare source of ``os.path.exists`` flakiness), and the snapshot-diff
+    cleanup leaked orphaned ``.gz`` files over time. Pointing ``app.root_path``
+    at a per-test ``tmp_path`` isolates all of it (pytest cleans tmp_path up);
+    ``templates``/``static`` are symlinked back so render paths still resolve.
+    """
+    root = tmp_path / "hvroot"
+    root.mkdir()
+    for name in ("templates", "static"):
+        os.symlink(PKG_ROOT / name, root / name)
+    for sub in ("wordlists", "tmp", "hashes", "rules", "logs", "wordlists_import"):
+        (root / "control" / sub).mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(app, "root_path", str(root))
+    # Tests that write dynamic wordlists reference these module globals directly;
+    # repoint them at the isolated dirs so they match app.root_path.
+    monkeypatch.setattr(sys.modules[__name__], "WORDLISTS_DIR", root / "control" / "wordlists")
+    monkeypatch.setattr(sys.modules[__name__], "TMP_DIR", root / "control" / "tmp")
 
 
 def _make_user(api_key="testapikey"):
@@ -428,6 +442,25 @@ def test_download_missing_wordlist_404(app, client):
     assert resp.status_code == 404
 
 
+def test_download_static_missing_file_returns_json_404(app, client):
+    # Regression: a static row that outlived its file on disk (e.g. a wordlist
+    # stranded across an upgrade, with a relative legacy path) must return a
+    # clean, parseable JSON 404 -- not send_from_directory's bare HTML page.
+    user = _make_user(api_key="dlmiss")
+    _auth(client, "dlmiss")
+    wl = Wordlists(name="Stranded", owner_id=user.id, type="static",
+                   path="hashview/control/wordlists/deadbeefdeadbeef.gz",
+                   checksum="0" * 64, size=0, byte_size=1)
+    db.session.add(wl)
+    db.session.commit()
+
+    resp = client.get(f"/v1/wordlists/{wl.id}")
+    assert resp.status_code == 404
+    data = resp.get_json()
+    assert data and data["type"] == "Error"
+    assert "missing on disk" in data["msg"]
+
+
 # ---------------------------------------------------------------------------
 # Launch migration: compress_existing_wordlists_if_needed
 # ---------------------------------------------------------------------------
@@ -513,6 +546,62 @@ def test_launch_migration(app, tmp_path):
     assert static_wl.checksum == checksum_after
 
 
+def test_migration_normalizes_relative_wordlist_path(app, client, tmp_path):
+    # A legacy row with a RELATIVE .gz path whose file IS present in the
+    # wordlists dir (the exact shape that stranded wordlist 6) gets its path
+    # rewritten to absolute, so the download route and cracking commands find it
+    # regardless of the process CWD.
+    user = _make_user(api_key="relkey")
+    _auth(client, "relkey")
+    content = b"one\ntwo\n"
+    gzname = secrets.token_hex(8) + ".gz"
+    abs_gz = WORDLISTS_DIR / gzname
+    with gzip.open(str(abs_gz), "wb", compresslevel=9) as f:
+        f.write(content)
+    rel_path = os.path.join("hashview", "control", "wordlists", gzname)   # legacy relative form
+    wl = Wordlists(name="RelPath", owner_id=user.id, type="static",
+                   path=rel_path, checksum=get_filehash(str(abs_gz)), size=2, byte_size=None)
+    db.session.add(wl)
+    db.session.commit()
+    wl_id = wl.id
+
+    compress_existing_wordlists_if_needed(db)
+
+    wl = Wordlists.query.get(wl_id)
+    assert os.path.isabs(wl.path)
+    assert os.path.abspath(wl.path) == os.path.abspath(str(abs_gz))
+    assert wl.byte_size == os.path.getsize(str(abs_gz))
+    # end-to-end: it now serves
+    resp = client.get(f"/v1/wordlists/{wl_id}")
+    assert resp.status_code == 200
+    assert gzip.decompress(resp.data) == content
+
+
+def test_migration_compresses_into_wordlists_dir(app, tmp_path):
+    # A static, uncompressed legacy file living OUTSIDE the wordlists dir must be
+    # compressed INTO the absolute wordlists dir (not next to the source), so it
+    # lands where the download route serves from.
+    user = _make_user(api_key="cmpkey")
+    content = b"aa\nbb\ncc\n"
+    src = tmp_path / "legacy_plain.txt"
+    src.write_bytes(content)
+    wl = Wordlists(name="LegacyPlain", owner_id=user.id, type="static",
+                   path=str(src), checksum=get_filehash(str(src)), size=3)
+    db.session.add(wl)
+    db.session.commit()
+    wl_id = wl.id
+
+    compress_existing_wordlists_if_needed(db)
+
+    wl = Wordlists.query.get(wl_id)
+    assert os.path.isabs(wl.path)
+    assert os.path.dirname(os.path.abspath(wl.path)) == os.path.abspath(str(WORDLISTS_DIR))
+    assert is_gzip(wl.path)
+    assert not src.exists()   # old plaintext removed after the durable commit
+    with gzip.open(wl.path, "rb") as f:
+        assert f.read() == content
+
+
 # ---------------------------------------------------------------------------
 # build_hashcat_command emits the .gz path the agent stores
 # ---------------------------------------------------------------------------
@@ -576,7 +665,7 @@ def test_build_hashcat_command_combinator_uses_second_wordlist(app, tmp_path):
     task.wl_id_2 = wl2.id
     db.session.commit()
 
-    cmd = build_hashcat_command(job.id, task.id)
+    cmd = " ".join(build_hashcat_command(job.id, task.id))   # argv list -> joined for substring checks
     assert " -a 1 " in cmd
     assert gz1 in cmd                      # left dictionary
     assert gz2 in cmd                      # right dictionary — the bug dropped this
@@ -595,7 +684,7 @@ def test_build_hashcat_command_static_dict_plus_rule(app, tmp_path):
     db.session.add(rule)
     db.session.commit()
     job, task = _setup_job_for_wordlist(user, wl, attackmode=0, rule_id=rule.id)
-    cmd = build_hashcat_command(job.id, task.id)
+    cmd = " ".join(build_hashcat_command(job.id, task.id))   # argv list -> joined for substring checks
     assert "-r control/rules/best64.rule" in cmd
     assert "control/wordlists/" + gz_basename in cmd
 
@@ -635,7 +724,8 @@ class _FakeApi:
         self.download_calls = []
 
     def getWordlists(self):
-        return json.dumps(self._entries)
+        # Native list, matching the server's post-#229 response (no double-encode).
+        return self._entries
 
     def get_wordlists_file(self, wid):
         self.download_calls.append(wid)

@@ -21,7 +21,10 @@ def test_job_creation_flow(page, live_server, login):
     page.get_by_role("link", name="New Job", exact=True).click()
     expect(page.get_by_role("heading", name="Create Job")).to_be_visible()
 
-    page.get_by_label("Job Name").fill("E2E Job")
+    # Use a name distinct from the seeded "E2E Job" (seed_e2e_db.py) — the job
+    # blueprint's validate_name check now rejects duplicate names, so reusing the
+    # seeded name would re-render step 1 instead of advancing the wizard.
+    page.get_by_label("Job Name").fill("E2E Job Create")
     if page.locator("#priority").count() > 0:
         # priority is now a range slider, not a <select>
         page.locator("#priority").evaluate(

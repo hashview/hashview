@@ -9,7 +9,7 @@ def main() -> int:
     api_url = os.getenv("HASHVIEW_API_URL", "http://localhost:5000")
     agent_uuid = os.getenv("HASHVIEW_AGENT_UUID", str(uuid_lib.uuid4()))
     agent_name = os.getenv("HASHVIEW_AGENT_NAME", "test-agent")
-    agent_version = os.getenv("HASHVIEW_AGENT_VERSION", "0.8.2")
+    agent_version = os.getenv("HASHVIEW_AGENT_VERSION", "0.8.3")
     poll_interval = float(os.getenv("HASHVIEW_AGENT_POLL_INTERVAL", "1.0"))
     max_seconds = float(os.getenv("HASHVIEW_AGENT_MAX_SECONDS", "30"))
 

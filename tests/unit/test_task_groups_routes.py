@@ -99,16 +99,16 @@ def test_assigned_tasks_demote_task_moves_down(app, client):
     assert json.loads(TaskGroups.query.get(tg.id).tasks) == [t2.id, t1.id]
 
 
-def test_validate_task_rejects_duplicate(app):
+def test_validate_name_rejects_duplicate_group(app):
     admin = make_admin()
-    _task(admin, "TakenName")
+    _group(admin, [], name="TakenName")   # a task GROUP, not a task
     form = TaskGroupsForm()
 
     class _Field:
         data = "TakenName"
 
     with pytest.raises(ValidationError):
-        form.validate_task(_Field())
+        form.validate_name(_Field())
 
 
 # --- edit route ------------------------------------------------------------
@@ -167,7 +167,7 @@ def test_task_groups_edit_non_owner_non_admin_403(app, client):
     assert TaskGroups.query.get(tg.id).name == "AdminGroup"
 
 
-def test_task_groups_edit_invalid_form_flashes_danger(app, client):
+def test_task_groups_edit_invalid_shows_error_in_modal(app, client):
     admin = make_admin()
     login(client, admin)
     t1 = _task(admin, "a")
@@ -176,7 +176,9 @@ def test_task_groups_edit_invalid_form_flashes_danger(app, client):
         "group_id": tg.id, "name": "",
         "task_ids": f"{t1.id}", "submit": "Create",
     }, follow_redirects=True)
-    assert b"Could not update task group" in resp.data
+    # Error is surfaced inside the reopened Edit-group modal, not flashed; the
+    # group keeps its old name.
+    assert b"This field is required" in resp.data
     assert TaskGroups.query.get(tg.id).name == "Keep"
 
 

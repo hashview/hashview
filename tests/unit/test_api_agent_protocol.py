@@ -280,7 +280,7 @@ def test_get_queue_assignment_returns_assigned_task(app, client):
     resp = client.get(f"/v1/jobTasks/{jt.id}")
     body = _body(resp)
     assert body["status"] == 200
-    assert json.loads(body["job_task"])["task_id"] == 2
+    assert body["job_task"]["task_id"] == 2
 
 
 def test_get_job_returns_job_json(app, client):
@@ -295,7 +295,7 @@ def test_get_job_returns_job_json(app, client):
     resp = client.get(f"/v1/jobs/{job.id}")
     body = _body(resp)
     assert body["status"] == 200
-    assert json.loads(body["job"])["name"] == "apijob"
+    assert body["job"]["name"] == "apijob"
 
 
 def test_get_task_returns_task_json(app, client):
@@ -307,7 +307,7 @@ def test_get_task_returns_task_json(app, client):
     resp = client.get(f"/v1/tasks/{task.id}")
     body = _body(resp)
     assert body["status"] == 200
-    assert json.loads(body["task"])["name"] == "apitask"
+    assert body["task"]["name"] == "apitask"
 
 
 def test_get_hashtype_returns_mode(app, client):

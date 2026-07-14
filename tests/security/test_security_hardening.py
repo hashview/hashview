@@ -279,7 +279,9 @@ def test_wordlist_path_collapses_to_basename(nocsrf_app, evil_path):
     from hashview.utils.utils import build_hashcat_command
 
     job, task = _seed_job_with_task(0, wl_path=evil_path)
-    cmd = build_hashcat_command(job.id, task.id)
+    # build_hashcat_command returns an argv list; join it so these substring
+    # checks (prefix + no-traversal) inspect the whole invocation.
+    cmd = " ".join(build_hashcat_command(job.id, task.id))
 
     # The wordlist must always be referenced under the relative control dir.
     assert "control/wordlists/" in cmd
@@ -300,10 +302,54 @@ def test_rule_path_collapses_to_basename(nocsrf_app):
     from hashview.utils.utils import build_hashcat_command
 
     job, task = _seed_job_with_task(0, rule_path="../../../../etc/passwd")
-    cmd = build_hashcat_command(job.id, task.id)
+    cmd = " ".join(build_hashcat_command(job.id, task.id))   # argv list -> joined for substring checks
     assert "control/rules/passwd" in cmd
     assert "/etc/passwd" not in cmd
     assert "../" not in cmd
+
+
+# --------------------------------------------------------------------------- #
+# 3b. Command injection via task mask / rule fields (issue #297)              #
+# build_hashcat_command returns an argv LIST run by the agent with shell=False,#
+# so free-form fields land as literal argv elements, never shell-interpreted. #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.security
+def test_mask_field_shell_injection_is_a_literal_argv_element(nocsrf_app):
+    """A mask carrying shell metacharacters must be ONE literal argv element
+    (issue #297): `;`, `$()`, backticks, `|`, newlines reach hashcat as data."""
+    from hashview.utils.utils import build_hashcat_command
+
+    payload = "?d?d ; touch /tmp/pwned #\n$(id)`whoami`|cat /etc/passwd"
+    job, task = _seed_job_with_task(3, hc_mask=payload)   # -a 3 mask mode
+    argv = build_hashcat_command(job.id, task.id)
+
+    assert isinstance(argv, list)
+    # The whole payload is exactly one argv element (never split on the
+    # metacharacters), so execve hands it to hashcat as a single argument.
+    assert payload in argv
+    assert argv.count(payload) == 1
+    assert argv[-1] == payload                       # it's the mask argument
+
+
+@pytest.mark.security
+def test_combinator_rule_shell_injection_is_a_literal_argv_element(nocsrf_app):
+    """The combinator -j/-k rules were single-quoted (unescaped) into a shell
+    string, so a `'` broke out. As argv elements they cannot (issue #297)."""
+    from hashview.utils.utils import build_hashcat_command
+
+    j_payload = "$1' ; rm -rf / ; '"                 # single-quote break-out attempt
+    k_payload = "`whoami`"
+    job, task = _seed_job_with_task(1, j_rule=j_payload, k_rule=k_payload)  # -a 1 combinator
+    argv = build_hashcat_command(job.id, task.id)
+
+    assert isinstance(argv, list)
+    # Each rule is exactly one literal argv element, right after its flag.
+    assert argv[argv.index("-j") + 1] == j_payload
+    assert argv[argv.index("-k") + 1] == k_payload
+    # The build never emitted standalone shell-metacharacter tokens.
+    assert ";" not in argv and "&&" not in argv and "|" not in argv
 
 
 # --------------------------------------------------------------------------- #

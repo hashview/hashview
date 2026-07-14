@@ -32,14 +32,12 @@ info:
     `GET /v1/wordlists/{wordlist_id}`); these are modeled explicitly.
 
 
-    **Serialized rows.** List/detail endpoints return ORM rows JSON-encoded
-    **as a string** (double-decode required; see the per-field descriptions).
-    The encoder also emits SQLAlchemy artifacts (`query`, `query_class`,
-    `registry`, relationship keys such as `owner`) as `null`, and **all
-    datetime columns are always `null`** because non-JSON-encodable values are
-    dropped. Clients should ignore these artifact keys. The one exception is
-    `GET /v1/hashfiles/hash_type/{hash_type}`, which builds a real nested
-    array with ISO-8601 timestamps.
+    **Serialized rows.** List/detail endpoints return ORM rows as native JSON
+    (arrays/objects — no double-decode; issue #229). The encoder emits
+    SQLAlchemy artifacts (`query`, `query_class`, `registry`, relationship keys
+    such as `owner`) as `null`, and **all datetime columns are always `null`**
+    because non-JSON-encodable values are dropped. Clients should ignore these
+    artifact keys.
 
 servers:
   - url: /
@@ -294,14 +292,14 @@ paths:
       tags: [Admin]
       summary: Get system settings
       description: >-
-        Returns the Settings rows JSON-encoded as a string. Note this includes
+        Returns the Settings rows as a native JSON array. Note this includes
         `slack_bot_token` and is readable by ANY valid user or agent
         credential.
       operationId: getAdminSettings
       x-audience: both
       responses:
         '200':
-          description: Envelope with `settings` as a JSON-encoded string.
+          description: Envelope with `settings` as a native JSON array.
           content:
             application/json:
               schema:
@@ -315,15 +313,15 @@ paths:
       tags: [Customers]
       summary: List customers
       description: >-
-        Returns all customers JSON-encoded as a string — under the (misnamed)
+        Returns all customers as a native JSON array — under the (misnamed)
         key **`users`**, not `customers`.
       operationId: listCustomers
       x-audience: both
       responses:
         '200':
           description: >-
-            Envelope whose `users` key (sic) is a JSON-encoded string holding
-            the customer array.
+            Envelope whose `users` key (sic) is a native JSON array of
+            customers.
           content:
             application/json:
               schema:
@@ -371,7 +369,7 @@ paths:
       x-audience: both
       responses:
         '200':
-          description: Envelope with `rules` as a JSON-encoded string.
+          description: Envelope with `rules` as a native JSON array.
           content:
             application/json:
               schema:
@@ -467,7 +465,7 @@ paths:
       x-audience: both
       responses:
         '200':
-          description: Envelope with `wordlists` as a JSON-encoded string.
+          description: Envelope with `wordlists` as a native JSON array.
           content:
             application/json:
               schema:
@@ -671,8 +669,8 @@ paths:
       responses:
         '200':
           description: >-
-            Envelope with `job` as a JSON-encoded string. An unknown id
-            yields the string "null".
+            Envelope with `job` as a native JSON object (null for an unknown
+            id).
           content:
             application/json:
               schema:
@@ -746,8 +744,8 @@ paths:
       responses:
         '200':
           description: >-
-            Envelope with `job_task` as a JSON-encoded string ("null" when
-            the agent has no assignment).
+            Envelope with `job_task` as a native JSON object (null when the
+            agent has no assignment).
           content:
             application/json:
               schema:
@@ -850,8 +848,8 @@ paths:
       responses:
         '200':
           description: >-
-            Envelope with `task` as a JSON-encoded string ("null" for an
-            unknown id).
+            Envelope with `task` as a native JSON object (null for an unknown
+            id).
           content:
             application/json:
               schema:
@@ -954,6 +952,55 @@ paths:
               schema: {type: string}
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
+    delete:
+      tags: [Hashfiles]
+      summary: Delete a hashfile
+      description: >-
+        Owner or admin only. Refuses (409) while the hashfile is still
+        assigned to a job. On success cascades like the web UI: removes the
+        hashfile-hash links, the hashfile, and any uncracked hashes / hash
+        notifications it orphans, in one transaction.
+      operationId: deleteHashfile
+      x-audience: user
+      security:
+        - userApiKey: []
+      parameters:
+        - name: hashfile_id
+          in: path
+          required: true
+          schema: {type: integer}
+      responses:
+        '200':
+          description: >-
+            HTTP 200; body status 200 on success, 403 when not owner or
+            admin, 500 on a database error.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/HashfileDeletedResponse'
+                  - $ref: '#/components/schemas/ApiError'
+              examples:
+                deleted: {value: {status: 200, type: message, msg: Hashfile deleted, hashfile_id: 12}}
+                forbidden: {value: {status: 403, type: Error, msg: You do not have rights to delete this hashfile}}
+        '404':
+          description: Real HTTP 404 — unknown hashfile id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example: {status: 404, type: Error, msg: Hashfile not found}
+        '409':
+          description: >-
+            Real HTTP 409 — the hashfile is still associated with a job and
+            cannot be deleted until that job is removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example: {status: 409, type: Error, msg: Hashfile is currently associated with a job}
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
 
   /v1/hashfiles/hash_type/{hash_type}:
     get:
@@ -962,9 +1009,8 @@ paths:
       description: >-
         Lists every hashfile holding at least one hash of the given type. A
         hashfile can contain mixed types, so `total_hashes`/`cracked_hashes`
-        are scoped to the REQUESTED type within each file. Unlike the legacy
-        list endpoints this returns a real nested JSON array (no
-        double-decode) with ISO-8601 timestamps.
+        are scoped to the REQUESTED type within each file. Returns a nested
+        JSON array with ISO-8601 timestamps.
       operationId: listHashfilesByHashType
       x-audience: user
       security:
@@ -1262,7 +1308,7 @@ components:
       example: {status: 426, type: message, msg: 'Version missmatch, update your agent!'}
 
     # ------------------------------------------- serialized model rows
-    # These describe the OBJECTS EMBEDDED in the JSON-encoded strings the
+    # These describe the ORM row objects the
     # list/detail endpoints return. Only stable column fields are listed;
     # responses additionally carry SQLAlchemy artifacts (query, query_class,
     # registry, relationship keys like owner) as null — ignore them. ALL
@@ -1270,14 +1316,14 @@ components:
     # values), which is why they are typed nullable string here.
     Customer:
       type: object
-      description: A customer row (embedded in the JSON-encoded string).
+      description: A customer row (returned as a native JSON object).
       properties:
         id: {type: integer}
         name: {type: string}
 
     Rule:
       type: object
-      description: A rule-file catalog row (embedded in the JSON-encoded string).
+      description: A rule-file catalog row (returned as a native JSON object).
       properties:
         id: {type: integer}
         name: {type: string}
@@ -1292,7 +1338,7 @@ components:
 
     Wordlist:
       type: object
-      description: A wordlist catalog row (embedded in the JSON-encoded string).
+      description: A wordlist catalog row (returned as a native JSON object).
       properties:
         id: {type: integer}
         name: {type: string}
@@ -1314,7 +1360,7 @@ components:
 
     Job:
       type: object
-      description: A job row (embedded in the JSON-encoded string).
+      description: A job row (returned as a native JSON object).
       properties:
         id: {type: integer}
         name: {type: string}
@@ -1357,7 +1403,7 @@ components:
 
     JobTask:
       type: object
-      description: A job-task queue row (embedded in the JSON-encoded string).
+      description: A job-task queue row (returned as a native JSON object).
       properties:
         id: {type: integer}
         job_id: {type: integer}
@@ -1378,7 +1424,7 @@ components:
 
     Task:
       type: object
-      description: A task (attack definition) row (embedded in the JSON-encoded string).
+      description: A task (attack definition) row (returned as a native JSON object).
       properties:
         id: {type: integer}
         name: {type: string}
@@ -1400,7 +1446,7 @@ components:
     Settings:
       type: object
       description: >-
-        The system settings row (embedded in the JSON-encoded string). NOTE:
+        The system settings row (returned as a native JSON object). NOTE:
         includes `slack_bot_token` — visible to any valid user or agent
         credential.
       properties:
@@ -1571,14 +1617,10 @@ components:
           required: [settings]
           properties:
             settings:
-              type: string
-              description: >-
-                JSON-encoded STRING (double-decode) holding an array of
-                Settings objects.
-              x-embedded-schema:
-                type: array
-                items: {$ref: '#/components/schemas/Settings'}
-              example: '[{"id": 1, "retention_period": 30, "max_runtime_jobs": 0, "max_runtime_tasks": 0, "email_enabled": true, "slack_enabled": false, "slack_bot_token": null}]'
+              type: array
+              description: Array of Settings rows (native JSON; no double-decode).
+              items: {$ref: '#/components/schemas/Settings'}
+              example: [{"id": 1, "retention_period": 30, "max_runtime_jobs": 0, "max_runtime_tasks": 0, "email_enabled": true, "slack_enabled": false, "slack_bot_token": null}]
 
     CustomersListResponse:
       allOf:
@@ -1587,14 +1629,12 @@ components:
           required: [users]
           properties:
             users:
-              type: string
+              type: array
               description: >-
-                MISNAMED KEY — holds the CUSTOMERS, not users, as a
-                JSON-encoded STRING (double-decode).
-              x-embedded-schema:
-                type: array
-                items: {$ref: '#/components/schemas/Customer'}
-              example: '[{"id": 1, "name": "Acme"}]'
+                MISNAMED KEY — holds the CUSTOMERS, not users, as a native
+                JSON array (no double-decode).
+              items: {$ref: '#/components/schemas/Customer'}
+              example: [{"id": 1, "name": "Acme"}]
 
     RulesListResponse:
       allOf:
@@ -1603,14 +1643,10 @@ components:
           required: [rules]
           properties:
             rules:
-              type: string
-              description: >-
-                JSON-encoded STRING (double-decode) holding an array of Rule
-                objects.
-              x-embedded-schema:
-                type: array
-                items: {$ref: '#/components/schemas/Rule'}
-              example: '[{"id": 1, "name": "best64", "owner_id": 1, "path": "hashview/control/rules/ab12.txt", "size": 77, "checksum": "9f2c...", "last_updated": null}]'
+              type: array
+              description: Array of Rule rows (native JSON; no double-decode).
+              items: {$ref: '#/components/schemas/Rule'}
+              example: [{"id": 1, "name": "best64", "owner_id": 1, "path": "hashview/control/rules/ab12.txt", "size": 77, "checksum": "9f2c...", "last_updated": null}]
 
     WordlistsListResponse:
       allOf:
@@ -1619,14 +1655,10 @@ components:
           required: [wordlists]
           properties:
             wordlists:
-              type: string
-              description: >-
-                JSON-encoded STRING (double-decode) holding an array of
-                Wordlist objects.
-              x-embedded-schema:
-                type: array
-                items: {$ref: '#/components/schemas/Wordlist'}
-              example: '[{"id": 1, "name": "rockyou", "type": "static", "size": 14344384, "byte_size": 53357520, "checksum": "ab34...", "path": "hashview/control/wordlists/cd56.gz", "owner_id": 1, "last_updated": null}]'
+              type: array
+              description: Array of Wordlist rows (native JSON; no double-decode).
+              items: {$ref: '#/components/schemas/Wordlist'}
+              example: [{"id": 1, "name": "rockyou", "type": "static", "size": 14344384, "byte_size": 53357520, "checksum": "ab34...", "path": "hashview/control/wordlists/cd56.gz", "owner_id": 1, "last_updated": null}]
 
     JobResponse:
       allOf:
@@ -1635,13 +1667,11 @@ components:
           required: [job]
           properties:
             job:
-              type: string
-              description: >-
-                JSON-encoded STRING (double-decode) holding a single Job
-                object ("null" for an unknown id).
-              x-embedded-schema:
-                $ref: '#/components/schemas/Job'
-              example: '{"id": 12, "name": "acme-ntlm", "status": "Running", "priority": 3, "customer_id": 1, "owner_id": 1, "hashfile_id": 9, "limit_recovered": false, "crawl_url": null}'
+              description: A single Job row (native JSON), or null for an unknown id.
+              nullable: true
+              allOf:
+                - $ref: '#/components/schemas/Job'
+              example: {"id": 12, "name": "acme-ntlm", "status": "Running", "priority": 3, "customer_id": 1, "owner_id": 1, "hashfile_id": 9, "limit_recovered": false, "crawl_url": null}
 
     JobTaskResponse:
       allOf:
@@ -1650,13 +1680,13 @@ components:
           required: [job_task]
           properties:
             job_task:
-              type: string
               description: >-
-                JSON-encoded STRING (double-decode) holding a single JobTask
-                object ("null" when the agent has no assignment).
-              x-embedded-schema:
-                $ref: '#/components/schemas/JobTask'
-              example: '{"id": 7, "job_id": 12, "task_id": 42, "priority": 3, "status": "Running", "agent_id": 2, "command": "hashcat -O -w 3 ..."}'
+                A single JobTask row (native JSON), or null when the agent has
+                no assignment.
+              nullable: true
+              allOf:
+                - $ref: '#/components/schemas/JobTask'
+              example: {"id": 7, "job_id": 12, "task_id": 42, "priority": 3, "status": "Running", "agent_id": 2, "command": "hashcat -O -w 3 ..."}
 
     TaskResponse:
       allOf:
@@ -1665,13 +1695,11 @@ components:
           required: [task]
           properties:
             task:
-              type: string
-              description: >-
-                JSON-encoded STRING (double-decode) holding a single Task
-                object ("null" for an unknown id).
-              x-embedded-schema:
-                $ref: '#/components/schemas/Task'
-              example: '{"id": 42, "name": "rockyou-best64", "hc_attackmode": 0, "wl_id": 1, "rule_id": 2, "owner_id": 1, "wl_id_2": null, "j_rule": null, "k_rule": null, "hc_mask": null}'
+              description: A single Task row (native JSON), or null for an unknown id.
+              nullable: true
+              allOf:
+                - $ref: '#/components/schemas/Task'
+              example: {"id": 42, "name": "rockyou-best64", "hc_attackmode": 0, "wl_id": 1, "rule_id": 2, "owner_id": 1, "wl_id_2": null, "j_rule": null, "k_rule": null, "hc_mask": null}
 
     HashfilesByTypeResponse:
       allOf:
@@ -1757,6 +1785,14 @@ components:
           required: [job_id]
           properties:
             job_id: {type: integer}
+
+    HashfileDeletedResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMessage'
+        - type: object
+          required: [hashfile_id]
+          properties:
+            hashfile_id: {type: integer}
 
     TaskAddedResponse:
       allOf:

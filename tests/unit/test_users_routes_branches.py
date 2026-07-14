@@ -199,11 +199,12 @@ class TestUsersList:
 # ---------------------------------------------------------------------------
 
 class TestUsersAdd:
-    def test_admin_get_renders_form(self, app, client):
+    def test_get_not_allowed(self, app, client):
+        """The add-user form is a modal on /users; /users/add is POST-only now."""
         user = _make_user(app, email="admin_add@example.com", admin=True)
         _login(client, user)
         resp = client.get("/users/add")
-        assert resp.status_code == 200
+        assert resp.status_code == 405
 
     def test_non_admin_redirected(self, app, client):
         user = _make_user(app, email="nonadmin_add@example.com", admin=False)
@@ -242,25 +243,6 @@ class TestUsersAdd:
         created = Users.query.filter_by(email_address="createduser@example.com").first()
         assert created is not None
 
-    def test_admin_add_user_with_pushover(self, app, client):
-        user = _make_user(app, email="admin_pushover@example.com", admin=True)
-        _login(client, user)
-        resp = client.post(
-            "/users/add",
-            data={
-                "first_name": "Push",
-                "last_name": "Over",
-                "email": "pushovercreated@example.com",
-                "password": "PushoverPass1234!",
-                "confirm_password": "PushoverPass1234!",
-                "is_admin": False,
-                "pushover_app_id": "apptoken123",
-                "pushover_user_key": "userkey123",
-            },
-            follow_redirects=False,
-        )
-        assert resp.status_code in (200, 301, 302)
-
     def test_admin_add_user_with_invite(self, app, client):
         """send_invite flag triggers send_email (best-effort, won't crash)."""
         user = _make_user(app, email="admin_invite@example.com", admin=True)
@@ -280,19 +262,61 @@ class TestUsersAdd:
         )
         assert resp.status_code in (200, 301, 302)
 
-    def test_admin_get_add_page(self, app, client):
-        """GET /users/add renders the add form."""
-        user = _make_user(app, email="admin_get_add@example.com", admin=True)
-        _login(client, user)
-        resp = client.get("/users/add")
-        assert resp.status_code == 200
+    def test_duplicate_email_shows_error_inside_modal(self, app, client):
+        """A duplicate email is a validation error: redirect back to /users (not
+        the old /users/add page) with the error rendered inside the add-user
+        modal — NOT flashed over the listing."""
+        admin = _make_user(app, email="dupe_admin@example.com", admin=True)
+        _make_user(app, email="taken@example.com", admin=False)
+        _login(client, admin)
+        resp = client.post(
+            "/users/add",
+            data={
+                "first_name": "Dupe",
+                "last_name": "User",
+                "email": "taken@example.com",
+                "password": "DupeUserPass1234!",
+                "confirm_password": "DupeUserPass1234!",
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code in (301, 302)
+        assert resp.headers.get("Location", "").endswith("/users")
+        # No second account was created for the taken email.
+        assert Users.query.filter_by(email_address="taken@example.com").count() == 1
+        # The error is NOT flashed (nothing queued for the listing's flash area).
+        with client.session_transaction() as sess:
+            assert not sess.get("_flashes")
+        # It renders inside the add-user modal's error block instead.
+        body = client.get("/users").data
+        assert b'id="nu-errors"' in body
+        assert b"That email address is taken" in body
 
-    def test_non_admin_get_redirected(self, app, client):
-        """Non-admin GET /users/add is redirected."""
-        user = _make_user(app, email="nonadmin_get_add@example.com", admin=False)
-        _login(client, user)
-        resp = client.get("/users/add")
-        assert resp.status_code in (200, 301, 302)
+    def test_failed_add_repopulates_modal(self, app, client):
+        """After a validation failure the users page reopens the add-user modal
+        pre-filled with what was typed (passwords excepted)."""
+        admin = _make_user(app, email="repop_admin@example.com", admin=True)
+        _make_user(app, email="dup@example.com", admin=False)
+        _login(client, admin)
+        resp = client.post(
+            "/users/add",
+            data={
+                "first_name": "Repop",
+                "last_name": "Tester",
+                "email": "dup@example.com",  # taken -> validation error
+                "password": "RepopPass1234!",
+                "confirm_password": "RepopPass1234!",
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code in (301, 302)
+        body = client.get("/users").data
+        assert b'value="Repop"' in body
+        assert b'value="Tester"' in body
+        assert b'value="dup@example.com"' in body
+        # The add-user modal auto-reopens (the repopulate-only script block,
+        # identified by its unique guard, is emitted).
+        assert b"if (!dlg) return;" in body
 
 
 # ---------------------------------------------------------------------------

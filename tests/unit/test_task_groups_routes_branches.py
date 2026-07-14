@@ -273,7 +273,8 @@ def test_task_groups_edit_admin_can_edit_any_group(app, client):
 
 
 def test_task_groups_edit_form_invalid(app, client):
-    """Missing name field → form fails validation → danger flash."""
+    """Missing name field → form fails validation → error shown in the reopened
+    Edit-group modal (not flashed over the listing)."""
     admin = _admin()
     _login(client, admin)
     tg = _make_group(admin.id, name="form-invalid-group")
@@ -283,7 +284,7 @@ def test_task_groups_edit_form_invalid(app, client):
         # name omitted — DataRequired will reject
         "task_ids": "",
     }, follow_redirects=True)
-    assert b"Could not update task group" in resp.data
+    assert b"This field is required" in resp.data
 
 
 # ---------------------------------------------------------------------------

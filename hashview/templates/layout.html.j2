@@ -134,7 +134,7 @@
                             <input class="input mono" id="as-apikey" type="text" data-full="{{ as_key }}" data-mask="{{ as_mask }}" value="{{ as_mask }}" readonly style="padding-right:38px; width:100%;">
                             <button type="button" class="icon-btn" onclick="hvApiReveal()" title="Show / hide" style="position:absolute; right:4px; top:50%; transform:translateY(-50%); border:0; background:none;">{{ icon('eye', size=15) }}</button>
                         </div>
-                        <button type="button" class="btn" onclick="hvApiCopy()" style="flex:none;">{{ icon('copy', size=15) }} Copy</button>
+                        <button type="button" class="btn" onclick="hvApiCopy(this)" style="flex:none;">{{ icon('copy', size=15) }} Copy</button>
                         <a class="btn" href="{{ url_for('users.generate_api_key', next=request.path) }}" role="button" style="flex:none;">{{ icon('refresh', size=15) }} Generate</a>
                     </div>
                     <span class="field-hint" style="margin-top:8px; display:block;">Used to authenticate against the Hashview REST API. Regenerating immediately revokes the previous key.</span>
@@ -226,12 +226,47 @@
         var full = i.getAttribute('data-full'); if (!full) return;
         i.value = (i.value === full) ? i.getAttribute('data-mask') : full;
     }
-    function hvApiCopy() {
+    function hvApiCopy(btn) {
         var i = document.getElementById('as-apikey'); if (!i) return;
         var full = i.getAttribute('data-full'); if (!full) return;
-        if (navigator.clipboard) { navigator.clipboard.writeText(full); }
-        else { var was = i.value; i.value = full; i.select(); document.execCommand('copy'); i.value = was; }
+        // Momentary "Copied!" confirmation on the button so the user knows the
+        // key made it to the clipboard (issue #303).
+        function flash() {
+            if (!btn) return;
+            if (btn._copyT) { clearTimeout(btn._copyT); } else { btn._copyHTML = btn.innerHTML; }
+            btn.innerHTML = '✓ Copied!';
+            btn.style.color = 'var(--primary)';
+            btn._copyT = setTimeout(function () {
+                btn.innerHTML = btn._copyHTML;
+                btn.style.color = '';
+                btn._copyT = null;
+            }, 1500);
+        }
+        function legacy() {
+            var was = i.value; i.value = full; i.select();
+            try { document.execCommand('copy'); } catch (e) {}
+            i.value = was; if (i.blur) { i.blur(); }
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(full).then(flash, function () { legacy(); flash(); });
+        } else {
+            legacy(); flash();
+        }
     }
+    // After regenerating the key, generate_api_key redirects back with
+    // ?apikey_generated=1 — reopen the account modal and reveal the new key
+    // (the page re-rendered with it), then strip the marker from the URL.
+    document.addEventListener('DOMContentLoaded', function () {
+        var params = new URLSearchParams(window.location.search);
+        if (!params.has('apikey_generated')) return;
+        var modal = document.getElementById('account-settings-modal');
+        if (modal) { try { modal.showModal(); } catch (e) { modal.setAttribute('open', ''); } }
+        var i = document.getElementById('as-apikey');
+        if (i) { var full = i.getAttribute('data-full'); if (full) { i.value = full; } }
+        params.delete('apikey_generated');
+        var qs = params.toString();
+        history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : '') + window.location.hash);
+    });
     // Reveal the per-channel admin-notification options only when the master
     // "Receive administrative notifications" switch is on (admins only).
     function hvSyncAdminNotif() {

@@ -46,7 +46,7 @@ def test_api_task_lookup(page, live_server):
     data = response.json()
     if "task" not in data:
         pytest.skip("HASHVIEW_E2E_API_KEY is not authorized for task lookup.")
-    task = json.loads(data["task"])
+    task = data["task"]
     assert str(task.get("id")) == str(task_id)
 
 
@@ -62,7 +62,7 @@ def test_api_job_lookup(page, live_server):
     data = response.json()
     if "job" not in data:
         pytest.skip("HASHVIEW_E2E_API_KEY is not authorized for job lookup.")
-    job = json.loads(data["job"])
+    job = data["job"]
     assert str(job.get("id")) == str(job_id)
 
 
@@ -71,7 +71,7 @@ def test_api_agent_heartbeat_creates_agent(page, live_server):
     page.context.add_cookies(
         [
             {"name": "uuid", "value": "test-agent-uuid", "url": live_server},
-            {"name": "agent_version", "value": "0.8.2", "url": live_server},
+            {"name": "agent_version", "value": "0.8.3", "url": live_server},
             {"name": "name", "value": "Test Agent", "url": live_server},
         ]
     )

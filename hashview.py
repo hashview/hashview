@@ -291,8 +291,6 @@ def data_retention_cleanup(app):
         )
         from hashview.utils.utils import send_email
 
-        print('[DEBUG] Im retaining all the data: ' + str(datetime.now()))
-
         setting = Settings.query.get('1')
         retention_period = setting.retention_period
         filter_after = datetime.today() - timedelta(days = retention_period)
@@ -316,8 +314,6 @@ def data_retention_cleanup(app):
             db.session.delete(job)
             db.session.commit()
 
-            print("[DEBUG] Job Name: " + str(job.name) + '  Owner ID: ' + str(job.owner_id))
-
         # Remove Hashfiles (jobs younger than retention period that reference
         # these hashfiles get removed too).
         hashfiles = Hashfiles.query.filter(Hashfiles.uploaded_at < filter_after).all()
@@ -326,7 +322,6 @@ def data_retention_cleanup(app):
             # Job, jobtask and job notifications
             jobs = Jobs.query.filter_by(hashfile_id = hashfile.id).all()
             for job in jobs:
-                print("[DEBUG] Hashfile->jobs: Job Name: " +str(job.name))
                 user = Users.query.get(job.owner_id)
                 subject = (
                     'Hashview removed a job that was associated to an old hash file: '
@@ -347,11 +342,6 @@ def data_retention_cleanup(app):
                 db.session.commit()
 
             # Hashfiles, HashfileHashes and Hash notifications
-            print(
-                f'[DEBUG] Hashfile Name: {hashfile.name}    '
-                f'Owner ID: {hashfile.owner_id}'
-            )
-            print('[DEBUG] Hashfile ID: ' + str(hashfile.id))
             user = Users.query.get(hashfile.owner_id)
             subject = 'Hashview removed an old Hashfile: ' + str(hashfile.name)
             message = (
@@ -382,17 +372,10 @@ def data_retention_cleanup(app):
 
         # Clean temp folder of files older than RETENTION PERIOD
         for file in os.listdir('hashview/control/tmp'):
-            print('[DEBUG] hashview.py->data_retention_cleanup() ' + file)
-            if file == '.gitignore':
-                print('Found Git Ignore!')
             tmp_path = 'hashview/control/tmp/' + file
             age_limit = time.time() - retention_period * 86400
             if os.stat(tmp_path).st_mtime < age_limit and file != '.gitignore':
                 os.remove(tmp_path)
-                print('[DEBUG] hashview.py->data_retention_cleanup() '
-                      f'Removed: {tmp_path}')
-
-        print('[DEBUG] ==============')
 
 
 def cli(args) -> int:

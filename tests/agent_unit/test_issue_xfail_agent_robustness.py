@@ -9,6 +9,8 @@ failure — a built-in reminder to drop the marker.
   A. api.* call json.loads() on the None that http.get/post return on non-200.
   B. download-to-disk call sites write that None straight to a file.
   C. callers index (`['msg']`) an api result that can be None even on a 200.
+  A/B/C are now FIXED — the tests below are regression guards, not xfails (see
+  also tests/agent_unit/test_agent_robustness.py for the wider coverage).
 
 #281 — agent process-control reliability:
   D. run_command treats ANY hashcat stderr as fatal and SIGINTs the agent.
@@ -80,28 +82,28 @@ def test_heartbeat_handles_non_200_without_typeerror(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# #280 B — a failed download must not be written to disk as None
+# #280 B — a failed download must not be written to disk as None (FIXED)
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, raises=TypeError,
-                   reason="#280 B: download_hashfile writes the None from a failed "
-                          "download straight to the file (no guard)")
 def test_download_hashfile_handles_failed_download(tmp_path, monkeypatch):
+    # #280 B FIXED: a failed download (get_hashfile -> None) is not written to
+    # disk; download_hashfile returns False so the caller skips the run. Now a
+    # regression guard, not an xfail.
     monkeypatch.chdir(tmp_path)
     (tmp_path / "control" / "hashes").mkdir(parents=True)
     monkeypatch.setattr(agent_main.api, "get_hashfile", lambda hashfile_id: None)
-    agent_main.download_hashfile(1, 2, 3)   # desired: handled, not write(None) -> TypeError
+    assert agent_main.download_hashfile(1, 2, 3) is False   # handled, no write(None) -> TypeError
+    assert not (tmp_path / "control" / "hashes" / "hashfile_1_2.txt").exists()
 
 
 # ---------------------------------------------------------------------------
-# #280 C — callers must not index a response that can be None
+# #280 C — callers must not index a response that can be None (FIXED)
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, raises=TypeError,
-                   reason="#280 C: handle_heartbeat does response['msg'] when "
-                          "send_heartbeat returns None")
 def test_handle_heartbeat_handles_none_response(monkeypatch):
-    # getHashcatPid() runs first; the default psutil stub yields no processes.
+    # #280 C FIXED: handle_heartbeat tolerates a None reply from send_heartbeat
+    # (getHashcatPid() runs first; the default psutil stub yields no processes).
+    # Now a regression guard, not an xfail.
     monkeypatch.setattr(agent_main, "send_heartbeat", lambda *a, **k: None)
-    agent_main.handle_heartbeat()   # desired: graceful, not None['msg'] -> TypeError
+    agent_main.handle_heartbeat()   # must not raise (was None['msg'] -> TypeError)
 
 
 # ---------------------------------------------------------------------------

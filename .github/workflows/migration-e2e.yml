@@ -1,0 +1,35 @@
+name: Migration E2E
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  migration-e2e:
+    runs-on: ubuntu-latest
+    # Builds two app images (hashview:main from origin/main + hashview:dev from
+    # the checkout) and cycles a MySQL compose stack. Two cold docker builds +
+    # two MySQL boots + a venv install need headroom on a fresh runner.
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The runner builds the "old" image from origin/main, so we need the
+          # full history / that ref available locally.
+          fetch-depth: 0
+
+      - name: Ensure origin/main is available
+        run: git fetch origin main:refs/remotes/origin/main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run end-to-end main->dev migration test
+        env:
+          DOCKER_PLATFORM: linux/amd64
+        run: ./tests/run_migration_e2e.sh

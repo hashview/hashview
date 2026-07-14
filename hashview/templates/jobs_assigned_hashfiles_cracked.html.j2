@@ -10,13 +10,26 @@
 </div>
 {{ wizard_stepper('hashfile') }}
 
+<style>
+    /* Keep the (potentially huge) instacrack list in a scrollable box so the
+       wizard Next button stays reachable without scrolling past every row. */
+    #ic-scroll { max-height: 55vh; overflow-y: auto; }
+    #ic-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); padding-top: 12px; }
+</style>
 <div class="card">
     <div class="card-head">
-        <h3>Local Check</h3>
-        <span class="page-sub" title="The following hashes are already cracked in Hashview's Local database!">{{ icon('info', size=15) }} Already cracked in Hashview's local database</span>
+        <div style="display:flex; flex-direction:column; gap:3px;">
+            <h3>InstaCrack!</h3>
+            <span class="page-sub" style="margin-top:0; display:inline-flex; align-items:center; gap:6px;" title="The following hashes are already cracked in Hashview's Local database!">{{ icon('info', size=15) }} Already cracked in Hashview's local database</span>
+        </div>
     </div>
     {% if cracked_hashfiles_hashes|length > 0 %}
-    <table class="tbl">
+    <div style="display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--border-soft);">
+        <input type="text" id="ic-filter" class="input" style="flex:1;" placeholder="Filter by name, hash, or plaintext…" autocomplete="off" oninput="hvIcFilter(this.value)">
+        <span class="mono" id="ic-count" style="font-size:11px; color:var(--text-mute); white-space:nowrap;"></span>
+    </div>
+    <div id="ic-scroll">
+    <table class="tbl" id="ic-table">
         <thead>
             <tr>
                 <th>Username</th>
@@ -26,10 +39,12 @@
         </thead>
         <tbody>
             {% for entry in cracked_hashfiles_hashes %}
-            <tr>
+            {% set nm = (entry[1].username | jinja_hex_decode) if entry[1].username else '' %}
+            {% set pt = (entry[0].plaintext | jinja_hex_decode) if entry[0].plaintext else '' %}
+            <tr class="ic-row" data-search="{{ (nm ~ ' ' ~ entry[0].ciphertext ~ ' ' ~ pt) | lower }}">
                 <td>
                     {% if entry[1].username %}
-                        {{ entry[1].username | jinja_hex_decode }}
+                        {{ nm }}
                     {% else %}
                         <span style="color:var(--text-mute);">None</span>
                     {% endif %}
@@ -37,15 +52,17 @@
                 <td class="mono" style="color:var(--text-dim);">{{ entry[0].ciphertext }}</td>
                 <td>
                     {% if entry[0].plaintext %}
-                        <span class="mono" style="color:var(--primary); text-shadow:var(--glow-text);">{{ entry[0].plaintext | jinja_hex_decode }}</span>
+                        <span class="mono" style="color:var(--primary); text-shadow:var(--glow-text);">{{ pt }}</span>
                     {% else %}
                         <span style="color:var(--text-mute);">None</span>
                     {% endif %}
                 </td>
             </tr>
             {% endfor %}
+            <tr id="ic-no-match" style="display:none;"><td colspan="3" style="text-align:center; padding:28px 16px; color:var(--text-mute);" class="mono">No results match that filter.</td></tr>
         </tbody>
     </table>
+    </div>
     {% else %}
     <div class="card-body" style="text-align:center; padding:48px 24px;">
         <div class="mono" style="color:var(--text-dim);">No previously cracked hashes found.</div>
@@ -57,5 +74,39 @@
     <span class="spacer"></span>
     <a class="btn btn-primary" href="/jobs/{{job.id}}/notifications" role="button">Next {{ icon('arrowRight', size=15) }}</a>
 </div>
+
+{% if cracked_hashfiles_hashes|length > 0 %}
+<script>
+function hvIcFilter(q) {
+    q = (q || '').trim().toLowerCase();
+    var rows = document.querySelectorAll('#ic-table tbody tr.ic-row');
+    var shown = 0;
+    rows.forEach(function (r) {
+        var hit = !q || (r.getAttribute('data-search') || '').indexOf(q) !== -1;
+        r.style.display = hit ? '' : 'none';
+        if (hit) shown++;
+    });
+    var none = document.getElementById('ic-no-match');
+    if (none) none.style.display = shown === 0 ? '' : 'none';
+    var count = document.getElementById('ic-count');
+    if (count) count.textContent = shown + ' / ' + rows.length + ' shown';
+}
+// Size the results box to exactly fill the space between its top and the wizard
+// nav, so the Back/Next buttons are visible on load without scrolling the page.
+function hvIcResize() {
+    var box = document.getElementById('ic-scroll');
+    var nav = document.querySelector('.wizard-nav');
+    if (!box || !nav) return;
+    var boxTop = box.getBoundingClientRect().top;
+    // Space consumed below the box (nav height + the gap to it). This is
+    // invariant to the box's own height, so a single measurement is stable.
+    var belowBox = nav.getBoundingClientRect().bottom - box.getBoundingClientRect().bottom;
+    var avail = window.innerHeight - boxTop - belowBox - 12;   // 12px breathing room
+    box.style.maxHeight = Math.max(avail, 160) + 'px';         // floor for tiny viewports
+}
+window.addEventListener('resize', hvIcResize);
+document.addEventListener('DOMContentLoaded', function () { hvIcFilter(''); hvIcResize(); });
+</script>
+{% endif %}
 
 {% endblock content %}

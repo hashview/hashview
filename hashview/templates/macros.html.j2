@@ -19,6 +19,18 @@
 </div>
 {%- endmacro %}
 
+{# Error alert shown INSIDE a create/edit modal after a failed submit that
+   round-tripped through the session (see the *_list routes, which pop the
+   stashed error into `form_err`). Renders only for the modal that actually
+   failed, so a page can host several modals and only the relevant one lights up. #}
+{% macro modal_errors(form_err, modal_id) -%}
+{% if form_err and form_err.modal == modal_id and form_err.errors %}
+<div class="flash flash-danger" style="margin-bottom:16px;">
+  {% for error in form_err.errors %}<div>{{ error }}</div>{% endfor %}
+</div>
+{% endif %}
+{%- endmacro %}
+
 {# Status pill — ported from ui.jsx StatusBadge. Tone + optional icon + label. #}
 {% macro status_badge(status) -%}
 {%- set m = {

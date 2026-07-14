@@ -5,6 +5,14 @@
 <style>
 .hv-dl-opt { transition: border-color .15s, background .15s; }
 .hv-dl-opt:hover { border-color: var(--primary-dim); background: rgba(var(--primary-rgb), 0.06); }
+/* bulk-select bar — appears once ≥1 selectable row is checked */
+.hf-bulkbar { display:none; align-items:center; gap:12px; margin:0 16px 14px; padding:11px 16px;
+    border:1px solid var(--primary-dim); border-radius:10px; background:rgba(var(--primary-rgb),0.07); box-shadow:var(--glow-sm); }
+.hf-bulkbar.on { display:flex; }
+.hf-sel-count { color:var(--primary); text-shadow:var(--glow-text); font-family:var(--mono); font-size:13px; letter-spacing:.3px; }
+.hf-lock { color:var(--text-mute); display:inline-flex; }
+.hf-bulk-row { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border-soft); }
+.hf-bulk-row:last-child { border-bottom:none; }
 </style>
 
 <div class="page-head">
@@ -37,9 +45,16 @@
         <input type="text" id="hf-filter" class="input" style="width:260px; flex:none;" placeholder="filter by hashfile or customer…" autocomplete="off" oninput="hvFilterHashfiles(this.value)">
     </div>
     {% if hashfiles %}
+    <div class="hf-bulkbar" id="hf-bulkbar">
+        <span class="hf-sel-count"><span id="hf-sel-count">0</span> selected</span>
+        <span style="flex:1;"></span>
+        <button type="button" class="btn" onclick="hvHfClearSel()">Clear</button>
+        <button type="button" class="btn btn-danger" onclick="hvHfOpenBulkDel()">{{ icon('trash', size=15) }} Delete selected</button>
+    </div>
     <table class="tbl">
         <thead>
             <tr>
+                <th style="width:34px; text-align:center;"><input type="checkbox" class="hv-check" id="hf-select-all" onclick="hvHfToggleAll(this)" title="Select all deletable hashfiles"></th>
                 <th>Hashfile</th>
                 <th class="center">Type</th>
                 <th>Customer</th>
@@ -52,11 +67,24 @@
         <tbody id="hf-tbody">
             {% for hashfile in hashfiles %}
             {% set st = hashfile_stats.get(hashfile.id) if hashfile_stats is defined else none %}
+            {% set in_job = hashfile_jobs.get(hashfile.id) if hashfile_jobs is defined else none %}
             <tr data-name="{{ hashfile.name|lower }}{% for c in customers %}{% if c.id == hashfile.customer_id %} {{ c.name|lower }}{% endif %}{% endfor %}">
+                <td class="center">
+                    {% if in_job %}
+                    <span class="hf-lock" title="In a job — remove the job before deleting">{{ icon('lock', size=15) }}</span>
+                    {% else %}
+                    <input type="checkbox" class="hv-check hf-check" value="{{ hashfile.id }}"
+                           data-name="{{ hashfile.name }}"
+                           data-customer="{% for c in customers %}{% if c.id == hashfile.customer_id %}{{ c.name }}{% endif %}{% endfor %}"
+                           data-recovered="{{ st.cracked if st else 0 }}"
+                           onchange="hvHfSelChanged()">
+                    {% endif %}
+                </td>
                 <td style="font-weight:500;">
                     <span style="display:inline-flex; align-items:center; gap:9px;">
                         <span style="color:var(--text-mute); display:inline-flex;">{{ icon('file', size=16) }}</span>
                         {{ hashfile.name }}
+                        {% if in_job %}<span class="badge amber" style="font-size:9px;">IN JOB</span>{% endif %}
                     </span>
                 </td>
                 <td class="center"><span class="badge cyan">{{ hash_type_dict[hashfile.id] }}</span></td>
@@ -81,12 +109,16 @@
                         <button type="button" class="icon-btn" title="Download" onclick="document.getElementById('dl-{{ hashfile.id }}').showModal()">{{ icon('download', size=15) }}</button>
                         <a class="icon-btn" href="/analytics?customer_id={{hashfile.customer_id}}&hashfile_id={{hashfile.id}}" title="Analytics">{{ icon('chart', size=15) }}</a>
                         <button type="button" class="icon-btn" title="Info" onclick="document.getElementById('info-{{ hashfile.id }}').showModal()">{{ icon('info', size=15) }}</button>
+                        {% if in_job %}
+                        <span class="icon-btn" style="color:var(--text-mute); opacity:.45; cursor:not-allowed;" title="In a job — cannot be deleted">{{ icon('trash', size=15) }}</span>
+                        {% else %}
                         <button type="button" class="icon-btn act-del" style="color:var(--red); border-color:var(--red-dim);" title="Delete" onclick="document.getElementById('del-{{ hashfile.id }}').showModal()">{{ icon('trash', size=15) }}</button>
+                        {% endif %}
                     </div>
                 </td>
             </tr>
             {% endfor %}
-            <tr id="hf-no-match" style="display:none;"><td colspan="7" style="text-align:center; padding:28px 16px; color:var(--text-mute);" class="mono">No hashfiles match that filter.</td></tr>
+            <tr id="hf-no-match" style="display:none;"><td colspan="8" style="text-align:center; padding:28px 16px; color:var(--text-mute);" class="mono">No hashfiles match that filter.</td></tr>
         </tbody>
     </table>
     {% else %}
@@ -107,6 +139,62 @@ function hvFilterHashfiles(q){
     });
     var none = document.getElementById('hf-no-match');
     if (none) none.style.display = shown === 0 ? '' : 'none';
+}
+
+// ---- bulk selection + bulk delete -------------------------------------------
+var HF_FILE_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-mute); flex:none;"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>';
+
+function hvHfSelected(){
+    return Array.prototype.slice.call(document.querySelectorAll('.hf-check:checked'));
+}
+function hvHfSelChanged(){
+    var n = hvHfSelected().length;
+    var all = document.querySelectorAll('.hf-check').length;
+    var cEl = document.getElementById('hf-sel-count'); if (cEl) cEl.textContent = n;
+    var bar = document.getElementById('hf-bulkbar'); if (bar) bar.classList.toggle('on', n > 0);
+    var sa = document.getElementById('hf-select-all');
+    if (sa) { sa.checked = n > 0 && n === all; sa.indeterminate = n > 0 && n < all; }
+}
+function hvHfToggleAll(cb){
+    document.querySelectorAll('.hf-check').forEach(function(c){ c.checked = cb.checked; });
+    hvHfSelChanged();
+}
+function hvHfClearSel(){
+    document.querySelectorAll('.hf-check').forEach(function(c){ c.checked = false; });
+    hvHfSelChanged();
+}
+function hvHfOpenBulkDel(){
+    var sel = hvHfSelected();
+    if (!sel.length) return;
+    var list = document.getElementById('hf-bulk-list');
+    var hidden = document.getElementById('hf-bulk-hidden');
+    list.innerHTML = ''; hidden.innerHTML = '';
+    sel.forEach(function(c){
+        var row = document.createElement('div');
+        row.className = 'hf-bulk-row';
+        var ico = document.createElement('span');
+        ico.style.cssText = 'display:inline-flex; flex:none;';
+        ico.innerHTML = HF_FILE_ICON;                 // static markup, safe
+        var name = document.createElement('span');
+        name.className = 'mono'; name.style.color = 'var(--text)';
+        name.textContent = c.getAttribute('data-name') || '';   // textContent — XSS-safe
+        var meta = document.createElement('span');
+        meta.style.color = 'var(--text-mute)';
+        var cust = c.getAttribute('data-customer') || '';
+        var rec = c.getAttribute('data-recovered') || '0';
+        meta.textContent = (cust ? ' · ' + cust : '') + ' · ' + rec + ' recovered';
+        row.appendChild(ico); row.appendChild(name); row.appendChild(meta);
+        list.appendChild(row);
+        var inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = 'hashfile_ids'; inp.value = c.value;
+        hidden.appendChild(inp);
+    });
+    var n = sel.length;
+    document.getElementById('hf-bulk-title').textContent =
+        'Delete ' + n + ' hashfile' + (n === 1 ? '' : 's') + '?';
+    document.getElementById('hf-bulk-btn-count').textContent = n;
+    var m = document.getElementById('hf-bulk-del-modal');
+    try { m.showModal(); } catch (e) { m.setAttribute('open', ''); }
 }
 </script>
 
@@ -211,5 +299,28 @@ function hvFilterHashfiles(q){
     </div>
 </dialog>
 {% endfor %}
+
+{# ---- bulk-delete confirmation (one modal for the whole selected set) ---- #}
+<dialog class="hv-dialog" id="hf-bulk-del-modal" style="max-width:620px; width:94vw;">
+    <div class="hv-dialog-head">
+        <span style="color:var(--red); display:inline-flex;">{{ icon('trash', size=16) }}</span>
+        <div style="line-height:1.2;">
+            <h3 style="margin:0;" id="hf-bulk-title">Delete hashfiles?</h3>
+            <div class="mono" style="font-size:10px; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-mute); margin-top:3px;">this permanently removes the hashfiles and their recovered plaintext</div>
+        </div>
+        <button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close" style="margin-left:auto;">{{ icon('x', size=15) }}</button>
+    </div>
+    <div class="hv-dialog-body" style="max-height:52vh; overflow-y:auto;">
+        <div class="mono" style="font-size:11px; color:var(--text-mute); margin-bottom:10px;">The following will be permanently deleted:</div>
+        <div id="hf-bulk-list"></div>
+    </div>
+    <div class="hv-dialog-foot">
+        <button class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+        <form id="hf-bulk-form" action="{{ url_for('hashfiles.hashfiles_bulk_delete') }}" method="POST" style="display:inline;">
+            <span id="hf-bulk-hidden"></span>
+            <button type="submit" class="btn btn-danger">{{ icon('trash', size=15) }} Delete <span id="hf-bulk-btn-count">0</span></button>
+        </form>
+    </div>
+</dialog>
 
 {% endblock content %}

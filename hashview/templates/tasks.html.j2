@@ -1,6 +1,6 @@
 {% extends "layout.html.j2" %}
 {% from "icons.html.j2" import icon %}
-{% from "macros.html.j2" import status_badge %}
+{% from "macros.html.j2" import status_badge, modal_errors %}
 {% block title %}Tasks · Hashview{% endblock %}
 {% block content %}
 {% macro hcount(n) -%}
@@ -253,6 +253,8 @@ function hvFilterTasks(q){
     </div>
     <form method="POST" action="{{ url_for('tasks.tasks_add') }}" id="atk-form">
         {{ tasksForm.hidden_tag() }}
+        <input type="hidden" name="from_modal" value="1">
+        {{ modal_errors(form_err, 'add-task-modal') }}
         {{ task_modal_body('atk', wordlists, rules) }}
         <div class="hv-dialog-foot">
             <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
@@ -393,20 +395,20 @@ function hvFilterTasks(q){
             <div>{{ kv_label('Historical hits') }}<div><span class="mono" style="color:{{ 'var(--primary)' if ns.recovered else 'var(--text-mute)' }};{% if ns.recovered %}text-shadow:var(--glow-text);{% endif %}">{{ "{:,}".format(ns.recovered|int) }}</span> <span style="color:var(--text-dim);">passwords recovered</span></div></div>
         </div>
 
-        {# used-in jobs #}
-        {% set jl = namespace(count=0) %}
-        {% for jt in job_tasks %}{% if jt.task_id == task.id %}{% for j in jobs %}{% if j.id == jt.job_id %}{% set jl.count = jl.count + 1 %}{% endif %}{% endfor %}{% endif %}{% endfor %}
+        {# used-in jobs: DISTINCT jobs (chunk rows collapsed so a job the task was
+           split across is listed once, not once per chunk) #}
+        {% set used = (jobs_by_task.get(task.id, []) if jobs_by_task is defined else []) %}
         <div style="margin-top:24px;">
-            <div class="mono" style="display:flex; align-items:center; gap:8px; font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-mute); margin-bottom:11px;">{{ icon('jobs', size=14) }} Used in {{ jl.count | commafy }} job{{ '' if jl.count == 1 else 's' }}</div>
-            {% if jl.count %}
-            {% for jt in job_tasks %}{% if jt.task_id == task.id %}{% for j in jobs %}{% if j.id == jt.job_id %}
+            <div class="mono" style="display:flex; align-items:center; gap:8px; font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-mute); margin-bottom:11px;">{{ icon('jobs', size=14) }} Used in {{ used|length | commafy }} job{{ '' if used|length == 1 else 's' }}</div>
+            {% if used %}
+            {% for j in used %}
             <div class="card" style="margin-bottom:8px; padding:12px 14px; display:flex; align-items:center; gap:10px;">
                 <span class="dot-led {% if j.status == 'Running' %}run{% elif j.status == 'Completed' %}on{% elif j.status == 'Canceled' %}off{% else %}idle{% endif %}"></span>
                 <span class="mono" style="color:var(--text-mute);">#{{ j.id }}</span>
                 <span style="font-weight:600; color:var(--text);">{{ j.name }}</span>
                 <span style="margin-left:auto;">{{ status_badge(j.status) }}</span>
             </div>
-            {% endif %}{% endfor %}{% endif %}{% endfor %}
+            {% endfor %}
             {% else %}
             <div class="mono" style="color:var(--text-mute);">Not used in any jobs yet.</div>
             {% endif %}
@@ -428,5 +430,18 @@ function hvFilterTasks(q){
     </div>
 </dialog>
 {% endfor %}
+
+{# Reopen the Add-task modal after a failed submit, error shown inside it. #}
+{% if form_err %}
+<script>
+(function () {
+    var fe = {{ form_err | tojson }};
+    if (fe.modal !== 'add-task-modal') return;
+    var n = document.getElementById('atk-name'); if (n) n.value = (fe.values && fe.values.name) || '';
+    var dlg = document.getElementById('add-task-modal');
+    if (dlg) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
+})();
+</script>
+{% endif %}
 
 {% endblock content %}

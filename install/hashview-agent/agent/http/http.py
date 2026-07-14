@@ -1,10 +1,15 @@
 import requests
 import json
+import logging
 from agent.config import Config
 # to supress SSL Error messages
 import urllib3
 import builtins
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Share the agent's logger so transport-layer diagnostics land in the same stream
+# as the rest of the agent instead of bare prints.
+LOG = logging.getLogger('hashview-agent')
 
 from requests.packages.urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
@@ -60,11 +65,19 @@ def get(url):
         print('[DEBUG] http.py->GET: ' + path)
         print('[DEBUG] http.py->GET: ' + str(cookie))
 
-    response = http.get(path, verify=False, cookies=cookie)
+    # A connection-level failure (refused/timeout/TLS/too many redirects) must not
+    # bubble a raw exception up to callers that expect a body-or-None. Log it and
+    # return None so the caller degrades gracefully and retries next cycle.
+    try:
+        response = http.get(path, verify=False, cookies=cookie)
+    except requests.exceptions.RequestException as err:
+        LOG.warning('GET %s failed: %s', path, err)
+        return None
     if response.status_code == 200:
         return response.content
-    else:
-        print('[!] HTTP POST (response): Got an unexpected return code:' + str(response.status_code))
+    LOG.warning('GET %s returned HTTP %s: %s',
+                path, response.status_code, response.text[:200])
+    return None
 
 def post(url, data):
     path = _scheme()
@@ -85,9 +98,13 @@ def post(url, data):
         print('[DEBUG] http.py->POST: ' + str(data))
         print('[DEBUG] http.py->POST: ' + str(cookie))
 
-    # put in try/catch statement for timeouts etc.
-    response = http.post(path, data=json.dumps(data), verify=False, cookies=cookie, headers=headers)
+    try:
+        response = http.post(path, data=json.dumps(data), verify=False, cookies=cookie, headers=headers)
+    except requests.exceptions.RequestException as err:
+        LOG.warning('POST %s failed: %s', path, err)
+        return None
     if response.status_code == 200:
         return response.text
-    else:
-        print('[!] HTTP POST (response): Got an unexpected return code:' + str(response.status_code))
+    LOG.warning('POST %s returned HTTP %s: %s',
+                path, response.status_code, response.text[:200])
+    return None

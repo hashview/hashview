@@ -400,8 +400,8 @@ def test_227_hashfile_download_uses_root_path(client, app, admin_user, tmp_path,
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="#229: payload is json.dumps()'d into a string, forcing clients to double-parse")
 def test_229_rules_list_is_native_json(client, admin_user):
+    # #229 FIXED: list endpoints return native JSON, not a json.dumps'd string.
     _auth(client, admin_user.api_key)
     resp = client.get("/v1/rules")
     body = _json_body(resp)
@@ -435,6 +435,6 @@ def test_230_update_wordlist_accepts_post(client, admin_user, monkeypatch):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="#232: __version__ still '0.8.2' on the v0.8.3-dev branch")
 def test_232_version_is_0_8_3():
+    # #232 FIXED: the app version now tracks the dev line (v0.8.3).
     assert hashview.__version__ == "0.8.3"

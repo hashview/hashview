@@ -2,18 +2,69 @@
 Notable changes will be documented here
 
 ## Current Release
-## [v0.8.3-Beta] - 2026-07-02
+## [v0.8.3-Beta] - YYYY-MM-DD
 
 ### Added
 
+**Redesigned Interface**
+- New dark "phosphor" UI across the whole app, replacing the previous Bootstrap theme
+- Card-style, drag-and-drop task queue when building a job
+- Live recovery feed on the dashboard showing freshly cracked hashes with relative timestamps (e.g. "3 minutes ago")
+- Scrollable, filterable "InstaCrack" panel showing which hashes are already recovered when a hashfile is added to a job
+
+**Single Sign-On (Microsoft Entra ID / Azure AD)**
+- Optional OIDC web login alongside local accounts, with group-gated just-in-time user provisioning (configured under Settings)
+
+**Slack Notifications**
+- Per-user Slack direct messages as a third job-notification channel (email / Pushover / Slack)
+- Opt-in admin and security notifications delivered to a Slack room
+
+**Audit & Error Logging**
+- On-disk JSON audit log of authentication and create/update/delete events, plus captured server errors, viewable and clearable from Settings
+
+**API Documentation**
+- The `/v1` API is now described by an OpenAPI spec with interactive Swagger UI at `/api/docs`
+- `DELETE /v1/hashfiles/<id>` to remove a hashfile via the API
+
 **API Expansion**
-- `POST /v1/hashes/import/<hash_type>` now imports cracked hashes for any hash type the server can recompute locally, not just NTLM: MD5 (0), SHA1 (100), MySQL4.1/5 (300), MD4 (900), NTLM (1000), SHA2-256 (1400), and MSSQL 2012/2014 (1731). Each submitted `HASH:plaintext` pair is still verified server-side; unverifiable plaintext is never trusted.
+- `POST /v1/hashes/import/<hash_type>` now imports cracked hashes for any hash type the server can recompute locally, not just NTLM: MD5 (0), SHA1 (100), MySQL4.1/5 (300), MD4 (900), NTLM (1000), SHA2-256 (1400), and MSSQL 2012/2014 (1731). Each submitted `HASH:plaintext` pair is still verified server-side; unverifiable plaintext is never trusted. Imports are atomic: a single failing line rolls back the entire request.
+
+**Encrypted Database Backup**
+- Download an encrypted `mysqldump` of the database from Settings -> Data Management, protected by a one-time password
+
+**Agent Management**
+- Configurable agent heartbeat timeout, with scheduled alerts when an agent goes offline or recovers
+- Per-agent host-specific hashcat arguments via `HC_EXTRA_ARGS` (e.g. to pin specific GPUs)
+
+**Jobs & Hashfiles**
+- Bulk-select and bulk-delete on the hashfiles list
+- Per-hashfile `--hex-salt` option for salted hash types
+- New "Website Keywords" dynamic wordlist that crawls a per-job URL to build a targeted wordlist
 
 ### Changed
-- `POST /v1/hashes/import/<hash_type>` imports are now atomic: a single failing line rolls back the entire request so no partial results are committed. Submitted hashes are matched case-insensitively.
+- Reintroduced distributed chunking: eligible mask/wordlist tasks are split into per-agent chunks sized from each agent's benchmark, and a chunked task now appears as a single attack in the job editor
+- Wordlists are stored gzip-compressed at rest; agents sync and verify the compressed files
+- `/v1` list and detail endpoints now return native JSON instead of a JSON-encoded string, so clients no longer double-parse
+- Usernames and recovered plaintext are stored as UTF-8 text (`$HEX[...]` only for non-UTF-8 bytes) instead of latin-1 hex
+- Creating and queuing a job now returns you to the dashboard
+- The job-creation wizard gates "Next" until the current step's required fields are filled in
+- Quantities throughout the UI are thousands-separated
+- Alembic migrations for the dev line were consolidated into a single baseline
+- Pinned Python to 3.11+; added a ruff / pylint / bandit / pre-commit lint-and-security stack, a LICENSE, and substantially expanded automated tests (unit, agent, end-to-end, and security)
 
 ### Fixed
-- `POST /v1/hashes/import/<hash_type>` looked up records using the raw submitted ciphertext, which missed hashes stored (lowercased) by the hashfile import path. The lookup is now normalized so cracked-hash imports match regardless of the submitted hash's case.
+- The agent's HTTP/API layer is now resilient to non-200 and unexpected server responses instead of crashing with opaque errors
+- Command-injection hardening: hashcat is invoked as an argv list with no shell
+- CSRF: state-changing actions were moved from GET to POST and protected with CSRF tokens
+- Fixed an open redirect on the login page
+- Wordlists with legacy/relative paths no longer 404; the download route returns a clear error and paths self-heal on startup
+- The API returns JSON (not an HTML error page) for empty or invalid request bodies
+- Task/job max-runtime is enforced on the parent task rather than per chunk
+- Cracked-hash import compares hashes case-insensitively and normalizes the lookup so records stored (lowercased) by the hashfile import path match regardless of the submitted hash's case
+- Analytics decode `$HEX[...]` values before length/complexity analysis
+- Agents survive a server restart mid-task, and a bug where agent status could show as empty was fixed
+- Create/edit forms surface validation errors inside their modal instead of redirecting away
+- Several data-retention cleanup failures and hash-type/validator parsing bugs (e.g. PKZIP `$pkzip$`/`$pkzip2$`)
 
 ## [v0.8.2-Beta] - 2026-06-01
 

@@ -9,7 +9,7 @@ openapi: 3.0.3
 
 info:
   title: Hashview API
-  version: 0.8.2
+  version: 0.8.3
   description: >-
     The `/v1` API shared by Hashview's human consumers (scripting against the
     server with a personal API key) and the distributed cracking agents.

@@ -108,7 +108,7 @@ def alchemy_to_native(obj):
     inside `jsonify({...})` pattern, which nested a JSON-encoded string in the
     response and forced clients to double-parse (issue #229). None passes
     through (-> JSON null)."""
-    if isinstance(obj, (list, tuple)):
+    if isinstance(obj, list | tuple):
         return [alchemy_to_native(item) for item in obj]
     if isinstance(obj.__class__, DeclarativeMeta):
         return AlchemyEncoder().default(obj)

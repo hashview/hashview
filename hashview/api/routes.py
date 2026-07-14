@@ -774,7 +774,17 @@ def v1_api_get_wordlist_download(wordlist_id):
 
     wordlists_dir = os.path.join(current_app.root_path, 'control/wordlists')
     tmp_dir = os.path.join(current_app.root_path, 'control/tmp')
-    wordlist_name = wordlist.path.split('/')[-1]
+    # Resolve by basename against the wordlists dir rather than trusting a
+    # possibly-relative wordlist.path against the CWD (legacy rows can hold a
+    # relative path). When the row outlives its file -- e.g. a wordlist stranded
+    # by an upgrade -- return a clear JSON 404 instead of send_from_directory's
+    # bare HTML page, so the agent logs an actionable body and the operator knows
+    # to re-upload. (Mirrors the /v1/rules/<id> download handler.)
+    wordlist_name = os.path.basename(wordlist.path or '')
+    src_path = os.path.join(wordlists_dir, wordlist_name)
+    if not wordlist_name or not os.path.exists(src_path):
+        return jsonify({'status': 404, 'type': 'Error',
+                        'msg': 'Wordlist file missing on disk: ' + (wordlist_name or '(no path)')}), 404
 
     if wordlist.type == 'static':
         # Stored compressed at rest: serve the .gz directly. The stored bytes
@@ -785,7 +795,7 @@ def v1_api_get_wordlist_download(wordlist_id):
     # DB via /v1/updateWordlist). Compress the current .txt into control/tmp
     # and serve that. No shell; pure-Python streamed gzip -9.
     tmp_gz = os.path.join(tmp_dir, secrets.token_hex(8) + '.gz')
-    compress_to_gz(wordlist.path, tmp_gz, 9)
+    compress_to_gz(src_path, tmp_gz, 9)
     return _send_generated_file(
         tmp_dir, os.path.basename(tmp_gz), mimetype='application/octet-stream')
 

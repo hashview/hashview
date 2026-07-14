@@ -216,6 +216,109 @@ def test_jobs_reorder_tasks_bad_order_is_noop(app, client):
     assert _ordered_task_ids(job) == [t1.id, t2.id]
 
 
+# --- chunked tasks read as ONE attack in the editor ------------------------
+
+def _chunk(job, task, chunk_no, chunk_total, status="Queued"):
+    """A single chunk row of a split task (queue-time fan-out)."""
+    jt = JobTasks(job_id=job.id, task_id=task.id, status=status, priority=3,
+                  chunk_no=chunk_no, chunk_total=chunk_total)
+    db.session.add(jt)
+    db.session.commit()
+    return jt
+
+
+def test_jobs_list_collapses_chunked_task_to_one_card(app, client):
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+    task = _task(admin, name="MaskAttack")
+    for n in range(1, 4):                 # one task fanned into 3 chunk rows
+        _chunk(job, task, n, 3)
+    body = client.get(f"/jobs/{job.id}/tasks").get_data(as_text=True)
+    assert body.count(f'data-task-id="{task.id}"') == 1     # one card, not three
+    assert "split into 3 chunks" in body
+
+
+def test_jobs_remove_chunked_task_deletes_all_chunks(app, client):
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+    task = _task(admin, name="MaskAttack")
+    for n in range(1, 4):
+        _chunk(job, task, n, 3)
+    resp = client.post(f"/jobs/{job.id}/remove_task/{task.id}", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    assert JobTasks.query.filter_by(job_id=job.id, task_id=task.id).count() == 0
+
+
+def test_jobs_reorder_does_not_multiply_chunked_task(app, client):
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+    t1 = _task(admin, name="mask")
+    t2 = _task(admin, name="dict")
+    for n in range(1, 4):                 # t1 split into 3 chunks
+        _chunk(job, t1, n, 3)
+    _assign(job, t2)                      # t2 whole
+    # collapsed order is [t1, t2]; reorder to [t2, t1]
+    resp = client.post(f"/jobs/{job.id}/reorder_tasks",
+                       data={"order": f"{t2.id},{t1.id}"}, follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    rows = JobTasks.query.filter_by(job_id=job.id).order_by(JobTasks.id).all()
+    # t1 collapses to ONE whole row (the old code recreated 3 -> re-chunk x3)
+    assert sum(1 for r in rows if r.task_id == t1.id) == 1
+    assert [r.task_id for r in rows] == [t2.id, t1.id]     # order swapped
+    assert all(r.chunk_total is None for r in rows)        # de-chunked; re-chunks at next queue
+
+
+def test_jobs_dynamic_duplicate_tasks_stay_separate(app, client):
+    # A dynamic-wordlist task may be assigned more than once (separate WHOLE rows,
+    # never chunked). Those must stay distinct cards, and removing one leaves the rest.
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+    task = _task(admin, name="DynTask")
+    _assign(job, task)                    # two whole rows, same task_id
+    _assign(job, task)
+    body = client.get(f"/jobs/{job.id}/tasks").get_data(as_text=True)
+    assert body.count(f'data-task-id="{task.id}"') == 2     # two cards
+    client.post(f"/jobs/{job.id}/remove_task/{task.id}", follow_redirects=False)
+    assert JobTasks.query.filter_by(job_id=job.id, task_id=task.id).count() == 1
+
+
+def test_jobs_list_counts_chunked_task_as_one_attack(app, client):
+    # Jobs list "N attacks queued" must count the attack once, not once per chunk.
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust, name="chunked-job")
+    task = _task(admin, name="MaskAttack")
+    for n in range(1, 4):
+        _chunk(job, task, n, 3)
+    body = client.get("/jobs").get_data(as_text=True)
+    assert "1 attack queued" in body
+    assert "3 attacks queued" not in body
+
+
+def test_task_detail_used_in_jobs_dedupes_chunks(app, client):
+    # Task info modal "Used in N jobs" counts a job once even when the task was
+    # split across N chunk rows in it.
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+    task = _task(admin, name="MaskAttack")
+    for n in range(1, 4):
+        _chunk(job, task, n, 3)
+    body = client.get("/tasks").get_data(as_text=True)
+    assert "Used in 1 job" in body
+    assert "Used in 3 jobs" not in body
+
+
 def test_jobs_remove_all_tasks_clears(app, client):
     admin = make_admin()
     login(client, admin)

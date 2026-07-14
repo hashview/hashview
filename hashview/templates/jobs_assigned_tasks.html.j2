@@ -93,17 +93,21 @@
                 <input type="hidden" name="order" id="reorder-order">
             </form>
             <div id="task-queue">
-                {% for job_task in job_tasks %}
-                    {% set m = task_meta.get(job_task.task_id) if task_meta is defined else none %}
-                    <div class="tq-item" draggable="true" data-task-id="{{ job_task.task_id }}">
+                {# One card per logical assignment. A task split into chunks at queue
+                   time collapses to a single card (with a chunk-count note), not one
+                   card per chunk; dynamic-wordlist tasks assigned more than once still
+                   show one card each. #}
+                {% for a in (assigned if assigned is defined else []) %}
+                    {% set m = task_meta.get(a.task_id) if task_meta is defined else none %}
+                    <div class="tq-item" draggable="true" data-task-id="{{ a.task_id }}">
                         <span class="tq-index">{{ '%02d' % loop.index }}</span>
                         <span class="tq-grip" title="Drag to reorder">{{ icon('drag', size=16) }}</span>
                         <div class="tq-body">
                             <div class="tq-name">{{ m.name if m else 'Unknown task' }}</div>
-                            <div class="tq-sub">{{ m.type if m else 'Task' }}{% if m and m.wordlist %} · {{ m.wordlist }}{% endif %}</div>
+                            <div class="tq-sub">{{ m.type if m else 'Task' }}{% if m and m.wordlist %} · {{ m.wordlist }}{% endif %}{% if a.chunks > 1 %} · split into {{ a.chunks | commafy }} chunks{% endif %}</div>
                         </div>
                         <div class="tq-controls">
-                            <form method="POST" action="/jobs/{{job.id}}/remove_task/{{job_task.task_id}}" style="display:contents">
+                            <form method="POST" action="/jobs/{{job.id}}/remove_task/{{a.task_id}}" style="display:contents">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="icon-btn act-del" title="Remove task">{{ icon('trash', size=15) }}</button>
                             </form>

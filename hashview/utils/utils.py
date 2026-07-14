@@ -861,7 +861,7 @@ def build_hashcat_command(job_id, task_id, chunk=None, job_task_id=None):
     un-chunked, pre-existing naming).
     """
 
-    hc_binpath = '@HASHCATBINPATH@'
+    hc_binpath = '@HASHCATBINPATH@'  # nosec B105 - placeholder token, not a password
     task = Tasks.query.get(task_id)
     job = Jobs.query.get(job_id)
     rules_file = Rules.query.get(task.rule_id)

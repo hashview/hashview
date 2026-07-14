@@ -172,7 +172,7 @@ def sync_rules():
     # no parseable list. Bail out WITHOUT pruning so a transient failure can never
     # wipe the local rules.
     try:
-        server_entries = json.loads(api.rules_list())
+        server_entries = api.rules_list()
     except (TypeError, ValueError, KeyError) as err:
         LOG.warning('Could not fetch the rules manifest; skipping rules sync and cleanup: %s', err)
         return
@@ -347,7 +347,7 @@ def sync_wordlists():
     # yields no parseable list. Bail out WITHOUT pruning so a transient failure
     # can never wipe the local wordlists.
     try:
-        server_entries = json.loads(api.getWordlists())
+        server_entries = api.getWordlists()
     except (TypeError, ValueError, KeyError) as err:
         LOG.warning('Could not fetch the wordlists manifest; skipping wordlist sync and cleanup: %s', err)
         return
@@ -460,7 +460,7 @@ def build_hashcat_argv(command):
     extra = parse_hc_extra_args(getattr(Config, 'HC_EXTRA_ARGS', ''))
     argv = []
     for token in json.loads(command):
-        if token == '@HASHCATBINPATH@':
+        if token == '@HASHCATBINPATH@':  # nosec B105 - placeholder token, not a password
             argv.append(Config.HC_BIN_PATH)
             argv.extend(extra)
         else:
@@ -633,7 +633,7 @@ def updateJobTask(job_task_id, task_status):
 def data_retention_cleanup():
     """Remove temp / output / hash files older than the server's retention period."""
     try:
-        server_settings = json.loads(api.server_settings())
+        server_settings = api.server_settings()
     except (KeyError, ValueError, TypeError):
         LOG.info('Data-retention cleanup skipped: server returned an unauthorized or '
                  'unexpected response (agent may not be approved yet).')
@@ -672,7 +672,7 @@ def maybe_update_dynamic_wordlist(task):
     re-sync. /vX/wordlists/<id> is reserved for downloads, so we scan the list to
     find the task's wordlist rather than fetching it directly."""
     try:
-        server_wordlists = json.loads(getWordlists())
+        server_wordlists = getWordlists()
     except (TypeError, ValueError, KeyError) as err:
         LOG.warning('Could not fetch wordlists for the dynamic-update check; skipping it: %s', err)
         return

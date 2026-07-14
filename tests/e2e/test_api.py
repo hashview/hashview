@@ -46,7 +46,7 @@ def test_api_task_lookup(page, live_server):
     data = response.json()
     if "task" not in data:
         pytest.skip("HASHVIEW_E2E_API_KEY is not authorized for task lookup.")
-    task = json.loads(data["task"])
+    task = data["task"]
     assert str(task.get("id")) == str(task_id)
 
 
@@ -62,7 +62,7 @@ def test_api_job_lookup(page, live_server):
     data = response.json()
     if "job" not in data:
         pytest.skip("HASHVIEW_E2E_API_KEY is not authorized for job lookup.")
-    job = json.loads(data["job"])
+    job = data["job"]
     assert str(job.get("id")) == str(job_id)
 
 

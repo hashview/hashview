@@ -182,10 +182,11 @@ def test_admin_settings_never_leaks_stored_secrets(client, admin_user):
     resp = client.get("/v1/admin/settings")
     body = _body(resp)
     assert body["status"] == 200
-    # The settings collection is serialized as a JSON *string*; the raw secret
-    # values must not appear anywhere in it.
-    assert "xoxb-LEAK-ME-NOT" not in body["settings"]
-    assert "azure-LEAK-ME-NOT" not in body["settings"]
+    # The raw secret values must not appear anywhere in the settings payload
+    # (the encoder denylist redacts them). Serialize the native array to scan it.
+    dumped = json.dumps(body["settings"])
+    assert "xoxb-LEAK-ME-NOT" not in dumped
+    assert "azure-LEAK-ME-NOT" not in dumped
 
 
 # ---------------------------------------------------------------------------
@@ -495,7 +496,7 @@ def test_wordlists_list_returns_seeded(client, admin_user):
     resp = client.get("/v1/wordlists")
     body = _body(resp)
     assert body["status"] == 200
-    assert "rockyou" in body["wordlists"]
+    assert any(w["name"] == "rockyou" for w in body["wordlists"])
 
 
 @pytest.mark.security

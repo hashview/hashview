@@ -186,7 +186,7 @@ def test_upload_cracks_defers_when_hashtype_missing(tmp_path, monkeypatch):
 
 def test_maybe_update_dynamic_wordlist_handles_none(monkeypatch):
     monkeypatch.setattr(agent_main, "getWordlists",
-                        lambda: json.dumps([{"id": 3, "type": "dynamic"}]))
+                        lambda: [{"id": 3, "type": "dynamic"}])
     monkeypatch.setattr(agent_main, "updateDynamicWordlists", lambda wid: None)
     monkeypatch.setattr(agent_main, "sync_wordlists", lambda: None)
     agent_main.maybe_update_dynamic_wordlist({"wl_id": 3})   # no None['msg'] -> TypeError

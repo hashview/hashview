@@ -510,7 +510,7 @@ def test_rules_list_returns_seeded_rule(client, admin_user):
     assert resp.status_code == 200
     body = _json(resp)
     assert body["status"] == 200
-    assert "branch-rule" in body["rules"]
+    assert any(r["name"] == "branch-rule" for r in body["rules"])
 
 
 @pytest.mark.security
@@ -748,7 +748,7 @@ def test_jobs_get_returns_job(client, admin_user):
     assert resp.status_code == 200
     body = _json(resp)
     assert body["status"] == 200
-    assert "get-job" in body["job"]
+    assert body["job"]["name"] == "get-job"
 
 
 @pytest.mark.security
@@ -922,7 +922,7 @@ def test_tasks_get_returns_task(client, admin_user):
     assert resp.status_code == 200
     body = _json(resp)
     assert body["status"] == 200
-    assert "tasks-get-task" in body["task"]
+    assert body["task"]["name"] == "tasks-get-task"
 
 
 @pytest.mark.security

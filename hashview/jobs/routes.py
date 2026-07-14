@@ -144,8 +144,14 @@ def jobs_list():
     except Exception:  # pragma: no cover - defensive
         hash_type_names = {}
 
+    # Count ATTACKS (assignments), not raw rows: a task split into N chunks is one
+    # attack, so count it once (at its chunk_no==1 row) rather than N times. Whole
+    # rows -- including a dynamic-wordlist task legitimately assigned twice -- each
+    # count once.
     job_task_count = {}
     for jt in job_tasks:
+        if jt.chunk_total and jt.chunk_no != 1:
+            continue
         job_task_count[jt.job_id] = job_task_count.get(jt.job_id, 0) + 1
 
     jn_by_job = {}
@@ -464,6 +470,30 @@ def jobs_assigned_hashfile_cracked(job_id, hashfile_id):
 
     return render_template('jobs_assigned_hashfiles_cracked.html.j2', title='Jobs Assigned Hashfiles Cracked', hashfile=hashfile, job=job, cracked_hashfiles_hashes=cracked_hashfiles_hashes)
 
+def _assigned_tasks(job_id):
+    """A job's task assignments in queue order, with a split task's chunk rows
+    collapsed into a single logical entry.
+
+    At queue time a chunkable task fans out into N JobTasks rows (each with
+    chunk_total set); those are ONE assignment and collapse to a single entry
+    that carries the chunk count. A dynamic-wordlist task may be assigned more
+    than once -- those are separate WHOLE rows (chunk_total is NULL) and each
+    stays its own entry. Ordered by JobTasks id, which matches both the
+    pre-chunk insertion order and the agent-dispatch order (min id per task).
+    Returns a list of {'task_id': int, 'chunks': int}.
+    """
+    entries, seen_chunked = [], set()
+    for jt in (JobTasks.query.filter_by(job_id=job_id)
+               .order_by(JobTasks.id.asc()).all()):
+        if jt.chunk_total:
+            if jt.task_id in seen_chunked:
+                continue
+            seen_chunked.add(jt.task_id)
+            entries.append({'task_id': jt.task_id, 'chunks': jt.chunk_total})
+        else:
+            entries.append({'task_id': jt.task_id, 'chunks': 1})
+    return entries
+
 @jobs.route("/jobs/<int:job_id>/tasks", methods=['GET'])
 @login_required
 def jobs_list_tasks(job_id):
@@ -505,7 +535,11 @@ def jobs_list_tasks(job_id):
     if job.hashfile_id:
         alert_hashes = db.session.query(HashNotifications).join(HashfileHashes, HashNotifications.hash_id == HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id == job.hashfile_id).first() is not None
 
-    return render_template('jobs_assigned_tasks.html.j2', title='Jobs Assigned Tasks', job=job, tasks=tasks, job_tasks=job_tasks, assignable_tasks=assignable_tasks, task_meta=task_meta, task_groups=task_groups, wordlists=wordlists, alert_hashes=alert_hashes, website=_job_uses_website_keywords(job_id))
+    # One card per logical assignment: chunk rows of a split task collapse to a
+    # single entry (the editor shows the attack once, not once per chunk).
+    assigned = _assigned_tasks(job_id)
+
+    return render_template('jobs_assigned_tasks.html.j2', title='Jobs Assigned Tasks', job=job, tasks=tasks, job_tasks=job_tasks, assigned=assigned, assignable_tasks=assignable_tasks, task_meta=task_meta, task_groups=task_groups, wordlists=wordlists, alert_hashes=alert_hashes, website=_job_uses_website_keywords(job_id))
 
 @jobs.route("/jobs/<int:job_id>/assign_task/<int:task_id>", methods=['POST'])
 @login_required
@@ -616,7 +650,11 @@ def jobs_reorder_tasks(job_id):
         flash('Security check failed (invalid or missing CSRF token).', 'danger')
         return redirect("/jobs/" + str(job_id) + "/tasks")
 
-    current = [jt.task_id for jt in JobTasks.query.filter_by(job_id=job_id).all()]
+    # Compare against the COLLAPSED assignment list (one entry per attack), which
+    # is what the page renders and submits. Using the raw per-chunk rows here made
+    # a split task's task_id appear N times, so a reorder recreated N whole rows
+    # for it -- multiplying the task on the next queue. One entry per attack fixes that.
+    current = [e['task_id'] for e in _assigned_tasks(job_id)]
     try:
         submitted = [int(x) for x in request.form.get('order', '').split(',') if x != '']
     except ValueError:
@@ -643,11 +681,19 @@ def jobs_remove_task(job_id, task_id):
         flash('Security check failed (invalid or missing CSRF token).', 'danger')
         return redirect("/jobs/" + str(job_id) + "/tasks")
 
-    job_task = JobTasks.query.filter_by(job_id=job_id, task_id=task_id).first()
-    if job_task is None:
+    job_tasks = JobTasks.query.filter_by(job_id=job_id, task_id=task_id).all()
+    if not job_tasks:
         flash('That task is no longer on this job — it may have already been removed.', 'warning')
         return redirect("/jobs/"+str(job_id)+"/tasks")
-    db.session.delete(job_task)
+    # A split task is many chunk rows sharing this task_id -> removing the attack
+    # removes ALL of them (the old .first() left chunks 2..N orphaned). A
+    # dynamic-wordlist task can be assigned more than once as separate whole rows;
+    # there, drop a single instance so the others survive.
+    if any(jt.chunk_total for jt in job_tasks):
+        for jt in job_tasks:
+            db.session.delete(jt)
+    else:
+        db.session.delete(job_tasks[0])
     if not try_commit(f'remove task {task_id} from job {job_id}'):
         flash('Could not remove the task — it may have already been removed.', 'danger')
 
@@ -868,7 +914,11 @@ def jobs_summary(job_id):
 
         return redirect(url_for('main.home'))
 
-    return render_template('jobs_summary.html.j2', title='Job Summary', job=job, form=form, job_notification=job_notification, cracked_rate=cracked_rate, cracked_cnt=cracked_cnt, hash_total=hash_total, hashfile_hash_type=hashfile_hash_type, job_tasks=job_tasks, hash_notification_cnt=hash_notification_cnt, customer=customer, hashfile=hashfile, tasks=tasks, hash_notification=hash_notification, settings=settings, website=_job_uses_website_keywords(job_id))
+    # Collapse a split task's chunk rows into one entry so the review step lists
+    # each attack once (matches the assign-tasks step), not once per chunk.
+    assigned = _assigned_tasks(job_id)
+
+    return render_template('jobs_summary.html.j2', title='Job Summary', job=job, form=form, job_notification=job_notification, cracked_rate=cracked_rate, cracked_cnt=cracked_cnt, hash_total=hash_total, hashfile_hash_type=hashfile_hash_type, job_tasks=job_tasks, assigned=assigned, hash_notification_cnt=hash_notification_cnt, customer=customer, hashfile=hashfile, tasks=tasks, hash_notification=hash_notification, settings=settings, website=_job_uses_website_keywords(job_id))
 
 @jobs.route("/jobs/start/<int:job_id>", methods=['POST'])
 @login_required

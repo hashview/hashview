@@ -113,7 +113,24 @@ def tasks_list():
     # too); the list view uses this to disable the edit button for those tasks.
     tasks_in_jobs = {jt.task_id for jt in job_tasks}
 
-    return render_template('tasks.html.j2', title='tasks', tasks=tasks, users=users, jobs=jobs, job_tasks=job_tasks, wordlists=wordlists, task_groups=task_groups, task_recovery_performance=task_recovery_performance, pagination=pagination, sort_by=sort_by, sort_order=sort_order, rules=Rules.query.all(), wl_filesize=wl_filesize, tasks_in_jobs=tasks_in_jobs, tasksForm=TasksForm(), form_err=session.pop('tasks_form_err', None))
+    # DISTINCT jobs each task is used in, for the info modal's "Used in N jobs"
+    # panel. Collapse chunk rows so a job the task was split across is listed once
+    # (not once per chunk); a task used more than once in the same job also lists
+    # that job once.
+    jobs_by_id = {j.id: j for j in jobs}
+    jobs_by_task = {}
+    _seen_job_for_task = {}
+    for jt in job_tasks:
+        job = jobs_by_id.get(jt.job_id)
+        if job is None:
+            continue
+        seen = _seen_job_for_task.setdefault(jt.task_id, set())
+        if job.id in seen:
+            continue
+        seen.add(job.id)
+        jobs_by_task.setdefault(jt.task_id, []).append(job)
+
+    return render_template('tasks.html.j2', title='tasks', tasks=tasks, users=users, jobs=jobs, job_tasks=job_tasks, jobs_by_task=jobs_by_task, wordlists=wordlists, task_groups=task_groups, task_recovery_performance=task_recovery_performance, pagination=pagination, sort_by=sort_by, sort_order=sort_order, rules=Rules.query.all(), wl_filesize=wl_filesize, tasks_in_jobs=tasks_in_jobs, tasksForm=TasksForm(), form_err=session.pop('tasks_form_err', None))
 
 @tasks.route("/tasks/add", methods=['GET', 'POST'])
 @login_required

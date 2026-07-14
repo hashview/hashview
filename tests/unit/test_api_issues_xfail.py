@@ -435,6 +435,6 @@ def test_230_update_wordlist_accepts_post(client, admin_user, monkeypatch):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="#232: __version__ still '0.8.2' on the v0.8.3-dev branch")
 def test_232_version_is_0_8_3():
+    # #232 FIXED: the app version now tracks the dev line (v0.8.3).
     assert hashview.__version__ == "0.8.3"

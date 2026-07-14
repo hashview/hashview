@@ -5,7 +5,7 @@ from logging.config import dictConfig as loggingDictConfig
 from flask import Flask, redirect, request, url_for
 from jinja2 import select_autoescape
 
-__version__ = '0.8.2'
+__version__ = '0.8.3'
 
 
 def get_application_version() -> str:

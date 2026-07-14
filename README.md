@@ -1,4 +1,4 @@
-# Hashview v0.8.2
+# Hashview v0.8.3
 
 [![Unit Tests](https://github.com/hashview/hashview/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/hashview/hashview/actions/workflows/unit-tests.yml)
 [![E2E](https://github.com/hashview/hashview/actions/workflows/e2e.yml/badge.svg)](https://github.com/hashview/hashview/actions/workflows/e2e.yml)

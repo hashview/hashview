@@ -71,7 +71,7 @@ def test_api_agent_heartbeat_creates_agent(page, live_server):
     page.context.add_cookies(
         [
             {"name": "uuid", "value": "test-agent-uuid", "url": live_server},
-            {"name": "agent_version", "value": "0.8.2", "url": live_server},
+            {"name": "agent_version", "value": "0.8.3", "url": live_server},
             {"name": "name", "value": "Test Agent", "url": live_server},
         ]
     )

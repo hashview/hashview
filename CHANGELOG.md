@@ -26,6 +26,9 @@ Notable changes will be documented here
 - The `/v1` API is now described by an OpenAPI spec with interactive Swagger UI at `/api/docs`
 - `DELETE /v1/hashfiles/<id>` to remove a hashfile via the API
 
+**API Expansion**
+- `POST /v1/hashes/import/<hash_type>` now imports cracked hashes for any hash type the server can recompute locally, not just NTLM: MD5 (0), SHA1 (100), MySQL4.1/5 (300), MD4 (900), NTLM (1000), SHA2-256 (1400), and MSSQL 2012/2014 (1731). Each submitted `HASH:plaintext` pair is still verified server-side; unverifiable plaintext is never trusted. Imports are atomic: a single failing line rolls back the entire request.
+
 **Encrypted Database Backup**
 - Download an encrypted `mysqldump` of the database from Settings -> Data Management, protected by a one-time password
 
@@ -57,7 +60,7 @@ Notable changes will be documented here
 - Wordlists with legacy/relative paths no longer 404; the download route returns a clear error and paths self-heal on startup
 - The API returns JSON (not an HTML error page) for empty or invalid request bodies
 - Task/job max-runtime is enforced on the parent task rather than per chunk
-- Cracked-hash import compares NTLM hashes case-insensitively
+- Cracked-hash import compares hashes case-insensitively and normalizes the lookup so records stored (lowercased) by the hashfile import path match regardless of the submitted hash's case
 - Analytics decode `$HEX[...]` values before length/complexity analysis
 - Agents survive a server restart mid-task, and a bug where agent status could show as empty was fixed
 - Create/edit forms surface validation errors inside their modal instead of redirecting away

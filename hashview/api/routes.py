@@ -39,6 +39,7 @@ from hashview.utils.utils import (
     build_job_task_commands,
     compress_to_gz,
     decompress_gz,
+    get_cracked_hash_verifier,
     get_filehash,
     get_linecount,
     get_md5_hash,
@@ -48,7 +49,6 @@ from hashview.utils.utils import (
     ingest_static_wordlist_file,
     is_gzip,
     notify_admins,
-    ntlm_hash_hex,
     process_recovered_hash_notifications,
     rechunk_queued_tasks_for_hashtype,
     slowest_benchmark,
@@ -1783,108 +1783,116 @@ def v1_api_hashes_import(hash_type):
     if not is_authorized(user=True, agent=False, request=request):
         return redirect("/v1/not_authorized")
 
-    # The route converter yields an int; comparing to the string '1000' made
-    # this branch unreachable (every request fell through to 'Unsupported
-    # Hashtype'). Compare as int so NTLM import actually runs.
-    if hash_type == 1000:
-    
-        # Expect raw plain‑text body (Content‑Type: text/plain)
-        raw_content = request.get_data(as_text=True)
-        if not raw_content:
-            return jsonify({
-                'status': 400,
-                'type': 'Error',
-                'msg': 'Missing cracked content in request body'
-            })
-        
-        # Resolve user from api_key cookie
-        user_uuid = request.cookies.get('uuid')
-        user = Users.query.filter_by(api_key=user_uuid).first()
-        if not user:
-            return jsonify({
-                'status': 403,
-                'type': 'Error',
-                'msg': 'User not found'
-            })
+    # Verify-only model: only accept a submitted plaintext for a hash type the
+    # server can LOCALLY recompute. get_cracked_hash_verifier returns None for
+    # anything unsupported (incl. LM 3000), which we reject up front.
+    verifier = get_cracked_hash_verifier(hash_type)
+    if verifier is None:
+        return jsonify({'status': 403, 'type': 'message', 'msg': 'Unsupported Hashtype'})
 
-        # Generate a random filename for storage
-        random_name = secrets.token_hex(8) + '.txt'
-        file_path = os.path.abspath(os.path.join(current_app.root_path, 'control/tmp', random_name))
+    # Expect raw plain‑text body (Content‑Type: text/plain)
+    raw_content = request.get_data(as_text=True)
+    if not raw_content:
+        return jsonify({
+            'status': 400,
+            'type': 'Error',
+            'msg': 'Missing cracked content in request body'
+        })
 
-        # Save the raw content to disk
-        try:
-            with open(file_path, 'w') as f:
-                f.write(raw_content)
-            f.close()
-        except Exception:
-            current_app.logger.exception('API: failed to write file')
-            return jsonify({
-                'status': 500,
-                'type': 'Error',
-                'msg': 'Failed to write file.'
-            })
+    # Resolve user from api_key cookie
+    user_uuid = request.cookies.get('uuid')
+    user = Users.query.filter_by(api_key=user_uuid).first()
+    if not user:
+        return jsonify({
+            'status': 403,
+            'type': 'Error',
+            'msg': 'User not found'
+        })
+
+    # Generate a random filename for storage
+    random_name = secrets.token_hex(8) + '.txt'
+    file_path = os.path.abspath(os.path.join(current_app.root_path, 'control/tmp', random_name))
+
+    # Save the raw content to disk
+    try:
+        with open(file_path, 'w') as f:
+            f.write(raw_content)
+    except Exception:
+        current_app.logger.exception('API: failed to write file')
+        return jsonify({
+            'status': 500,
+            'type': 'Error',
+            'msg': 'Failed to write file.'
+        })
 
 
-        # import contents from file
+    # import contents from file. The import is atomic: all verified records are
+    # mutated in the session and committed ONCE after the loop completes. Any
+    # verification failure rolls back so nothing from this request persists.
+    try:
         try:
             with open(file_path, encoding='utf-8', errors='surrogateescape') as f:
                 for line in f:
                     line = line.rstrip('\r\n')
+                    if not line:
+                        continue
                     parts = line.split(':')
                     ciphertext = parts[0]
                     # everything after the first ':' is the plaintext (it may itself contain ':')
                     plaintext = ':'.join(parts[1:])
 
-                    # encipher plaintext and compare cipher text (NTLM = MD4(UTF-16LE(pw)));
-                    # ntlm_hash_hex falls back to pure-Python MD4 where OpenSSL 3.x
-                    # no longer provides md4. Compare case-insensitively: hashcat
-                    # and Hashview store hashes in lowercase hex while
-                    # ntlm_hash_hex returns uppercase.
-                    if ciphertext.lower() == ntlm_hash_hex(plaintext).lower():
-                        # valid hash:plaintext
-                        record = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(ciphertext), cracked='0').first()
+                    # Recompute the digest from the submitted plaintext (plus any salt
+                    # embedded in the ciphertext) and compare case-insensitively.
+                    # Never trust unverified plaintext.
+                    if verifier(plaintext, ciphertext):
+                        # valid hash:plaintext. Hashfile imports store hex hashes
+                        # lowercased and key sub_ciphertext off the lowercased value,
+                        # so look up on ciphertext.lower() to actually hit the record.
+                        record = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(ciphertext.lower()), cracked='0').first()
                         if record:
-                            try:
-                                record.plaintext = text_from_field(plaintext)
-                                record.cracked = 1
-                                record.recovered_at = datetime.today()
-                                record.recovered_by = user.id
-                                db.session.commit()
-                            except Exception:
-                                current_app.logger.exception('API: failed to import cracked hash %s', ciphertext)
-                                return jsonify({
-                                    'status': 500,
-                                    'type': 'Error',
-                                    'msg': 'Failed to import cracked hash.'
-                                })  
+                            # Mutate in the session; commit happens once after the loop.
+                            record.plaintext = text_from_field(plaintext)
+                            record.cracked = 1
+                            record.recovered_at = datetime.today()
+                            record.recovered_by = user.id
                     else:
+                        # A single bad line invalidates the whole request; roll back
+                        # any pending changes so nothing persists.
+                        db.session.rollback()
                         return jsonify({
                             'status': 500,
                             'type': 'Error',
                             'msg': f'Plaintext for hash {ciphertext}, was found to be invalid.'
                         })
+
+            # All lines verified. Commit the whole batch atomically.
+            try:
+                db.session.commit()
+            except Exception:
+                current_app.logger.exception('API: failed to import cracked hashes')
+                db.session.rollback()
+                return jsonify({
+                    'status': 500,
+                    'type': 'Error',
+                    'msg': 'Failed to import cracked hash.'
+                })
         except Exception:
             current_app.logger.exception('API: failed to open/parse uploaded file')
+            db.session.rollback()
             return jsonify({
                 'status': 500,
                 'type': 'Error',
                 'msg': 'Failed to open file.'
             })
+    finally:
+        _remove_file(file_path)
 
-        # Send per-hash "recovered" notifications (email/push/slack) for any now-cracked watched hash.
-        process_recovered_hash_notifications()
+    # Send per-hash "recovered" notifications (email/push/slack) for any now-cracked watched hash.
+    process_recovered_hash_notifications()
 
-        message = {
-            'status': 200,
-            'type': 'message',
-            'msg': 'OK'
-        }
-        return jsonify(message)
-
-    else:
-        message = {
-            'status': 403,
-            'type': 'message',
-            'msg': 'Unsupported Hashtype'
-            }
+    message = {
+        'status': 200,
+        'type': 'message',
+        'msg': 'OK'
+    }
     return jsonify(message)

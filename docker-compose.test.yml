@@ -9,7 +9,7 @@ services:
     environment:
       HASHVIEW_API_URL: http://app:5000
       HASHVIEW_AGENT_NAME: test-agent
-      HASHVIEW_AGENT_VERSION: 0.8.2
+      HASHVIEW_AGENT_VERSION: 0.8.3
       HASHVIEW_AGENT_MAX_SECONDS: 30
       HASHVIEW_AGENT_POLL_INTERVAL: 1.0
     depends_on:

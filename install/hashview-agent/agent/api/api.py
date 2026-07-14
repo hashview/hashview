@@ -32,13 +32,12 @@ def _load(response, endpoint):
     return decoded
 
 
-def _extract(response, endpoint, key, reparse=False):
+def _extract(response, endpoint, key):
     """Pull a single payload key out of a decoded response.
 
     Guards a missing key / wrong shape -- e.g. an authorized-but-Error reply that
     the server returns as HTTP 200 with an {'type':'Error',...} body and no data
-    key. Returns the value, or None. reparse=True re-decodes the values the
-    server double-encodes as JSON strings (job_task / job / task).
+    key. Returns the value, or None.
     """
     decoded = _load(response, endpoint)
     if decoded is None:
@@ -46,14 +45,7 @@ def _extract(response, endpoint, key, reparse=False):
     if not isinstance(decoded, dict) or key not in decoded:
         LOG.warning('%s: unexpected response shape (missing %r).', endpoint, key)
         return None
-    value = decoded[key]
-    if reparse:
-        try:
-            return json.loads(value)
-        except (TypeError, ValueError) as err:
-            LOG.warning('%s: could not parse the %r payload (%s).', endpoint, key, err)
-            return None
-    return value
+    return decoded[key]
 
 
 def heartbeat(agent_status, hc_status):
@@ -107,15 +99,15 @@ def get_wordlists_file(wordlist_id):
 
 def jobTasks(job_task_id):
     response = http.get('/v1/jobTasks/' + str(job_task_id))
-    return _extract(response, 'jobTasks', 'job_task', reparse=True)
+    return _extract(response, 'jobTasks', 'job_task')
 
 def jobs(job_id):
     response = http.get('/v1/jobs/' + str(job_id))
-    return _extract(response, 'jobs', 'job', reparse=True)
+    return _extract(response, 'jobs', 'job')
 
 def tasks(task_id):
     response = http.get('/v1/tasks/' + str(task_id))
-    return _extract(response, 'tasks', 'task', reparse=True)
+    return _extract(response, 'tasks', 'task')
 
 def updateDynamicWordlists(wordlist_id):
     response = http.get('/v1/updateWordlist/' + str(wordlist_id))

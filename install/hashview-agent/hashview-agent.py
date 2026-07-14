@@ -460,7 +460,7 @@ def build_hashcat_argv(command):
     extra = parse_hc_extra_args(getattr(Config, 'HC_EXTRA_ARGS', ''))
     argv = []
     for token in json.loads(command):
-        if token == '@HASHCATBINPATH@':
+        if token == '@HASHCATBINPATH@':  # nosec B105 - placeholder token, not a password
             argv.append(Config.HC_BIN_PATH)
             argv.extend(extra)
         else:

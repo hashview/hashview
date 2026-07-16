@@ -82,17 +82,33 @@ wait_healthy db
 wait_healthy db-fresh
 
 echo "== app-main: create + migrate the main-era schema =="
+# Compute main's alembic head from the migration files in the main worktree.
+# Waiting for ANY revision (the old behavior) races the seed load against the
+# still-running migration chain -- e.g. the seed references settings.max_runtime_jobs,
+# added by 0fa1e1dc4069, but the poll can break on an earlier revision like
+# e57e9bb43f01 and load the seed before that column exists.
+MAIN_HEAD="$(python3 - "$MAIN_WT/migrations/versions" <<'PY'
+import pathlib, re, sys
+versions = pathlib.Path(sys.argv[1])
+revs, downs = {}, set()
+for f in versions.glob("*.py"):
+    text = f.read_text()
+    rm = re.search(r"^revision\s*=\s*['\"]([^'\"]+)['\"]", text, re.M)
+    dm = re.search(r"^down_revision\s*=\s*['\"]([^'\"]+)['\"]", text, re.M)
+    if rm:
+        revs[rm.group(1)] = True
+    if dm:
+        downs.add(dm.group(1))
+heads = [r for r in revs if r not in downs]
+if len(heads) != 1:
+    sys.exit(f"expected exactly one alembic head, got {heads!r}")
+print(heads[0])
+PY
+)"
+echo "  main alembic head: $MAIN_HEAD"
 $COMPOSE up -d app-main
-# app-main runs its migrations during create_app (before serving); wait until the
-# alembic bookkeeping table has a revision recorded.
-rev=""
-for _ in $(seq 1 80); do
-  rev="$(db_exec db "SELECT version_num FROM alembic_version" 2>/dev/null | tr -d '[:space:]' || true)"
-  [ -n "$rev" ] && break
-  sleep 3
-done
-[ -n "$rev" ] || { echo "ERROR: app-main never recorded an alembic revision"; $COMPOSE logs --tail 120 app-main; exit 1; }
-echo "  main schema at revision: $rev"
+poll "app-main alembic at main head ($MAIN_HEAD)" \
+  "SELECT version_num FROM alembic_version" "$MAIN_HEAD"
 
 echo "== Load main-era seed =="
 $COMPOSE exec -T db mysql -h127.0.0.1 -uhashview -phashview hashview < tests/migration/seed_main.sql

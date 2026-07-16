@@ -119,7 +119,6 @@ YEAR_RE = re.compile(r'(?:19|20)\d{2}')
 # generic org-name tokens that would over-match if treated as "company name" hits
 _COMPANY_STOPWORDS = frozenset({'inc', 'llc', 'ltd', 'corp', 'the', 'and', 'group',
                                 'company', 'gmbh', 'holdings'})
-_ATTACK_LABELS = {0: 'Wordlist', 1: 'Combinator', 3: 'Mask / brute-force', 6: 'Hybrid', 7: 'Hybrid'}
 
 
 def _base_word(plaintext):
@@ -182,20 +181,6 @@ def _pattern_intelligence(corpus, company_tokens):
     )
 
 
-def _attack_breakdown(customer_id, hashfile_id):
-    """Recovered (distinct) hashes grouped by the attack method that cracked them."""
-    rows = (_scoped_hash_query(customer_id, hashfile_id, cracked=True)
-            .with_entities(Hashes.id, Hashes.task_id).distinct().all())
-    method = {}
-    for task in Tasks.query.with_entities(Tasks.id, Tasks.hc_attackmode, Tasks.rule_id).all():
-        label = _ATTACK_LABELS.get(task.hc_attackmode, 'Other')
-        if task.hc_attackmode == 0 and task.rule_id:
-            label = 'Wordlist + rules'
-        method[task.id] = label
-    counts = Counter(method.get(task_id, 'Unknown') for _hash_id, task_id in rows)
-    return [{'label': label, 'n': n} for label, n in counts.most_common()]
-
-
 _MODE_BADGE = {1: 'Combinator', 3: 'Mask', 6: 'Hybrid', 7: 'Hybrid'}
 
 
@@ -230,7 +215,7 @@ def _recovery_by_task(customer_id, hashfile_id):
     for task_id, n in counts.most_common():
         t = meta.get(task_id)
         result.append({
-            'name': t.name if t else 'task %s (deleted)' % task_id,
+            'name': t.name if t else '(Task Deleted)',
             'mode': _task_mode_label(t.hc_attackmode, t.rule_id) if t else 'Unknown',
             'n': n,
             'share': round(100.0 * n / total, 1),
@@ -399,7 +384,6 @@ def get_analytics():
     # ---- pattern intelligence (base words / themes / years / endings) + crack method ----
     top_base_words, themes, year_dist, suffixes = _pattern_intelligence(
         corpus, _company_tokens(customer_obj, customers))
-    fell = _attack_breakdown(customer_id, hashfile_id)
     recovery_by_task, recovery_total = _recovery_by_task(customer_id, hashfile_id)
     heatmap_rows, heatmap_cols, heatmap_max, rotations, strength_dist = _structure_breakdowns(corpus)
 
@@ -503,7 +487,6 @@ def get_analytics():
         themes=themes,
         year_dist=year_dist,
         suffixes=suffixes,
-        fell=fell,
         recovery_by_task=recovery_by_task,
         recovery_total=recovery_total,
         heatmap_rows=heatmap_rows,

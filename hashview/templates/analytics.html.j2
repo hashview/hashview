@@ -341,15 +341,6 @@
         </div>
     </div>
 </div>
-<div class="card" style="margin-bottom:var(--gap);">
-    <div class="card-head"><span class="dot-led on"></span><h3>How They Fell</h3><span class="mono" style="margin-left:auto;font-size:10.5px;color:var(--text-mute);">attack that cracked the hash</span></div>
-    <div class="card-body">
-        {% if not fell %}{{ empty_note('no recovered hashes in this scope') }}{% else %}
-            {% set fl_max = fell[0].n %}
-            {% for f in fell %}{{ bar_row(f.label, f.n, fl_max, 'amber') }}{% endfor %}
-        {% endif %}
-    </div>
-</div>
 
 {# ---------- recovery by task ---------- #}
 <div class="card" style="margin-bottom:var(--gap);">

@@ -95,6 +95,10 @@ Notable changes will be documented here
 - New analytics figure identifying accounts that share the same password hash, with downloadable results
 - Downloadable results for the username-equals-password figure
 
+**Analytics: Recovery by Task**
+- New analytics figure ranking the tasks that recovered passwords in the selected scope (hashfile, customer, or all hashes), showing each task's attack mode, contribution, recovered count, and share of recoveries
+- Replaces the previous "How They Fell" attack-method breakdown
+
 **Rules Editor**
 - View and edit hashcat rule file contents directly in the browser
 - Rules attached to queued tasks are protected from edits

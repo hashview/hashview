@@ -196,6 +196,49 @@ def _attack_breakdown(customer_id, hashfile_id):
     return [{'label': label, 'n': n} for label, n in counts.most_common()]
 
 
+_MODE_BADGE = {1: 'Combinator', 3: 'Mask', 6: 'Hybrid', 7: 'Hybrid'}
+
+
+def _task_mode_label(attackmode, rule_id):
+    """Short attack-mode badge label for a task's hc_attackmode."""
+    if attackmode == 0:
+        return 'Dict + Rule' if rule_id else 'Dictionary'
+    return _MODE_BADGE.get(attackmode, 'Mode %s' % attackmode)
+
+
+def _recovery_by_task(customer_id, hashfile_id):
+    """Recovered (distinct) hashes grouped by the task that cracked them.
+
+    Each recovered hash carries Hashes.task_id -- the task that recovered it.
+    Returns (rows, total): rows are sorted by recovered count descending, each
+    ``{'name', 'mode', 'n', 'share', 'bar'}`` where ``share`` is the percent of
+    the scope's attributed recoveries and ``bar`` is the count relative to the
+    top task (drives the contribution bar width). Hashes with no task_id (e.g.
+    imported cracks) aren't attributable and are excluded.
+    """
+    rows = (_scoped_hash_query(customer_id, hashfile_id, cracked=True)
+            .with_entities(Hashes.id, Hashes.task_id).distinct().all())
+    counts = Counter(task_id for _hash_id, task_id in rows if task_id is not None)
+    total = sum(counts.values())
+    if not counts:
+        return [], 0
+    top = counts.most_common(1)[0][1]
+    meta = {t.id: t for t in (Tasks.query
+            .with_entities(Tasks.id, Tasks.name, Tasks.hc_attackmode, Tasks.rule_id)
+            .filter(Tasks.id.in_(list(counts))).all())}
+    result = []
+    for task_id, n in counts.most_common():
+        t = meta.get(task_id)
+        result.append({
+            'name': t.name if t else 'task %s (deleted)' % task_id,
+            'mode': _task_mode_label(t.hc_attackmode, t.rule_id) if t else 'Unknown',
+            'n': n,
+            'share': round(100.0 * n / total, 1),
+            'bar': round(100.0 * n / top, 1),
+        })
+    return result, total
+
+
 # Length-bucket columns for the length x complexity heatmap.
 _LEN_COLS = ('≤5', '6', '7', '8', '9', '10', '11', '12', '13-15', '16+')
 STRENGTH_LABELS = ('Very weak', 'Weak', 'Fair', 'Strong', 'Very strong')
@@ -357,6 +400,7 @@ def get_analytics():
     top_base_words, themes, year_dist, suffixes = _pattern_intelligence(
         corpus, _company_tokens(customer_obj, customers))
     fell = _attack_breakdown(customer_id, hashfile_id)
+    recovery_by_task, recovery_total = _recovery_by_task(customer_id, hashfile_id)
     heatmap_rows, heatmap_cols, heatmap_max, rotations, strength_dist = _structure_breakdowns(corpus)
 
     # ---- scope totals (uncracked is derived in the template as total - cracked) ----
@@ -460,6 +504,8 @@ def get_analytics():
         year_dist=year_dist,
         suffixes=suffixes,
         fell=fell,
+        recovery_by_task=recovery_by_task,
+        recovery_total=recovery_total,
         heatmap_rows=heatmap_rows,
         heatmap_cols=heatmap_cols,
         heatmap_max=heatmap_max,

@@ -312,3 +312,73 @@ def test_analytics_hex_not_overscored_as_long_strong(app, client):
         f"/analytics?customer_id={customer_id}&hashfile_id={hashfile_id}"
     ).get_data(as_text=True)
     assert _HEX_PW not in html        # wrapper must not appear in top passwords/masks
+
+
+# --- Recovery by Task figure -----------------------------------------------
+
+def _task(owner_id, name, attackmode=0, rule_id=None):
+    t = Tasks(name=name, hc_attackmode=attackmode, owner_id=owner_id, rule_id=rule_id)
+    db.session.add(t)
+    db.session.commit()
+    return t
+
+
+def _cracked_for_task(hashfile_id, task_id, n, prefix):
+    """n cracked hashes attributed to task_id, linked to the hashfile."""
+    for i in range(n):
+        h = Hashes(sub_ciphertext="0" * 8, ciphertext="%s%d" % (prefix, i), hash_type=1000,
+                   cracked=True, plaintext="pw-%s-%d" % (prefix, i),
+                   recovered_at=datetime(2024, 1, 2), task_id=task_id)
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hashfile_id,
+                                      username="u%s%d" % (prefix, i)))
+    db.session.commit()
+
+
+def test_recovery_by_task_groups_counts_shares_and_scopes(app, client):
+    from hashview.analytics.routes import _recovery_by_task
+
+    admin = _admin()
+    cust = Customers(name="RBT Corp")
+    db.session.add(cust)
+    db.session.commit()
+    hf = Hashfiles(name="rbt_dump", customer_id=cust.id, owner_id=admin.id, runtime=0)
+    db.session.add(hf)
+    db.session.commit()
+
+    t_dict = _task(admin.id, "rockyou.txt", attackmode=0)
+    t_rule = _task(admin.id, "rockyou + best64", attackmode=0, rule_id=1)
+    t_mask = _task(admin.id, "8-char brute", attackmode=3)
+    _cracked_for_task(hf.id, t_dict.id, 3, "d")     # 3 recovered
+    _cracked_for_task(hf.id, t_rule.id, 6, "r")     # 6 recovered
+    _cracked_for_task(hf.id, t_mask.id, 1, "m")     # 1 recovered
+    # a cracked hash with no task_id is unattributable and must be excluded
+    orphan = Hashes(sub_ciphertext="0" * 8, ciphertext="orphan", hash_type=1000,
+                    cracked=True, plaintext="orphan", recovered_at=datetime(2024, 1, 2),
+                    task_id=None)
+    db.session.add(orphan)
+    db.session.commit()
+    db.session.add(HashfileHashes(hash_id=orphan.id, hashfile_id=hf.id, username="orphan"))
+    db.session.commit()
+
+    rows, total = _recovery_by_task(cust.id, hf.id)
+    assert total == 10                                        # 6 + 3 + 1 (orphan excluded)
+    assert [r["name"] for r in rows] == ["rockyou + best64", "rockyou.txt", "8-char brute"]
+    assert (rows[0]["n"], rows[0]["mode"], rows[0]["share"], rows[0]["bar"]) == (6, "Dict + Rule", 60.0, 100.0)
+    assert (rows[1]["n"], rows[1]["mode"], rows[1]["share"]) == (3, "Dictionary", 30.0)
+    assert (rows[2]["n"], rows[2]["mode"], rows[2]["share"], rows[2]["bar"]) == (1, "Mask", 10.0, round(100.0 / 6, 1))
+
+    # scope isolation: a different customer sees nothing; all-scope sees everything
+    other = Customers(name="Other Corp")
+    db.session.add(other)
+    db.session.commit()
+    assert _recovery_by_task(other.id, None) == ([], 0)
+    assert _recovery_by_task(None, None)[1] == 10
+
+    # the figure renders on the page
+    _login(client, admin)
+    html = client.get("/analytics?customer_id=%d&hashfile_id=%d" % (cust.id, hf.id)).get_data(as_text=True)
+    assert "Recovery by Task" in html
+    assert "rockyou + best64" in html
+    assert "Dict + Rule" in html                              # mode badge text (CSS uppercases it)

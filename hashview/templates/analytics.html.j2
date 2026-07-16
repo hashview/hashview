@@ -351,6 +351,47 @@
     </div>
 </div>
 
+{# ---------- recovery by task ---------- #}
+<div class="card" style="margin-bottom:var(--gap);">
+    <div class="card-head">
+        <span class="dot-led {{ 'on' if recovery_by_task else 'idle' }}"></span><h3>Recovery by Task</h3>
+        <span class="mono" style="margin-left:auto;font-size:10.5px;color:var(--text-mute);">{{ recovery_by_task | length | commafy }} task{{ '' if (recovery_by_task | length) == 1 else 's' }} &middot; {{ recovery_total | commafy }} recovered</span>
+    </div>
+    <div class="card-body" style="max-height:600px;overflow-y:auto;">
+        {% if not recovery_by_task %}{{ empty_note('no task has recovered a password in this scope yet') }}{% else %}
+        <table class="tbl">
+            <thead><tr>
+                <th>Task</th>
+                <th>Mode</th>
+                <th style="width:34%;">Contribution</th>
+                <th class="num" style="text-align:right;">Recovered</th>
+                <th class="num" style="text-align:right;">Share</th>
+            </tr></thead>
+            <tbody>
+                {% for r in recovery_by_task %}
+                <tr>
+                    <td>
+                        <span class="mono" style="color:var(--primary);margin-right:12px;">{{ '%02d' % loop.index }}</span><span style="color:var(--text-dim);margin-right:8px;vertical-align:middle;">{{ icon('task', size=13) }}</span><span style="color:var(--text);">{{ r.name }}</span>
+                    </td>
+                    <td><span class="badge dim" style="font-size:9.5px;">{{ r.mode }}</span></td>
+                    <td>
+                        <div style="height:7px;background:var(--inset);border-radius:20px;overflow:hidden;border:1px solid var(--border-soft);">
+                            <div style="width:{{ r.bar }}%;height:100%;background:linear-gradient(90deg,var(--primary-deep),var(--primary));box-shadow:var(--glow-sm);"></div>
+                        </div>
+                    </td>
+                    <td class="num" style="text-align:right;color:var(--primary);font-weight:600;">{{ r.n | commafy }}</td>
+                    <td class="num" style="text-align:right;color:var(--text-mute);">{{ r.share }}%</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div style="padding:13px 14px 0;color:var(--text-mute);font-size:11px;display:flex;align-items:center;gap:7px;">
+            <span style="display:flex;flex:none;">{{ icon('info', size=13) }}</span> Each recovered password is attributed to the task that cracked it. Scoped to {{ scope_name }}.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
 {# ---------- length x complexity heatmap ---------- #}
 <div class="card" style="margin-bottom:var(--gap);">
     <div class="card-head"><h3>Length &times; Complexity</h3><span class="mono" style="margin-left:auto;font-size:10.5px;color:var(--text-mute);">recovered passwords</span></div>

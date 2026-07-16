@@ -82,33 +82,34 @@ wait_healthy db
 wait_healthy db-fresh
 
 echo "== app-main: create + migrate the main-era schema =="
-# Compute main's alembic head from the migration files in the main worktree.
-# Waiting for ANY revision (the old behavior) races the seed load against the
-# still-running migration chain -- e.g. the seed references settings.max_runtime_jobs,
-# added by 0fa1e1dc4069, but the poll can break on an earlier revision like
-# e57e9bb43f01 and load the seed before that column exists.
-MAIN_HEAD="$(python3 - "$MAIN_WT/migrations/versions" <<'PY'
-import pathlib, re, sys
-versions = pathlib.Path(sys.argv[1])
-revs, downs = {}, set()
-for f in versions.glob("*.py"):
-    text = f.read_text()
-    rm = re.search(r"^revision\s*=\s*['\"]([^'\"]+)['\"]", text, re.M)
-    dm = re.search(r"^down_revision\s*=\s*['\"]([^'\"]+)['\"]", text, re.M)
-    if rm:
-        revs[rm.group(1)] = True
-    if dm:
-        downs.add(dm.group(1))
-heads = [r for r in revs if r not in downs]
-if len(heads) != 1:
-    sys.exit(f"expected exactly one alembic head, got {heads!r}")
-print(heads[0])
-PY
-)"
-echo "  main alembic head: $MAIN_HEAD"
 $COMPOSE up -d app-main
-poll "app-main alembic at main head ($MAIN_HEAD)" \
-  "SELECT version_num FROM alembic_version" "$MAIN_HEAD"
+# Wait for app-main's alembic_version to STABILIZE (not just become non-empty).
+# The old behavior -- break on the first recorded revision -- races the seed
+# load against a still-running migration chain: e.g. the seed references
+# settings.max_runtime_jobs (added by 0fa1e1dc4069), but a poll that catches
+# an earlier revision like e57e9bb43f01 loads the seed before that column
+# exists (ERROR 1054). We can't just wait for the parsed alembic head either,
+# because on some main revs app-main crashes mid-chain (e.g. a wordlist FK
+# insert that requires an admin user not yet created) and never reaches head.
+# Instead, poll until version_num is the same across 4 consecutive checks
+# (~20s of no change) -- that covers both "clean success" and "app-main got
+# stuck partway" while still ensuring the seed lands on a settled schema.
+echo "  waiting for app-main alembic_version to stabilize..."
+last=""; stable=0; rev=""
+for _ in $(seq 1 100); do
+  rev="$(db_exec db "SELECT version_num FROM alembic_version" 2>/dev/null | tr -d '[:space:]' || true)"
+  if [ -n "$rev" ] && [ "$rev" = "$last" ]; then
+    stable=$((stable + 1))
+    [ "$stable" -ge 4 ] && break
+  else
+    stable=0
+  fi
+  last="$rev"
+  sleep 5
+done
+[ -n "$rev" ] || { echo "ERROR: app-main never recorded an alembic revision"; $COMPOSE logs --tail 120 app-main; exit 1; }
+[ "$stable" -ge 4 ] || { echo "ERROR: app-main alembic_version never stabilized (last: '$rev')"; $COMPOSE logs --tail 120 app-main; exit 1; }
+echo "  main schema settled at revision: $rev"
 
 echo "== Load main-era seed =="
 $COMPOSE exec -T db mysql -h127.0.0.1 -uhashview -phashview hashview < tests/migration/seed_main.sql

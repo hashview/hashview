@@ -158,3 +158,5 @@ hashview/ssl/*
 # test artifacts / local env
 coverage.json
 .env.test
+# pre-push hook — local sensitive keywords (per-clone)
+.sensitive-keywords

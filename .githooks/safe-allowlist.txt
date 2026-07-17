@@ -1,0 +1,23 @@
+# Allowlist for the pre-push hook — suppresses known false positives.
+#
+# One regex per line. Blank lines and '# ...' comments are ignored.
+# Matching is case-insensitive against the entire hit line
+# (the line from `grep -In`, e.g. "42:+some code here" or
+# "3:[commit-msg] abc1234 subject line").
+#
+# If ANY pattern here matches the hit line, the hit is dropped.
+#
+# Prefer specific patterns over broad ones — an over-broad allowlist
+# defeats the point of the hook. Anchor on file/path or unique context
+# where possible.
+#
+# Examples:
+#   # ignore trustedsec mentions in the example template only
+#   sensitive-keywords\.example
+#
+#   # allow the word "session" (which contains "ses") in test files
+#   tests/.*session
+#
+#   # allow a specific known-safe token literal used in fixtures
+#   fixtures/.*dummy-token-abc123
+example\.com

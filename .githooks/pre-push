@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# Pre-push hook: scan outgoing commits for sensitive info.
+#
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+#
+# Bypass (use sparingly):
+#   git push --no-verify
+
+set -u
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+KEYWORDS_FILE="${REPO_ROOT}/.sensitive-keywords"
+ALLOWLIST_FILE="${REPO_ROOT}/.githooks/safe-allowlist.txt"
+
+# Load allowlist patterns once (regex, case-insensitive). A hit whose full
+# matched line matches any allowlist pattern is treated as a false positive
+# and suppressed.
+ALLOWLIST_PATTERNS=""
+if [ -f "$ALLOWLIST_FILE" ]; then
+    ALLOWLIST_PATTERNS=$(grep -Ev '^[[:space:]]*(#|$)' "$ALLOWLIST_FILE" || true)
+fi
+
+filter_allowlist() {
+    if [ -z "$ALLOWLIST_PATTERNS" ]; then
+        cat
+    else
+        grep -vEi -f <(printf '%s\n' "$ALLOWLIST_PATTERNS") || true
+    fi
+}
+
+RED=$'\033[0;31m'
+YEL=$'\033[0;33m'
+DIM=$'\033[2m'
+RST=$'\033[0m'
+
+fail=0
+findings=""
+
+record() {
+    findings+="$1"$'\n'
+    fail=1
+}
+
+# Read refs being pushed from stdin: <local_ref> <local_sha> <remote_ref> <remote_sha>
+zero="0000000000000000000000000000000000000000"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -z "${local_sha:-}" ] && continue
+
+    # Deletion — nothing to scan.
+    if [ "$local_sha" = "$zero" ]; then
+        continue
+    fi
+
+    if [ "$remote_sha" = "$zero" ]; then
+        # New branch: scan everything reachable from local_sha not already on any remote.
+        range_args=("$local_sha" --not --remotes)
+    else
+        range_args=("${remote_sha}..${local_sha}")
+    fi
+
+    # List commits being pushed.
+    commits=$(git rev-list "${range_args[@]}" 2>/dev/null)
+    [ -z "$commits" ] && continue
+
+    # Combined diff of added lines only for the push range.
+    diff=$(git diff --unified=0 --no-color "${range_args[@]}" 2>/dev/null)
+
+    # Files added/modified in this push.
+    changed_files=$(git diff --name-only --diff-filter=AM "${range_args[@]}" 2>/dev/null)
+
+    # Commit messages (subject + body) for every commit in the push range,
+    # prefixed with the short SHA so findings point at the offending commit.
+    messages=$(git log --format='%h %B%n---END---' "${range_args[@]}" 2>/dev/null)
+
+    if [ -z "$diff" ] && [ -z "$messages" ]; then
+        continue
+    fi
+
+    # --- Built-in patterns (scan added diff lines + commit messages) ---
+
+    added=$(printf '%s\n' "$diff" | grep -E '^\+' | grep -Ev '^\+\+\+')
+    # Tag commit-message lines so scan output shows they came from a message.
+    msg_tagged=$(printf '%s\n' "$messages" | sed 's/^/[commit-msg] /')
+    haystack=$(printf '%s\n%s\n' "$added" "$msg_tagged")
+
+    scan() {
+        local label="$1" pattern="$2"
+        local hits
+        hits=$(printf '%s\n' "$haystack" | grep -InEi -e "$pattern" | filter_allowlist || true)
+        if [ -n "$hits" ]; then
+            record "${RED}[${label}]${RST}"
+            while IFS= read -r line; do
+                record "  ${DIM}${line}${RST}"
+            done <<<"$hits"
+        fi
+    }
+
+    scan "AWS access key ID"      'AKIA[0-9A-Z]{16}'
+    scan "AWS secret key"         '(aws.{0,20})?(secret|access)?.{0,5}[=:][[:space:]]*["'\'']?[A-Za-z0-9/+=]{40}["'\'']?'
+    scan "Generic secret assign"  '(api[_-]?key|secret|password|passwd|token|bearer)[[:space:]]*[=:][[:space:]]*["'\''][^"'\'']{6,}["'\'']'
+    scan "PEM private key"        '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+    scan "URL"                    '(https?|ftp|ssh|git|s3|smb)://[A-Za-z0-9._~:/?#@!$&+;=%-]+'
+    scan "IP address"             '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b'
+
+    # --- .env file additions ---
+    if [ -n "$changed_files" ]; then
+        env_hits=$(printf '%s\n' "$changed_files" | grep -E '(^|/)\.env(\.|$)' || true)
+        if [ -n "$env_hits" ]; then
+            record "${RED}[.env file added/modified]${RST}"
+            while IFS= read -r f; do
+                record "  ${DIM}${f}${RST}"
+            done <<<"$env_hits"
+        fi
+    fi
+
+    # --- Keyword file (regex, case-insensitive) ---
+    if [ -f "$KEYWORDS_FILE" ]; then
+        # Strip comments and blank lines.
+        patterns=$(grep -Ev '^[[:space:]]*(#|$)' "$KEYWORDS_FILE" || true)
+        if [ -n "$patterns" ]; then
+            while IFS= read -r pat; do
+                [ -z "$pat" ] && continue
+                hits=$(printf '%s\n' "$haystack" | grep -InEi -- "$pat" | filter_allowlist || true)
+                if [ -n "$hits" ]; then
+                    record "${YEL}[keyword: ${pat}]${RST}"
+                    while IFS= read -r line; do
+                        record "  ${DIM}${line}${RST}"
+                    done <<<"$hits"
+                fi
+            done <<<"$patterns"
+        fi
+    else
+        printf '%spre-push:%s no %s found — keyword scan skipped.\n' "$YEL" "$RST" "$KEYWORDS_FILE" >&2
+    fi
+done
+
+if [ "$fail" -ne 0 ]; then
+    printf '\n%sPush blocked — potential sensitive content detected:%s\n\n' "$RED" "$RST" >&2
+    printf '%s\n' "$findings" >&2
+    printf '%sReview the matches above. To bypass (only if you are sure), use:%s\n' "$YEL" "$RST" >&2
+    printf '  git push --no-verify\n\n' >&2
+    exit 1
+fi
+
+exit 0

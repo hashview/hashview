@@ -16,10 +16,19 @@ from flask_mail import Message
 
 
 def save_file(path, form_file):
-    """Function to safe file from form submission"""
+    """Save an uploaded file under a randomized, non-attacker-controlled name.
 
+    The uploaded filename comes straight from the multipart Content-Disposition
+    header and is fully attacker-controlled, so it is NOT used to build the
+    on-disk name: the file is stored as ``<random_hex>.txt`` inside ``path``.
+    Reusing any part of ``form_file.filename`` here previously let path
+    separators and shell metacharacters reach the on-disk name, which fed the
+    os.system() download sinks (CWE-78) and allowed path-traversal writes
+    (CWE-22). Legitimate uploads are unaffected (they already resolved to
+    ``<hex>.txt``); display names are stored separately by the callers.
+    """
     random_hex = secrets.token_hex(8)
-    file_name = random_hex + os.path.split(form_file.filename)[0] + '.txt'
+    file_name = random_hex + '.txt'
     file_path = os.path.join(current_app.root_path, path, file_name)
     form_file.save(file_path)
     return file_path

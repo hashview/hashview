@@ -12,6 +12,8 @@ import json
 import secrets
 import hashlib
 import binascii
+import gzip
+import shutil
 
 api = Blueprint('api', __name__)
 
@@ -318,13 +320,19 @@ def v1_api_get_rules_download(rules_id):
 
     update_heartbeat(request.cookies.get('uuid'))
     rules = Rules.query.get(rules_id)
-    rules_name = rules.path.split('/')[-1]
-    cmd = "gzip -9 -k -c hashview/control/rules/" + rules_name + " > hashview/control/tmp/" + rules_name + ".gz"
-
-    # What command injection?!
-    # TODO
-    os.system(cmd)
-    return send_from_directory('control/tmp', rules_name + '.gz', mimetype = 'application/octet-stream')
+    if not rules:
+        return jsonify({'status': 404, 'type': 'Rules', 'msg': 'Rules file not found'}), 404
+    # rules.path is DB-controlled and must NEVER reach a shell (CWE-78). Resolve
+    # to a bare basename, gzip it in-process (no os.system), and stream the gz.
+    rules_name = os.path.basename(rules.path or '')
+    src_path = os.path.join(current_app.root_path, 'control/rules', rules_name)
+    if not rules_name or not os.path.isfile(src_path):
+        return jsonify({'status': 404, 'type': 'Rules', 'msg': 'Rules file missing on disk'}), 404
+    gz_name = rules_name + '.gz'
+    gz_path = os.path.join(current_app.root_path, 'control/tmp', gz_name)
+    with open(src_path, 'rb') as f_in, gzip.open(gz_path, 'wb', compresslevel=9) as f_out:
+        shutil.copyfileobj(f_in, f_out)
+    return send_from_directory('control/tmp', gz_name, mimetype='application/octet-stream')
 
 # Provide wordlist info (really should be plural)
 @api.route('/v1/wordlists', methods=['GET'])
@@ -348,14 +356,20 @@ def v1_api_get_wordlist_download(wordlist_id):
 
     update_heartbeat(request.cookies.get('uuid'))
     wordlist = Wordlists.query.get(wordlist_id)
-    wordlist_name = wordlist.path.split('/')[-1]
+    if not wordlist:
+        return jsonify({'status': 404, 'type': 'Wordlists', 'msg': 'Wordlist not found'}), 404
+    # wordlist.path is DB-controlled and must NEVER reach a shell (CWE-78).
+    # Resolve to a bare basename, gzip it in-process (no os.system), stream the gz.
+    wordlist_name = os.path.basename(wordlist.path or '')
+    src_path = os.path.join(current_app.root_path, 'control/wordlists', wordlist_name)
+    if not wordlist_name or not os.path.isfile(src_path):
+        return jsonify({'status': 404, 'type': 'Wordlists', 'msg': 'Wordlist file missing on disk'}), 404
     random_hex = secrets.token_hex(8)
-    cmd = "gzip -9 -k -c hashview/control/wordlists/" + wordlist_name + " > hashview/control/tmp/" + wordlist_name + "_" + random_hex + ".gz"
-
-    # What command injection?!
-    # TODO
-    os.system(cmd)
-    return send_from_directory('control/tmp', wordlist_name + "_" + random_hex + ".gz", mimetype = 'application/octet-stream')
+    gz_name = wordlist_name + "_" + random_hex + ".gz"
+    gz_path = os.path.join(current_app.root_path, 'control/tmp', gz_name)
+    with open(src_path, 'rb') as f_in, gzip.open(gz_path, 'wb', compresslevel=9) as f_out:
+        shutil.copyfileobj(f_in, f_out)
+    return send_from_directory('control/tmp', gz_name, mimetype='application/octet-stream')
 
 # Update Dynamic Wordlist
 @api.route('/v1/updateWordlist/<int:wordlist_id>', methods=['GET'])

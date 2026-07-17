@@ -89,6 +89,9 @@ Notable changes will be documented here
 - Fixed several template rendering errors from unresolved merge conflicts in settings, jobs, and other pages
 - Fixed several hash import parsing issues
 
+### Security
+- Fixed an authenticated OS command injection (remote code execution) in the wordlist and rules download API (`GET /v1/rules/<id>`, `GET /v1/wordlists/<id>`): files are now compressed in-process instead of via a shell, and uploaded filenames are no longer reused to build on-disk paths (also closes a path-traversal write). CWE-78 / CWE-22. Reported by tonghuaroot.
+
 ## [v0.8.1-Beta] - 2023-08-18
 ### Added
 - Added support for max runtimes both for Jobs and Tasks. Admins can set the value (in hours) with = 0 being indefinate. 

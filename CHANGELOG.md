@@ -66,6 +66,9 @@ Notable changes will be documented here
 - Create/edit forms surface validation errors inside their modal instead of redirecting away
 - Several data-retention cleanup failures and hash-type/validator parsing bugs (e.g. PKZIP `$pkzip$`/`$pkzip2$`)
 
+### Security
+- Hardened wordlist/rules file handling against a reported authenticated command-injection advisory (CWE-78 / CWE-22): the download API compresses files in-process instead of shelling out to `gzip`, and uploaded filenames are never reused to build on-disk paths — closing a path-traversal write. Reported by tonghuaroot.
+
 ## [v0.8.2-Beta] - 2026-06-01
 
 ### Added

@@ -3,6 +3,7 @@ from flask_wtf import FlaskForm
 from wtforms import StringField, SubmitField, SelectField
 from wtforms.validators import DataRequired, InputRequired, ValidationError
 from hashview.models import Tasks
+from hashview.utils.utils import validate_hashcat_combinator_rule, validate_hashcat_mask
 
 
 class TasksForm(FlaskForm):
@@ -26,3 +27,21 @@ class TasksForm(FlaskForm):
         task = Tasks.query.filter_by(name = name.data).first()
         if task:
             raise ValidationError('That task name is taken. Please choose a different one.')
+
+    def validate_mask(self, field):
+        try:
+            validate_hashcat_mask(field.data)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+
+    def validate_j_rule(self, field):
+        try:
+            validate_hashcat_combinator_rule(field.data)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+
+    def validate_k_rule(self, field):
+        try:
+            validate_hashcat_combinator_rule(field.data)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc

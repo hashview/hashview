@@ -3,6 +3,7 @@ import os
 import secrets
 import hashlib
 import re
+import shlex
 import struct
 import binascii
 import _md5
@@ -340,6 +341,33 @@ def update_dynamic_wordlist(wordlist_id):
     wordlist.last_updated = datetime.today()
     db.session.commit()
 
+_HASHCAT_MASK_BAD = re.compile(r'[;&|`$()\n\r<>\\#]')
+_HASHCAT_RULE_BAD = re.compile(r'[;&|`()\n\r<>\\#]')
+
+
+def validate_hashcat_mask(value):
+    """Reject shell metacharacters in user-supplied hashcat masks (CWE-78)."""
+    if value is None or value == '':
+        return
+    if _HASHCAT_MASK_BAD.search(value):
+        raise ValueError('Mask contains disallowed shell metacharacters')
+
+
+def validate_hashcat_combinator_rule(value):
+    """Reject shell metacharacters in combinator -j/-k rules (CWE-78)."""
+    if value is None or value == '':
+        return
+    if _HASHCAT_RULE_BAD.search(value):
+        raise ValueError('Rule contains disallowed shell metacharacters')
+
+
+def _normalize_task_rule(value):
+    """Tasks.j_rule/k_rule were occasionally stored as 1-tuples; normalize."""
+    if isinstance(value, tuple):
+        value = value[0] if value else None
+    return value if isinstance(value, str) else None
+
+
 def build_hashcat_command(job_id, task_id):
     """Function to build the main hashcat cmd we use to crack"""
 
@@ -400,23 +428,36 @@ def build_hashcat_command(job_id, task_id):
             cmd += ' ' + target_file + ' ' + relative_wordlist_path
     # combinator
     elif attackmode == 1:
-        if isinstance(task.j_rule, str):
-            j_rule = " -j '" + task.j_rule + "' "
+        j_rule_str = _normalize_task_rule(task.j_rule)
+        if j_rule_str:
+            validate_hashcat_combinator_rule(j_rule_str)
+            j_rule = ' -j ' + shlex.quote(j_rule_str) + ' '
         else:
             j_rule = ' '
-        
-        if isinstance(task.k_rule, str):
-            k_rule = " -k '" + task.k_rule + "' "
+
+        k_rule_str = _normalize_task_rule(task.k_rule)
+        if k_rule_str:
+            validate_hashcat_combinator_rule(k_rule_str)
+            k_rule = ' -k ' + shlex.quote(k_rule_str) + ' '
         else:
             k_rule = ' '
         cmd += ' ' + ' -a 1 ' + target_file + ' ' + relative_wordlist_path + j_rule + relative_wordlist_path + k_rule
     # maskmode
     elif attackmode == 3:
+        if mask:
+            validate_hashcat_mask(mask)
+            mask = shlex.quote(mask)
         cmd += ' ' + ' -a 3 ' + target_file + ' ' + mask
     # Hybrid (Wordlist + Mask)
     elif attackmode == 6:
+        if mask:
+            validate_hashcat_mask(mask)
+            mask = shlex.quote(mask)
         cmd += ' ' + ' -a 6 ' + target_file + ' ' + relative_wordlist_path + ' ' + mask
     elif attackmode == 7:
+        if mask:
+            validate_hashcat_mask(mask)
+            mask = shlex.quote(mask)
         cmd += ' ' + ' -a 7 ' + target_file + ' ' + mask + ' ' + relative_wordlist_path
 
     # Mask mode

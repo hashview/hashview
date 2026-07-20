@@ -12,6 +12,9 @@ import signal
 import builtins
 import time
 import subprocess
+import shlex
+import gzip
+import shutil
 from contextlib import suppress
 from threading import Thread
 from datetime import datetime, timedelta
@@ -103,27 +106,49 @@ if not os.path.exists('agent/config.conf'):
 
     config.close()
 
-from agent.api import api    
-    
-def run_command(command):
-    try:
-        cmd = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        #cmd = subprocess.Popen(["python", file],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-        output, error = cmd.communicate()
+from agent.api import api
 
-        if(error):
-            print(error)
-            if 'hashfile is empty or corrupt' not in str(error):
-                if 'Terminated' in str(error):
-                    sys.exit()
-                else:
-                    api.sendError(str(error))
-                    os.kill(os.getpid(), signal.SIGINT)
-    except OSError as e: 
+
+def _handle_subprocess_error(error):
+    if error:
+        print(error)
+        if b'hashfile is empty or corrupt' not in error:
+            if b'Terminated' in error:
+                sys.exit()
+            else:
+                api.sendError(error.decode('utf-8', errors='replace'))
+                os.kill(os.getpid(), signal.SIGINT)
+
+
+def run_command(command):
+    """Run a subprocess without invoking a shell (CWE-78)."""
+    try:
+        if isinstance(command, (list, tuple)):
+            argv = list(command)
+        else:
+            argv = shlex.split(command)
+        cmd = subprocess.Popen(argv, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        output, error = cmd.communicate()
+        _handle_subprocess_error(error)
+        return output
+    except OSError as e:
         print("inside exception", e)
         api.sendError(str(e))
-        #sys.exit()
         os.kill(os.getpid(), signal.SIGINT)
+
+
+def _gunzip_file(gz_path):
+    """Decompress a .gz file in place, returning the output path."""
+    out_path = gz_path[:-3] if gz_path.endswith('.gz') else gz_path + '.out'
+    with gzip.open(gz_path, 'rb') as gz_file:
+        with open(out_path, 'wb') as out_file:
+            shutil.copyfileobj(gz_file, out_file)
+    os.remove(gz_path)
+    return out_path
+
+
+def _move_file(src, dest):
+    shutil.move(src, dest)
 
 def send_heartbeat(agent_status, hc_status):
     return api.heartbeat(agent_status, hc_status)
@@ -176,8 +201,7 @@ def sync_rules():
                 with open(tmp_gz, 'wb') as f:
                     f.write(compressed)
 
-                run_command(f'gunzip {tmp_gz}')
-                tmp_file = os.path.join('control/tmp', random_hex)
+                tmp_file = _gunzip_file(tmp_gz)
 
                 sha256 = hashlib.sha256()
                 with open(tmp_file, 'rb') as f:
@@ -188,7 +212,7 @@ def sync_rules():
 
                 if local_checksum == remote_checksum:
                     dest = os.path.join('control/rules', filename)
-                    run_command(f'mv {tmp_file} {dest}')
+                    _move_file(tmp_file, dest)
                     new_manifest[rule_id] = {'checksum': local_checksum, 'filename': filename}
                 else:
                     print('Checksum verification failed for rule', rule_id)
@@ -204,8 +228,7 @@ def sync_rules():
             with open(tmp_gz, 'wb') as f:
                 f.write(compressed)
 
-            run_command(f'gunzip {tmp_gz}')
-            tmp_file = os.path.join('control/tmp', random_hex)
+            tmp_file = _gunzip_file(tmp_gz)
 
             sha256 = hashlib.sha256()
             with open(tmp_file, 'rb') as f:
@@ -216,7 +239,7 @@ def sync_rules():
 
             if local_checksum == remote_checksum:
                 dest = os.path.join('control/rules', filename)
-                run_command(f'mv {tmp_file} {dest}')
+                _move_file(tmp_file, dest)
                 new_manifest[rule_id] = {'checksum': local_checksum, 'filename': filename}
             else:
                 print('Checksum verification failed for new rule', rule_id)
@@ -261,8 +284,7 @@ def sync_wordlists():
                 with open(tmp_gz, 'wb') as f:
                     f.write(compressed)
 
-                run_command(f'gunzip {tmp_gz}')
-                tmp_file = os.path.join('control/tmp', random_hex)
+                tmp_file = _gunzip_file(tmp_gz)
 
                 sha256 = hashlib.sha256()
                 with open(tmp_file, 'rb') as f:
@@ -273,7 +295,7 @@ def sync_wordlists():
 
                 if local_checksum == remote_checksum:
                     dest = os.path.join('control/wordlists', filename)
-                    run_command(f'mv {tmp_file} {dest}')
+                    _move_file(tmp_file, dest)
                     new_manifest[wl_id] = {'checksum': local_checksum, 'filename': filename}
                 else:
                     print('Checksum verification failed for wordlist', wl_id)
@@ -289,8 +311,7 @@ def sync_wordlists():
             with open(tmp_gz, 'wb') as f:
                 f.write(compressed)
 
-            run_command(f'gunzip {tmp_gz}')
-            tmp_file = os.path.join('control/tmp', random_hex)
+            tmp_file = _gunzip_file(tmp_gz)
 
             sha256 = hashlib.sha256()
             with open(tmp_file, 'rb') as f:
@@ -300,7 +321,7 @@ def sync_wordlists():
 
             if local_checksum == remote_checksum:
                 dest = os.path.join('control/wordlists', filename)
-                run_command(f'mv {tmp_file} {dest}')
+                _move_file(tmp_file, dest)
                 new_manifest[wl_id] = {'checksum': local_checksum, 'filename': filename}
             else:
                 print('Checksum verification failed for new wordlist', wl_id)
@@ -339,9 +360,36 @@ def replaceHashcatBinPath(cmd):
     from agent.config import Config
     return cmd.replace('@HASHCATBINPATH@', Config.HC_BIN_PATH)
 
-def run_hashcat(cmd):
-    run_command(cmd)
-    #os.system(cmd)
+def run_hashcat(command, status_output_path):
+    """Run hashcat without a shell; stream JSON status lines to a file."""
+    argv = shlex.split(replaceHashcatBinPath(command))
+    argv.append('--status-json')
+    print(' '.join(argv))
+    try:
+        proc = subprocess.Popen(
+            argv,
+            shell=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        stderr_data = []
+
+        def drain_stderr():
+            stderr_data.append(proc.stderr.read())
+
+        stderr_thread = Thread(target=drain_stderr)
+        stderr_thread.start()
+        with open(status_output_path, 'wb') as status_file:
+            for chunk in iter(lambda: proc.stdout.read(4096), b''):
+                status_file.write(chunk)
+                status_file.flush()
+        proc.wait()
+        stderr_thread.join()
+        _handle_subprocess_error(b''.join(stderr_data))
+    except OSError as e:
+        print("inside exception", e)
+        api.sendError(str(e))
+        os.kill(os.getpid(), signal.SIGINT)
 
 def time_difference(future_timestamp):
     # Get the current time and calculate the difference
@@ -531,11 +579,11 @@ if __name__ == '__main__':
                 # Download our hashfile. File name will be generated to match that of whats expected by the jobtask cmd.
                 download_hashfile(job['id'], job_task['task_id'], job['hashfile_id'])
 
-                cmd = replaceHashcatBinPath(job_task['command']) + ' --status-json | tee control/outfiles/hcoutput_' + str(job['id']) + '_' + str(job_task['id']) + '.txt'
-                print(cmd)
+                status_output_path = 'control/outfiles/hcoutput_' + str(job['id']) + '_' + str(job_task['id']) + '.txt'
+                print(replaceHashcatBinPath(job_task['command']) + ' --status-json')
 
                 # run in thread
-                thread = Thread(target=run_hashcat, args=(cmd,))
+                thread = Thread(target=run_hashcat, args=(job_task['command'], status_output_path))
                 thread.start()
                 
                 while thread.is_alive():

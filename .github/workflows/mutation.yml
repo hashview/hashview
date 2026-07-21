@@ -21,8 +21,8 @@ jobs:
     # job is non-blocking regardless since it never runs on push/PR.
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -47,7 +47,7 @@ jobs:
           mutmut export-cicd-stats || true
       - name: Upload mutation report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mutation-report
           path: |

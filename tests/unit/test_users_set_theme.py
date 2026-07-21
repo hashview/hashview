@@ -24,6 +24,15 @@ def test_set_theme_rejects_invalid_value(app, client):
     assert Users.query.get(user.id).theme == before
 
 
+def test_set_theme_rejects_missing_field(app, client):
+    user = make_user()
+    login(client, user)
+    before = Users.query.get(user.id).theme  # server default 'auto'
+    resp = client.post("/profile/set_theme", data={})
+    assert resp.status_code == 400
+    assert Users.query.get(user.id).theme == before
+
+
 def test_set_theme_requires_login(app, client):
     resp = client.post("/profile/set_theme", data={"theme": "dark"},
                        follow_redirects=False)

@@ -59,9 +59,9 @@ class ProfileForm(FlaskForm):
     submit = SubmitField('Update')
 
 class ThemeForm(FlaskForm):
-    """Minimal CSRF-carrying form for the account theme control. The value is
-    validated against the allowed set in the route, not here."""
-    theme = StringField('Theme')
+    """Minimal CSRF-carrying form for the account theme control. Presence is
+    enforced here; the value is validated against the allowed set in the route."""
+    theme = StringField('Theme', validators=[DataRequired()])
 
 class RequestResetForm(FlaskForm):
     """Class representing Password Reset Request Form"""

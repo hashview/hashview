@@ -33,3 +33,23 @@ regardless
 password="hashed-pw"
 api_key="user-api-key-admin"
 src_ip="127\.0\.0\.1"
+
+# --- CI workflow false positives (.github/workflows/*) ---
+# The scanner reads whole changed files, so editing a workflow surfaces its
+# CI-only test values, template variables and comment substrings. None are
+# real secrets.
+
+# "iadb" keyword inside "MariaDB" (job name, image tag, service env, comments).
+mariadb
+# Loopback address in CI service URIs / base URLs.
+127\.0\.0\.1
+# Deterministic, throwaway e2e test credentials baked into the e2e workflow.
+HASHVIEW_E2E_
+# CI-only MySQL/MariaDB test connection string (root:hashview@localhost).
+HASHVIEW_TEST_DATABASE_URI
+# SHA-256 checksum of the public SecLists rockyou archive (not a key).
+ROCKYOU_TGZ_SHA256
+# Public SecLists download URL used to fetch rockyou for the crack e2e.
+danielmiessler/SecLists
+# Badge-push URL using the ${GH_TOKEN} action variable, not a literal token.
+x-access-token

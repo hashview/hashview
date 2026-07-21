@@ -1,6 +1,6 @@
 import pytest
 
-from hashview.models import Users, db
+from hashview.models import db
 from tests.unit.helpers import login, make_admin
 
 

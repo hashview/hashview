@@ -15,31 +15,40 @@ branch_labels = None
 depends_on = None
 
 
+def _has_column(table, column):
+    """True if ``table`` already has ``column`` in the live database.
+
+    These adds are guarded because real-world databases drift: a column this
+    migration means to introduce may already exist (e.g. built model-first by
+    an earlier deploy), and a blind ``ADD COLUMN`` then aborts the whole
+    upgrade with 'Duplicate column name' -- MySQL DDL is non-transactional, so
+    the failure strands every later change too. Skipping already-present
+    columns makes the upgrade safe to (re-)run on a drifted schema.
+    """
+    return any(c['name'] == column for c in sa.inspect(op.get_bind()).get_columns(table))
+
+
+# (table, column-factory) pairs. limit_recovered carries a server_default so
+# the NOT NULL add succeeds against a jobs table that already holds rows.
+_ADDS = [
+    ('hashes', lambda: sa.Column('recovered_at', sa.DateTime(), nullable=True)),
+    ('hashes', lambda: sa.Column('task_id', sa.Integer(), nullable=True)),
+    ('hashes', lambda: sa.Column('recovered_by', sa.Integer(), nullable=True)),
+    ('jobs', lambda: sa.Column('limit_recovered', sa.Boolean(), nullable=False,
+                               server_default=sa.text('0'))),
+    ('tasks', lambda: sa.Column('wl_id_2', sa.Integer(), nullable=True)),
+    ('tasks', lambda: sa.Column('j_rule', sa.String(length=25), nullable=True)),
+    ('tasks', lambda: sa.Column('k_rule', sa.String(length=25), nullable=True)),
+]
+
+
 def upgrade():
-    with op.batch_alter_table('hashes', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('recovered_at', sa.DateTime(), nullable=True))
-        batch_op.add_column(sa.Column('task_id', sa.Integer(), nullable=True))
-        batch_op.add_column(sa.Column('recovered_by', sa.Integer(), nullable=True))
-
-    with op.batch_alter_table('jobs', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('limit_recovered', sa.Boolean(), nullable=False))
-
-    with op.batch_alter_table('tasks', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('wl_id_2', sa.Integer(), nullable=True))
-        batch_op.add_column(sa.Column('j_rule', sa.String(length=25), nullable=True))
-        batch_op.add_column(sa.Column('k_rule', sa.String(length=25), nullable=True))
+    for table, make_col in _ADDS:
+        if not _has_column(table, make_col().name):
+            op.add_column(table, make_col())
 
 
 def downgrade():
-    with op.batch_alter_table('tasks', schema=None) as batch_op:
-        batch_op.drop_column('k_rule')
-        batch_op.drop_column('j_rule')
-        batch_op.drop_column('wl_id_2')
-
-    with op.batch_alter_table('jobs', schema=None) as batch_op:
-        batch_op.drop_column('limit_recovered')
-
-    with op.batch_alter_table('hashes', schema=None) as batch_op:
-        batch_op.drop_column('recovered_by')
-        batch_op.drop_column('task_id')
-        batch_op.drop_column('recovered_at')
+    for table, make_col in reversed(_ADDS):
+        if _has_column(table, make_col().name):
+            op.drop_column(table, make_col().name)

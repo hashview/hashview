@@ -65,6 +65,7 @@ Notable changes will be documented here
 - Agents survive a server restart mid-task, and a bug where agent status could show as empty was fixed
 - Create/edit forms surface validation errors inside their modal instead of redirecting away
 - Several data-retention cleanup failures and hash-type/validator parsing bugs (e.g. PKZIP `$pkzip$`/`$pkzip2$`)
+- The `main` -> v0.8.3 database upgrade is now idempotent under schema drift: migrations skip columns/tables that already exist instead of aborting on a duplicate-column error (which previously stranded the whole upgrade and left the app reporting "Unknown column"). The `tasks.hc_attackmode` conversion is also guarded so it can't misclassify tasks if re-run on an already-integer column.
 
 ## [v0.8.2-Beta] - 2026-06-01
 

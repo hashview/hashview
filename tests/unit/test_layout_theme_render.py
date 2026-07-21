@@ -22,6 +22,8 @@ def test_auto_theme_defers_to_script(app, client):
     login(client, admin)
     html = client.get("/users").data.decode()
     assert 'data-theme-pref="auto"' in html
+    # server bakes the safe dark default for auto; the script resolves the rest
+    assert 'data-theme="dark"' in html
     assert "prefers-color-scheme: light" in html
 
 

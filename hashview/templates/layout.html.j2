@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en" data-glow="subtle" data-scanlines="{% block scanlines %}on{% endblock %}" data-density="comfortable"
-      data-theme="{% if current_user.is_authenticated and current_user.theme in ['dark','light-paper','light-invert','light-clean'] %}{{ current_user.theme }}{% else %}dark{% endif %}"
+      {# Bake any explicit (non-auto) stored theme so there's no flash and it works without JS; 'auto' and anonymous fall back to dark and are resolved client-side. Values are constrained by the set_theme allowlist, so no separate list is duplicated here. #}
+      data-theme="{% if current_user.is_authenticated and current_user.theme and current_user.theme != 'auto' %}{{ current_user.theme }}{% else %}dark{% endif %}"
+      {# An empty/absent data-theme-pref is the intentional signal for the pre-paint script to fall back to localStorage/OS (anonymous pages). Do not emit a default here. #}
       data-theme-pref="{% if current_user.is_authenticated %}{{ current_user.theme }}{% else %}{% endif %}">
 {% from "icons.html.j2" import icon %}
 <head>

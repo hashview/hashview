@@ -78,6 +78,7 @@ api = Blueprint('api', __name__)
 _ENCODER_DENYLIST = frozenset({
     'password', 'api_key',
     'azure_client_secret', 'slack_bot_token',
+    'provider_secret',
 })
 
 class AlchemyEncoder(json.JSONEncoder):

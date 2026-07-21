@@ -935,9 +935,11 @@ def test_jobs_website_keywords_redirects_when_no_website_task(app, client):
     job = _make_job(user.id, customer.id)
     _login(client, user)
 
+    # The website step self-skips to the next wizard step (/provider_input),
+    # which in turn self-skips to /summary for a job with no provider wordlist.
     resp = client.get(f"/jobs/{job.id}/website", follow_redirects=False)
     assert resp.status_code in (301, 302)
-    assert resp.headers["Location"].endswith(f"/jobs/{job.id}/summary")
+    assert resp.headers["Location"].endswith(f"/jobs/{job.id}/provider_input")
 
 
 # ---------------------------------------------------------------------------
@@ -1023,7 +1025,9 @@ def test_jobs_website_keywords_post_saves_url(app, client):
                        data={"crawl_url": "https://example.com"},
                        follow_redirects=False)
     assert resp.status_code in (301, 302)
-    assert resp.headers["Location"].endswith(f"/jobs/{job.id}/summary")
+    # Chain is website -> provider_input -> summary; provider_input self-skips to
+    # summary for a job with no provider-backed wordlist.
+    assert resp.headers["Location"].endswith(f"/jobs/{job.id}/provider_input")
     db.session.expire_all()
     assert Jobs.query.get(job.id).crawl_url == "https://example.com"
 

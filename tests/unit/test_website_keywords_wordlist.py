@@ -254,7 +254,9 @@ def test_job_website_step_shows_and_stores_url(app, client):
     resp = client.post(f"/jobs/{job.id}/website",
                        data={"crawl_url": "https://example.com", "submit": "Next"},
                        follow_redirects=False)
-    assert resp.status_code == 302 and f"/jobs/{job.id}/summary" in resp.headers["Location"]
+    # The wizard chain is website -> provider_input -> summary; the provider_input
+    # step self-skips to summary when no task uses a provider-backed wordlist.
+    assert resp.status_code == 302 and f"/jobs/{job.id}/provider_input" in resp.headers["Location"]
     assert Jobs.query.get(job.id).crawl_url == "https://example.com"
 
 
@@ -267,8 +269,10 @@ def test_job_website_step_skipped_when_not_applicable(app, client):
     db.session.commit()
     job, _ = _make_job_with_task(user, wl_id=static.id)
 
+    # The website step self-skips to the next step (/provider_input, which then
+    # self-skips to /summary for a job with no provider wordlist).
     resp = client.get(f"/jobs/{job.id}/website", follow_redirects=False)
-    assert resp.status_code == 302 and f"/jobs/{job.id}/summary" in resp.headers["Location"]
+    assert resp.status_code == 302 and f"/jobs/{job.id}/provider_input" in resp.headers["Location"]
 
 
 # ---------------------------------------------------------------------------

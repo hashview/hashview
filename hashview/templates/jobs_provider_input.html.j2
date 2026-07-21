@@ -1,0 +1,40 @@
+{% extends "layout.html.j2" %}
+{% from "macros.html.j2" import icon, phos_field, status_badge, priority_pips, wizard_stepper %}
+{% block content %}
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">Create Job</h1>
+        <div class="page-sub">// wordlist provider input</div>
+    </div>
+</div>
+{{ wizard_stepper('provider', alert_hashes=(alert_hashes if alert_hashes is defined else false), website=(website if website is defined else false), provider=true) }}
+
+<form method="POST" action="" id="provider_form">
+    {{ form.hidden_tag() }}
+
+    <div class="card">
+        <div class="card-head">{{ icon('book', size=15) }}<h3>Wordlist Provider Input</h3></div>
+        <div class="card-body">
+            <div class="field-hint" style="margin-bottom:16px;">
+                One or more of this job's tasks use a provider-backed <span class="mono">(DYNAMIC)</span> wordlist.
+                Enter the input to submit to the provider — every task in this job that uses that wordlist will be
+                built from the list the provider returns for this input.
+            </div>
+            {{ phos_field(form.provider_input, placeholder='e.g. example.com — a target domain, company name, or keyword set') }}
+        </div>
+    </div>
+
+    <div class="wizard-nav">
+        <a class="btn" href="{{ url_for('jobs.jobs_website_keywords', job_id=job.id) }}">{{ icon('arrowLeft', size=15) }} Back</a>
+        <span class="spacer"></span>
+        {{ form.submit(class="btn btn-primary", id="provider_next") }}
+    </div>
+</form>
+
+<script>
+    // Gate Next until the provider input is non-empty (DataRequired renders required).
+    hvGateNext(document.getElementById('provider_form'), document.getElementById('provider_next'));
+</script>
+
+{% endblock content %}

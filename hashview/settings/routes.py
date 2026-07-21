@@ -18,15 +18,20 @@ from flask import (
 from flask_login import current_user, login_required
 
 import hashview
-from hashview.models import Hashes, Settings, db
-from hashview.settings.forms import DatabaseBackupForm, HashviewSettingsForm
+from hashview.models import Hashes, Settings, Tasks, WordlistProviders, Wordlists, db
+from hashview.settings.forms import (
+    DatabaseBackupForm,
+    HashviewSettingsForm,
+    WordlistProviderForm,
+)
 from hashview.utils.audit import clear_logs_on_disk, log_event, logs_dir
 from hashview.utils.backup import (
     BackupError,
     create_encrypted_db_backup,
     purge_stale_backups,
 )
-from hashview.utils.utils import send_slack_channel
+from hashview.utils.utils import get_filehash, send_slack_channel
+from hashview.utils.wordlist_providers import test_connection, validate_base_url
 
 # control/tmp filename of a generated backup, e.g. '1a2b3c4d5e6f7a8b.sql.gz.enc'
 _BACKUP_TOKEN_RE = re.compile(r'^[0-9a-f]{16}\.sql\.gz\.enc$')
@@ -158,9 +163,169 @@ def settings_list():
             database_version    = database_version,
             default_azure_redirect = default_azure_redirect,
             azure_secret_set    = bool(settings.azure_client_secret),
+            wordlist_providers  = WordlistProviders.query.order_by(WordlistProviders.name).all(),
+            providerForm        = WordlistProviderForm(is_add=True),
         )
 
     abort(403)
+
+
+#############################################
+# Wordlist Providers
+#############################################
+
+def _provider_wordlist(provider_id):
+    """The dynamic Wordlists row backing a provider, if any."""
+    return Wordlists.query.filter_by(provider_id=provider_id).first()
+
+
+@settings.route("/settings/providers/add", methods=['POST'])
+@login_required
+def providers_add():
+    """Register a wordlist provider and create its backing dynamic wordlist."""
+    if not current_user.admin:
+        abort(403)
+    form = WordlistProviderForm(is_add=True)
+    if not form.validate_on_submit():
+        for field, errors in form.errors.items():
+            for err in errors:
+                flash(f'{field}: {err}', 'danger')
+        return redirect(url_for('settings.settings_list'))
+
+    # Reject a non-http(s) base URL up front (URL() allows other schemes).
+    try:
+        validate_base_url(form.base_url.data)
+    except ValueError as exc:
+        flash(str(exc), 'danger')
+        return redirect(url_for('settings.settings_list'))
+
+    if WordlistProviders.query.filter_by(name=form.name.data).first():
+        flash('A provider with that name already exists.', 'danger')
+        return redirect(url_for('settings.settings_list'))
+
+    provider = WordlistProviders(
+        name            = form.name.data,
+        description     = form.description.data or None,
+        base_url        = form.base_url.data,
+        auth_type       = form.auth_type.data,
+        username        = form.username.data or None,
+        provider_secret = form.provider_secret.data or None,
+        verify_tls      = form.verify_tls.data,
+        enabled         = form.enabled.data,
+        owner_id        = current_user.id,
+    )
+    db.session.add(provider)
+    db.session.commit()
+
+    # Create the backing dynamic wordlist (mirrors setup.add_default_dynamic_wordlists).
+    path = os.path.join('hashview/control/wordlists', 'provider-' + str(provider.id) + '.txt')
+    with open(path, mode='w'):
+        pass
+    db.session.add(Wordlists(
+        name        = '(DYNAMIC) ' + provider.name,
+        owner_id    = current_user.id,
+        type        = 'dynamic',
+        path        = path,
+        provider_id = provider.id,
+        checksum    = get_filehash(path),
+        size        = 0,
+    ))
+    db.session.commit()
+    flash('Wordlist provider added.', 'success')
+    return redirect(url_for('settings.settings_list'))
+
+
+@settings.route("/settings/providers/<int:provider_id>/edit", methods=['POST'])
+@login_required
+def providers_edit(provider_id):
+    """Update a provider. The secret is write-only (blank keeps the stored value)."""
+    if not current_user.admin:
+        abort(403)
+    provider = WordlistProviders.query.get_or_404(provider_id)
+    form = WordlistProviderForm(is_add=False)
+    if not form.validate_on_submit():
+        for field, errors in form.errors.items():
+            for err in errors:
+                flash(f'{field}: {err}', 'danger')
+        return redirect(url_for('settings.settings_list'))
+
+    try:
+        validate_base_url(form.base_url.data)
+    except ValueError as exc:
+        flash(str(exc), 'danger')
+        return redirect(url_for('settings.settings_list'))
+
+    clash = WordlistProviders.query.filter(
+        WordlistProviders.name == form.name.data,
+        WordlistProviders.id != provider.id).first()
+    if clash:
+        flash('A provider with that name already exists.', 'danger')
+        return redirect(url_for('settings.settings_list'))
+
+    old_name = provider.name
+    provider.name        = form.name.data
+    provider.description = form.description.data or None
+    provider.base_url    = form.base_url.data
+    provider.auth_type   = form.auth_type.data
+    provider.username    = form.username.data or None
+    provider.verify_tls  = form.verify_tls.data
+    provider.enabled     = form.enabled.data
+    # Write-only secret: only overwrite when a new value was actually typed.
+    if form.provider_secret.data:
+        provider.provider_secret = form.provider_secret.data
+
+    # Keep the backing wordlist's display name in sync with the provider name.
+    if provider.name != old_name:
+        wordlist = _provider_wordlist(provider.id)
+        if wordlist:
+            wordlist.name = '(DYNAMIC) ' + provider.name
+    db.session.commit()
+    flash('Wordlist provider updated.', 'success')
+    return redirect(url_for('settings.settings_list'))
+
+
+@settings.route("/settings/providers/<int:provider_id>/delete", methods=['POST'])
+@login_required
+def providers_delete(provider_id):
+    """Delete a provider and its backing wordlist, unless a task still uses it."""
+    if not current_user.admin:
+        abort(403)
+    provider = WordlistProviders.query.get_or_404(provider_id)
+    wordlist = _provider_wordlist(provider.id)
+
+    if wordlist:
+        in_use = Tasks.query.filter(
+            (Tasks.wl_id == wordlist.id) | (Tasks.wl_id_2 == wordlist.id)).first()
+        if in_use:
+            flash("This provider's wordlist is in use by one or more tasks; "
+                  "remove those tasks before deleting the provider.", 'danger')
+            return redirect(url_for('settings.settings_list'))
+        # DB row first, then best-effort unlink the file (mirrors wordlists_delete).
+        path = wordlist.path
+        db.session.delete(wordlist)
+        db.session.commit()
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError:
+                current_app.logger.warning('Could not remove provider wordlist file %s', path)
+
+    db.session.delete(provider)
+    db.session.commit()
+    flash('Wordlist provider deleted.', 'success')
+    return redirect(url_for('settings.settings_list'))
+
+
+@settings.route("/settings/providers/<int:provider_id>/test", methods=['POST'])
+@login_required
+def providers_test(provider_id):
+    """Probe a provider's /health endpoint and flash the result."""
+    if not current_user.admin:
+        abort(403)
+    provider = WordlistProviders.query.get_or_404(provider_id)
+    ok, message = test_connection(provider)
+    flash(('Provider "%s": ' % provider.name) + message, 'success' if ok else 'danger')
+    return redirect(url_for('settings.settings_list'))
 
 
 @settings.route("/settings/send_test_admin_slack", methods=['GET'])

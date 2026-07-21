@@ -30,6 +30,7 @@ from hashview.models import (
     Settings,
     Tasks,
     Users,
+    WordlistProviders,
     Wordlists,
     db,
 )
@@ -734,16 +735,42 @@ def _generate_website_keywords(wordlist, job_id):
         shutil.move(tmp_path, wordlist.path)
 
 
+def _generate_from_provider(wordlist, job_id):
+    """Populate a provider-backed dynamic wordlist by calling the remote provider.
+
+    Reads the per-job ``provider_input`` (resolved from the requesting agent's
+    running job) and submits it to the provider's API; the returned wordlist is
+    materialized to ``wordlist.path``. If no provider or no per-job input can be
+    resolved (e.g. a manual UI refresh with no running job), the existing file is
+    left untouched — the same contract as ``_generate_website_keywords``.
+    """
+    provider = WordlistProviders.query.get(wordlist.provider_id)
+    job = Jobs.query.get(job_id) if job_id else None
+    user_input = job.provider_input if (job and job.provider_input) else None
+    if not provider or not user_input:
+        current_app.logger.warning(
+            'Provider wordlist update with no job input (job_id=%s); leaving wordlist %s unchanged.',
+            job_id, wordlist.id)
+        return
+
+    from hashview.utils.wordlist_providers import generate_wordlist
+    generate_wordlist(provider, user_input, wordlist.path)
+
+
 def update_dynamic_wordlist(wordlist_id, job_id=None):
     """Function to update dynamic wordlist.
 
     ``job_id`` (resolved server-side from the requesting agent's running job)
-    is used by crawl-based wordlists to read the per-job target URL.
+    is used by crawl-based and provider-backed wordlists to read the per-job
+    target URL / provider input.
     """
 
     wordlist = Wordlists.query.get(wordlist_id)
 
-    if 'Website' in wordlist.name:
+    if wordlist.provider_id:
+        # Provider-backed: fetch the list from the remote provider API.
+        _generate_from_provider(wordlist, job_id)
+    elif 'Website' in wordlist.name:
         # Crawl-based: generate into a random tmp file + atomic replace.
         _generate_website_keywords(wordlist, job_id)
     else:

@@ -69,6 +69,37 @@
             if (on) { el.removeAttribute('readonly'); } else { el.setAttribute('readonly', 'readonly'); }
         });
     }
+    // Load a provider's values into the add/edit form and repoint it at the edit route.
+    // The secret stays blank (write-only) — submitting blank keeps the stored value.
+    function hvEditProvider(id) {
+        var el = document.getElementById('provider-data-' + id);
+        if (!el) return;
+        var p = JSON.parse(el.textContent);
+        var form = document.getElementById('hv-provider-form');
+        form.action = '/settings/providers/' + id + '/edit';
+        form.querySelector('#prov-name').value = p.name || '';
+        form.querySelector('#prov-desc').value = p.description || '';
+        form.querySelector('#prov-url').value = p.base_url || '';
+        form.querySelector('#prov-auth').value = p.auth_type || 'bearer';
+        form.querySelector('#prov-user').value = p.username || '';
+        form.querySelector('#prov-secret').value = '';
+        form.querySelector('#prov-secret').setAttribute('placeholder', 'unchanged — leave blank to keep');
+        var vtls = form.querySelector('[name=verify_tls]'); if (vtls) vtls.checked = !!p.verify_tls;
+        var en = form.querySelector('[name=enabled]'); if (en) en.checked = !!p.enabled;
+        document.getElementById('provider-form-title').textContent = 'Edit Wordlist Provider';
+        document.getElementById('prov-submit').lastChild.textContent = ' Save changes';
+        document.getElementById('prov-cancel-edit').style.display = '';
+        form.scrollIntoView({behavior: 'smooth', block: 'center'});
+    }
+    function hvResetProviderForm() {
+        var form = document.getElementById('hv-provider-form');
+        form.action = '{{ url_for('settings.providers_add') }}';
+        form.reset();
+        form.querySelector('#prov-secret').setAttribute('placeholder', 'paste token or password');
+        document.getElementById('provider-form-title').textContent = 'Add Wordlist Provider';
+        document.getElementById('prov-submit').lastChild.textContent = ' Add provider';
+        document.getElementById('prov-cancel-edit').style.display = 'none';
+    }
     document.addEventListener('DOMContentLoaded', function () {
         ['email', 'push', 'slack'].forEach(hvSyncNotif);
         hvSyncAzure();
@@ -89,6 +120,7 @@
         <button type="button" class="set-tab hv-settings-tab active" data-tab="general" onclick="hvShowSettingsTab('general')">{{ icon('settings', size=16) }}<span>General</span></button>
         <button type="button" class="set-tab hv-settings-tab" data-tab="notifications" onclick="hvShowSettingsTab('notifications')">{{ icon('bell', size=16) }}<span>Notifications</span></button>
         <button type="button" class="set-tab hv-settings-tab" data-tab="authentication" onclick="hvShowSettingsTab('authentication')">{{ icon('key', size=16) }}<span>Authentication</span></button>
+        <button type="button" class="set-tab hv-settings-tab" data-tab="providers" onclick="hvShowSettingsTab('providers')">{{ icon('book', size=16) }}<span>Wordlist providers</span></button>
         <button type="button" class="set-tab hv-settings-tab" data-tab="data" onclick="hvShowSettingsTab('data')">{{ icon('file', size=16) }}<span>Data management</span></button>
         <button type="button" class="set-tab hv-settings-tab" data-tab="info" onclick="hvShowSettingsTab('info')">{{ icon('info', size=16) }}<span>Information</span></button>
     </div>
@@ -323,6 +355,113 @@
                 </div>
             </div>
         </form>
+
+        {# ---- Wordlist providers ---- #}
+        <div class="hv-settings-pane" data-pane="providers" style="display:none;">
+            {# Registered providers #}
+            <div class="card">
+                <div class="card-head">{{ icon('book', size=15) }}<h3>Registered Providers</h3></div>
+                <div class="card-body" style="padding:6px 8px 8px;">
+                    {% if wordlist_providers %}
+                    <table class="tbl">
+                        <thead><tr><th>Name</th><th>Base URL</th><th>Auth</th><th class="center">TLS</th><th class="center">Enabled</th><th class="center">Control</th></tr></thead>
+                        <tbody>
+                        {% for p in wordlist_providers %}
+                            <tr>
+                                <td style="font-weight:500;">{{ p.name }}{% if p.description %}<div class="field-hint" style="margin-top:2px;">{{ p.description }}</div>{% endif %}</td>
+                                <td class="mono" style="color:var(--text-dim); font-size:12px; word-break:break-all;">{{ p.base_url }}</td>
+                                <td><span class="badge dim">{{ 'Bearer' if p.auth_type == 'bearer' else 'Basic' }}</span></td>
+                                <td class="center">{% if p.verify_tls %}<span class="badge green">on</span>{% else %}<span class="badge amber">off</span>{% endif %}</td>
+                                <td class="center">{% if p.enabled %}<span class="badge green">yes</span>{% else %}<span class="badge dim">no</span>{% endif %}</td>
+                                <td class="center">
+                                    <div style="display:flex; gap:4px; justify-content:center;">
+                                        <form method="POST" action="{{ url_for('settings.providers_test', provider_id=p.id) }}" style="margin:0;">
+                                            {{ providerForm.csrf_token }}
+                                            <button type="submit" class="icon-btn" title="Test connection">{{ icon('refresh', size=15) }}</button>
+                                        </form>
+                                        <button type="button" class="icon-btn" title="Edit" onclick="hvEditProvider({{ p.id }})">{{ icon('edit', size=15) }}</button>
+                                        <form method="POST" action="{{ url_for('settings.providers_delete', provider_id=p.id) }}" style="margin:0;"
+                                              onsubmit="return confirm('Delete provider {{ p.name }} and its (DYNAMIC) wordlist?');">
+                                            {{ providerForm.csrf_token }}
+                                            <button type="submit" class="icon-btn act-del" title="Delete">{{ icon('trash', size=15) }}</button>
+                                        </form>
+                                    </div>
+                                    <script type="application/json" id="provider-data-{{ p.id }}">{"name": {{ p.name|tojson }}, "description": {{ (p.description or '')|tojson }}, "base_url": {{ p.base_url|tojson }}, "auth_type": {{ p.auth_type|tojson }}, "username": {{ (p.username or '')|tojson }}, "verify_tls": {{ p.verify_tls|tojson }}, "enabled": {{ p.enabled|tojson }}}</script>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="field-hint" style="padding:14px;">No wordlist providers registered yet. Add one below — it becomes a <span class="mono">(DYNAMIC)</span> wordlist selectable when creating a job.</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            {# Add / edit provider #}
+            <div class="card" style="margin-top:var(--gap);">
+                <div class="card-head">{{ icon('plus', size=15) }}<h3 id="provider-form-title">Add Wordlist Provider</h3></div>
+                <div class="card-body" style="max-width:760px;">
+                    <div class="field-hint" style="margin-bottom:16px;">
+                        A provider is a remote service that generates a wordlist on demand. Hashview submits the per-job input to
+                        <span class="mono">POST {base_url}/generate</span> (and probes <span class="mono">GET {base_url}/health</span> for the test button)
+                        with the credentials below. Registering a provider adds a <span class="mono">(DYNAMIC)</span> wordlist that appears in the job wizard.
+                    </div>
+                    <form method="POST" action="{{ url_for('settings.providers_add') }}" id="hv-provider-form" style="margin:0;">
+                        {{ providerForm.csrf_token }}
+                        <div class="field">
+                            <label class="field-label" for="prov-name">Display name <span class="req">*</span></label>
+                            {{ providerForm.name(class="input", id="prov-name", placeholder="Weakpass API") }}
+                            <span class="field-hint">Shown as the wordlist name, prefixed <span class="mono">(DYNAMIC)</span>.</span>
+                        </div>
+                        <div class="field">
+                            <label class="field-label" for="prov-desc">Description</label>
+                            {{ providerForm.description(class="input", id="prov-desc", placeholder="Optional note shown in this table") }}
+                        </div>
+                        <div class="field">
+                            <label class="field-label" for="prov-url">Base URL <span class="req">*</span></label>
+                            {{ providerForm.base_url(class="input mono", id="prov-url", placeholder="https://api.example.com/hv") }}
+                            <span class="field-hint">Root of the provider API (http/https). Hashview appends <span class="mono">/generate</span> and <span class="mono">/health</span>.</span>
+                        </div>
+                        <div class="grid" style="grid-template-columns:1fr 1fr; gap:16px;">
+                            <div class="field">
+                                <label class="field-label" for="prov-auth">Authentication <span class="req">*</span></label>
+                                {{ providerForm.auth_type(class="select", id="prov-auth") }}
+                                <span class="field-hint">Bearer → Authorization header. Basic → username + password.</span>
+                            </div>
+                            <div class="field">
+                                <label class="field-label" for="prov-user">Username <span class="mono" style="color:var(--text-mute); font-weight:400;">· Basic only</span></label>
+                                {{ providerForm.username(class="input mono", id="prov-user", placeholder="svc-hashview", autocomplete="off") }}
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label class="field-label" for="prov-secret">Token / password <span class="req">*</span></label>
+                            {{ providerForm.provider_secret(class="input mono", id="prov-secret", placeholder="paste token or password", autocomplete="new-password") }}
+                            <span class="field-hint">Write-only — stored server-side, never shown again or sent to agents. On edit, leave blank to keep the current value.</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:12px; margin-top:6px;">
+                            <div style="flex:1; min-width:0;">
+                                <div style="color:var(--text);">Verify TLS certificate</div>
+                                <div class="field-hint" style="margin-top:2px;">Disable only for a provider with a self-signed cert on a trusted network.</div>
+                            </div>
+                            <label class="switch">{{ providerForm.verify_tls(role="switch") }}<span class="track"></span></label>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:12px; margin-top:18px;">
+                            <div style="flex:1; min-width:0;">
+                                <div style="color:var(--text);">Enabled</div>
+                                <div class="field-hint" style="margin-top:2px;">A disabled provider is skipped on refresh (its wordlist is left unchanged).</div>
+                            </div>
+                            <label class="switch">{{ providerForm.enabled(role="switch") }}<span class="track"></span></label>
+                        </div>
+                        <div class="wizard-nav">
+                            <button type="button" class="btn" id="prov-cancel-edit" style="display:none;" onclick="hvResetProviderForm()">{{ icon('x', size=15) }} Cancel edit</button>
+                            <span class="spacer"></span>
+                            <button type="submit" class="btn btn-primary" id="prov-submit">{{ icon('plus', size=15) }} Add provider</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
 
         {# ---- Data management ---- #}
         <div class="hv-settings-pane" data-pane="data" style="display:none;">

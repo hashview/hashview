@@ -8,7 +8,7 @@
         <div class="page-sub">// website keywords</div>
     </div>
 </div>
-{{ wizard_stepper('website', alert_hashes=(alert_hashes if alert_hashes is defined else false), website=true) }}
+{{ wizard_stepper('website', alert_hashes=(alert_hashes if alert_hashes is defined else false), website=true, provider=(provider if provider is defined else false)) }}
 
 <form method="POST" action="" id="website_form">
     {{ form.hidden_tag() }}

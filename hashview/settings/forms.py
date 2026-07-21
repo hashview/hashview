@@ -9,7 +9,7 @@ from wtforms import (
     SubmitField,
     ValidationError,
 )
-from wtforms.validators import DataRequired, NumberRange
+from wtforms.validators import URL, DataRequired, NumberRange, Optional
 
 
 class HashviewSettingsForm(FlaskForm):
@@ -67,6 +67,44 @@ class HashviewSettingsForm(FlaskForm):
             raise ValidationError('Range must be between 0 and 65535.')
         if max_runtime_tasks < 0 or max_runtime_tasks > 65535:
             raise ValidationError('Range must be between 0 and 65535.')
+
+
+class WordlistProviderForm(FlaskForm):
+    """Add/edit a remote wordlist provider (Settings -> Wordlist Providers).
+
+    ``provider_secret`` is a write-only PasswordField (rendered blank; the route
+    only overwrites the stored value when a new one is typed). ``username`` is
+    required only for HTTP Basic; the secret is required only when adding a new
+    provider (blank on edit keeps the existing secret) — the route passes
+    ``is_add`` so validation can distinguish the two.
+    """
+
+    name = StringField('Name', validators=[DataRequired()])
+    description = StringField('Description', validators=[Optional()])
+    base_url = StringField('Base URL', validators=[DataRequired(), URL()])
+    auth_type = SelectField('Authentication',
+                            choices=[('bearer', 'Bearer token'),
+                                     ('basic', 'HTTP Basic (username & password)')],
+                            default='bearer')
+    username = StringField('Username (HTTP Basic only)', validators=[Optional()])
+    provider_secret = PasswordField('Token / password', render_kw={'autocomplete': 'new-password'})
+    verify_tls = BooleanField('Verify TLS certificate', default=True)
+    enabled = BooleanField('Enabled', default=True)
+    submit = SubmitField('Save provider')
+
+    def __init__(self, *args, is_add=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.is_add = is_add
+
+    def validate_username(self, username):
+        """HTTP Basic needs a username."""
+        if self.auth_type.data == 'basic' and not (username.data or '').strip():
+            raise ValidationError('A username is required for HTTP Basic authentication.')
+
+    def validate_provider_secret(self, provider_secret):
+        """A secret is required when adding; on edit, blank keeps the existing one."""
+        if self.is_add and not (provider_secret.data or '').strip():
+            raise ValidationError('A token / password is required.')
 
 
 class DatabaseBackupForm(FlaskForm):

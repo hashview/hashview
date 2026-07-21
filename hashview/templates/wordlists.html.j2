@@ -142,6 +142,7 @@
                     <span style="display:inline-flex; align-items:center; gap:9px;">
                         <span style="color:var(--text-mute); display:inline-flex;">{{ icon('book', size=16) }}</span>
                         {{ wordlist.name }}
+                        {% if wordlist.provider_id %}<span class="badge cyan" title="Materialized from a remote wordlist provider">provider</span>{% endif %}
                     </span>
                 </td>
                 <td class="mono num" style="color:var(--primary);">{{ "{:,}".format(wordlist.size) }}</td>

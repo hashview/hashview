@@ -197,6 +197,11 @@ class Jobs(db.Model):
     limit_recovered = db.Column(db.Boolean, nullable=False, default=False)
     # URL to crawl for the (DYNAMIC) Website Keywords wordlist, captured during job creation
     crawl_url = db.Column(db.String(2048), nullable=True)
+    # Free-form input submitted to a wordlist provider's API for provider-backed
+    # (DYNAMIC) wordlists, captured during job creation. Sibling to crawl_url: the
+    # crawler carries a URL, a provider carries arbitrary text the remote service
+    # interprets. See hashview/utils/wordlist_providers.py.
+    provider_input = db.Column(db.String(2048), nullable=True)
 
 class JobTasks(db.Model):
     """Class object to represent JobTasks"""
@@ -315,6 +320,35 @@ class Wordlists(db.Model):
     size = db.Column(db.BigInteger, nullable=False)         # line count
     byte_size = db.Column(db.BigInteger, nullable=True)     # on-disk bytes of the file at `path` (compressed for static)
     checksum = db.Column(db.String(64), nullable=False)
+    # NULL for internal dynamic wordlists (crawler/DB-derived) and all static
+    # wordlists. Non-NULL means this dynamic wordlist is materialized by calling a
+    # remote provider's API; update_dynamic_wordlist() branches on this.
+    provider_id = db.Column(db.Integer, db.ForeignKey('wordlist_providers.id'), nullable=True)
+
+class WordlistProviders(db.Model):
+    """A remote HTTP service that generates wordlists on demand.
+
+    Registered by an admin under Settings. Hashview POSTs a per-job input to the
+    provider's API (see hashview/utils/wordlist_providers.py for the contract) and
+    materializes the returned list to disk; agents never contact the provider.
+
+    Credentials (`provider_secret`) are stored PLAINTEXT at rest, matching the
+    existing convention for `Settings.azure_client_secret` / `Settings.slack_bot_token`
+    (write-only form field + API serialization denylist). `provider_secret` MUST stay
+    in api.routes._ENCODER_DENYLIST so it is never serialized to agents/users.
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(128), nullable=False, unique=True)
+    description = db.Column(db.String(512), nullable=True)
+    base_url = db.Column(db.String(512), nullable=False)          # http/https only, validated at use
+    auth_type = db.Column(db.String(10), nullable=False, default='bearer')  # 'bearer' | 'basic'
+    username = db.Column(db.String(255), nullable=True)           # HTTP Basic username (basic only)
+    provider_secret = db.Column(db.String(512), nullable=True)    # bearer token OR basic password; PLAINTEXT, write-only
+    verify_tls = db.Column(db.Boolean, nullable=False, default=True)
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 class Tasks(db.Model):
     """Class object to represent Tasks"""

@@ -13,6 +13,9 @@ Notable changes will be documented here
 - Live recovery feed on the dashboard showing freshly cracked hashes with relative timestamps (e.g. "3 minutes ago")
 - Scrollable, filterable "InstaCrack" panel showing which hashes are already recovered when a hashfile is added to a job
 
+**Dynamic Wordlist Providers**
+- Register external wordlist-generation services under Settings -> Wordlist providers (base URL + Bearer/Basic credentials). Each registered provider adds a `(DYNAMIC)` wordlist; when a job uses it, the operator supplies an input in the wizard that Hashview submits to the provider's API at crack time, materializing the returned list. See `docs/wordlist-providers.md` for the API contract.
+
 **Single Sign-On (Microsoft Entra ID / Azure AD)**
 - Optional OIDC web login alongside local accounts, with group-gated just-in-time user provisioning (configured under Settings)
 

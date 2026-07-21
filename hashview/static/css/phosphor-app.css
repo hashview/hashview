@@ -245,6 +245,10 @@ details.job-card[open] > summary .chev { transform: rotate(90deg); }
 .wizard-steps .wstep-web { display: none; }
 .wizard-steps.show-website .wstep.wstep-web { display: flex; }
 .wizard-steps.show-website .wstep-line.wstep-web { display: block; }
+/* conditional "Provider Input" step: hidden unless the stepper has .show-prov */
+.wizard-steps .wstep-prov { display: none; }
+.wizard-steps.show-prov .wstep.wstep-prov { display: flex; }
+.wizard-steps.show-prov .wstep-line.wstep-prov { display: block; }
 .wstep-mark {
   width: 42px; height: 42px;
   border-radius: 9px;

@@ -98,3 +98,11 @@ class JobWebsiteKeywordsForm(FlaskForm):
     # enforces URL shape; the URL() validator stays authoritative server-side.
     crawl_url = URLField('Website URL', validators=[DataRequired(), URL(message='Enter a valid URL, e.g. https://example.com')])
     submit = SubmitField('Next')
+
+class JobProviderInputForm(FlaskForm):
+    """Free-form input submitted to a wordlist provider for provider-backed
+    (DYNAMIC) wordlists. Not a URLField — the input is arbitrary text (a domain,
+    company name, or keyword set) the remote provider interprets."""
+
+    provider_input = StringField('Provider input', validators=[DataRequired()])
+    submit = SubmitField('Next')

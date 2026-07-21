@@ -145,6 +145,21 @@
                     <span class="field-hint" style="margin-top:8px; display:block;">Used to authenticate against the Hashview REST API. Regenerating immediately revokes the previous key.</span>
                 </div>
 
+                {# APPEARANCE #}
+                <div class="as-sec">Appearance</div>
+                <div class="field" style="margin-bottom:0;">
+                    <label class="field-label">Theme</label>
+                    <div class="hv-theme-seg" role="group" aria-label="Theme"
+                         data-current="{{ current_user.theme }}"
+                         style="display:flex; gap:6px; flex-wrap:wrap;">
+                        {% for val, lbl in [('auto','System'),('light-paper','Paper'),('light-invert','Invert'),('light-clean','Clean'),('dark','Dark')] %}
+                        <button type="button" class="btn hv-theme-opt{{ ' active' if current_user.theme == val else '' }}"
+                                data-theme-value="{{ val }}" onclick="hvSetTheme('{{ val }}', this)">{{ lbl }}</button>
+                        {% endfor %}
+                    </div>
+                    <span class="field-hint" style="margin-top:8px; display:block;">System follows your operating system's light/dark setting. Your choice is saved to your account.</span>
+                </div>
+
                 {# PUSHOVER — only when the channel is enabled instance-wide #}
                 {% if notify_channels.pushover %}
                 <div class="as-sec">Pushover notifications</div>
@@ -226,6 +241,32 @@
         </form>
     </dialog>
     <script>
+    function hvSetTheme(value, btn) {
+        // apply live
+        var resolved = value;
+        if (value === 'auto') {
+            resolved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light-paper' : 'dark';
+        }
+        document.documentElement.setAttribute('data-theme', resolved);
+        document.documentElement.setAttribute('data-theme-pref', value);
+        try { localStorage.setItem('hv_theme', value); } catch (e) {}
+        // reflect active state on the segmented control
+        if (btn && btn.parentNode) {
+            btn.parentNode.querySelectorAll('.hv-theme-opt').forEach(function (b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+        }
+        // persist to the account
+        var token = document.querySelector('#account-settings-modal input[name="csrf_token"]');
+        var body = new URLSearchParams();
+        body.set('theme', value);
+        if (token) { body.set('csrf_token', token.value); }
+        fetch("{{ url_for('users.set_theme') }}", {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: body.toString(),
+            credentials: 'same-origin'
+        }).catch(function () {});
+    }
     function hvApiReveal() {
         var i = document.getElementById('as-apikey'); if (!i) return;
         var full = i.getAttribute('data-full'); if (!full) return;

@@ -803,3 +803,4 @@ input[type=range].hv-range::-moz-range-thumb {
 }
 .toast .ico { color: var(--primary); width: 18px; height: 18px; }
 @keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+.hv-theme-opt.active { border-color: var(--primary); color: var(--primary); box-shadow: var(--glow-sm); }

@@ -16,7 +16,26 @@ branch_labels = None
 depends_on = None
 
 
+def _hc_attackmode_is_text():
+    """True only if tasks.hc_attackmode is still a textual column.
+
+    Guards against re-running the text->int normalization on a database where
+    the column is ALREADY integer (schema drift: some deploys built the column
+    integer from the start). If it were re-run there, the string-literal WHERE
+    clauses would be cast to integers by MySQL -- 'dictionary'/'maskmode' both
+    become 0 -- rewriting legitimate mode-0 rows to mode 3. Skipping entirely
+    when the column is already integer is a safe no-op.
+    """
+    for c in sa.inspect(op.get_bind()).get_columns('tasks'):
+        if c['name'] == 'hc_attackmode':
+            return 'CHAR' in str(c['type']).upper() or 'TEXT' in str(c['type']).upper()
+    return False
+
+
 def upgrade():
+    if not _hc_attackmode_is_text():
+        return  # already Integer -- nothing to normalize or convert
+
     # Normalize legacy textual values to their numeric equivalents BEFORE the
     # column type change so MySQL's implicit cast can't silently turn them
     # into 0. Mapping comes from hashview/tasks/forms.py choices.

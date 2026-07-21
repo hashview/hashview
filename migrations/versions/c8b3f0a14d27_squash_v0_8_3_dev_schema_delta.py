@@ -59,128 +59,112 @@ down_revision = '8a5b0fff063d'
 branch_labels = None
 depends_on = None
 
+# Inlined so this permanent artifact can't break on a model refactor (see docstring).
+_CRAWL_UA = ('Mozilla/5.0 (compatible; Hashview-Crawler/1.0; '
+             '+https://github.com/hashview/hashview)')
+
+
+def _insp():
+    return sa.inspect(op.get_bind())
+
+
+def _has_column(table, column):
+    return any(c['name'] == column for c in _insp().get_columns(table))
+
+
+def _has_table(table):
+    return _insp().has_table(table)
+
+
+def _has_index(table, name):
+    return any(ix['name'] == name for ix in _insp().get_indexes(table))
+
+
+# Every additive column this squash introduces, in original order, as
+# (table, column-factory). Guarded on apply so a database that already has some
+# of these (schema drift, or a partially-applied prior run) upgrades cleanly
+# instead of aborting on a duplicate-column error -- MySQL DDL is
+# non-transactional, so one blind ADD COLUMN failure would strand the rest.
+_ADDS = [
+    ('wordlists', lambda: sa.Column('byte_size', sa.BigInteger(), nullable=True)),
+    ('settings', lambda: sa.Column('crawl_min_word_length', sa.Integer(), nullable=False, server_default='8')),
+    ('settings', lambda: sa.Column('crawl_user_agent', sa.String(length=255), nullable=False, server_default=_CRAWL_UA)),
+    ('settings', lambda: sa.Column('crawl_force_lowercase', sa.Boolean(), nullable=False, server_default=sa.text('1'))),
+    ('settings', lambda: sa.Column('crawl_depth', sa.Integer(), nullable=False, server_default='2')),
+    ('settings', lambda: sa.Column('crawl_threads', sa.Integer(), nullable=False, server_default='5')),
+    ('jobs', lambda: sa.Column('crawl_url', sa.String(length=2048), nullable=True)),
+    ('settings', lambda: sa.Column('slack_enabled', sa.Boolean(), nullable=False, server_default=sa.text('0'))),
+    ('settings', lambda: sa.Column('slack_bot_token', sa.String(length=255), nullable=True)),
+    ('users', lambda: sa.Column('slack_id', sa.String(length=50), nullable=True)),
+    ('settings', lambda: sa.Column('email_enabled', sa.Boolean(), nullable=False, server_default=sa.text('1'))),
+    ('settings', lambda: sa.Column('pushover_enabled', sa.Boolean(), nullable=False, server_default=sa.text('1'))),
+    ('settings', lambda: sa.Column('passwords_decoded', sa.Boolean(), nullable=False, server_default=sa.text('0'))),
+    ('settings', lambda: sa.Column('auth_method', sa.String(length=10), nullable=False, server_default='local')),
+    ('settings', lambda: sa.Column('azure_tenant_id', sa.String(length=64), nullable=True)),
+    ('settings', lambda: sa.Column('azure_client_id', sa.String(length=64), nullable=True)),
+    ('settings', lambda: sa.Column('azure_client_secret', sa.String(length=512), nullable=True)),
+    ('settings', lambda: sa.Column('azure_redirect_uri', sa.String(length=512), nullable=True)),
+    ('settings', lambda: sa.Column('azure_allowed_groups', sa.String(length=1024), nullable=True)),
+    ('users', lambda: sa.Column('auth_source', sa.String(length=10), nullable=False, server_default='local')),
+    ('users', lambda: sa.Column('azure_oid', sa.String(length=64), nullable=True)),
+    ('tasks', lambda: sa.Column('loopback', sa.Boolean(), nullable=False, server_default=sa.text('0'))),
+    ('job_tasks', lambda: sa.Column('chunk_no', sa.Integer(), nullable=True)),
+    ('job_tasks', lambda: sa.Column('chunk_total', sa.Integer(), nullable=True)),
+    ('job_tasks', lambda: sa.Column('chunk_skip', sa.BigInteger(), nullable=True)),
+    ('job_tasks', lambda: sa.Column('chunk_limit', sa.BigInteger(), nullable=True)),
+    ('job_tasks', lambda: sa.Column('chunk_mask', sa.String(length=64), nullable=True)),
+    ('settings', lambda: sa.Column('enabled_chunking', sa.Boolean(), nullable=False, server_default=sa.false())),
+    ('settings', lambda: sa.Column('chunk_target_duration', sa.Integer(), nullable=False, server_default='3600')),
+    ('agents', lambda: sa.Column('gpu_model', sa.String(length=128), nullable=True)),
+    ('agents', lambda: sa.Column('gpu_temps', sa.String(length=128), nullable=True)),
+    ('hashfiles', lambda: sa.Column('hex_salt', sa.Boolean(), nullable=False, server_default=sa.text('0'))),
+    ('users', lambda: sa.Column('admin_notifications_enabled', sa.Boolean(), nullable=False, server_default=sa.text('1'))),
+    ('users', lambda: sa.Column('admin_notify_email', sa.Boolean(), nullable=False, server_default=sa.text('1'))),
+    ('users', lambda: sa.Column('admin_notify_pushover', sa.Boolean(), nullable=False, server_default=sa.text('1'))),
+    ('users', lambda: sa.Column('admin_notify_slack', sa.Boolean(), nullable=False, server_default=sa.text('1'))),
+    ('settings', lambda: sa.Column('slack_admin_channel', sa.String(length=255), nullable=True)),
+    ('settings', lambda: sa.Column('agent_timeout_minutes', sa.Integer(), nullable=False, server_default=sa.text('60'))),
+    ('agents', lambda: sa.Column('offline_notified', sa.Boolean(), nullable=False, server_default=sa.text('0'))),
+]
+
 
 def upgrade():
-    # ---- 3f9c1d2a7b04: wordlists.byte_size (backfilled at app startup) ----
-    with op.batch_alter_table('wordlists') as batch_op:
-        batch_op.add_column(sa.Column('byte_size', sa.BigInteger(), nullable=True))
+    for table, make_col in _ADDS:
+        if not _has_column(table, make_col().name):
+            op.add_column(table, make_col())
 
-    # ---- 5c2e1f4a9d37: website-crawler settings + jobs.crawl_url ----
-    # DEFAULT_CRAWL_USER_AGENT literal inlined (see module docstring).
-    with op.batch_alter_table('settings') as batch_op:
-        batch_op.add_column(sa.Column('crawl_min_word_length', sa.Integer(), nullable=False, server_default='8'))
-        batch_op.add_column(sa.Column('crawl_user_agent', sa.String(length=255), nullable=False, server_default='Mozilla/5.0 (compatible; Hashview-Crawler/1.0; +https://github.com/hashview/hashview)'))
-        batch_op.add_column(sa.Column('crawl_force_lowercase', sa.Boolean(), nullable=False, server_default=sa.text('1')))
-        batch_op.add_column(sa.Column('crawl_depth', sa.Integer(), nullable=False, server_default='2'))
-        batch_op.add_column(sa.Column('crawl_threads', sa.Integer(), nullable=False, server_default='5'))
-
-    with op.batch_alter_table('jobs') as batch_op:
-        batch_op.add_column(sa.Column('crawl_url', sa.String(length=2048), nullable=True))
-
-    # ---- 8b4d2f1c9a06: Slack notification settings ----
-    with op.batch_alter_table('settings') as batch_op:
-        batch_op.add_column(sa.Column('slack_enabled', sa.Boolean(), nullable=False, server_default=sa.text('0')))
-        batch_op.add_column(sa.Column('slack_bot_token', sa.String(length=255), nullable=True))
-
-    with op.batch_alter_table('users') as batch_op:
-        batch_op.add_column(sa.Column('slack_id', sa.String(length=50), nullable=True))
-
-    # ---- 9c5e3a07b218: email/pushover master switches ----
-    with op.batch_alter_table('settings') as batch_op:
-        batch_op.add_column(sa.Column('email_enabled', sa.Boolean(), nullable=False, server_default=sa.text('1')))
-        batch_op.add_column(sa.Column('pushover_enabled', sa.Boolean(), nullable=False, server_default=sa.text('1')))
-
-    # ---- a1f7c4e9d2b3: unicode text storage flag + utf8mb4 widening ----
-    with op.batch_alter_table('settings') as batch_op:
-        batch_op.add_column(sa.Column('passwords_decoded', sa.Boolean(), nullable=False, server_default=sa.text('0')))
-
+    # utf8mb4 widening of pre-existing base-schema columns (MySQL only; SQLite
+    # ignores VARCHAR length, so data already fits). Re-applying is a harmless
+    # no-op, so these need no existence guard.
     if op.get_bind().dialect.name == 'mysql':
         op.execute("ALTER TABLE hashfile_hashes MODIFY username VARCHAR(256) CHARACTER SET utf8mb4")
         op.execute("ALTER TABLE hashes MODIFY plaintext VARCHAR(256) CHARACTER SET utf8mb4")
-
-    # ---- c3d9f1a6b8e2: Azure/Entra OIDC SSO ----
-    with op.batch_alter_table('settings') as batch_op:
-        batch_op.add_column(sa.Column('auth_method', sa.String(length=10), nullable=False, server_default='local'))
-        batch_op.add_column(sa.Column('azure_tenant_id', sa.String(length=64), nullable=True))
-        batch_op.add_column(sa.Column('azure_client_id', sa.String(length=64), nullable=True))
-        batch_op.add_column(sa.Column('azure_client_secret', sa.String(length=512), nullable=True))
-        batch_op.add_column(sa.Column('azure_redirect_uri', sa.String(length=512), nullable=True))
-        batch_op.add_column(sa.Column('azure_allowed_groups', sa.String(length=1024), nullable=True))
-
-    with op.batch_alter_table('users') as batch_op:
-        batch_op.add_column(sa.Column('auth_source', sa.String(length=10), nullable=False, server_default='local'))
-        batch_op.add_column(sa.Column('azure_oid', sa.String(length=64), nullable=True))
-
-    # Widen the user text columns for JIT-provisioned Entra identities. MySQL only;
-    # SQLite ignores VARCHAR length, so existing data already fits.
-    if op.get_bind().dialect.name == 'mysql':
         op.execute("ALTER TABLE users MODIFY first_name VARCHAR(64) CHARACTER SET utf8mb4 NOT NULL")
         op.execute("ALTER TABLE users MODIFY last_name VARCHAR(64) CHARACTER SET utf8mb4 NOT NULL")
         op.execute("ALTER TABLE users MODIFY email_address VARCHAR(255) CHARACTER SET utf8mb4 NOT NULL")
-
-    # ---- d4e8b1f3a297: tasks.loopback ----
-    with op.batch_alter_table('tasks') as batch_op:
-        batch_op.add_column(sa.Column('loopback', sa.Boolean(), nullable=False, server_default=sa.text('0')))
-
-    # ---- e2b9c7a14d35: widen hashes.ciphertext to TEXT utf8mb4 ----
     if op.get_bind().dialect.name != 'sqlite':
         op.execute("ALTER TABLE hashes MODIFY ciphertext TEXT CHARACTER SET utf8mb4 NOT NULL")
 
     # ---- 3ddfbf55f5cc: index on hashfile_hashes.hashfile_id ----
-    op.create_index(
-        'ix_hashfile_hashes_hashfile_id',
-        'hashfile_hashes', ['hashfile_id'], unique=False)
+    if not _has_index('hashfile_hashes', 'ix_hashfile_hashes_hashfile_id'):
+        op.create_index('ix_hashfile_hashes_hashfile_id', 'hashfile_hashes',
+                        ['hashfile_id'], unique=False)
 
-    # ---- 32eb61afc767: agent_benchmarks table + job_tasks chunk_* + settings chunking ----
-    op.create_table(
-        'agent_benchmarks',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('agent_id', sa.Integer(), nullable=False),
-        sa.Column('hash_type', sa.Integer(), nullable=False),
-        sa.Column('speed', sa.BigInteger(), nullable=False),
-        sa.Column('updated_at', sa.DateTime(), nullable=False),
-        sa.ForeignKeyConstraint(['agent_id'], ['agents.id'], ),
-        sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('agent_id', 'hash_type', name='uix_agent_hashtype'),
-    )
-    op.create_index('ix_agent_benchmarks_agent_id', 'agent_benchmarks', ['agent_id'], unique=False)
-    op.create_index('ix_agent_benchmarks_hash_type', 'agent_benchmarks', ['hash_type'], unique=False)
-
-    op.add_column('job_tasks', sa.Column('chunk_no', sa.Integer(), nullable=True))
-    op.add_column('job_tasks', sa.Column('chunk_total', sa.Integer(), nullable=True))
-    op.add_column('job_tasks', sa.Column('chunk_skip', sa.BigInteger(), nullable=True))
-    op.add_column('job_tasks', sa.Column('chunk_limit', sa.BigInteger(), nullable=True))
-    op.add_column('job_tasks', sa.Column('chunk_mask', sa.String(length=64), nullable=True))
-
-    op.add_column('settings', sa.Column(
-        'enabled_chunking', sa.Boolean(), nullable=False, server_default=sa.false()))
-    op.add_column('settings', sa.Column(
-        'chunk_target_duration', sa.Integer(), nullable=False, server_default='3600'))
-
-    # ---- dae1c3ac81e6: agents GPU telemetry ----
-    op.add_column('agents', sa.Column('gpu_model', sa.String(length=128), nullable=True))
-    op.add_column('agents', sa.Column('gpu_temps', sa.String(length=128), nullable=True))
-
-    # ---- a3f7c1e29b84: hashfiles.hex_salt ----
-    with op.batch_alter_table('hashfiles') as batch_op:
-        batch_op.add_column(sa.Column('hex_salt', sa.Boolean(), nullable=False, server_default=sa.text('0')))
-
-    # ---- d4e7a1b9c602: admin notification prefs + settings.slack_admin_channel ----
-    with op.batch_alter_table('users') as batch_op:
-        batch_op.add_column(sa.Column('admin_notifications_enabled', sa.Boolean(), nullable=False, server_default=sa.text('1')))
-        batch_op.add_column(sa.Column('admin_notify_email', sa.Boolean(), nullable=False, server_default=sa.text('1')))
-        batch_op.add_column(sa.Column('admin_notify_pushover', sa.Boolean(), nullable=False, server_default=sa.text('1')))
-        batch_op.add_column(sa.Column('admin_notify_slack', sa.Boolean(), nullable=False, server_default=sa.text('1')))
-
-    with op.batch_alter_table('settings') as batch_op:
-        batch_op.add_column(sa.Column('slack_admin_channel', sa.String(length=255), nullable=True))
-
-    # ---- c8b3f0a14d27: agent timeout + offline flag ----
-    with op.batch_alter_table('settings') as batch_op:
-        batch_op.add_column(sa.Column('agent_timeout_minutes', sa.Integer(), nullable=False, server_default=sa.text('60')))
-
-    with op.batch_alter_table('agents') as batch_op:
-        batch_op.add_column(sa.Column('offline_notified', sa.Boolean(), nullable=False, server_default=sa.text('0')))
+    # ---- 32eb61afc767: agent_benchmarks table (+ its indexes) ----
+    if not _has_table('agent_benchmarks'):
+        op.create_table(
+            'agent_benchmarks',
+            sa.Column('id', sa.Integer(), nullable=False),
+            sa.Column('agent_id', sa.Integer(), nullable=False),
+            sa.Column('hash_type', sa.Integer(), nullable=False),
+            sa.Column('speed', sa.BigInteger(), nullable=False),
+            sa.Column('updated_at', sa.DateTime(), nullable=False),
+            sa.ForeignKeyConstraint(['agent_id'], ['agents.id'], ),
+            sa.PrimaryKeyConstraint('id'),
+            sa.UniqueConstraint('agent_id', 'hash_type', name='uix_agent_hashtype'),
+        )
+        op.create_index('ix_agent_benchmarks_agent_id', 'agent_benchmarks', ['agent_id'], unique=False)
+        op.create_index('ix_agent_benchmarks_hash_type', 'agent_benchmarks', ['hash_type'], unique=False)
 
 
 def downgrade():
@@ -190,95 +174,18 @@ def downgrade():
     # narrowing could truncate stored data; a wider column is a safe superset.
     # This matches the original migrations, which all skipped those reversals.
 
-    # ---- reverse of c8b3f0a14d27 ----
-    with op.batch_alter_table('agents') as batch_op:
-        batch_op.drop_column('offline_notified')
+    # Drop the additive columns in reverse order, guarded so a partial schema
+    # downgrades cleanly. The agent_benchmarks table/indexes are removed first.
+    if _has_table('agent_benchmarks'):
+        if _has_index('agent_benchmarks', 'ix_agent_benchmarks_hash_type'):
+            op.drop_index('ix_agent_benchmarks_hash_type', table_name='agent_benchmarks')
+        if _has_index('agent_benchmarks', 'ix_agent_benchmarks_agent_id'):
+            op.drop_index('ix_agent_benchmarks_agent_id', table_name='agent_benchmarks')
+        op.drop_table('agent_benchmarks')
 
-    with op.batch_alter_table('settings') as batch_op:
-        batch_op.drop_column('agent_timeout_minutes')
+    if _has_index('hashfile_hashes', 'ix_hashfile_hashes_hashfile_id'):
+        op.drop_index('ix_hashfile_hashes_hashfile_id', table_name='hashfile_hashes')
 
-    # ---- reverse of d4e7a1b9c602 ----
-    with op.batch_alter_table('settings') as batch_op:
-        batch_op.drop_column('slack_admin_channel')
-
-    with op.batch_alter_table('users') as batch_op:
-        batch_op.drop_column('admin_notify_slack')
-        batch_op.drop_column('admin_notify_pushover')
-        batch_op.drop_column('admin_notify_email')
-        batch_op.drop_column('admin_notifications_enabled')
-
-    # ---- reverse of a3f7c1e29b84 ----
-    with op.batch_alter_table('hashfiles') as batch_op:
-        batch_op.drop_column('hex_salt')
-
-    # ---- reverse of dae1c3ac81e6 ----
-    op.drop_column('agents', 'gpu_temps')
-    op.drop_column('agents', 'gpu_model')
-
-    # ---- reverse of 32eb61afc767 ----
-    op.drop_column('settings', 'chunk_target_duration')
-    op.drop_column('settings', 'enabled_chunking')
-
-    op.drop_column('job_tasks', 'chunk_mask')
-    op.drop_column('job_tasks', 'chunk_limit')
-    op.drop_column('job_tasks', 'chunk_skip')
-    op.drop_column('job_tasks', 'chunk_total')
-    op.drop_column('job_tasks', 'chunk_no')
-
-    op.drop_index('ix_agent_benchmarks_hash_type', table_name='agent_benchmarks')
-    op.drop_index('ix_agent_benchmarks_agent_id', table_name='agent_benchmarks')
-    op.drop_table('agent_benchmarks')
-
-    # ---- reverse of 3ddfbf55f5cc ----
-    op.drop_index('ix_hashfile_hashes_hashfile_id', table_name='hashfile_hashes')
-
-    # ---- reverse of e2b9c7a14d35: ciphertext TEXT widening intentionally not reverted ----
-
-    # ---- reverse of d4e8b1f3a297 ----
-    with op.batch_alter_table('tasks') as batch_op:
-        batch_op.drop_column('loopback')
-
-    # ---- reverse of c3d9f1a6b8e2 (users column widening intentionally not reverted) ----
-    with op.batch_alter_table('users') as batch_op:
-        batch_op.drop_column('azure_oid')
-        batch_op.drop_column('auth_source')
-
-    with op.batch_alter_table('settings') as batch_op:
-        batch_op.drop_column('azure_allowed_groups')
-        batch_op.drop_column('azure_redirect_uri')
-        batch_op.drop_column('azure_client_secret')
-        batch_op.drop_column('azure_client_id')
-        batch_op.drop_column('azure_tenant_id')
-        batch_op.drop_column('auth_method')
-
-    # ---- reverse of a1f7c4e9d2b3 (username/plaintext widening intentionally not reverted) ----
-    with op.batch_alter_table('settings') as batch_op:
-        batch_op.drop_column('passwords_decoded')
-
-    # ---- reverse of 9c5e3a07b218 ----
-    with op.batch_alter_table('settings') as batch_op:
-        batch_op.drop_column('pushover_enabled')
-        batch_op.drop_column('email_enabled')
-
-    # ---- reverse of 8b4d2f1c9a06 ----
-    with op.batch_alter_table('users') as batch_op:
-        batch_op.drop_column('slack_id')
-
-    with op.batch_alter_table('settings') as batch_op:
-        batch_op.drop_column('slack_bot_token')
-        batch_op.drop_column('slack_enabled')
-
-    # ---- reverse of 5c2e1f4a9d37 ----
-    with op.batch_alter_table('jobs') as batch_op:
-        batch_op.drop_column('crawl_url')
-
-    with op.batch_alter_table('settings') as batch_op:
-        batch_op.drop_column('crawl_threads')
-        batch_op.drop_column('crawl_depth')
-        batch_op.drop_column('crawl_force_lowercase')
-        batch_op.drop_column('crawl_user_agent')
-        batch_op.drop_column('crawl_min_word_length')
-
-    # ---- reverse of 3f9c1d2a7b04 ----
-    with op.batch_alter_table('wordlists') as batch_op:
-        batch_op.drop_column('byte_size')
+    for table, make_col in reversed(_ADDS):
+        if _has_column(table, make_col().name):
+            op.drop_column(table, make_col().name)

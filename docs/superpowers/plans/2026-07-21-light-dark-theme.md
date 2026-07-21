@@ -122,47 +122,59 @@ git commit -m "feat(migration): add users.theme column"
 
 ## Task 3: `set_theme` route (TDD)
 
+**IMPORTANT — CSRF:** This app installs **no global CSRFProtect**. CSRF is
+enforced only via `FlaskForm.validate_on_submit()` (which validates the
+`csrf_token` field). A raw `request.form` POST route would be
+**CSRF-vulnerable** — do NOT do that. `set_theme` MUST route its input through a
+`FlaskForm` so `validate_on_submit()` provides CSRF protection, exactly like the
+existing `profile` route. In `testing=True`, FlaskForm CSRF is auto-disabled, so
+unit tests POST without a token (matching every other route test).
+
+**Run tests with the project venv:** `.venv/bin/python -m pytest ...`
+(the venv is Python 3.14 with flask/pytest/hashview installed).
+
 **Files:**
-- Modify: `hashview/users/routes.py` (add constant near top after imports; add route after `generate_api_key`, ~line 371)
+- Modify: `hashview/users/forms.py` (add `ThemeForm`)
+- Modify: `hashview/users/routes.py` (add constant + route + imports)
 - Create: `tests/unit/test_users_set_theme.py`
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `tests/unit/test_users_set_theme.py`. Use the project's existing unit
-test fixtures (look at another file in `tests/unit/` for the `client` /
-logged-in-user fixture names and reuse them — do not invent new ones). The tests:
+The real unit fixtures are `app`, `client`, `db_session` (in
+`tests/unit/conftest.py`) plus helpers `login`, `make_user`, `make_admin` (in
+`tests/unit/helpers.py`). Login sets the session directly; POSTs need no CSRF
+token in testing mode. Create `tests/unit/test_users_set_theme.py`:
 
 ```python
 import pytest
 
+from hashview.models import Users
 from hashview.users.routes import EXPLICIT_THEMES, VALID_THEMES
+from tests.unit.helpers import login, make_user
 
 
 @pytest.mark.parametrize("value", sorted(VALID_THEMES))
-def test_set_theme_accepts_valid_values(logged_in_client, db_session, value):
-    resp = logged_in_client.post(
-        "/profile/set_theme",
-        data={"theme": value, "csrf_token": logged_in_client.csrf_token()},
-    )
+def test_set_theme_accepts_valid_values(app, client, value):
+    user = make_user()
+    login(client, user)
+    resp = client.post("/profile/set_theme", data={"theme": value})
     assert resp.status_code == 200
     assert resp.is_json and resp.get_json()["ok"] is True
-    from hashview.models import Users
-    assert Users.query.first().theme == value
+    assert Users.query.get(user.id).theme == value
 
 
-def test_set_theme_rejects_invalid_value(logged_in_client, db_session):
-    from hashview.models import Users
-    before = Users.query.first().theme
-    resp = logged_in_client.post(
-        "/profile/set_theme",
-        data={"theme": "rainbow", "csrf_token": logged_in_client.csrf_token()},
-    )
+def test_set_theme_rejects_invalid_value(app, client):
+    user = make_user()
+    login(client, user)
+    before = Users.query.get(user.id).theme  # server default 'auto'
+    resp = client.post("/profile/set_theme", data={"theme": "rainbow"})
     assert resp.status_code == 400
-    assert Users.query.first().theme == before
+    assert Users.query.get(user.id).theme == before
 
 
-def test_set_theme_requires_login(client):
-    resp = client.post("/profile/set_theme", data={"theme": "dark"})
+def test_set_theme_requires_login(app, client):
+    resp = client.post("/profile/set_theme", data={"theme": "dark"},
+                       follow_redirects=False)
     assert resp.status_code in (302, 401)
 
 
@@ -172,17 +184,24 @@ def test_valid_themes_membership():
     assert EXPLICIT_THEMES == VALID_THEMES - {"auto"}
 ```
 
-> If `tests/unit/` has no `logged_in_client` / `csrf_token` helper, adapt these
-> to the actual fixtures used by an existing route test (e.g. copy the login +
-> CSRF-extraction pattern from the nearest `tests/unit/test_*routes*.py`).
-> Keep the assertions identical.
-
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `pytest tests/unit/test_users_set_theme.py -v`
+Run: `.venv/bin/python -m pytest tests/unit/test_users_set_theme.py -v`
 Expected: FAIL — `ImportError: cannot import name 'EXPLICIT_THEMES'` / 404 on route.
 
-- [ ] **Step 3: Add the constant**
+- [ ] **Step 3: Add the `ThemeForm`**
+
+In `hashview/users/forms.py`, after `ProfileForm` (the file already imports
+`FlaskForm` and `StringField`), add:
+
+```python
+class ThemeForm(FlaskForm):
+    """Minimal CSRF-carrying form for the account theme control. The value is
+    validated against the allowed set in the route, not here."""
+    theme = StringField('Theme')
+```
+
+- [ ] **Step 4: Add the constant**
 
 In `hashview/users/routes.py`, after the `users = Blueprint('users', __name__)`
 line (~line 70), add:
@@ -192,7 +211,7 @@ VALID_THEMES = {'auto', 'dark', 'light-paper', 'light-invert', 'light-clean'}
 EXPLICIT_THEMES = VALID_THEMES - {'auto'}
 ```
 
-- [ ] **Step 4: Add the route**
+- [ ] **Step 5: Add the route**
 
 In `hashview/users/routes.py`, after the `generate_api_key` function (~line 371):
 
@@ -201,9 +220,13 @@ In `hashview/users/routes.py`, after the `generate_api_key` function (~line 371)
 @login_required
 def set_theme():
     """Persist the account theme preference chosen from the account-settings
-    modal. CSRF-protected (Flask-WTF validates the csrf_token field on POST).
-    Returns JSON so the segmented control can save without a page reload."""
-    value = (request.form.get('theme') or '').strip()
+    modal. Routed through ThemeForm so validate_on_submit() enforces CSRF (there
+    is no global CSRFProtect). Returns JSON so the segmented control saves
+    without a page reload."""
+    form = ThemeForm()
+    if not form.validate_on_submit():
+        return jsonify(ok=False, error='invalid request'), 400
+    value = (form.theme.data or '').strip()
     if value not in VALID_THEMES:
         return jsonify(ok=False, error='invalid theme'), 400
     current_user.theme = value
@@ -211,19 +234,19 @@ def set_theme():
     return jsonify(ok=True, theme=value)
 ```
 
-Ensure `jsonify` and `request` are imported from `flask` at the top of the file
-(the `from flask import (...)` block near line 6). Add `jsonify` to that import
-list if missing.
+Ensure `jsonify` is in the `from flask import (...)` block at the top of the
+file (add it if missing), and add `ThemeForm` to the existing
+`from hashview.users.forms import (...)` import block.
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **Step 6: Run tests to verify they pass**
 
-Run: `pytest tests/unit/test_users_set_theme.py -v`
+Run: `.venv/bin/python -m pytest tests/unit/test_users_set_theme.py -v`
 Expected: PASS (all parametrized cases + rejects + login + membership).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add hashview/users/routes.py tests/unit/test_users_set_theme.py
+git add hashview/users/forms.py hashview/users/routes.py tests/unit/test_users_set_theme.py
 git commit -m "feat(users): CSRF-protected set_theme route"
 ```
 
@@ -237,37 +260,44 @@ git commit -m "feat(users): CSRF-protected set_theme route"
 
 - [ ] **Step 1: Write the failing render tests**
 
-Create `tests/unit/test_layout_theme_render.py` (reuse the same fixtures as
-Task 3; `logged_in_client` renders an authenticated page, `client` an anon one):
+Real fixtures: `app`, `client` (from `tests/unit/conftest.py`) + `login`,
+`make_admin` (from `tests/unit/helpers.py`). Use an admin so the authenticated
+page renders fully. The authenticated page is `GET /` (main.home); if that route
+errors on the empty test DB, fall back to any authenticated GET that renders the
+full layout (e.g. `/users`) — the layout `<html>` attributes are what matter,
+not which page. Create `tests/unit/test_layout_theme_render.py`:
 
 ```python
 import pytest
 
-from hashview.models import Users
+from hashview.models import Users, db
+from tests.unit.helpers import login, make_admin
 
 
 @pytest.mark.parametrize("value", ["dark", "light-paper", "light-invert", "light-clean"])
-def test_explicit_theme_is_baked_into_html(logged_in_client, db_session, value):
-    Users.query.first().theme = value
-    from hashview.models import db
+def test_explicit_theme_is_baked_into_html(app, client, value):
+    admin = make_admin()
+    admin.theme = value
     db.session.commit()
-    html = logged_in_client.get("/").data.decode()
+    login(client, admin)
+    html = client.get("/").data.decode()
     assert f'data-theme="{value}"' in html
-    assert 'data-theme-pref="%s"' % value in html
+    assert f'data-theme-pref="{value}"' in html
 
 
-def test_auto_theme_defers_to_script(logged_in_client, db_session):
-    Users.query.first().theme = "auto"
-    from hashview.models import db
+def test_auto_theme_defers_to_script(app, client):
+    admin = make_admin()
+    admin.theme = "auto"
     db.session.commit()
-    html = logged_in_client.get("/").data.decode()
+    login(client, admin)
+    html = client.get("/").data.decode()
     # server picks a safe default but marks the pref so the pre-paint script
     # resolves against the OS
     assert 'data-theme-pref="auto"' in html
     assert "prefers-color-scheme: light" in html
 
 
-def test_login_page_has_theme_script_and_no_pref(client):
+def test_login_page_has_theme_script_and_no_pref(app, client):
     html = client.get("/login").data.decode()
     assert "prefers-color-scheme: light" in html
     assert 'data-theme-pref=""' in html
@@ -275,7 +305,7 @@ def test_login_page_has_theme_script_and_no_pref(client):
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `pytest tests/unit/test_layout_theme_render.py -v`
+Run: `.venv/bin/python -m pytest tests/unit/test_layout_theme_render.py -v`
 Expected: FAIL — attributes/script not present yet.
 
 - [ ] **Step 3: Update the `<html>` tag and add the pre-paint script**

@@ -23,3 +23,13 @@
 example\.com
 # the crawler User-Agent embeds the project's own repo URL
 github\.com/hashview/hashview
+
+# "gard" keyword substring inside the ordinary English word "regardless"
+# (CHANGELOG + a code comment) — not a credential.
+regardless
+
+# Test-only dummy credential literals in the API test fixtures
+# (tests/unit/test_api_customer_hashfiles.py admin_user fixture).
+password="hashed-pw"
+api_key="user-api-key-admin"
+src_ip="127\.0\.0\.1"

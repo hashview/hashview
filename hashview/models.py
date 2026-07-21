@@ -46,6 +46,7 @@ class Users(db.Model, UserMixin):
     # backfilled on first SSO login (matching falls back to email_address).
     auth_source       = db.Column(db.String(10), nullable=False, default='local')
     azure_oid         = db.Column(db.String(64), nullable=True)
+    theme             = db.Column(db.String(16), nullable=False, default='auto')
     wordlists         = db.relationship('Wordlists',  backref='tbd',   lazy=True)
     rules             = db.relationship('Rules',      backref='owner', lazy=True)
     jobs              = db.relationship('Jobs',       backref='owner', lazy=True)

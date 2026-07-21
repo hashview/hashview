@@ -36,6 +36,8 @@ import pytest
 from hashview.models import (
     Agents,
     Customers,
+    Hashes,
+    HashfileHashes,
     Hashfiles,
     Users,
 )
@@ -95,6 +97,25 @@ def _seed_hashfile(name, customer_id, owner_id):
     _db.session.add(hf)
     _db.session.commit()
     return hf
+
+
+def _seed_hash(hashfile_id, hash_type, cracked):
+    """Add one Hashes row of the given type and link it to a hashfile.
+
+    Mirrors the real ingest path: a Hashes row plus a HashfileHashes junction
+    row. `cracked` is a bool; Hashes.cracked is a non-nullable boolean column.
+    """
+    h = Hashes(
+        sub_ciphertext="0" * 32,
+        ciphertext=f"hash-{hashfile_id}-{hash_type}-{int(cracked)}",
+        hash_type=hash_type,
+        cracked=cracked,
+    )
+    _db.session.add(h)
+    _db.session.commit()
+    _db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hashfile_id))
+    _db.session.commit()
+    return h
 
 
 # ---------------------------------------------------------------------------
@@ -176,3 +197,77 @@ def test_customer_hashfiles_rejects_unauthenticated(client, admin_user):
 
     assert 300 <= resp.status_code < 400
     assert "not_authorized" in resp.headers.get("Location", "")
+
+
+# ---------------------------------------------------------------------------
+# Response envelope: derived count / hash_type fields (issue #346)
+#
+# The proposed envelope matches GET /v1/hashfiles/hash_type/<n>, so each entry
+# must also carry `hash_type`, `total_hashes`, and `cracked_hashes`. The
+# by-hash-type route scopes its counts to one type; the per-customer route is
+# NOT type-scoped, so counts cover every hash in the file and `hash_type` is the
+# file's representative mode (min hash_type, as hashfiles_list() computes it).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.security
+@pytest.mark.xfail(strict=True, reason="endpoint not implemented: per-customer hashfile listing")
+def test_customer_hashfiles_entry_reports_counts_and_hash_type(client, admin_user):
+    """Each entry carries hash_type + total/cracked counts over the whole file."""
+    cust = _seed_customer("Acme")
+    hf = _seed_hashfile("acme-ntlm", cust.id, admin_user.id)
+    # 3 hashes of type 1000, one of them cracked.
+    _seed_hash(hf.id, hash_type=1000, cracked=False)
+    _seed_hash(hf.id, hash_type=1000, cracked=False)
+    _seed_hash(hf.id, hash_type=1000, cracked=True)
+
+    _auth(client, admin_user.api_key)
+    resp = client.get(f"/v1/customers/{cust.id}/hashfiles")
+
+    body = _json_body(resp)
+    assert body["status"] == 200
+    (entry,) = body["hashfiles"]
+    assert entry["hash_type"] == 1000
+    assert entry["total_hashes"] == 3
+    assert entry["cracked_hashes"] == 1
+
+
+@pytest.mark.security
+@pytest.mark.xfail(strict=True, reason="endpoint not implemented: per-customer hashfile listing")
+def test_customer_hashfiles_counts_are_scoped_per_file(client, admin_user):
+    """Counts belong to their own file; hashes from a sibling file don't leak in."""
+    cust = _seed_customer("Acme")
+    hf_a = _seed_hashfile("acme-a", cust.id, admin_user.id)
+    hf_b = _seed_hashfile("acme-b", cust.id, admin_user.id)
+    _seed_hash(hf_a.id, hash_type=1000, cracked=True)
+    _seed_hash(hf_a.id, hash_type=1000, cracked=False)
+    _seed_hash(hf_b.id, hash_type=1800, cracked=False)
+
+    _auth(client, admin_user.api_key)
+    resp = client.get(f"/v1/customers/{cust.id}/hashfiles")
+
+    body = _json_body(resp)
+    by_name = {e["name"]: e for e in body["hashfiles"]}
+    assert by_name["acme-a"]["total_hashes"] == 2
+    assert by_name["acme-a"]["cracked_hashes"] == 1
+    assert by_name["acme-a"]["hash_type"] == 1000
+    assert by_name["acme-b"]["total_hashes"] == 1
+    assert by_name["acme-b"]["cracked_hashes"] == 0
+    assert by_name["acme-b"]["hash_type"] == 1800
+
+
+@pytest.mark.security
+@pytest.mark.xfail(strict=True, reason="endpoint not implemented: per-customer hashfile listing")
+def test_customer_hashfiles_file_with_no_hashes_reports_zero_counts(client, admin_user):
+    """A hashfile with no linked hashes still lists, with zeroed counts."""
+    cust = _seed_customer("Acme")
+    _seed_hashfile("empty-file", cust.id, admin_user.id)
+
+    _auth(client, admin_user.api_key)
+    resp = client.get(f"/v1/customers/{cust.id}/hashfiles")
+
+    body = _json_body(resp)
+    (entry,) = body["hashfiles"]
+    assert entry["name"] == "empty-file"
+    assert entry["total_hashes"] == 0
+    assert entry["cracked_hashes"] == 0

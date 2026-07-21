@@ -80,6 +80,133 @@ html[data-density="dense"] {
   --gap: 14px;
 }
 
+/* =========================================================================
+   LIGHT THEMES — token overrides on <html data-theme>. Dark is the default
+   :root above and is intentionally left untouched.
+   ========================================================================= */
+
+/* --- Paper Terminal: warm paper, dark ink, amber accent, no glow/scanlines. */
+html[data-theme="light-paper"] {
+  --bg:          #efeadc;
+  --bg-grad:     #e9e3d2;
+  --surface:     #f6f2e6;
+  --surface-2:   #f0ebdb;
+  --surface-3:   #e7e0cd;
+  --inset:       #e2dcc9;
+
+  --border:        #cfc7b0;
+  --border-soft:   #ddd6c1;
+  --border-bright: #b8ad8f;
+
+  --text:        #1c1b16;
+  --text-dim:    #5c5647;
+  --text-faint:  #8a806690;
+  --text-mute:   #7a6f57;
+
+  --green:       #2fae5b;
+  --green-deep:  #1f7d40;
+  --green-dim:   #cfe6d5;
+  --amber:       #b8901f;
+  --amber-deep:  #8a6c15;
+  --amber-dim:   #efe2c0;
+  --red:         #c4362f;
+  --red-dim:     #f0d6d3;
+  --cyan:        #1f8f99;
+
+  --primary:      var(--amber);
+  --primary-deep: var(--amber-deep);
+  --primary-dim:  var(--amber-dim);
+  --primary-rgb:  184, 144, 31;
+
+  --glow-sm: none;
+  --glow:    none;
+  --glow-text: none;
+}
+html[data-theme="light-paper"] .scanlines { display: none; }
+
+/* --- Minimal Invert: light bg, phosphor green/amber accents, faint glow. */
+html[data-theme="light-invert"] {
+  --bg:          #f3f4ef;
+  --bg-grad:     #eceee7;
+  --surface:     #fbfbf6;
+  --surface-2:   #f4f5ef;
+  --surface-3:   #eaece4;
+  --inset:       #e6e8df;
+
+  --border:        #c9ccbf;
+  --border-soft:   #d8dace;
+  --border-bright: #aab09c;
+
+  --text:        #14231a;
+  --text-dim:    #4a5a4e;
+  --text-faint:  #7c8a7690;
+  --text-mute:   #5f6d5c;
+
+  --green:       #2fae5b;
+  --green-deep:  #1f7d40;
+  --green-dim:   #cfe6d5;
+  --amber:       #b8901f;
+  --amber-deep:  #8a6c15;
+  --amber-dim:   #efe2c0;
+  --red:         #c4362f;
+  --red-dim:     #f0d6d3;
+  --cyan:        #1f8f99;
+
+  --primary:      var(--green);
+  --primary-deep: var(--green-deep);
+  --primary-dim:  var(--green-dim);
+  --primary-rgb:  47, 174, 91;
+
+  --glow-sm:   0 0 3px rgba(var(--primary-rgb), 0.25);
+  --glow:      0 0 6px rgba(var(--primary-rgb), 0.20);
+  --glow-text: 0 0 4px rgba(var(--primary-rgb), 0.18);
+}
+html[data-theme="light-invert"] .scanlines { display: none; }
+
+/* --- Clean Light UI: conventional dashboard. Sans body, soft shadows, neutral
+   accent, no CRT effects. This is the only theme that changes typography. */
+html[data-theme="light-clean"] {
+  --bg:          #f5f6f8;
+  --bg-grad:     #eef0f3;
+  --surface:     #ffffff;
+  --surface-2:   #f9fafb;
+  --surface-3:   #f1f3f5;
+  --inset:       #eef0f2;
+
+  --border:        #e2e5e9;
+  --border-soft:   #edeff2;
+  --border-bright: #cdd2d8;
+
+  --text:        #111827;
+  --text-dim:    #4b5563;
+  --text-faint:  #9ca3af90;
+  --text-mute:   #6b7280;
+
+  --green:       #16a34a;
+  --green-deep:  #15803d;
+  --green-dim:   #dcfce7;
+  --amber:       #d97706;
+  --amber-deep:  #b45309;
+  --amber-dim:   #fef3c7;
+  --red:         #dc2626;
+  --red-dim:     #fee2e2;
+  --cyan:        #0891b2;
+
+  --primary:      #2563eb;
+  --primary-deep: #1d4ed8;
+  --primary-dim:  #dbeafe;
+  --primary-rgb:  37, 99, 235;
+
+  --glow-sm: none;
+  --glow:    none;
+  --glow-text: none;
+
+  /* conventional dashboard: sans body instead of the console mono */
+  --mono: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+}
+html[data-theme="light-clean"] .scanlines { display: none; }
+html[data-theme="light-clean"] body { font-family: var(--sans); }
+
 * { box-sizing: border-box; }
 
 html, body {

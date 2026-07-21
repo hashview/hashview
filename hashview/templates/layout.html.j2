@@ -154,10 +154,10 @@
                          style="display:flex; gap:6px; flex-wrap:wrap;">
                         {% for val, lbl in [('auto','System'),('light-paper','Paper'),('light-invert','Invert'),('light-clean','Clean'),('dark','Dark')] %}
                         <button type="button" class="btn hv-theme-opt{{ ' active' if current_user.theme == val else '' }}"
-                                data-theme-value="{{ val }}" onclick="hvSetTheme('{{ val }}', this)">{{ lbl }}</button>
+                                data-theme-value="{{ val }}" aria-pressed="{{ 'true' if current_user.theme == val else 'false' }}" onclick="hvSetTheme('{{ val }}', this)">{{ lbl }}</button>
                         {% endfor %}
                     </div>
-                    <span class="field-hint" style="margin-top:8px; display:block;">System follows your operating system's light/dark setting. Your choice is saved to your account.</span>
+                    <span class="field-hint" id="hv-theme-hint" style="margin-top:8px; display:block;">System follows your operating system's light/dark setting. Your choice is saved to your account.</span>
                 </div>
 
                 {# PUSHOVER — only when the channel is enabled instance-wide #}
@@ -241,21 +241,42 @@
         </form>
     </dialog>
     <script>
-    function hvSetTheme(value, btn) {
-        // apply live
-        var resolved = value;
+    var hvThemeHintDefault = null;
+    function hvThemeResolve(value) {
         if (value === 'auto') {
-            resolved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light-paper' : 'dark';
+            return (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light-paper' : 'dark';
         }
-        document.documentElement.setAttribute('data-theme', resolved);
-        document.documentElement.setAttribute('data-theme-pref', value);
+        return value;
+    }
+    function hvThemeApply(value, btn) {
+        var el = document.documentElement;
+        el.setAttribute('data-theme', hvThemeResolve(value));
+        el.setAttribute('data-theme-pref', value);
         try { localStorage.setItem('hv_theme', value); } catch (e) {}
-        // reflect active state on the segmented control
         if (btn && btn.parentNode) {
-            btn.parentNode.querySelectorAll('.hv-theme-opt').forEach(function (b) { b.classList.remove('active'); });
+            btn.parentNode.querySelectorAll('.hv-theme-opt').forEach(function (b) {
+                b.classList.remove('active');
+                b.setAttribute('aria-pressed', 'false');
+            });
             btn.classList.add('active');
+            btn.setAttribute('aria-pressed', 'true');
         }
-        // persist to the account
+    }
+    function hvSetTheme(value, btn) {
+        // snapshot current state so we can roll back if the save fails
+        var el = document.documentElement;
+        var prevPref = el.getAttribute('data-theme-pref') || 'auto';
+        var prevBtn = btn && btn.parentNode ? btn.parentNode.querySelector('.hv-theme-opt.active') : null;
+        var hint = document.getElementById('hv-theme-hint');
+        if (hint && hvThemeHintDefault === null) { hvThemeHintDefault = hint.textContent; }
+        // clear any prior error before the new attempt
+        if (hint) { hint.textContent = hvThemeHintDefault; hint.style.color = ''; }
+        // apply optimistically
+        hvThemeApply(value, btn);
+        function rollback() {
+            hvThemeApply(prevPref, prevBtn);
+            if (hint) { hint.textContent = 'Could not save your theme — reverted. Check your connection and try again.'; hint.style.color = 'var(--red)'; }
+        }
         var token = document.querySelector('#account-settings-modal input[name="csrf_token"]');
         var body = new URLSearchParams();
         body.set('theme', value);
@@ -265,7 +286,9 @@
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
             body: body.toString(),
             credentials: 'same-origin'
-        }).catch(function () {});
+        }).then(function (r) {
+            if (!r.ok) { rollback(); }
+        }).catch(function () { rollback(); });
     }
     function hvApiReveal() {
         var i = document.getElementById('as-apikey'); if (!i) return;

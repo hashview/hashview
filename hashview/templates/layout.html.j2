@@ -1,8 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" data-glow="subtle" data-scanlines="{% block scanlines %}on{% endblock %}" data-density="comfortable">
+<html lang="en" data-glow="subtle" data-scanlines="{% block scanlines %}on{% endblock %}" data-density="comfortable"
+      data-theme="{% if current_user.is_authenticated and current_user.theme in ['dark','light-paper','light-invert','light-clean'] %}{{ current_user.theme }}{% else %}dark{% endif %}"
+      data-theme-pref="{% if current_user.is_authenticated %}{{ current_user.theme }}{% else %}{% endif %}">
 {% from "icons.html.j2" import icon %}
 <head>
     <script>/* sidebar collapse pref — applied before paint to avoid a flash of the expanded rail */(function(){try{if(localStorage.getItem('hv_sidebar_collapsed')==='1'){document.documentElement.setAttribute('data-sidebar','collapsed');}}catch(e){}})();</script>
+    <script>/* theme — applied before paint to avoid a flash of the wrong theme */(function(){try{var el=document.documentElement;var pref=el.getAttribute('data-theme-pref');if(!pref){pref=localStorage.getItem('hv_theme')||'auto';}var resolved=pref;if(pref==='auto'){resolved=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light-paper':'dark';}el.setAttribute('data-theme',resolved);}catch(e){}})();</script>
     <meta charset="UTF-8">
     <title>{% block title %}Hashview v{{ get_application_version() }}{% endblock %}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">

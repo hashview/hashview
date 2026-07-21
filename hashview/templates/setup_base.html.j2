@@ -1,6 +1,7 @@
 <!DOCTYPE html>
-<html lang="en" data-glow="subtle" data-scanlines="on" data-density="comfortable">
+<html lang="en" data-glow="subtle" data-scanlines="on" data-density="comfortable" data-theme="dark" data-theme-pref="">
 <head>
+    <script>/* theme — applied before paint to avoid a flash of the wrong theme */(function(){try{var el=document.documentElement;var pref=el.getAttribute('data-theme-pref');if(!pref){pref=localStorage.getItem('hv_theme')||'auto';}var resolved=pref;if(pref==='auto'){resolved=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light-paper':'dark';}el.setAttribute('data-theme',resolved);}catch(e){}})();</script>
     <meta charset="UTF-8">
     <title>Hashview v{{ get_application_version() }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">

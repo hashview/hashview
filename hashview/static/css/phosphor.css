@@ -205,7 +205,6 @@ html[data-theme="light-clean"] {
   --mono: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
 }
 html[data-theme="light-clean"] .scanlines { display: none; }
-html[data-theme="light-clean"] body { font-family: var(--sans); }
 
 * { box-sizing: border-box; }
 

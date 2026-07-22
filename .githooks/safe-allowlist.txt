@@ -21,3 +21,5 @@
 #   # allow a specific known-safe token literal used in fixtures
 #   fixtures/.*dummy-token-abc123
 example\.com
+# the crawler User-Agent embeds the project's own repo URL
+github\.com/hashview/hashview

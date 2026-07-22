@@ -65,7 +65,7 @@ Notable changes will be documented here
 - Agents survive a server restart mid-task, and a bug where agent status could show as empty was fixed
 - Create/edit forms surface validation errors inside their modal instead of redirecting away
 - Several data-retention cleanup failures and hash-type/validator parsing bugs (e.g. PKZIP `$pkzip$`/`$pkzip2$`)
-- The `main` -> v0.8.3 database upgrade is now idempotent under schema drift: migrations skip columns/tables that already exist instead of aborting on a duplicate-column error (which previously stranded the whole upgrade and left the app reporting "Unknown column"). The `tasks.hc_attackmode` conversion is also guarded so it can't misclassify tasks if re-run on an already-integer column.
+- The `main` -> v0.8.3 database upgrade is now idempotent under schema drift: migrations skip columns/tables that already exist instead of aborting on a duplicate-column error (which previously stranded the whole upgrade and left the app reporting "Unknown column"). The `tasks.hc_attackmode` conversion is also guarded so it can't misclassify tasks if re-run on an already-integer column. The `main` -> v0.8.3 upgrade also reconciles `jobs.limit_recovered` to the same `DEFAULT 0` a fresh install gets (it was previously added default-less on the main line), so an upgraded schema matches a freshly built one.
 
 ### Security
 - Hardened wordlist/rules file handling against a reported authenticated command-injection advisory (CWE-78 / CWE-22): the download API compresses files in-process instead of shelling out to `gzip`, and uploaded filenames are never reused to build on-disk paths — closing a path-traversal write. Reported by tonghuaroot.

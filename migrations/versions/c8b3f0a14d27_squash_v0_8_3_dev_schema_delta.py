@@ -145,6 +145,29 @@ def upgrade():
     if op.get_bind().dialect.name != 'sqlite':
         op.execute("ALTER TABLE hashes MODIFY ciphertext TEXT CHARACTER SET utf8mb4 NOT NULL")
 
+    # jobs.limit_recovered default reconciliation. On the main line the column is
+    # added (a02b6f567b7b) NOT NULL with NO server_default, but the dev rewrite of
+    # that same revision -- and thus every fresh dev build -- creates it with
+    # server_default '0'. Because the revision id already ran on a main-line
+    # database, the main->dev upgrade keeps the default-less column and drifts from
+    # a freshly built schema. Reconcile it here in the dev-only delta that always
+    # runs on the main->dev path so both paths converge on any dialect. No-op when
+    # the default is already '0'.
+    if _has_column('jobs', 'limit_recovered'):
+        dialect = op.get_bind().dialect.name
+        if dialect == 'mysql':
+            op.execute("ALTER TABLE jobs ALTER COLUMN limit_recovered SET DEFAULT 0")
+        elif dialect == 'sqlite':
+            # SQLite can't ALTER a column default in place; batch mode recreates
+            # the table (reflecting its existing FKs/indexes) with the default set.
+            with op.batch_alter_table('jobs') as batch_op:
+                batch_op.alter_column(
+                    'limit_recovered',
+                    existing_type=sa.Boolean(),
+                    existing_nullable=False,
+                    server_default=sa.text('0'),
+                )
+
     # ---- 3ddfbf55f5cc: index on hashfile_hashes.hashfile_id ----
     if not _has_index('hashfile_hashes', 'ix_hashfile_hashes_hashfile_id'):
         op.create_index('ix_hashfile_hashes_hashfile_id', 'hashfile_hashes',

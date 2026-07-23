@@ -722,8 +722,6 @@ def jobs_assign_notifications(job_id):
     job = Jobs.query.get(job_id)
 
     # Moving task check to /summary. Otherwise this will always skip /notifications now that notifications are before tasks
-    # populate the forms dynamically with the choices in the database
-    # form.hashes.choices = [(str(c[0].id), str(bytes.fromhex(c[1].username).decode('latin-1')) + ':' + c[0].ciphertext) for c in db.session.query(Hashes, HashfileHashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).all()]
 
     if form.validate_on_submit():
         if form.job_completion_email.data == True:

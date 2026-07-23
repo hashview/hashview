@@ -798,28 +798,28 @@ def generate_recovered_password_wordlist(path, min_length=0, max_length=None):
 
     This is the single source of dynamic recovered-password wordlist
     generation: callers pass the length window they want and this writes one
-    candidate per line. ``min_length``/``max_length`` bound the DECODED byte
-    length (inclusive); ``max_length=None`` means no upper bound, and the
-    default (0, None) writes every recovered plaintext.
+    candidate per line. ``min_length``/``max_length`` bound the length
+    (inclusive); ``max_length=None`` means no upper bound, and the default
+    (0, None) writes every recovered plaintext.
 
-    ``$HEX[...]`` plaintexts are decoded to their raw bytes first, so they are
-    both bucketed by decoded length and written as the decoded value. Because
-    those bytes may not be valid UTF-8, the file is written in binary mode.
+    ``$HEX[...]`` plaintexts are decoded ONLY to measure their true byte
+    length for bucketing; the value is stored in the wordlist in its original
+    ``$HEX[...]`` form. Stored plaintext is always valid UTF-8 (real text, or
+    the ASCII ``$HEX[...]`` wrapper), so the file is written as UTF-8 text.
     """
     plains = (
         Hashes.query.filter_by(cracked=True)
         .distinct('plaintext')
         .with_entities(Hashes.plaintext)
     )
-    with open(path, 'wb') as fh:
+    with open(path, 'w', encoding='utf-8') as fh:
         for entry in plains:
             if entry.plaintext is None:
                 continue
-            decoded = _decode_plaintext_bytes(entry.plaintext)
-            length = len(decoded)
+            length = len(_decode_plaintext_bytes(entry.plaintext))
             if length < min_length or (max_length is not None and length > max_length):
                 continue
-            fh.write(decoded + b'\n')
+            fh.write(entry.plaintext + '\n')
 
 
 def update_dynamic_wordlist(wordlist_id, job_id=None):

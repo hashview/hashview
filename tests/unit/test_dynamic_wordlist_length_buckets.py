@@ -17,9 +17,9 @@ min_length, max_length): the app passes the length window to write. The
 dispatcher (update_dynamic_wordlist) just parses the "(length ...)" token
 from the wordlist name into those bounds and delegates.
 
-$HEX[...] plaintexts are DECODED first: bucketing uses the decoded byte
-length, and the decoded value (not the $HEX[...] wrapper) is what gets
-written. Bytes that aren't valid UTF-8 are written raw.
+$HEX[...] plaintexts are bucketed by their DECODED byte length, but are
+STORED in the wordlist in their original $HEX[...] form (the length is
+decoded only to decide which bucket the entry sorts into).
 
 Buckets are seeded on fresh install and on upgrade from an install that
 predates them, even with zero cracked passwords, so a task can reference
@@ -131,11 +131,11 @@ def test_high_catchall_bucket_includes_nine_and_up(app, tmp_path):
 
 
 @pytest.mark.security
-def test_hex_plaintext_decoded_into_correct_bucket(app, tmp_path):
+def test_hex_bucketed_by_decoded_length_but_stored_as_hex(app, tmp_path):
     _make_user()
     wl = _make_wordlist(tmp_path, "(DYNAMIC) Recovered Passwords (length 6)")
-    # $HEX[414243444546] decodes to 6 bytes ("ABCDEF") -> length-6 bucket,
-    # written as the decoded value, NOT the $HEX[...] wrapper.
+    # $HEX[414243444546] decodes to 6 bytes -> length-6 bucket, but is stored
+    # in its original $HEX[...] form, NOT decoded.
     _write_plain("$HEX[414243444546]", "a" * 32)
     # $HEX[4142] decodes to 2 bytes -> excluded from the length-6 bucket.
     _write_plain("$HEX[4142]", "b" * 32)
@@ -143,20 +143,21 @@ def test_hex_plaintext_decoded_into_correct_bucket(app, tmp_path):
     update_dynamic_wordlist(wl.id)
 
     contents = set(open(wl.path, encoding="utf-8").read().splitlines())
-    assert contents == {"ABCDEF"}
+    assert contents == {"$HEX[414243444546]"}
 
 
 @pytest.mark.security
-def test_hex_non_utf8_decoded_and_written_raw(app, tmp_path):
+def test_hex_non_utf8_stored_as_hex_in_correct_bucket(app, tmp_path):
     _make_user()
     # 0xFF 0xFE: 2 decoded bytes (not valid UTF-8) -> the 0-5 combined bucket.
-    # The decoded bytes must be written raw, not the $HEX[...] wrapper.
+    # Stored verbatim as the $HEX[...] wrapper.
     wl = _make_wordlist(tmp_path, "(DYNAMIC) Recovered Passwords (length 0-5)")
     _write_plain("$HEX[fffe]", "a" * 32)
 
     update_dynamic_wordlist(wl.id)
 
-    assert open(wl.path, "rb").read() == b"\xff\xfe\n"
+    contents = set(open(wl.path, encoding="utf-8").read().splitlines())
+    assert contents == {"$HEX[fffe]"}
 
 
 @pytest.mark.security
@@ -230,7 +231,7 @@ def test_generate_function_unbounded_upper(app, tmp_path):
 
 
 @pytest.mark.security
-def test_generate_function_decodes_hex_by_byte_length(app, tmp_path):
+def test_generate_function_buckets_hex_by_byte_length_stores_hex(app, tmp_path):
     _make_user()
     _write_plain("$HEX[414243444546]", "a" * 32)  # 6 decoded bytes -> included
     _write_plain("$HEX[4142]", "b" * 32)          # 2 decoded bytes -> excluded
@@ -238,7 +239,8 @@ def test_generate_function_decodes_hex_by_byte_length(app, tmp_path):
 
     generate_recovered_password_wordlist(out, min_length=6, max_length=6)
 
-    assert set(open(out, encoding="utf-8").read().splitlines()) == {"ABCDEF"}
+    # Bucketed by decoded length (6) but stored in original $HEX[...] form.
+    assert set(open(out, encoding="utf-8").read().splitlines()) == {"$HEX[414243444546]"}
 
 
 # ---------------------------------------------------------------------------

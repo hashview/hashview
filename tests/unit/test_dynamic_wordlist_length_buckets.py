@@ -5,25 +5,20 @@ Feature request hashview/hashview#353: alongside the existing
 contain only recovered plaintexts of a given length. Buckets are a FIXED
 set seeded like the other dynamic wordlists:
 
-    (DYNAMIC) Recovered Passwords (length 0-4)   -> len <= 4  (combined)
-    (DYNAMIC) Recovered Passwords (length 5)     -> len == 5
+    (DYNAMIC) Recovered Passwords (length 0-5)   -> len <= 5  (combined)
     (DYNAMIC) Recovered Passwords (length 6)     -> len == 6
     (DYNAMIC) Recovered Passwords (length 7)     -> len == 7
     (DYNAMIC) Recovered Passwords (length 8)     -> len == 8
     (DYNAMIC) Recovered Passwords (length 9+)    -> len >= 9  (catch-all)
 
-The dispatcher in hashview.utils.utils.update_dynamic_wordlist must parse
-the "(length ...)" token from the wordlist name and filter accordingly.
+The dispatcher in hashview.utils.utils.update_dynamic_wordlist parses the
+"(length ...)" token from the wordlist name and filters accordingly.
 $HEX[...] plaintexts are DECODED first: bucketing uses the decoded byte
 length, and the decoded value (not the $HEX[...] wrapper) is what gets
 written to the bucket. Bytes that aren't valid UTF-8 are written raw.
 
-The six bucket-behavior tests are marked ``xfail(strict=True)``: the
-feature (hashview/hashview#353) is not implemented yet, so they fail
-today and will flip to XPASS -> hard failure the moment the dispatcher
-learns to length-filter, forcing the markers to be removed. The final
-test (unbucketed "All Recovered Passwords") guards existing behavior and
-must pass now.
+The final test (unbucketed "All Recovered Passwords") guards that the
+plain list still writes every plaintext, unfiltered.
 """
 
 import os
@@ -77,7 +72,6 @@ def _write_plain(plaintext: str, ciphertext: str):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="length buckets not implemented yet (hashview#353)")
 def test_exact_length_bucket_writes_only_that_length(app, tmp_path):
     _make_user()
     wl = _make_wordlist(tmp_path, "(DYNAMIC) Recovered Passwords (length 8)")
@@ -92,22 +86,20 @@ def test_exact_length_bucket_writes_only_that_length(app, tmp_path):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="length buckets not implemented yet (hashview#353)")
-def test_low_combined_bucket_includes_zero_through_four(app, tmp_path):
+def test_low_combined_bucket_includes_zero_through_five(app, tmp_path):
     _make_user()
-    wl = _make_wordlist(tmp_path, "(DYNAMIC) Recovered Passwords (length 0-4)")
-    _write_plain("a", "a" * 32)       # 1
-    _write_plain("abcd", "b" * 32)    # 4  -> included
-    _write_plain("abcde", "c" * 32)   # 5  -> excluded
+    wl = _make_wordlist(tmp_path, "(DYNAMIC) Recovered Passwords (length 0-5)")
+    _write_plain("a", "a" * 32)        # 1  -> included
+    _write_plain("abcde", "b" * 32)    # 5  -> included (upper boundary)
+    _write_plain("abcdef", "c" * 32)   # 6  -> excluded
 
     update_dynamic_wordlist(wl.id)
 
     contents = set(open(wl.path).read().splitlines())
-    assert contents == {"a", "abcd"}
+    assert contents == {"a", "abcde"}
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="length buckets not implemented yet (hashview#353)")
 def test_high_catchall_bucket_includes_nine_and_up(app, tmp_path):
     _make_user()
     wl = _make_wordlist(tmp_path, "(DYNAMIC) Recovered Passwords (length 9+)")
@@ -122,7 +114,6 @@ def test_high_catchall_bucket_includes_nine_and_up(app, tmp_path):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="length buckets not implemented yet (hashview#353)")
 def test_hex_plaintext_decoded_into_correct_bucket(app, tmp_path):
     _make_user()
     wl = _make_wordlist(tmp_path, "(DYNAMIC) Recovered Passwords (length 6)")
@@ -139,12 +130,11 @@ def test_hex_plaintext_decoded_into_correct_bucket(app, tmp_path):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="length buckets not implemented yet (hashview#353)")
 def test_hex_non_utf8_decoded_and_written_raw(app, tmp_path):
     _make_user()
-    # 0xFF 0xFE: 2 decoded bytes (not valid UTF-8) -> the 0-4 combined bucket.
+    # 0xFF 0xFE: 2 decoded bytes (not valid UTF-8) -> the 0-5 combined bucket.
     # The decoded bytes must be written raw, not the $HEX[...] wrapper.
-    wl = _make_wordlist(tmp_path, "(DYNAMIC) Recovered Passwords (length 0-4)")
+    wl = _make_wordlist(tmp_path, "(DYNAMIC) Recovered Passwords (length 0-5)")
     _write_plain("$HEX[fffe]", "a" * 32)
 
     update_dynamic_wordlist(wl.id)
@@ -153,7 +143,6 @@ def test_hex_non_utf8_decoded_and_written_raw(app, tmp_path):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="length buckets not implemented yet (hashview#353)")
 def test_empty_bucket_writes_valid_empty_file(app, tmp_path):
     _make_user()
     wl = _make_wordlist(tmp_path, "(DYNAMIC) Recovered Passwords (length 7)")

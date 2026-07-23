@@ -140,7 +140,7 @@ def ensure_dynamic_wordlist(db):
     creates: Recovered Passwords, Usernames, Customers, NTLM Hashes.
     """
     from hashview.models import Wordlists
-    from hashview.utils.utils import get_filehash
+    from hashview.utils.utils import dynamic_password_length_wordlists, get_filehash
 
     wanted = [
         ('(DYNAMIC) All Recovered Passwords', 'hashview/control/wordlists/dynamic-all.txt'),
@@ -148,6 +148,8 @@ def ensure_dynamic_wordlist(db):
         ('(DYNAMIC) All Customers',           'hashview/control/wordlists/dynamic-customers.txt'),
         ('(DYNAMIC) All NTLM Hashes',         'hashview/control/wordlists/dynamic-ntlm.txt'),
         ('(DYNAMIC) Website Keywords',        'hashview/control/wordlists/dynamic-website-keywords.txt'),
+        # Recovered passwords split into fixed length buckets (0-5, 6..8, 9+).
+        *dynamic_password_length_wordlists(),
     ]
     added = 0
     for name, path in wanted:

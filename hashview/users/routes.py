@@ -192,7 +192,7 @@ def users_add():
 
     form = UsersForm()
     if form.validate_on_submit():
-        hashed_password = bcrypt.generate_password_hash(form.password.data).decode('latin-1')
+        hashed_password = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
         # Pushover isn't collected at creation — the user sets it themselves from
         # their profile after logging in.
         user = Users(first_name=form.first_name.data, last_name=form.last_name.data, email_address=form.email.data, admin=form.is_admin.data, password=hashed_password)
@@ -262,7 +262,7 @@ def users_edit(user_id):
         if password != confirm:
             flash('Passwords do not match.', 'danger')
             return redirect(url_for('users.users_list'))
-        user.password = bcrypt.generate_password_hash(password).decode('latin-1')
+        user.password = bcrypt.generate_password_hash(password).decode('utf-8')
 
     user.first_name = first
     user.last_name = last

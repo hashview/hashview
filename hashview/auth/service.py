@@ -92,7 +92,7 @@ def resolve_or_provision_azure_user(claims, settings):
     if not email:
         raise AzureLoginDenied('no usable email/UPN claim to provision an account')
     given, family = _names_from_claims(claims)
-    random_pw = bcrypt.generate_password_hash(secrets.token_urlsafe(32)).decode('latin-1')
+    random_pw = bcrypt.generate_password_hash(secrets.token_urlsafe(32)).decode('utf-8')
     user = Users(
         first_name=given,
         last_name=family,

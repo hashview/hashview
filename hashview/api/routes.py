@@ -579,6 +579,7 @@ def v1_api_post_agent_benchmark():
 
     return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
 
+
 @api.route('/v1/agents/benchmark', methods=['GET'])
 def v1_api_get_agent_benchmarks():
     # Expose already-stored per-(agent, hash type) benchmarks as rig performance.
@@ -598,7 +599,7 @@ def v1_api_get_agent_benchmarks():
                              db.func.min(AgentBenchmarks.speed))
             .group_by(AgentBenchmarks.hash_type).all())
     return jsonify({'status': 200,
-                    'performance': {ht: spd for ht, spd in rows}})
+                    'performance': {str(ht): spd for ht, spd in rows}})
 
 @api.route('/v1/customers', methods=['GET'])
 def v1_api_get_customers():

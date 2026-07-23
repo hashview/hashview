@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from hashview.models import AgentBenchmarks, Rules, Tasks, Users, Wordlists
+from hashview.models import AgentBenchmarks, Agents, Rules, Tasks, Users, Wordlists
 from hashview.models import db as _db
 
 DOMAIN = "localhost.test"
@@ -62,6 +62,11 @@ def test_get_tasks_lists_all(client, admin_user):
 
 
 def _bench(agent_id, hash_type, speed):
+    if Agents.query.get(agent_id) is None:
+        _db.session.add(Agents(id=agent_id, name=f"ag{agent_id}",
+                               src_ip="127.0.0.1", uuid=f"bench-u{agent_id}",
+                               status="Authorized"))
+        _db.session.commit()
     b = AgentBenchmarks(agent_id=agent_id, hash_type=hash_type, speed=speed)
     _db.session.add(b)
     _db.session.commit()

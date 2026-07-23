@@ -296,6 +296,9 @@ paths:
         agent POST.
       operationId: getAgentBenchmarks
       x-audience: both
+      security:
+        - userApiKey: []
+        - agentUuid: []
       parameters:
         - name: hash_type
           in: query

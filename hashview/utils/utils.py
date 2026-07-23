@@ -845,8 +845,8 @@ def update_dynamic_wordlist(wordlist_id, job_id=None):
             wordlist.path, min_length=min_length, max_length=max_length
         )
     else:
-        # DB-derived dynamic wordlists: rewrite wordlist.path in place.
-        # Usernames are stored as text now; write them directly (UTF-8).
+        # Text-derived dynamic wordlists (usernames, customers, NTLM
+        # ciphertexts): all stored as text, written directly as UTF-8.
         file = open(wordlist.path, 'w', encoding='utf-8')
         if 'Usernames' in wordlist.name:
             usernames = HashfileHashes.query.distinct('username')

@@ -285,6 +285,34 @@ paths:
               example: {status: 200, type: message, msg: OK}
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
+    get:
+      tags: [Agents]
+      summary: Read rig benchmark performance per hash type
+      description: >-
+        Returns the stored agent benchmarks aggregated to the slowest agent's
+        speed per hash type (matching how the chunk planner sizes work). With
+        `?hash_type=<mode>`, returns that single mode's slowest speed (null if
+        never benchmarked). Read-only; exposes data already written by the
+        agent POST.
+      operationId: getAgentBenchmarks
+      x-audience: both
+      parameters:
+        - name: hash_type
+          in: query
+          required: false
+          schema: {type: integer}
+          description: If set, return only this hash mode's performance.
+      responses:
+        '200':
+          description: >-
+            Without `hash_type`, `{performance: {<mode>: <H/s>}}`. With it,
+            `{hash_type, speed}` (speed null when unbenchmarked).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentBenchmarkPerformanceResponse'
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
 
   # ----------------------------------------------------------------- Admin
   /v1/admin/settings:
@@ -1728,6 +1756,24 @@ components:
               allOf:
                 - $ref: '#/components/schemas/Task'
               example: {"id": 42, "name": "rockyou-best64", "hc_attackmode": 0, "wl_id": 1, "rule_id": 2, "owner_id": 1, "wl_id_2": null, "j_rule": null, "k_rule": null, "hc_mask": null}
+
+    AgentBenchmarkPerformanceResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMessage'
+        - type: object
+          properties:
+            performance:
+              type: object
+              description: Map of hash-mode (string) -> slowest agent speed (H/s). Present when no hash_type filter is given.
+              additionalProperties: {type: integer}
+              example: {"1000": 60000000000, "3200": 20000}
+            hash_type:
+              type: integer
+              description: Echoed hash mode; present only for a single-hash query.
+            speed:
+              type: integer
+              nullable: true
+              description: Slowest agent speed for the queried hash_type; null if never benchmarked.
 
     HashfilesByTypeResponse:
       allOf:

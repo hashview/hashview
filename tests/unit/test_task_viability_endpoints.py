@@ -59,3 +59,48 @@ def test_get_tasks_lists_all(client, admin_user):
     assert {"rockyou + best64", "rockyou (plain)"} <= names
     withrule = next(t for t in body["tasks"] if t["name"] == "rockyou + best64")
     assert withrule["wl_id"] == 6 and withrule["rule_id"] == 1
+
+
+def _bench(agent_id, hash_type, speed):
+    b = AgentBenchmarks(agent_id=agent_id, hash_type=hash_type, speed=speed)
+    _db.session.add(b)
+    _db.session.commit()
+    return b
+
+
+def test_get_benchmark_requires_auth(client):
+    resp = client.get("/v1/agents/benchmark", follow_redirects=False)
+    assert resp.status_code == 302
+    assert "/v1/not_authorized" in resp.headers["Location"]
+
+
+def test_get_benchmark_performance_is_slowest_per_hash(client, admin_user):
+    """Two agents benchmarked mode 1000; the map reports the SLOWEST (min) speed."""
+    _bench(agent_id=1, hash_type=1000, speed=100_000_000_000)
+    _bench(agent_id=2, hash_type=1000, speed=60_000_000_000)   # slower rig
+    _bench(agent_id=1, hash_type=3200, speed=20_000)
+
+    _auth(client, admin_user.api_key)
+    body = _body(client.get("/v1/agents/benchmark"))
+
+    assert body["status"] == 200
+    # JSON object keys are strings.
+    assert body["performance"]["1000"] == 60_000_000_000
+    assert body["performance"]["3200"] == 20_000
+
+
+def test_get_benchmark_single_hash_and_missing(client, admin_user):
+    _bench(agent_id=1, hash_type=1000, speed=60_000_000_000)
+    _auth(client, admin_user.api_key)
+
+    hit = _body(client.get("/v1/agents/benchmark?hash_type=1000"))
+    assert hit["hash_type"] == 1000 and hit["speed"] == 60_000_000_000
+
+    miss = _body(client.get("/v1/agents/benchmark?hash_type=9999"))
+    assert miss["hash_type"] == 9999 and miss["speed"] is None
+
+
+def test_get_benchmark_empty_table(client, admin_user):
+    _auth(client, admin_user.api_key)
+    body = _body(client.get("/v1/agents/benchmark"))
+    assert body["status"] == 200 and body["performance"] == {}

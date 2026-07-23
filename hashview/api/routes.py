@@ -579,6 +579,27 @@ def v1_api_post_agent_benchmark():
 
     return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
 
+@api.route('/v1/agents/benchmark', methods=['GET'])
+def v1_api_get_agent_benchmarks():
+    # Expose already-stored per-(agent, hash type) benchmarks as rig performance.
+    # Aggregated per hash type to the SLOWEST agent's speed, matching how chunk
+    # sizing works (slowest_benchmark). Read-only; touches no agent code.
+    if not is_authorized(user=True, agent=True, request=request):
+        return redirect("/v1/not_authorized")
+
+    update_heartbeat(request.cookies.get('uuid'))
+
+    hash_type = request.args.get('hash_type', type=int)
+    if hash_type is not None:
+        return jsonify({'status': 200, 'hash_type': hash_type,
+                        'speed': slowest_benchmark(hash_type)})
+
+    rows = (db.session.query(AgentBenchmarks.hash_type,
+                             db.func.min(AgentBenchmarks.speed))
+            .group_by(AgentBenchmarks.hash_type).all())
+    return jsonify({'status': 200,
+                    'performance': {ht: spd for ht, spd in rows}})
+
 @api.route('/v1/customers', methods=['GET'])
 def v1_api_get_customers():
     if not is_authorized(user=True, agent=True, request=request):

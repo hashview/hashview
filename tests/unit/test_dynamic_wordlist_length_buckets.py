@@ -11,22 +11,39 @@ set seeded like the other dynamic wordlists:
     (DYNAMIC) Recovered Passwords (length 8)     -> len == 8
     (DYNAMIC) Recovered Passwords (length 9+)    -> len >= 9  (catch-all)
 
-The dispatcher in hashview.utils.utils.update_dynamic_wordlist parses the
-"(length ...)" token from the wordlist name and filters accordingly.
+All generation flows through a single function,
+hashview.utils.utils.generate_recovered_password_wordlist(path,
+min_length, max_length): the app passes the length window to write. The
+dispatcher (update_dynamic_wordlist) just parses the "(length ...)" token
+from the wordlist name into those bounds and delegates.
+
 $HEX[...] plaintexts are DECODED first: bucketing uses the decoded byte
 length, and the decoded value (not the $HEX[...] wrapper) is what gets
-written to the bucket. Bytes that aren't valid UTF-8 are written raw.
+written. Bytes that aren't valid UTF-8 are written raw.
 
-The final test (unbucketed "All Recovered Passwords") guards that the
-plain list still writes every plaintext, unfiltered.
+Buckets are seeded on fresh install and on upgrade from an install that
+predates them, even with zero cracked passwords, so a task can reference
+any bucket immediately.
 """
 
 import os
+from pathlib import Path
 
 import pytest
 
 from hashview.models import Hashes, Users, Wordlists, db
-from hashview.utils.utils import update_dynamic_wordlist
+from hashview.setup import (
+    _DYNAMIC_WORDLISTS,
+    add_default_dynamic_wordlists,
+    default_dynamic_wordlists_need_added,
+)
+from hashview.utils.utils import (
+    dynamic_password_length_wordlists,
+    generate_recovered_password_wordlist,
+    update_dynamic_wordlist,
+)
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _make_user():
@@ -168,3 +185,100 @@ def test_unbucketed_all_passwords_still_writes_everything(app, tmp_path):
 
     contents = set(open(wl.path).read().splitlines())
     assert contents == {"hi", "password", "z" * 40}
+
+
+# ---------------------------------------------------------------------------
+# Single generation function: the app passes the length bounds directly.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.security
+def test_generate_function_exact_length(app, tmp_path):
+    _make_user()
+    _write_plain("password", "a" * 32)   # 8 -> included
+    _write_plain("hi", "b" * 32)          # 2 -> excluded
+    out = str(tmp_path / "out.txt")
+
+    generate_recovered_password_wordlist(out, min_length=8, max_length=8)
+
+    assert set(open(out).read().splitlines()) == {"password"}
+
+
+@pytest.mark.security
+def test_generate_function_inclusive_range(app, tmp_path):
+    _make_user()
+    _write_plain("a", "a" * 32)        # 1 -> included
+    _write_plain("abcde", "b" * 32)    # 5 -> included (upper boundary)
+    _write_plain("abcdef", "c" * 32)   # 6 -> excluded
+    out = str(tmp_path / "out.txt")
+
+    generate_recovered_password_wordlist(out, min_length=0, max_length=5)
+
+    assert set(open(out).read().splitlines()) == {"a", "abcde"}
+
+
+@pytest.mark.security
+def test_generate_function_unbounded_upper(app, tmp_path):
+    _make_user()
+    _write_plain("x" * 8, "a" * 32)   # 8  -> excluded
+    _write_plain("y" * 9, "b" * 32)   # 9  -> included
+    out = str(tmp_path / "out.txt")
+
+    # max_length=None (default) => no upper bound.
+    generate_recovered_password_wordlist(out, min_length=9)
+
+    assert set(open(out).read().splitlines()) == {"y" * 9}
+
+
+@pytest.mark.security
+def test_generate_function_decodes_hex_by_byte_length(app, tmp_path):
+    _make_user()
+    _write_plain("$HEX[414243444546]", "a" * 32)  # 6 decoded bytes -> included
+    _write_plain("$HEX[4142]", "b" * 32)          # 2 decoded bytes -> excluded
+    out = str(tmp_path / "out.txt")
+
+    generate_recovered_password_wordlist(out, min_length=6, max_length=6)
+
+    assert set(open(out, encoding="utf-8").read().splitlines()) == {"ABCDEF"}
+
+
+# ---------------------------------------------------------------------------
+# Seeding: buckets exist on fresh install AND on upgrade, even with no
+# passwords that fit any bucket.
+# ---------------------------------------------------------------------------
+
+def test_length_buckets_registered_in_both_seed_lists():
+    seeded = {name for name, _ in _DYNAMIC_WORDLISTS}
+    for name, _ in dynamic_password_length_wordlists():
+        assert name in seeded
+    # hashview.py (standalone CLI setup) seeds via the same helper.
+    assert "dynamic_password_length_wordlists" in (REPO_ROOT / "hashview.py").read_text()
+
+
+def test_upgrade_seeds_buckets_even_with_no_matching_passwords(app, tmp_path, monkeypatch):
+    """Simulates upgrading a v0.8.2 install that predates the buckets: the
+    seeder must add every bucket (row + empty file) even though the DB has
+    zero cracked passwords, so tasks can reference them immediately."""
+    _make_user()  # owner_id=1 target for seeded wordlists
+    # No cracked hashes at all.
+    assert Hashes.query.filter_by(cracked=True).count() == 0
+
+    # Redirect the seed list to the tmp dir so we never touch the real control
+    # dir, mirroring the buckets the real _DYNAMIC_WORDLISTS carries.
+    bucket_seed = tuple(
+        (name, str(tmp_path / f"{name.replace(' ', '_').replace('/', '_')}.txt"))
+        for name, _ in dynamic_password_length_wordlists()
+    )
+    monkeypatch.setattr("hashview.setup._DYNAMIC_WORDLISTS", bucket_seed)
+
+    assert default_dynamic_wordlists_need_added(db) is True
+    add_default_dynamic_wordlists(db)
+
+    for name, path in bucket_seed:
+        row = Wordlists.query.filter_by(name=name).first()
+        assert row is not None and row.type == "dynamic" and row.size == 0
+        assert os.path.exists(path)
+    # Idempotent: a second pass adds nothing.
+    assert default_dynamic_wordlists_need_added(db) is False
+    add_default_dynamic_wordlists(db)
+    for name, _ in bucket_seed:
+        assert Wordlists.query.filter_by(name=name).count() == 1

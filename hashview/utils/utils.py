@@ -772,22 +772,54 @@ def _decode_plaintext_bytes(plaintext):
     return plaintext.encode('utf-8')
 
 
-def _length_bucket_predicate(name):
-    """Parse a '(length ...)' token from ``name`` into a length predicate.
+def _length_bucket_bounds(name):
+    """Parse a '(length ...)' token from ``name`` into (min_length, max_length).
 
-    Returns None when the name carries no token (i.e. the unbucketed
-    "All Recovered Passwords" list, which must not be length-filtered).
+    ``max_length`` is None for an unbounded upper end. Returns None when the
+    name carries no token (i.e. the unbucketed "All Recovered Passwords" list,
+    which must not be length-filtered). Token forms:
+        'a-b' -> (a, b)      inclusive range (combined low bucket)
+        'N+'  -> (N, None)   catch-all high bucket
+        'N'   -> (N, N)      exact length
     """
     match = re.search(r'\(length\s+(\d+)(?:(-)(\d+)|(\+))?\)', name)
     if not match:
         return None
     low = int(match.group(1))
-    if match.group(2):                      # 'a-b' range
-        high = int(match.group(3))
-        return lambda n: low <= n <= high
-    if match.group(4):                       # 'N+' catch-all
-        return lambda n: n >= low
-    return lambda n: n == low                # 'N' exact
+    if match.group(2):          # 'a-b' range
+        return (low, int(match.group(3)))
+    if match.group(4):          # 'N+' catch-all
+        return (low, None)
+    return (low, low)           # 'N' exact
+
+
+def generate_recovered_password_wordlist(path, min_length=0, max_length=None):
+    """Write distinct recovered plaintexts to ``path``, filtered by length.
+
+    This is the single source of dynamic recovered-password wordlist
+    generation: callers pass the length window they want and this writes one
+    candidate per line. ``min_length``/``max_length`` bound the DECODED byte
+    length (inclusive); ``max_length=None`` means no upper bound, and the
+    default (0, None) writes every recovered plaintext.
+
+    ``$HEX[...]`` plaintexts are decoded to their raw bytes first, so they are
+    both bucketed by decoded length and written as the decoded value. Because
+    those bytes may not be valid UTF-8, the file is written in binary mode.
+    """
+    plains = (
+        Hashes.query.filter_by(cracked=True)
+        .distinct('plaintext')
+        .with_entities(Hashes.plaintext)
+    )
+    with open(path, 'wb') as fh:
+        for entry in plains:
+            if entry.plaintext is None:
+                continue
+            decoded = _decode_plaintext_bytes(entry.plaintext)
+            length = len(decoded)
+            if length < min_length or (max_length is not None and length > max_length):
+                continue
+            fh.write(decoded + b'\n')
 
 
 def update_dynamic_wordlist(wordlist_id, job_id=None):
@@ -803,23 +835,15 @@ def update_dynamic_wordlist(wordlist_id, job_id=None):
         # Crawl-based: generate into a random tmp file + atomic replace.
         _generate_website_keywords(wordlist, job_id)
     elif 'Passwords' in wordlist.name:
-        # Recovered passwords. $HEX[...] plaintexts are decoded to their raw
-        # bytes for both length bucketing and output, so the wordlist holds
-        # real candidate bytes (not the $HEX wrapper). Because decoded bytes
-        # may not be valid UTF-8, this branch writes in binary mode. A
-        # "(length ...)" token in the name (see _length_bucket_predicate)
-        # restricts the list to that decoded length; without one, every
-        # recovered plaintext is written.
-        predicate = _length_bucket_predicate(wordlist.name)
-        plains = Hashes.query.filter_by(cracked=True).distinct('plaintext').with_entities(Hashes.plaintext)
-        with open(wordlist.path, 'wb') as file:
-            for entry in plains:
-                if entry.plaintext is None:
-                    continue
-                decoded = _decode_plaintext_bytes(entry.plaintext)
-                if predicate is not None and not predicate(len(decoded)):
-                    continue
-                file.write(decoded + b'\n')
+        # Recovered passwords. A "(length ...)" token in the name selects the
+        # length window (see _length_bucket_bounds); without one, the whole
+        # recovered corpus is written. All generation is delegated to the
+        # single generate_recovered_password_wordlist() function.
+        bounds = _length_bucket_bounds(wordlist.name)
+        min_length, max_length = bounds if bounds is not None else (0, None)
+        generate_recovered_password_wordlist(
+            wordlist.path, min_length=min_length, max_length=max_length
+        )
     else:
         # DB-derived dynamic wordlists: rewrite wordlist.path in place.
         # Usernames are stored as text now; write them directly (UTF-8).

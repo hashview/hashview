@@ -1132,7 +1132,11 @@ def v1_api_get_tasks():
 
     update_heartbeat(request.cookies.get('uuid'))
     tasks = Tasks.query.all()
-    return jsonify({'status': 200, 'tasks': alchemy_to_native(tasks)})
+    message = {
+        'status': 200,
+        'tasks': alchemy_to_native(tasks)
+    }
+    return jsonify(message)
 
 # Provide task info
 @api.route('/v1/tasks/<int:task_id>', methods=['GET'])

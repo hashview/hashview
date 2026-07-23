@@ -50,7 +50,9 @@ def test_get_tasks_lists_all(client, admin_user):
     _task(admin_user.id, name="rockyou (plain)", wl_id=6, rule_id=None)
 
     _auth(client, admin_user.api_key)
-    body = _body(client.get("/v1/tasks"))
+    resp = client.get("/v1/tasks")
+    assert resp.status_code == 200
+    body = _body(resp)
 
     assert body["status"] == 200
     names = {t["name"] for t in body["tasks"]}

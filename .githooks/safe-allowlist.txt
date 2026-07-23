@@ -43,6 +43,9 @@ password="hashed-pw"
 api_key="user-api-key-admin"
 src_ip="127\.0\.0\.1"
 
+# test fixture api_key literal in the download tests (not a real secret)
+api_key="dl-key"
+
 # --- CI workflow false positives (.github/workflows/*) ---
 # The scanner reads whole changed files, so editing a workflow surfaces its
 # CI-only test values, template variables and comment substrings. None are

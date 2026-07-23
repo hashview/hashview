@@ -1124,6 +1124,16 @@ def v1_api_post_start_job(job_id):
             'msg': 'Invalid job ID'
         })
 
+# List all tasks
+@api.route('/v1/tasks', methods=['GET'])
+def v1_api_get_tasks():
+    if not is_authorized(user=True, agent=True, request=request):
+        return redirect("/v1/not_authorized")
+
+    update_heartbeat(request.cookies.get('uuid'))
+    tasks = Tasks.query.all()
+    return jsonify({'status': 200, 'tasks': alchemy_to_native(tasks)})
+
 # Provide task info
 @api.route('/v1/tasks/<int:task_id>', methods=['GET'])
 def v1_api_get_task(task_id):

@@ -834,6 +834,22 @@ paths:
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
 
+  /v1/tasks:
+    get:
+      tags: [Tasks]
+      summary: List all tasks (metadata)
+      operationId: listTasks
+      x-audience: both
+      responses:
+        '200':
+          description: Envelope with `tasks` as a native JSON array.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TasksListResponse'
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
+
   /v1/tasks/{task_id}:
     get:
       tags: [Tasks]
@@ -1687,6 +1703,18 @@ components:
               allOf:
                 - $ref: '#/components/schemas/JobTask'
               example: {"id": 7, "job_id": 12, "task_id": 42, "priority": 3, "status": "Running", "agent_id": 2, "command": "hashcat -O -w 3 ..."}
+
+    TasksListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMessage'
+        - type: object
+          required: [tasks]
+          properties:
+            tasks:
+              type: array
+              description: Array of Task rows (native JSON; no double-decode).
+              items: {$ref: '#/components/schemas/Task'}
+              example: [{"id": 42, "name": "rockyou-best64", "hc_attackmode": 0, "wl_id": 1, "rule_id": 2, "owner_id": 1, "wl_id_2": null, "j_rule": null, "k_rule": null, "hc_mask": null}]
 
     TaskResponse:
       allOf:

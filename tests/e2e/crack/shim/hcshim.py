@@ -5,7 +5,7 @@ just isn't the optimized hashcat engine. Parses the server-built hashcat
 command, reads the gzip wordlist, applies any -r rules, and writes genuine
 hash:hex_plain matches to --outfile (outfile-format 1,3).
 
-CRITICAL: never write to stderr on the happy path — the agent's run_command
+CRITICAL: never write to stderr on the happy path — the agent's run_hashcat
 treats any stderr output as a fatal error and kills the agent.
 """
 import binascii

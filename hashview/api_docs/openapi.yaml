@@ -360,6 +360,39 @@ paths:
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
 
+  /v1/customers/{customer_id}/hashfiles:
+    get:
+      tags: [Customers]
+      summary: List a customer's hashfiles
+      description: >-
+        Lists every hashfile belonging to the customer (issue #346), replacing
+        the client-side loop over common hash types. Unlike
+        /v1/hashfiles/hash_type/{hash_type}, counts are NOT type-scoped:
+        `total_hashes`/`cracked_hashes` cover ALL hashes in each file and
+        `hash_type` is the file's representative mode (its lowest hash type).
+        An unknown customer is a valid empty result (body status 200, empty
+        `hashfiles`), not a 404.
+      operationId: listCustomerHashfiles
+      x-audience: user
+      security:
+        - userApiKey: []
+      parameters:
+        - name: customer_id
+          in: path
+          required: true
+          schema: {type: integer}
+      responses:
+        '200':
+          description: >-
+            Envelope with a `hashfiles` array; empty array for an unknown
+            customer or one with no hashfiles (still body status 200).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerHashfilesResponse'
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
+
   /v1/customers/add:
     post:
       tags: [Customers]
@@ -1537,6 +1570,33 @@ components:
           type: integer
           description: Cracked hashes of the REQUESTED type in this file.
 
+    CustomerHashfileSummary:
+      type: object
+      description: >-
+        One hashfile entry from /v1/customers/{customer_id}/hashfiles. Counts
+        cover the WHOLE file (not scoped to a hash type) and hash_type is the
+        file's representative mode.
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        customer_id: {type: integer}
+        owner_id: {type: integer}
+        uploaded_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO-8601 (a real timestamp, unlike the encoder-nulled fields).
+        hash_type:
+          type: integer
+          nullable: true
+          description: Representative hash mode (lowest type in the file); null if empty.
+        total_hashes:
+          type: integer
+          description: All hashes in this file.
+        cracked_hashes:
+          type: integer
+          description: Cracked hashes in this file.
+
     # ------------------------------------------------- request bodies
     CustomerCreate:
       type: object
@@ -1789,6 +1849,18 @@ components:
               description: Real nested array — no double-decode needed.
               items:
                 $ref: '#/components/schemas/HashfileSummary'
+
+    CustomerHashfilesResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMessage'
+        - type: object
+          required: [hashfiles]
+          properties:
+            hashfiles:
+              type: array
+              description: Real nested array — no double-decode needed.
+              items:
+                $ref: '#/components/schemas/CustomerHashfileSummary'
 
     SearchResponse:
       allOf:

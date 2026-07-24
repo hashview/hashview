@@ -53,3 +53,9 @@ ROCKYOU_TGZ_SHA256
 danielmiessler/SecLists
 # Badge-push URL using the ${GH_TOKEN} action variable, not a literal token.
 x-access-token
+
+# Public documentation links in TESTING.md (surfaced whenever that file changes).
+https://hypothesis\.readthedocs\.io
+# This file's own usage example (a comment demonstrating an anchored pattern),
+# surfaced whenever the allowlist itself is edited.
+ignore trustedsec mentions in the example

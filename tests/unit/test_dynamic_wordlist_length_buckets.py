@@ -284,3 +284,53 @@ def test_upgrade_seeds_buckets_even_with_no_matching_passwords(app, tmp_path, mo
     add_default_dynamic_wordlists(db)
     for name, _ in bucket_seed:
         assert Wordlists.query.filter_by(name=name).count() == 1
+
+
+def test_upgrade_backfills_buckets_from_preexisting_cracked_corpus(app, tmp_path, monkeypatch):
+    """End-to-end upgrade: an install that ALREADY has a corpus of cracked
+    passwords (of varied lengths) predates the buckets. The seeder adds empty
+    bucket rows/files, then the first regeneration of each bucket must split
+    the pre-existing corpus into the correct length windows.
+
+    This is the composition the other tests only cover in halves: generation
+    is exercised against a populated DB, and seeding against an empty one, but
+    never the real upgrade sequence (existing cracked data -> seed -> refresh).
+    """
+    _make_user()  # owner_id=1 target for seeded wordlists
+
+    # Pre-existing cracked corpus, one plaintext per length bucket boundary.
+    _write_plain("ab", "a" * 32)            # len 2  -> 0-5
+    _write_plain("abcde", "b" * 32)         # len 5  -> 0-5 (upper boundary)
+    _write_plain("abcdef", "c" * 32)        # len 6  -> 6
+    _write_plain("abcdefg", "d" * 32)       # len 7  -> 7
+    _write_plain("password", "e" * 32)      # len 8  -> 8
+    _write_plain("elephantine", "f" * 32)   # len 11 -> 9+
+    _write_plain("$HEX[fffe]", "0" * 32)    # 2 non-UTF-8 bytes -> 0-5, stored as $HEX
+    assert Hashes.query.filter_by(cracked=True).count() == 7
+
+    # Redirect the seed list to the tmp dir so seeded rows carry tmp paths that
+    # regeneration will write to (never touching the real control dir).
+    bucket_seed = tuple(
+        (name, str(tmp_path / f"{name.replace(' ', '_').replace('/', '_')}.txt"))
+        for name, _ in dynamic_password_length_wordlists()
+    )
+    monkeypatch.setattr("hashview.setup._DYNAMIC_WORDLISTS", bucket_seed)
+
+    # Upgrade: seeder adds empty bucket rows + files from the existing corpus.
+    add_default_dynamic_wordlists(db)
+    for _, path in bucket_seed:
+        assert open(path).read() == ""  # seeded empty, not yet backfilled
+
+    # First refresh of each bucket splits the pre-existing corpus by length.
+    expected = {
+        "(DYNAMIC) Recovered Passwords (length 0-5)": {"ab", "abcde", "$HEX[fffe]"},
+        "(DYNAMIC) Recovered Passwords (length 6)": {"abcdef"},
+        "(DYNAMIC) Recovered Passwords (length 7)": {"abcdefg"},
+        "(DYNAMIC) Recovered Passwords (length 8)": {"password"},
+        "(DYNAMIC) Recovered Passwords (length 9+)": {"elephantine"},
+    }
+    for name, path in bucket_seed:
+        wl = Wordlists.query.filter_by(name=name).first()
+        update_dynamic_wordlist(wl.id)
+        contents = set(open(path, encoding="utf-8").read().splitlines())
+        assert contents == expected[name], name

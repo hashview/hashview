@@ -13,13 +13,14 @@ Covers three areas the existing single PoC did not:
 3. IDOR — a second, non-owner, non-admin user must not be able to delete another
    user's hashfile (plus an owner control case).
 
-NOTE — two confirmed findings that were originally proven here as strict xfails
-now live in their own per-issue PRs/branches so each tracks a GitHub issue:
+NOTE — two findings that were originally proven here as strict xfails now live in
+their own per-issue modules so each tracks a GitHub issue:
 
-  - FINDING #297 (HIGH) command injection via task fields -> agent shell:
-    tests/security/test_command_injection_xfail.py
-  - FINDING #298 (MEDIUM) missing CSRF on form-reading routes:
-    tests/security/test_csrf_xfail.py
+  - FINDING #297 (HIGH) command injection via task fields -> agent shell: FIXED
+    (argv list + agent shell=False). Now a passing regression suite:
+    tests/security/test_command_injection_argv.py
+  - FINDING #298 (MEDIUM) missing CSRF on form-reading routes: still open,
+    tracked as strict xfails in tests/security/test_csrf_xfail.py
 
 This module deliberately contains only PASSING security tests.
 """

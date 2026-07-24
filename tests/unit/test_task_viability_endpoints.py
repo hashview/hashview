@@ -3,6 +3,7 @@ GET /v1/agents/benchmark. Auth/fixture style mirrors test_api_routes_regression.
 (the 'uuid' cookie maps to Users.api_key; see is_authorized)."""
 
 import json
+from datetime import datetime
 
 import pytest
 
@@ -98,11 +99,37 @@ def test_get_benchmark_single_hash_and_missing(client, admin_user):
     _bench(agent_id=1, hash_type=1000, speed=60_000_000_000)
     _auth(client, admin_user.api_key)
 
-    hit = _body(client.get("/v1/agents/benchmark?hash_type=1000"))
+    resp = client.get("/v1/agents/benchmark?hash_type=1000")
+    assert resp.status_code == 200
+    hit = _body(resp)
     assert hit["hash_type"] == 1000 and hit["speed"] == 60_000_000_000
 
-    miss = _body(client.get("/v1/agents/benchmark?hash_type=9999"))
-    assert miss["hash_type"] == 9999 and miss["speed"] is None
+    # Un-benchmarked type is a 404, not a 200 with a null speed.
+    resp = client.get("/v1/agents/benchmark?hash_type=9999")
+    assert resp.status_code == 404
+    assert _body(resp)["status"] == 404
+
+
+def test_get_benchmark_rejects_agent_keys(client, admin_user):
+    """The fleet view is for users; an agent uuid must not be authorized."""
+    _bench(agent_id=1, hash_type=1000, speed=60_000_000_000)
+    _auth(client, "bench-u1")   # the agent's uuid, seeded by _bench
+
+    resp = client.get("/v1/agents/benchmark", follow_redirects=False)
+    assert resp.status_code == 302
+    assert "/v1/not_authorized" in resp.headers["Location"]
+
+
+def test_get_benchmark_records_no_heartbeat(client, admin_user):
+    """A user reading benchmarks must not bump any agent's heartbeat."""
+    _bench(agent_id=1, hash_type=1000, speed=60_000_000_000)
+    stamp = datetime(2026, 1, 1, 0, 0, 0)
+    Agents.query.get(1).last_checkin = stamp
+    _db.session.commit()
+    _auth(client, admin_user.api_key)
+
+    assert client.get("/v1/agents/benchmark").status_code == 200
+    assert Agents.query.get(1).last_checkin == stamp
 
 
 def test_get_benchmark_empty_table(client, admin_user):

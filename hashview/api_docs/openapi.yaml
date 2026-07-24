@@ -291,14 +291,14 @@ paths:
       description: >-
         Returns the stored agent benchmarks aggregated to the slowest agent's
         speed per hash type (matching how the chunk planner sizes work). With
-        `?hash_type=<mode>`, returns that single mode's slowest speed (null if
-        never benchmarked). Read-only; exposes data already written by the
-        agent POST.
+        `?hash_type=<mode>`, returns that single mode's slowest speed, or 404
+        if no agent has benchmarked it. User-only: agents have no use for the
+        fleet-wide view, and reading it records no heartbeat. Read-only;
+        exposes data already written by the agent POST.
       operationId: getAgentBenchmarks
-      x-audience: both
+      x-audience: user
       security:
         - userApiKey: []
-        - agentUuid: []
       parameters:
         - name: hash_type
           in: query
@@ -308,14 +308,22 @@ paths:
       responses:
         '200':
           description: >-
-            Without `hash_type`, `{performance: {<mode>: <H/s>}}`. With it,
-            `{hash_type, speed}` (speed null when unbenchmarked).
+            Without `hash_type`, `{performance: {<mode>: <H/s>}}` — an empty
+            map when no agent has benchmarked anything. With it,
+            `{hash_type, speed}`.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentBenchmarkPerformanceResponse'
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
+        '404':
+          description: No benchmark recorded for the requested hash type.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiMessage'
+              example: {status: 404, type: Error, msg: No benchmark recorded for hash type 9999}
 
   # ----------------------------------------------------------------- Admin
   /v1/admin/settings:
@@ -1835,8 +1843,9 @@ components:
               description: Echoed hash mode; present only for a single-hash query.
             speed:
               type: integer
-              nullable: true
-              description: Slowest agent speed for the queried hash_type; null if never benchmarked.
+              description: >-
+                Slowest agent speed for the queried hash_type. Only present on a
+                200; an unbenchmarked hash_type is a 404 rather than a null speed.
 
     HashfilesByTypeResponse:
       allOf:

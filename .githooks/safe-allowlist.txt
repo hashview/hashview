@@ -54,12 +54,20 @@ danielmiessler/SecLists
 # Badge-push URL using the ${GH_TOKEN} action variable, not a literal token.
 x-access-token
 
+# Public documentation links in TESTING.md (surfaced whenever that file changes).
+# The optional backslashes also match this entry's own escaped form, which the
+# URL rule otherwise flags whenever this line itself is added or moved.
+hypothesis\\?\.readthedocs\\?\.io
+
 # --- tests/unit/test_wordlist_gzip_storage.py false positives ---
 # The scanner reads whole changed files, so touching this test surfaces its
 # throwaway fixture values. None are real credentials.
 # Dummy per-test API keys handed to the _make_user fixture.
 api_key="(test)?apikey[a-z0-9]*"
 api_key="(dl|rel|cmp)[a-z0-9]*"
+# Covers the two patterns above in their own literal form, which the generic
+# secret-assign rule flags whenever these lines themselves are added or moved.
+api_key="[(\\]
 # 'deadbeefdeadbeef' fake wordlist filename matched as an AWS secret key.
 control/wordlists/deadbeef
 

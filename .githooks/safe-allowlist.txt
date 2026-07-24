@@ -12,7 +12,7 @@
 # where possible.
 #
 # Examples:
-#   # ignore trustedsec mentions in the example template only
+#   # ignore vendor-name mentions in the example template only
 #   sensitive-keywords\.example
 #
 #   # allow the word "session" (which contains "ses") in test files
@@ -23,3 +23,5 @@
 example\.com
 # the crawler User-Agent embeds the project's own repo URL
 github\.com/hashview/hashview
+# the "gard" keyword false-positives on the ordinary word "regardless"
+regardless

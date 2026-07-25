@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, redirect, request, send_from_directory, current_app, url_for
+from flask import Blueprint, jsonify, redirect, request, send_from_directory, current_app, url_for, after_this_request
 from hashview.models import Agents, JobTasks, Tasks, Wordlists, Rules, Jobs, Hashes, Hashfiles, HashfileHashes, Users, HashNotifications, Settings, JobNotifications, Customers
 from hashview.utils.utils import get_md5_hash, get_linecount, get_filehash, update_dynamic_wordlist, update_job_task_status, import_hashfilehashes, validate_pwdump_hashfile, validate_netntlm_hashfile, validate_kerberos_hashfile, validate_shadow_hashfile, validate_user_hash_hashfile, validate_hash_only_hashfile, send_email, send_pushover, notify_admins, build_hashcat_command, ntlm_hash_hex
 from hashview.models import db
@@ -40,6 +40,20 @@ class AlchemyEncoder(json.JSONEncoder):
             return fields
 
         return json.JSONEncoder.default(self, obj)
+
+def remove_after_request(path):
+    """Delete a control/tmp scratch file once the response has been sent.
+
+    The download endpoints materialize a temp file just to stream it back; if
+    it is never removed control/tmp grows without bound.
+    """
+    @after_this_request
+    def _remove(response):
+        try:
+            os.remove(path)
+        except OSError:
+            current_app.logger.warning('Could not remove temp file %s', path)
+        return response
 
 def is_authorized(user, agent, request):
     isUser = False
@@ -332,6 +346,7 @@ def v1_api_get_rules_download(rules_id):
     gz_path = os.path.join(current_app.root_path, 'control/tmp', gz_name)
     with open(src_path, 'rb') as f_in, gzip.open(gz_path, 'wb', compresslevel=9) as f_out:
         shutil.copyfileobj(f_in, f_out)
+    remove_after_request(gz_path)
     return send_from_directory('control/tmp', gz_name, mimetype='application/octet-stream')
 
 # Provide wordlist info (really should be plural)
@@ -369,6 +384,7 @@ def v1_api_get_wordlist_download(wordlist_id):
     gz_path = os.path.join(current_app.root_path, 'control/tmp', gz_name)
     with open(src_path, 'rb') as f_in, gzip.open(gz_path, 'wb', compresslevel=9) as f_out:
         shutil.copyfileobj(f_in, f_out)
+    remove_after_request(gz_path)
     return send_from_directory('control/tmp', gz_name, mimetype='application/octet-stream')
 
 # Update Dynamic Wordlist
@@ -815,6 +831,7 @@ def v1_api_get_hashfile(hashfile_id):
         file_object.write(result[0].ciphertext + '\n')
     file_object.close()
 
+    remove_after_request(os.path.join(current_app.root_path, 'control/tmp', random_hex))
     return send_from_directory('control/tmp/', random_hex)
 
 # List hashfiles that contain hashes of a given hash_type, with per-file

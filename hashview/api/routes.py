@@ -579,6 +579,38 @@ def v1_api_post_agent_benchmark():
 
     return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
 
+
+@api.route('/v1/agents/benchmark', methods=['GET'])
+def v1_api_get_agent_benchmarks():
+    # Expose already-stored per-(agent, hash type) benchmarks as rig performance.
+    # Aggregated per hash type to the SLOWEST agent's speed, matching how chunk
+    # sizing works (slowest_benchmark). Read-only; touches no agent code.
+    #
+    # Consumers are humans/dashboards, not agents: an agent has no use for the
+    # fleet-wide view, so agent keys are rejected and no heartbeat is recorded
+    # (a heartbeat would misreport this caller as a live agent).
+    if not is_authorized(user=True, agent=False, request=request):
+        return redirect("/v1/not_authorized")
+
+    hash_type = request.args.get('hash_type', type=int)
+    if hash_type is not None:
+        speed = slowest_benchmark(hash_type)
+        if speed is None:
+            # No agent has benchmarked this type yet — distinguish "unknown"
+            # from a real speed instead of returning a null the caller has to
+            # special-case.
+            return jsonify({'status': 404, 'type': 'Error',
+                            'msg': f'No benchmark recorded for hash type {hash_type}'}), 404
+        return jsonify({'status': 200, 'hash_type': hash_type, 'speed': speed})
+
+    rows = (db.session.query(AgentBenchmarks.hash_type,
+                             db.func.min(AgentBenchmarks.speed))
+            .group_by(AgentBenchmarks.hash_type).all())
+    # An empty fleet is not an error: 200 with an empty map, like the other
+    # collection endpoints.
+    return jsonify({'status': 200,
+                    'performance': {str(ht): spd for ht, spd in rows}})
+
 @api.route('/v1/customers', methods=['GET'])
 def v1_api_get_customers():
     if not is_authorized(user=True, agent=True, request=request):
@@ -1123,6 +1155,20 @@ def v1_api_post_start_job(job_id):
             'type': 'Error',
             'msg': 'Invalid job ID'
         })
+
+# List all tasks
+@api.route('/v1/tasks', methods=['GET'])
+def v1_api_get_tasks():
+    if not is_authorized(user=True, agent=True, request=request):
+        return redirect("/v1/not_authorized")
+
+    update_heartbeat(request.cookies.get('uuid'))
+    tasks = Tasks.query.all()
+    message = {
+        'status': 200,
+        'tasks': alchemy_to_native(tasks)
+    }
+    return jsonify(message)
 
 # Provide task info
 @api.route('/v1/tasks/<int:task_id>', methods=['GET'])

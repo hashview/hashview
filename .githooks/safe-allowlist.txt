@@ -12,7 +12,7 @@
 # where possible.
 #
 # Examples:
-#   # ignore trustedsec mentions in the example template only
+#   # ignore vendor-name mentions in the example template only
 #   sensitive-keywords\.example
 #
 #   # allow the word "session" (which contains "ses") in test files

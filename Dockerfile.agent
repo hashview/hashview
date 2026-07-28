@@ -4,11 +4,8 @@
 FROM python:3.11-slim
 WORKDIR /agent
 
-# gzip + coreutils: the agent shells out to `gunzip` / `mv` during rules sync.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends gzip coreutils \
-    && rm -rf /var/lib/apt/lists/*
-
+# No gzip/coreutils layer: the agent decompresses and installs rule files in-process
+# (gzip + os.replace) instead of shelling out to `gunzip` / `mv` (issue #297).
 RUN pip install --no-cache-dir requests psutil
 
 # Real agent code (includes its own agent/ package + control/ dirs).

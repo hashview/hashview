@@ -13,6 +13,7 @@
 #
 # Examples:
 #   # ignore a client-name keyword mentioned only in the example template
+#   # ignore vendor-name mentions in the example template only
 #   sensitive-keywords\.example
 #
 #   # allow the word "session" (which contains "ses") in test files
@@ -41,3 +42,44 @@ regardless
 password="hashed-pw"
 api_key="user-api-key-admin"
 src_ip="127\.0\.0\.1"
+
+# --- CI workflow false positives (.github/workflows/*) ---
+# The scanner reads whole changed files, so editing a workflow surfaces its
+# CI-only test values, template variables and comment substrings. None are
+# real secrets.
+
+# "iadb" keyword inside "MariaDB" (job name, image tag, service env, comments).
+mariadb
+# Loopback address in CI service URIs / base URLs.
+127\.0\.0\.1
+# Deterministic, throwaway e2e test credentials baked into the e2e workflow.
+HASHVIEW_E2E_
+# CI-only MySQL/MariaDB test connection string (root:hashview@localhost).
+HASHVIEW_TEST_DATABASE_URI
+# SHA-256 checksum of the public SecLists rockyou archive (not a key).
+ROCKYOU_TGZ_SHA256
+# Public SecLists download URL used to fetch rockyou for the crack e2e.
+danielmiessler/SecLists
+# Badge-push URL using the ${GH_TOKEN} action variable, not a literal token.
+x-access-token
+
+# Public documentation links in TESTING.md (surfaced whenever that file changes).
+# The optional backslashes also match this entry's own escaped form, which the
+# URL rule otherwise flags whenever this line itself is added or moved.
+hypothesis\\?\.readthedocs\\?\.io
+
+# --- tests/unit/test_wordlist_gzip_storage.py false positives ---
+# The scanner reads whole changed files, so touching this test surfaces its
+# throwaway fixture values. None are real credentials.
+# Dummy per-test API keys handed to the _make_user fixture.
+api_key="(test)?apikey[a-z0-9]*"
+api_key="(dl|rel|cmp)[a-z0-9]*"
+# Covers the two patterns above in their own literal form, which the generic
+# secret-assign rule flags whenever these lines themselves are added or moved.
+api_key="[(\\]
+# 'deadbeefdeadbeef' fake wordlist filename matched as an AWS secret key.
+control/wordlists/deadbeef
+
+# This file's own usage example (a comment demonstrating an anchored pattern),
+# surfaced whenever the allowlist itself is edited.
+ignore trustedsec mentions in the example

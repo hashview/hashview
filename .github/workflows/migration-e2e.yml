@@ -15,7 +15,7 @@ jobs:
     # two MySQL boots + a venv install need headroom on a fresh runner.
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # The runner builds the "old" image from origin/main, so we need the
           # full history / that ref available locally.
@@ -25,7 +25,7 @@ jobs:
         run: git fetch origin main:refs/remotes/origin/main
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 

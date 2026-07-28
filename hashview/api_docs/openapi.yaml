@@ -285,6 +285,45 @@ paths:
               example: {status: 200, type: message, msg: OK}
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
+    get:
+      tags: [Agents]
+      summary: Read rig benchmark performance per hash type
+      description: >-
+        Returns the stored agent benchmarks aggregated to the slowest agent's
+        speed per hash type (matching how the chunk planner sizes work). With
+        `?hash_type=<mode>`, returns that single mode's slowest speed, or 404
+        if no agent has benchmarked it. User-only: agents have no use for the
+        fleet-wide view, and reading it records no heartbeat. Read-only;
+        exposes data already written by the agent POST.
+      operationId: getAgentBenchmarks
+      x-audience: user
+      security:
+        - userApiKey: []
+      parameters:
+        - name: hash_type
+          in: query
+          required: false
+          schema: {type: integer}
+          description: If set, return only this hash mode's performance.
+      responses:
+        '200':
+          description: >-
+            Without `hash_type`, `{performance: {<mode>: <H/s>}}` — an empty
+            map when no agent has benchmarked anything. With it,
+            `{hash_type, speed}`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentBenchmarkPerformanceResponse'
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
+        '404':
+          description: No benchmark recorded for the requested hash type.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiMessage'
+              example: {status: 404, type: Error, msg: No benchmark recorded for hash type 9999}
 
   # ----------------------------------------------------------------- Admin
   /v1/admin/settings:
@@ -864,6 +903,22 @@ paths:
                 unknownWlId: {value: {status: 400, type: Error, msg: Invalid wl_id}}
                 badRuleId: {value: {status: 400, type: Error, msg: rule_id must be a rule id}}
                 unknownRuleId: {value: {status: 400, type: Error, msg: Invalid rule_id}}
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
+
+  /v1/tasks:
+    get:
+      tags: [Tasks]
+      summary: List all tasks (metadata)
+      operationId: listTasks
+      x-audience: both
+      responses:
+        '200':
+          description: Envelope with `tasks` as a native JSON array.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TasksListResponse'
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
 
@@ -1748,6 +1803,18 @@ components:
                 - $ref: '#/components/schemas/JobTask'
               example: {"id": 7, "job_id": 12, "task_id": 42, "priority": 3, "status": "Running", "agent_id": 2, "command": "hashcat -O -w 3 ..."}
 
+    TasksListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMessage'
+        - type: object
+          required: [tasks]
+          properties:
+            tasks:
+              type: array
+              description: Array of Task rows (native JSON; no double-decode).
+              items: {$ref: '#/components/schemas/Task'}
+              example: [{"id": 42, "name": "rockyou-best64", "hc_attackmode": 0, "wl_id": 1, "rule_id": 2, "owner_id": 1, "wl_id_2": null, "j_rule": null, "k_rule": null, "hc_mask": null}]
+
     TaskResponse:
       allOf:
         - $ref: '#/components/schemas/ApiMessage'
@@ -1760,6 +1827,25 @@ components:
               allOf:
                 - $ref: '#/components/schemas/Task'
               example: {"id": 42, "name": "rockyou-best64", "hc_attackmode": 0, "wl_id": 1, "rule_id": 2, "owner_id": 1, "wl_id_2": null, "j_rule": null, "k_rule": null, "hc_mask": null}
+
+    AgentBenchmarkPerformanceResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMessage'
+        - type: object
+          properties:
+            performance:
+              type: object
+              description: Map of hash-mode (string) -> slowest agent speed (H/s). Present when no hash_type filter is given.
+              additionalProperties: {type: integer}
+              example: {"1000": 60000000000, "3200": 20000}
+            hash_type:
+              type: integer
+              description: Echoed hash mode; present only for a single-hash query.
+            speed:
+              type: integer
+              description: >-
+                Slowest agent speed for the queried hash_type. Only present on a
+                200; an unbenchmarked hash_type is a 404 rather than a null speed.
 
     HashfilesByTypeResponse:
       allOf:

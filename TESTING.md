@@ -164,17 +164,24 @@ genuinely runs instead of skipping almost everything (its previous behavior).
   tests.
 - `test_security_hardening.py` — passing depth coverage for CSRF (positive), the
   agent-download `os.system` sink, path traversal, and IDOR.
+- `test_command_injection_argv.py` — **command injection (HIGH), issue #297 —
+  FIXED:** task mask / rule fields (`hc_mask`, `j_rule`, `k_rule`) used to flow
+  unquoted/unescaped into a hashcat command *string* the agent ran via
+  `subprocess.Popen(shell=True)`. `build_hashcat_command` now returns an argv list
+  and the agent runs it with `shell=False`, so these are passing regression tests
+  asserting each payload stays exactly one literal argv element. The agent half
+  lives in `tests/agent_unit/test_argv_command.py`.
 
-Two **real, open findings** are tracked as strict-`xfail` regression tests in
-their own per-issue files/PRs (the test asserts the safe behavior, the strict
-xfail proves it does not yet hold, and it flips to a hard failure the moment the
-issue is fixed — at which point the `xfail` marker should be removed):
+  When asserting argv safety, never write `assert payload not in argv` — against a
+  list that check is inverted: a correctly-passed payload *is* an element, so the
+  assertion fails exactly when the code is safe (this silently kept the old #297
+  xfails "passing" long after the fix landed).
 
-- `test_command_injection_xfail.py` — **command injection (HIGH), issue #297:**
-  task mask / rule fields (`hc_mask`, `j_rule`, `k_rule`) flow unquoted/unescaped
-  into the hashcat command built by `build_hashcat_command`, which the agent runs
-  via `subprocess.Popen(shell=True)` — so shell metacharacters execute on the
-  agent host.
+One **real, open finding** is tracked as strict-`xfail` regression tests in its
+own per-issue file (the test asserts the safe behavior, the strict xfail proves it
+does not yet hold, and it flips to a hard failure the moment the issue is fixed —
+at which point the `xfail` marker should be removed):
+
 - `test_csrf_xfail.py` — **missing CSRF (MEDIUM), issue #298:** there is no global
   `CSRFProtect`, so state-changing POST routes that read their form without
   `validate_on_submit()` (e.g. `/customers/edit`) mutate state with no token.

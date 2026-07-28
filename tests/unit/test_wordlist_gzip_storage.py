@@ -738,7 +738,8 @@ def _load_agent_sync(manifest, api_obj):
     whole agent, which parses argv and reads config at import time)."""
     src = AGENT_SCRIPT.read_text()
     tree = ast.parse(src)
-    wanted = {"_gz_name", "_sha256_file", "_prune_orphan_files", "sync_wordlists"}
+    wanted = {"_gz_name", "_safe_control_filename", "_sha256_file",
+              "_prune_orphan_files", "sync_wordlists"}
     chunks = []
     found = set()
     for n in tree.body:

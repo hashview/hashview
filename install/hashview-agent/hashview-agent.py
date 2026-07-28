@@ -10,10 +10,12 @@ import argparse
 import os
 import socket
 import uuid
+import gzip
 import json
 import logging
 import secrets
 import hashlib
+import zlib
 import psutil
 import re
 import signal
@@ -125,24 +127,6 @@ if not os.path.exists('agent/config.conf'):
 
 from agent.api import api
 
-def run_command(command):
-    try:
-        cmd = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        _output, error = cmd.communicate()
-
-        if error:
-            LOG.error('Command stderr: %s', error.decode('utf-8', 'replace').strip())
-            if 'hashfile is empty or corrupt' not in str(error):
-                if 'Terminated' in str(error):
-                    sys.exit()
-                else:
-                    api.sendError(str(error))
-                    os.kill(os.getpid(), signal.SIGINT)
-    except OSError as e:
-        LOG.error('Command failed to execute: %s', e)
-        api.sendError(str(e))
-        os.kill(os.getpid(), signal.SIGINT)
-
 def send_heartbeat(agent_status, hc_status):
     return api.heartbeat(agent_status, hc_status)
 
@@ -163,6 +147,59 @@ def getHashcatPid():
                 return False
     return False
 
+def _safe_control_filename(path_value):
+    """Reduce a server-supplied path to a plain filename for our control dirs.
+
+    The manifest `path` values come from the server's database (`Rules.path` /
+    `Wordlists.path`), so they are untrusted input on this host: they must only ever
+    become a file NAME inside control/, never a path that escapes it and never a
+    shell word. Returns None when the value does not reduce to a usable filename,
+    so the caller can skip the entry instead of writing somewhere unexpected.
+    """
+    raw = str(path_value or '').replace('\\', '/')
+    name = os.path.basename(raw)
+    if name in ('', '.', '..') or '\x00' in name:
+        return None
+    return name
+
+
+def _install_rule_file(rule_id, entry_id, filename, remote_checksum):
+    """Download, verify and install one rule file into control/rules.
+
+    Shell-free by construction (issue #297): the gzip payload is decompressed
+    in-process with `gzip` and the verified file is put in place with `os.replace`,
+    instead of the old `run_command(f'gunzip {tmp_gz}')` / `run_command(f'mv
+    {tmp_file} {dest}')` pair, which interpolated a server-supplied filename into a
+    shell command line. Returns the manifest entry, or None if skipped.
+    """
+    compressed = api.get_rules_file(entry_id)
+    if not compressed:
+        LOG.warning('No data received for rule %s; will retry next sync.', rule_id)
+        return None
+
+    try:
+        content = gzip.decompress(compressed)
+    except (OSError, EOFError, zlib.error) as err:
+        # Not gzip, or truncated. Previously `gunzip` failed and run_command turned
+        # its stderr into a SIGINT of the whole agent; now we just skip the rule.
+        LOG.warning('Rule %s did not decompress as gzip; skipping: %s', rule_id, err)
+        return None
+
+    local_checksum = hashlib.sha256(content).hexdigest()
+    LOG.debug('Rule checksum local=%s remote=%s', local_checksum, remote_checksum)
+    if local_checksum != remote_checksum:
+        LOG.warning('Checksum verification failed for rule %s; discarding download.', rule_id)
+        return None
+
+    os.makedirs('control/rules', exist_ok=True)
+    os.makedirs('control/tmp', exist_ok=True)
+    tmp_file = os.path.join('control/tmp', secrets.token_hex(8))
+    with open(tmp_file, 'wb') as f:
+        f.write(content)
+    os.replace(tmp_file, os.path.join('control/rules', filename))
+    return {'checksum': local_checksum, 'filename': filename}
+
+
 def sync_rules():
     """
     Synchronise local rule files with the server using JSON manifests.
@@ -181,76 +218,30 @@ def sync_rules():
     for entry in server_entries:
         rule_id = str(entry['id'])
         remote_checksum = entry['checksum']
-        filename = entry['path'].split('/')[-1]
+        # Untrusted: the server's Rules.path only ever becomes a bare filename here.
+        filename = _safe_control_filename(entry['path'])
+        if not filename:
+            LOG.warning('Rule %s has an unusable path %r; skipping it.', rule_id, entry.get('path'))
+            continue
 
         local_entry = rules_manifest.data.get(rule_id)
+        if local_entry and local_entry.get('checksum') == remote_checksum:
+            # Up to date; keep as-is.
+            new_manifest[rule_id] = local_entry
+            continue
 
         if local_entry:
-            # Existing entry – verify checksum
-            if local_entry['checksum'] != remote_checksum:
-                LOG.debug('Rule %s changed on the server; re-downloading.', rule_id)
-                old_path = os.path.join('control/rules', local_entry['filename'])
-                if os.path.exists(old_path):
-                    os.remove(old_path)
-
-                # Download and verify new file
-                random_hex = secrets.token_hex(8)
-                compressed = api.get_rules_file(entry['id'])
-                if not compressed:
-                    LOG.warning('No data received for rule %s; will retry next sync.', rule_id)
-                    continue
-                tmp_gz = os.path.join('control/tmp', f'{random_hex}.gz')
-                with open(tmp_gz, 'wb') as f:
-                    f.write(compressed)
-
-                run_command(f'gunzip {tmp_gz}')
-                tmp_file = os.path.join('control/tmp', random_hex)
-
-                sha256 = hashlib.sha256()
-                with open(tmp_file, 'rb') as f:
-                    for block in iter(lambda: f.read(4096), b''):
-                        sha256.update(block)
-                local_checksum = sha256.hexdigest()
-                LOG.debug('Rule checksum local=%s remote=%s', local_checksum, remote_checksum)
-
-                if local_checksum == remote_checksum:
-                    dest = os.path.join('control/rules', filename)
-                    run_command(f'mv {tmp_file} {dest}')
-                    new_manifest[rule_id] = {'checksum': local_checksum, 'filename': filename}
-                else:
-                    LOG.warning('Checksum verification failed for rule %s; discarding download.', rule_id)
-                    os.remove(tmp_file)
-            else:
-                new_manifest[rule_id] = local_entry
+            LOG.debug('Rule %s changed on the server; re-downloading.', rule_id)
+            old_name = local_entry.get('filename')
+            old_path = os.path.join('control/rules', old_name) if old_name else None
+            if old_path and os.path.exists(old_path):
+                os.remove(old_path)
         else:
-            # New rule – download
             LOG.info('Downloading new rule %s.', rule_id)
-            random_hex = secrets.token_hex(8)
-            compressed = api.get_rules_file(entry['id'])
-            if not compressed:
-                LOG.warning('No data received for new rule %s; will retry next sync.', rule_id)
-                continue
-            tmp_gz = os.path.join('control/tmp', f'{random_hex}.gz')
-            with open(tmp_gz, 'wb') as f:
-                f.write(compressed)
 
-            run_command(f'gunzip {tmp_gz}')
-            tmp_file = os.path.join('control/tmp', random_hex)
-
-            sha256 = hashlib.sha256()
-            with open(tmp_file, 'rb') as f:
-                for block in iter(lambda: f.read(4096), b''):
-                    sha256.update(block)
-            local_checksum = sha256.hexdigest()
-            LOG.debug('Rule checksum local=%s remote=%s', local_checksum, remote_checksum)
-
-            if local_checksum == remote_checksum:
-                dest = os.path.join('control/rules', filename)
-                run_command(f'mv {tmp_file} {dest}')
-                new_manifest[rule_id] = {'checksum': local_checksum, 'filename': filename}
-            else:
-                LOG.warning('Checksum verification failed for new rule %s; discarding download.', rule_id)
-                os.remove(tmp_file)
+        installed = _install_rule_file(rule_id, entry['id'], filename, remote_checksum)
+        if installed:
+            new_manifest[rule_id] = installed
 
     if new_manifest != rules_manifest.data:
         rules_manifest.data = new_manifest
@@ -357,7 +348,12 @@ def sync_wordlists():
         wl_id = str(entry['id'])
         remote_checksum = entry['checksum']
         wl_type = entry.get('type')
-        dest_filename = _gz_name(entry['path'].split('/')[-1])
+        # Untrusted: the server's Wordlists.path only ever becomes a bare filename.
+        base_filename = _safe_control_filename(entry['path'])
+        if not base_filename:
+            LOG.warning('Wordlist %s has an unusable path %r; skipping it.', wl_id, entry.get('path'))
+            continue
+        dest_filename = _gz_name(base_filename)
 
         local_entry = wordlists_manifest.data.get(wl_id)
         if local_entry and local_entry.get('checksum') == remote_checksum:

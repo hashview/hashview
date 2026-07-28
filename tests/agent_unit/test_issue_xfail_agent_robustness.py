@@ -13,7 +13,8 @@ failure — a built-in reminder to drop the marker.
   also tests/agent_unit/test_agent_robustness.py for the wider coverage).
 
 #281 — agent process-control reliability:
-  D. run_command treats ANY hashcat stderr as fatal and SIGINTs the agent.
+  D. the hashcat runner treats ANY stderr as fatal and SIGINTs the agent (the
+     logic moved from the old shell-based run_command to run_hashcat(argv)).
   E. getHashcatPid aborts its whole scan on the first inaccessible process.
 
 The api/http modules import cleanly (agent.config is stubbed by conftest). The
@@ -110,9 +111,9 @@ def test_handle_heartbeat_handles_none_response(monkeypatch):
 # #281 D — benign hashcat stderr must not make the agent SIGINT itself
 # ---------------------------------------------------------------------------
 @pytest.mark.xfail(strict=True,
-                   reason="#281 D: run_command treats any stderr as fatal and "
+                   reason="#281 D: run_hashcat treats any stderr as fatal and "
                           "os.kill(SIGINT)s the agent on benign hashcat warnings")
-def test_run_command_does_not_selfkill_on_benign_stderr(monkeypatch):
+def test_run_hashcat_does_not_selfkill_on_benign_stderr(tmp_path, monkeypatch):
     killed = []
     monkeypatch.setattr(agent_main.os, "kill", lambda pid, sig: killed.append((pid, sig)))
     monkeypatch.setattr(agent_main.api, "sendError", lambda msg: None)
@@ -125,7 +126,10 @@ def test_run_command_does_not_selfkill_on_benign_stderr(monkeypatch):
             return (b"", b"oclHashcat: benign device warning\n")
 
     monkeypatch.setattr(agent_main.subprocess, "Popen", lambda *a, **k: FakeProc())
-    agent_main.run_command("hashcat -m 1000 ...")
+    # run_hashcat is the only process-spawning path left (the shell-based
+    # run_command sink is gone), so the fatal-stderr handling lives here now.
+    agent_main.run_hashcat(["/usr/bin/hashcat", "-m", "1000"],
+                           str(tmp_path / "hc_status.json"))
     assert killed == [], "agent self-killed on benign hashcat stderr"
 
 

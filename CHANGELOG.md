@@ -27,6 +27,10 @@ Notable changes will be documented here
 - The `/v1` API is now described by an OpenAPI spec with interactive Swagger UI at `/api/docs`
 - `DELETE /v1/hashfiles/<id>` to remove a hashfile via the API
 
+**Task-viability read API**
+- `GET /v1/tasks` — list all tasks (metadata) in one call, complementing the existing single-task `GET /v1/tasks/{id}`
+- `GET /v1/agents/benchmark` — read rig benchmark performance per hash type (slowest agent per mode; `?hash_type=` for one mode). Exposes already-stored benchmark data over the API for external viability tooling.
+
 **API Expansion**
 - `GET /v1/customers/<customer_id>/hashfiles` -- list every hashfile belonging to a customer in one call, replacing the downstream client-side loop over common hash types (which silently missed uncommon types). Counts cover the whole file (`total_hashes`/`cracked_hashes`) and `hash_type` is the file's representative mode; an unknown customer returns an empty list. (#346)
 - `POST /v1/hashes/import/<hash_type>` now imports cracked hashes for any hash type the server can recompute locally, not just NTLM: MD5 (0), SHA1 (100), MySQL4.1/5 (300), MD4 (900), NTLM (1000), SHA2-256 (1400), and MSSQL 2012/2014 (1731). Each submitted `HASH:plaintext` pair is still verified server-side; unverifiable plaintext is never trusted. Imports are atomic: a single failing line rolls back the entire request.
@@ -70,6 +74,7 @@ Notable changes will be documented here
 - The `main` -> v0.8.3 database upgrade is now idempotent under schema drift: migrations skip columns/tables that already exist instead of aborting on a duplicate-column error (which previously stranded the whole upgrade and left the app reporting "Unknown column"). The `tasks.hc_attackmode` conversion is also guarded so it can't misclassify tasks if re-run on an already-integer column. The `main` -> v0.8.3 upgrade also reconciles `jobs.limit_recovered` to the same `DEFAULT 0` a fresh install gets (it was previously added default-less on the main line), so an upgraded schema matches a freshly built one.
 
 ### Security
+- The agent no longer runs any command through a shell. Rule files downloaded during sync are decompressed and installed in-process (`gzip` + `os.replace`) instead of shelling out to `gunzip`/`mv` with the server-supplied filename interpolated into the command line, and rule/wordlist names from the server are reduced to a plain filename before they are used as a path. A rule name carrying shell metacharacters (possible on installs upgraded from before the path randomization) can no longer execute on the agent host, and a corrupt download now skips that one rule instead of killing the agent. The agent image also no longer needs `gzip`/`coreutils`.
 - Hardened wordlist/rules file handling against a reported authenticated command-injection advisory (CWE-78 / CWE-22): the download API compresses files in-process instead of shelling out to `gzip`, and uploaded filenames are never reused to build on-disk paths — closing a path-traversal write. Reported by tonghuaroot.
 
 ## [v0.8.2-Beta] - 2026-06-01

@@ -1,8 +1,13 @@
 <!DOCTYPE html>
-<html lang="en" data-glow="subtle" data-scanlines="{% block scanlines %}on{% endblock %}" data-density="comfortable">
+<html lang="en" data-glow="subtle" data-scanlines="{% block scanlines %}on{% endblock %}" data-density="comfortable"
+      {# Bake any explicit (non-auto) stored theme so there's no flash and it works without JS; 'auto' and anonymous fall back to dark and are resolved client-side. Values are constrained by the set_theme allowlist, so no separate list is duplicated here. #}
+      data-theme="{% if current_user.is_authenticated and current_user.theme and current_user.theme != 'auto' %}{{ current_user.theme }}{% else %}dark{% endif %}"
+      {# An empty/absent data-theme-pref is the intentional signal for the pre-paint script to fall back to localStorage/OS (anonymous pages). Do not emit a default here. #}
+      data-theme-pref="{% if current_user.is_authenticated %}{{ current_user.theme }}{% else %}{% endif %}">
 {% from "icons.html.j2" import icon %}
 <head>
     <script>/* sidebar collapse pref — applied before paint to avoid a flash of the expanded rail */(function(){try{if(localStorage.getItem('hv_sidebar_collapsed')==='1'){document.documentElement.setAttribute('data-sidebar','collapsed');}}catch(e){}})();</script>
+    <script>/* theme — applied before paint to avoid a flash of the wrong theme */(function(){try{var el=document.documentElement;var pref=el.getAttribute('data-theme-pref');if(!pref){pref=localStorage.getItem('hv_theme')||'auto';}var resolved=pref;if(pref==='auto'){resolved=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light-paper':'dark';}el.setAttribute('data-theme',resolved);}catch(e){}})();</script>
     <meta charset="UTF-8">
     <title>{% block title %}Hashview v{{ get_application_version() }}{% endblock %}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
@@ -140,6 +145,21 @@
                     <span class="field-hint" style="margin-top:8px; display:block;">Used to authenticate against the Hashview REST API. Regenerating immediately revokes the previous key.</span>
                 </div>
 
+                {# APPEARANCE #}
+                <div class="as-sec">Appearance</div>
+                <div class="field" style="margin-bottom:0;">
+                    <label class="field-label">Theme</label>
+                    <div class="hv-theme-seg" role="group" aria-label="Theme"
+                         data-current="{{ current_user.theme }}"
+                         style="display:flex; gap:6px; flex-wrap:wrap;">
+                        {% for val, lbl in [('auto','System'),('light-paper','Paper'),('light-invert','Invert'),('light-clean','Clean'),('dark','Dark')] %}
+                        <button type="button" class="btn hv-theme-opt{{ ' active' if current_user.theme == val else '' }}"
+                                data-theme-value="{{ val }}" aria-pressed="{{ 'true' if current_user.theme == val else 'false' }}" onclick="hvSetTheme('{{ val }}', this)">{{ lbl }}</button>
+                        {% endfor %}
+                    </div>
+                    <span class="field-hint" id="hv-theme-hint" style="margin-top:8px; display:block;">System follows your operating system's light/dark setting. Your choice is saved to your account.</span>
+                </div>
+
                 {# PUSHOVER — only when the channel is enabled instance-wide #}
                 {% if notify_channels.pushover %}
                 <div class="as-sec">Pushover notifications</div>
@@ -221,6 +241,55 @@
         </form>
     </dialog>
     <script>
+    var hvThemeHintDefault = null;
+    function hvThemeResolve(value) {
+        if (value === 'auto') {
+            return (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light-paper' : 'dark';
+        }
+        return value;
+    }
+    function hvThemeApply(value, btn) {
+        var el = document.documentElement;
+        el.setAttribute('data-theme', hvThemeResolve(value));
+        el.setAttribute('data-theme-pref', value);
+        try { localStorage.setItem('hv_theme', value); } catch (e) {}
+        if (btn && btn.parentNode) {
+            btn.parentNode.querySelectorAll('.hv-theme-opt').forEach(function (b) {
+                b.classList.remove('active');
+                b.setAttribute('aria-pressed', 'false');
+            });
+            btn.classList.add('active');
+            btn.setAttribute('aria-pressed', 'true');
+        }
+    }
+    function hvSetTheme(value, btn) {
+        // snapshot current state so we can roll back if the save fails
+        var el = document.documentElement;
+        var prevPref = el.getAttribute('data-theme-pref') || 'auto';
+        var prevBtn = btn && btn.parentNode ? btn.parentNode.querySelector('.hv-theme-opt.active') : null;
+        var hint = document.getElementById('hv-theme-hint');
+        if (hint && hvThemeHintDefault === null) { hvThemeHintDefault = hint.textContent; }
+        // clear any prior error before the new attempt
+        if (hint) { hint.textContent = hvThemeHintDefault; hint.style.color = ''; }
+        // apply optimistically
+        hvThemeApply(value, btn);
+        function rollback() {
+            hvThemeApply(prevPref, prevBtn);
+            if (hint) { hint.textContent = 'Could not save your theme — reverted. Check your connection and try again.'; hint.style.color = 'var(--red)'; }
+        }
+        var token = document.querySelector('#account-settings-modal input[name="csrf_token"]');
+        var body = new URLSearchParams();
+        body.set('theme', value);
+        if (token) { body.set('csrf_token', token.value); }
+        fetch("{{ url_for('users.set_theme') }}", {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: body.toString(),
+            credentials: 'same-origin'
+        }).then(function (r) {
+            if (!r.ok) { rollback(); }
+        }).catch(function () { rollback(); });
+    }
     function hvApiReveal() {
         var i = document.getElementById('as-apikey'); if (!i) return;
         var full = i.getAttribute('data-full'); if (!full) return;

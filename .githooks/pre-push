@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Pre-push hook: scan outgoing commits for sensitive info.
+# Pre-push hook: (1) scan outgoing commits for sensitive info, then (2) run the
+# same fast gate CI runs (ruff, bandit, OpenAPI, unit/security/agent tests).
+#
+# The test gate lives here — not in .git/hooks/pre-push — because enabling this
+# scanner sets core.hooksPath=.githooks, which makes git ignore .git/hooks/
+# entirely. A gate left in .git/hooks/pre-push would silently never run.
 #
 # Enable once per clone:
 #   git config core.hooksPath .githooks
@@ -144,4 +149,42 @@ if [ "$fail" -ne 0 ]; then
     exit 1
 fi
 
+echo "pre-push: sensitive-content scan clean."
+
+# --- Local test gate (mirrors CI: no Docker, no Playwright) ---------------------
+cd "$REPO_ROOT" || exit 1
+
+# Prefer the project venv; fall back to python3 on PATH.
+if [ -x "$REPO_ROOT/.venv/bin/python" ]; then
+  PY="$REPO_ROOT/.venv/bin/python"
+else
+  PY=python3
+fi
+
+echo "pre-push: running ruff..."
+if ! "$PY" -m ruff check hashview/ hashview.py; then
+  echo "pre-push: ruff FAILED — push aborted (bypass: git push --no-verify)." >&2
+  exit 1
+fi
+
+echo "pre-push: running bandit (vs baseline)..."
+if ! "$PY" -m bandit -q -r hashview install/hashview-agent -c pyproject.toml -b .bandit-baseline.json; then
+  echo "pre-push: bandit FAILED — push aborted (bypass: git push --no-verify)." >&2
+  exit 1
+fi
+
+echo "pre-push: validating OpenAPI spec..."
+if ! "$PY" -m openapi_spec_validator hashview/api_docs/openapi.yaml; then
+  echo "pre-push: OpenAPI validation FAILED — push aborted (bypass: git push --no-verify)." >&2
+  exit 1
+fi
+
+echo "pre-push: running fast test suite (tests/unit tests/security tests/agent_unit)..."
+if ! "$PY" -m pytest tests/unit tests/security tests/agent_unit -q; then
+  echo >&2
+  echo "pre-push: tests FAILED — push aborted (bypass: git push --no-verify)." >&2
+  exit 1
+fi
+
+echo "pre-push: all checks passed."
 exit 0

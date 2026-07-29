@@ -8,6 +8,7 @@ from flask import (
     abort,
     current_app,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -40,6 +41,7 @@ from hashview.users.forms import (
     ProfileForm,
     RequestResetForm,
     ResetPasswordForm,
+    ThemeForm,
     UsersForm,
 )
 from hashview.utils.audit import log_event
@@ -68,6 +70,9 @@ def load_user(user_id):
 
 
 users = Blueprint('users', __name__)
+
+VALID_THEMES = {'auto', 'dark', 'light-paper', 'light-invert', 'light-clean'}
+EXPLICIT_THEMES = VALID_THEMES - {'auto'}
 
 
 def _azure_enabled():
@@ -368,6 +373,23 @@ def generate_api_key():
     target = _safe_next()
     target += ('&' if '?' in target else '?') + 'apikey_generated=1'
     return redirect(target)
+
+@users.route("/profile/set_theme", methods=['POST'])
+@login_required
+def set_theme():
+    """Persist the account theme preference chosen from the account-settings
+    modal. Routed through ThemeForm so validate_on_submit() enforces CSRF (there
+    is no global CSRFProtect). Returns JSON so the segmented control saves
+    without a page reload."""
+    form = ThemeForm()
+    if not form.validate_on_submit():
+        return jsonify(ok=False, error='invalid request'), 400
+    value = (form.theme.data or '').strip()
+    if value not in VALID_THEMES:
+        return jsonify(ok=False, error='invalid theme'), 400
+    current_user.theme = value
+    db.session.commit()
+    return jsonify(ok=True, theme=value)
 
 @users.route("/reset_password", methods=['GET', 'POST'])
 def reset_request():

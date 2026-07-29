@@ -8,6 +8,7 @@ Notable changes will be documented here
 
 **Redesigned Interface**
 - New dark "phosphor" UI across the whole app, replacing the previous Bootstrap theme
+- Light/dark theme support: per-user theme preference (System / Paper Terminal / Minimal Invert / Clean Light / Dark) chosen from the account settings modal, saved to your account, and applied without a flash of the wrong theme. "System" follows your operating system's light/dark setting.
 - Card-style, drag-and-drop task queue when building a job
 - Live recovery feed on the dashboard showing freshly cracked hashes with relative timestamps (e.g. "3 minutes ago")
 - Scrollable, filterable "InstaCrack" panel showing which hashes are already recovered when a hashfile is added to a job

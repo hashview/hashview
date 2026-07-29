@@ -12,6 +12,7 @@
 # where possible.
 #
 # Examples:
+#   # ignore a client-name keyword mentioned only in the example template
 #   # ignore vendor-name mentions in the example template only
 #   sensitive-keywords\.example
 #
@@ -21,8 +22,16 @@
 #   # allow a specific known-safe token literal used in fixtures
 #   fixtures/.*dummy-token-abc123
 example\.com
+# CSS comment separator banners (runs of '=') trip the AWS-secret-key heuristic
+={10,}
 # the crawler User-Agent embeds the project's own repo URL
 github\.com/hashview/hashview
+# inline SVG data: URIs reference the standard SVG namespace URL
+w3\.org/2000/svg
+# open-redirect guard comment/tests use the reserved evil.example host
+evil\.example
+# "regardless" contains the 'gard' client keyword as a substring
+regardless
 
 # "gard" keyword substring inside the ordinary English word "regardless"
 # (CHANGELOG + a code comment) — not a credential.

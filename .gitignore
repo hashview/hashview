@@ -160,3 +160,6 @@ coverage.json
 .env.test
 # pre-push hook — local sensitive keywords (per-clone)
 .sensitive-keywords
+
+# superpowers visual brainstorm scratch
+.superpowers/

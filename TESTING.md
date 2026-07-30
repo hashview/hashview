@@ -99,6 +99,19 @@ background scheduler). `tests/unit/test_scheduler_integration.py` is the
 exception: it drives the real `data_retention_cleanup` entry point against a
 seeded DB to exercise the scheduled-cleanup path end to end.
 
+### Website Keywords staleness tests
+
+`tests/unit/test_website_keywords_no_stale.py` pins the "never serve a cached
+crawl" contract for the `(DYNAMIC) Website Keywords` wordlist: a fresh random
+`control/tmp/` file per regeneration, leftovers in `control/tmp/` never consumed,
+an empty crawl result blanking the live list, and back-to-back crawls replacing
+rather than unioning.
+
+Three tests in it are strict `xfail`s against **issue #377** — when
+`crawl_website_keywords` *raises*, the exception escapes
+`_generate_website_keywords` before the tmp file is written, so the previous job's
+words stay on disk and get served. Remove the markers when #377 is fixed.
+
 ## Running E2E tests locally (live host)
 
 Run the app and DB with Docker Compose, then execute pytest:

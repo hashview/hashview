@@ -417,6 +417,51 @@ def test_hashes_import_ntlm_lowercase_hash_marks_cracked(
 
 
 @pytest.mark.security
+def test_hashes_import_ntlm_hex_wrapped_plaintext_marks_cracked(
+    client, app, admin_user, tmp_path, monkeypatch
+):
+    """Regression: a hashcat ``$HEX[...]``-wrapped plaintext must be unwrapped
+    before verification, not hashed as the literal wrapper text.
+
+    hate_crack's client falls back to sending the raw ``$HEX[...]`` token
+    verbatim whenever the recovered password contains an embedded CR/LF
+    (inlining those bytes would break this line-based upload protocol). The
+    real password here is ``Passw12\\n`` (trailing newline byte); its NTLM
+    hash is 26fe4af191f3ef93e7ca31bb99ede575. Hashing the literal wrapper
+    string instead of the decoded bytes always fails verification and 500s.
+    """
+    from hashview.utils.utils import get_md5_hash
+
+    _import_dirs(app, tmp_path, monkeypatch)
+    ntlm_hash = "26fe4af191f3ef93e7ca31bb99ede575"
+    record = Hashes(
+        sub_ciphertext=get_md5_hash(ntlm_hash),
+        ciphertext=ntlm_hash,
+        hash_type=1000,
+        cracked=False,
+    )
+    _db.session.add(record)
+    _db.session.commit()
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.post(
+        "/v1/hashes/import/1000",
+        data=f"{ntlm_hash}:$HEX[5061737331320a]",
+        content_type="text/plain",
+    )
+
+    body = _json_body(resp)
+    assert body["status"] == 200, body
+    assert body["msg"] == "OK"
+    assert record.cracked
+    # Storage keeps $HEX verbatim (decoded only at render/analysis time), so
+    # the wrapper itself is what's expected here -- verification against the
+    # decoded bytes is what this regression test is actually pinning.
+    assert record.plaintext == "$HEX[5061737331320a]"
+    assert record.recovered_by == admin_user.id
+
+
+@pytest.mark.security
 def test_hashes_import_invalid_plaintext_returns_500(
     client, app, admin_user, tmp_path, monkeypatch
 ):

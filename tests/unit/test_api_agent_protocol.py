@@ -142,6 +142,29 @@ def test_heartbeat_idle_agent_gets_queued_task(app, client):
     assert JobTasks.query.get(jt.id).agent_id == agent.id
 
 
+def test_heartbeat_reissue_matches_dynamic_wordlist_job_resolution(app, client):
+    # The heartbeat re-issues an already-assigned task with .first() (arbitrary
+    # order) while /v1/updateWordlist resolves the agent's job with
+    # .order_by(id.desc()).first(). When an agent holds more than one active
+    # task the two disagree, so the agent is told to run one job while a dynamic
+    # wordlist is regenerated from a different job's crawl URL. Both lookups must
+    # name the same task.
+    db.session.add(Settings(max_runtime_tasks=0, max_runtime_jobs=0))
+    db.session.commit()
+    agent = _agent(uuid="two-task-agent", status="Idle")
+    older = JobTasks(job_id=1, task_id=1, status="Running", priority=3, agent_id=agent.id)
+    newer = JobTasks(job_id=2, task_id=2, status="Running", priority=3, agent_id=agent.id)
+    db.session.add_all([older, newer])
+    db.session.commit()
+    _set_agent_cookies(client, "two-task-agent")
+    resp = client.post("/v1/agents/heartbeat", json={"agent_status": "Idle", "hc_status": ""})
+    reissued_id = _body(resp)["job_task_id"]
+    wordlist_job_task = (JobTasks.query
+                         .filter_by(agent_id=agent.id, status="Running")
+                         .order_by(JobTasks.id.desc()).first())
+    assert reissued_id == wordlist_job_task.id
+
+
 def test_heartbeat_working_agent_tolerates_malformed_hc_status(app, client):
     # When hashcat outlives an agent restart the agent sends a non-JSON hc_status
     # placeholder. The heartbeat must NOT 500 on json.loads of that value -- it

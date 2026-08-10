@@ -225,6 +225,23 @@ def v1_api_get_admin_settings():
 _ACTIVE_JOBTASK_STATUSES = ('Running', 'Queued', 'Not Started', 'Importing')
 
 
+def _agent_active_job_task(agent_id):
+    """The job task an agent is currently assigned, or None.
+
+    Single definition on purpose. The heartbeat's re-issue path and the job
+    resolution behind /v1/updateWordlist both need "which job is this agent on",
+    and they used to ask differently -- .first() versus
+    .order_by(id.desc()).first(). An agent holding more than one active task
+    would then be told to run one job while a dynamic wordlist was regenerated
+    from a different job's input.
+    """
+    return (JobTasks.query
+            .filter(JobTasks.agent_id == agent_id,
+                    JobTasks.status.in_(_ACTIVE_JOBTASK_STATUSES))
+            .order_by(JobTasks.id.desc())
+            .first())
+
+
 def _parent_task_started_at(job_id, task_id):
     """Earliest started_at across all chunks of a (job, task) group -- i.e. when
     the parent task first began processing. None if nothing has started yet.
@@ -422,7 +439,7 @@ def v1_api_set_agent_heartbeat():
                 agent.status = "Idle"
                 agent.hc_status = ""
                 db.session.commit()
-                already_assigned_task = JobTasks.query.filter_by(agent_id = agent.id).first()
+                already_assigned_task = _agent_active_job_task(agent.id)
                 if already_assigned_task is not None:
                     message = {
                         'status': 200,
@@ -840,14 +857,14 @@ def v1_api_get_update_wordlist(wordlist_id):
     update_heartbeat(request.cookies.get('uuid'))
 
     # Resolve the job this agent is currently running so crawl-based dynamic
-    # wordlists (Website Keywords) can read the per-job target URL. The
-    # heartbeat assigns the dispatched JobTask agent_id + 'Running' before the
-    # agent calls this, so the most-recent Running task for the agent is it.
+    # wordlists (Website Keywords) can read the per-job target URL. The heartbeat
+    # assigns the dispatched JobTask agent_id + 'Running' before the agent calls
+    # this, and _agent_active_job_task is the same lookup the heartbeat's re-issue
+    # path uses -- so the job resolved here is the job the agent was told to run.
     job_id = None
     agent = Agents.query.filter_by(uuid=request.cookies.get('uuid')).first()
     if agent:
-        running = JobTasks.query.filter_by(agent_id=agent.id, status='Running') \
-                                .order_by(JobTasks.id.desc()).first()
+        running = _agent_active_job_task(agent.id)
         if running:
             job_id = running.job_id
 

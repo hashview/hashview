@@ -151,9 +151,11 @@ def test_lucky_caps_at_ten_tasks_when_more_are_effective(app, client, db_session
     unambiguous, then hit the lucky endpoint. The query in
     ``jobs_assign_lucky_task_group`` (hashview/jobs/routes.py ~620) is
     hard-coded to ``.limit(10)``, so only the top 10 (T0..T9) should be
-    assigned — T10 and T11 must be excluded. This locks in today's hard
-    cap of 10 so a future fix for issue #379 (button says "top 5") doesn't
-    accidentally make the query unbounded.
+    assigned — T10 and T11 must be excluded. This locks in the hard cap of
+    10, which is the correct behavior (issue #379's actual bug was the
+    button label, previously mismatched at "top 5"; see
+    test_jobs_tasks_page_lucky_button_label_matches_backend_top_ten in
+    test_jobs_routes.py), so it can't be accidentally made unbounded.
     """
     admin = Users(
         first_name="A",

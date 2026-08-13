@@ -227,6 +227,22 @@ def _chunk(job, task, chunk_no, chunk_total, status="Queued"):
     return jt
 
 
+def test_jobs_tasks_page_lucky_button_label_matches_backend_top_ten(app, client):
+    """The "I'm Feeling Lucky" button must promise what the backend does.
+
+    jobs_assign_lucky_task_group (hashview/jobs/routes.py) queries the top
+    10 historically effective tasks; the button label must say "top 10",
+    not the previously mismatched "top 5" (issue #379).
+    """
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+    body = client.get(f"/jobs/{job.id}/tasks").get_data(as_text=True)
+    assert "Feeling Lucky — top 10" in body
+    assert "top 5" not in body
+
+
 def test_jobs_list_collapses_chunked_task_to_one_card(app, client):
     admin = make_admin()
     login(client, admin)

@@ -152,21 +152,24 @@ def test_hashfile_exposes_import_status(app):
 
 # ---------------------------------------------------------------------------
 # Issue #379 — "'I'm Feeling Lucky — top 5' button actually adds top 10 tasks"
+#
+# Resolved as: the button label was wrong, not the backend. The backend's
+# limit(10) plus flash message ("Successfully Added Top 10 Tasks") were
+# already the intended behavior — display the top 10 historically effective
+# tasks, or fewer if fewer exist. The button label was updated from "top 5"
+# to "top 10" (jobs_assigned_tasks.html.j2) to match. This test locks in the
+# "fewer than 10 available -> assign all of them" case with a count (7)
+# between the previous mismatched labels (5 and 10), complementing the
+# 2-task case in test_lucky_and_one_and_done.py and the 12-task overflow
+# case in test_lucky_caps_at_ten_tasks_when_more_are_effective.
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(
-    reason="issue #379: lucky button says 'top 5' but backend limit(10) adds up to 10",
-    strict=False,
-)
-def test_lucky_task_assignment_adds_at_most_five_tasks(app, client):
-    """``POST /jobs/<id>/assign_task/lucky`` should honor the "top 5" label.
+def test_lucky_assigns_all_when_fewer_than_ten_effective_tasks_exist(app, client):
+    """``POST /jobs/<id>/assign_task/lucky`` assigns all effective tasks when
+    fewer than 10 exist, rather than requiring exactly 10.
 
-    hashview/jobs/routes.py ~598 (``jobs_assign_lucky_task_group``) queries
-    the most effective historical tasks with ``.limit(10)`` (~line 620) and
-    even flashes "Successfully Added Top 10 Tasks" (~line 634), while the
-    button in jobs_assigned_tasks.html.j2:73 promises "top 5". Seed 7
-    historically effective tasks (more than 5, within today's limit of 10)
-    for the job's hash_type and assert only 5 get assigned. Expected to
-    XFAIL until the button label, query limit, and flash message agree.
+    Seeds 7 historically effective tasks (more than 5, fewer than the
+    limit(10) in jobs/routes.py ~620) for the job's hash_type and asserts
+    all 7 are assigned.
     """
     admin = make_admin()
     login(client, admin)
@@ -222,4 +225,5 @@ def test_lucky_task_assignment_adds_at_most_five_tasks(app, client):
     assert resp.status_code in (301, 302, 303, 307, 308)
 
     job_tasks = JobTasks.query.filter_by(job_id=job.id).all()
-    assert len(job_tasks) == 5
+    assert len(job_tasks) == 7
+    assert {jt.task_id for jt in job_tasks} == {t.id for t in tasks}

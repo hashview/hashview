@@ -70,7 +70,7 @@
                 {# ---- Add Top Tasks (lucky) ---- #}
                 <form method="POST" action="/jobs/{{job.id}}/assign_task/lucky" style="display:inline;">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="btn btn-primary btn-sm">{{ icon('zap', size=15) }} I'm Feeling Lucky — top 5</button>
+                    <button type="submit" class="btn btn-primary btn-sm">{{ icon('zap', size=15) }} I'm Feeling Lucky — top 10</button>
                 </form>
             </div>
         </div>

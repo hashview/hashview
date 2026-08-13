@@ -12,8 +12,17 @@ from configparser import ConfigParser
 
 import pytest
 
-from hashview.models import Hashfiles, Jobs, TaskGroups, Tasks, db
-from tests.unit.helpers import login, make_admin
+from hashview.models import (
+    Hashes,
+    HashfileHashes,
+    Hashfiles,
+    JobTasks,
+    Jobs,
+    TaskGroups,
+    Tasks,
+    db,
+)
+from tests.unit.helpers import login, make_admin, make_customer
 
 
 def _task(owner, name="t"):
@@ -139,3 +148,78 @@ def test_hashfile_exposes_import_status(app):
 
     assert any(hasattr(hf, attr)
                for attr in ("status", "import_status", "progress"))
+
+
+# ---------------------------------------------------------------------------
+# Issue #379 — "'I'm Feeling Lucky — top 5' button actually adds top 10 tasks"
+# ---------------------------------------------------------------------------
+@pytest.mark.xfail(
+    reason="issue #379: lucky button says 'top 5' but backend limit(10) adds up to 10",
+    strict=False,
+)
+def test_lucky_task_assignment_adds_at_most_five_tasks(app, client):
+    """``POST /jobs/<id>/assign_task/lucky`` should honor the "top 5" label.
+
+    hashview/jobs/routes.py ~598 (``jobs_assign_lucky_task_group``) queries
+    the most effective historical tasks with ``.limit(10)`` (~line 620) and
+    even flashes "Successfully Added Top 10 Tasks" (~line 634), while the
+    button in jobs_assigned_tasks.html.j2:73 promises "top 5". Seed 7
+    historically effective tasks (more than 5, within today's limit of 10)
+    for the job's hash_type and assert only 5 get assigned. Expected to
+    XFAIL until the button label, query limit, and flash message agree.
+    """
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+
+    hf = Hashfiles(name="hf", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+
+    target_hash = Hashes(
+        sub_ciphertext="0" * 32,
+        ciphertext="AAA",
+        hash_type=1000,
+        cracked=False,
+    )
+    db.session.add(target_hash)
+    db.session.commit()
+
+    db.session.add(HashfileHashes(hash_id=target_hash.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    # Seven distinct tasks, each with a decreasing but distinct crack count
+    # of hash_type=1000, so the "most effective" ordering is unambiguous.
+    tasks = [_task(admin, f"T{i}") for i in range(7)]
+    for rank, t in enumerate(tasks):
+        crack_count = 7 - rank
+        for i in range(crack_count):
+            db.session.add(
+                Hashes(
+                    sub_ciphertext=f"{rank}{i:031x}",
+                    ciphertext=f"T{rank}-CT-{i}",
+                    hash_type=1000,
+                    cracked=True,
+                    task_id=t.id,
+                )
+            )
+    db.session.commit()
+
+    job = Jobs(
+        name="J",
+        owner_id=admin.id,
+        customer_id=cust.id,
+        hashfile_id=hf.id,
+        status="Ready",
+    )
+    db.session.add(job)
+    db.session.commit()
+
+    resp = client.post(
+        f"/jobs/{job.id}/assign_task/lucky",
+        follow_redirects=False,
+    )
+    assert resp.status_code in (301, 302, 303, 307, 308)
+
+    job_tasks = JobTasks.query.filter_by(job_id=job.id).all()
+    assert len(job_tasks) == 5

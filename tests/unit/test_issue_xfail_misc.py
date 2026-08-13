@@ -12,8 +12,17 @@ from configparser import ConfigParser
 
 import pytest
 
-from hashview.models import Hashfiles, Jobs, TaskGroups, Tasks, db
-from tests.unit.helpers import login, make_admin
+from hashview.models import (
+    Hashes,
+    HashfileHashes,
+    Hashfiles,
+    JobTasks,
+    Jobs,
+    TaskGroups,
+    Tasks,
+    db,
+)
+from tests.unit.helpers import login, make_admin, make_customer
 
 
 def _task(owner, name="t"):
@@ -139,3 +148,82 @@ def test_hashfile_exposes_import_status(app):
 
     assert any(hasattr(hf, attr)
                for attr in ("status", "import_status", "progress"))
+
+
+# ---------------------------------------------------------------------------
+# Issue #379 — "'I'm Feeling Lucky — top 5' button actually adds top 10 tasks"
+#
+# Resolved as: the button label was wrong, not the backend. The backend's
+# limit(10) plus flash message ("Successfully Added Top 10 Tasks") were
+# already the intended behavior — display the top 10 historically effective
+# tasks, or fewer if fewer exist. The button label was updated from "top 5"
+# to "top 10" (jobs_assigned_tasks.html.j2) to match. This test locks in the
+# "fewer than 10 available -> assign all of them" case with a count (7)
+# between the previous mismatched labels (5 and 10), complementing the
+# 2-task case in test_lucky_and_one_and_done.py and the 12-task overflow
+# case in test_lucky_caps_at_ten_tasks_when_more_are_effective.
+# ---------------------------------------------------------------------------
+def test_lucky_assigns_all_when_fewer_than_ten_effective_tasks_exist(app, client):
+    """``POST /jobs/<id>/assign_task/lucky`` assigns all effective tasks when
+    fewer than 10 exist, rather than requiring exactly 10.
+
+    Seeds 7 historically effective tasks (more than 5, fewer than the
+    limit(10) in jobs/routes.py ~620) for the job's hash_type and asserts
+    all 7 are assigned.
+    """
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+
+    hf = Hashfiles(name="hf", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+
+    target_hash = Hashes(
+        sub_ciphertext="0" * 32,
+        ciphertext="AAA",
+        hash_type=1000,
+        cracked=False,
+    )
+    db.session.add(target_hash)
+    db.session.commit()
+
+    db.session.add(HashfileHashes(hash_id=target_hash.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    # Seven distinct tasks, each with a decreasing but distinct crack count
+    # of hash_type=1000, so the "most effective" ordering is unambiguous.
+    tasks = [_task(admin, f"T{i}") for i in range(7)]
+    for rank, t in enumerate(tasks):
+        crack_count = 7 - rank
+        for i in range(crack_count):
+            db.session.add(
+                Hashes(
+                    sub_ciphertext=f"{rank}{i:031x}",
+                    ciphertext=f"T{rank}-CT-{i}",
+                    hash_type=1000,
+                    cracked=True,
+                    task_id=t.id,
+                )
+            )
+    db.session.commit()
+
+    job = Jobs(
+        name="J",
+        owner_id=admin.id,
+        customer_id=cust.id,
+        hashfile_id=hf.id,
+        status="Ready",
+    )
+    db.session.add(job)
+    db.session.commit()
+
+    resp = client.post(
+        f"/jobs/{job.id}/assign_task/lucky",
+        follow_redirects=False,
+    )
+    assert resp.status_code in (301, 302, 303, 307, 308)
+
+    job_tasks = JobTasks.query.filter_by(job_id=job.id).all()
+    assert len(job_tasks) == 7
+    assert {jt.task_id for jt in job_tasks} == {t.id for t in tasks}

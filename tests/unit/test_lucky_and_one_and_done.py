@@ -143,6 +143,101 @@ def test_lucky_assigns_historically_effective_tasks_for_hash_type(
 
 
 @pytest.mark.security
+def test_lucky_caps_at_ten_tasks_when_more_are_effective(app, client, db_session):
+    """``/jobs/<id>/assign_task/lucky`` never adds more than 10 tasks.
+
+    Seed 12 historically effective tasks (T0..T11) for the job's hash_type,
+    each with a distinct, decreasing crack count so ordering is
+    unambiguous, then hit the lucky endpoint. The query in
+    ``jobs_assign_lucky_task_group`` (hashview/jobs/routes.py ~620) is
+    hard-coded to ``.limit(10)``, so only the top 10 (T0..T9) should be
+    assigned — T10 and T11 must be excluded. This locks in the hard cap of
+    10, which is the correct behavior (issue #379's actual bug was the
+    button label, previously mismatched at "top 5"; see
+    test_jobs_tasks_page_lucky_button_label_matches_backend_top_ten in
+    test_jobs_routes.py), so it can't be accidentally made unbounded.
+    """
+    admin = Users(
+        first_name="A",
+        last_name="D",
+        email_address="admin@example.com",
+        password="x" * 60,
+        admin=True,
+        api_key="k",
+    )
+    db_session.add(admin)
+    db_session.commit()
+
+    cust = Customers(name="X")
+    db_session.add(cust)
+    db_session.commit()
+
+    hf = Hashfiles(name="hf", customer_id=cust.id, owner_id=admin.id)
+    db_session.add(hf)
+    db_session.commit()
+
+    target_hash = Hashes(
+        sub_ciphertext="0" * 32,
+        ciphertext="AAA",
+        hash_type=1000,
+        cracked=False,
+    )
+    db_session.add(target_hash)
+    db_session.commit()
+
+    hfh = HashfileHashes(hash_id=target_hash.id, hashfile_id=hf.id)
+    db_session.add(hfh)
+    db_session.commit()
+
+    # 12 distinct tasks, each with a distinct, decreasing crack count of
+    # hash_type=1000, so T0 is the most effective and T11 the least.
+    tasks = [Tasks(name=f"T{i}", owner_id=admin.id, hc_attackmode=0) for i in range(12)]
+    db_session.add_all(tasks)
+    db_session.commit()
+
+    for rank, t in enumerate(tasks):
+        crack_count = 12 - rank
+        for i in range(crack_count):
+            db_session.add(
+                Hashes(
+                    sub_ciphertext=f"{rank:02x}{i:030x}",
+                    ciphertext=f"T{rank}-CT-{i}",
+                    hash_type=1000,
+                    cracked=True,
+                    task_id=t.id,
+                )
+            )
+    db_session.commit()
+
+    job = Jobs(
+        name="J",
+        owner_id=admin.id,
+        customer_id=cust.id,
+        hashfile_id=hf.id,
+        status="Ready",
+    )
+    db_session.add(job)
+    db_session.commit()
+
+    _login(client, admin.id)
+
+    resp = client.post(
+        f"/jobs/{job.id}/assign_task/lucky",
+        follow_redirects=False,
+    )
+    assert resp.status_code in (301, 302, 303, 307, 308)
+
+    job_tasks = JobTasks.query.filter_by(job_id=job.id).all()
+    assert len(job_tasks) == 10
+
+    assigned_task_ids = {jt.task_id for jt in job_tasks}
+    top_ten_ids = {t.id for t in tasks[:10]}
+    excluded_ids = {t.id for t in tasks[10:]}
+    assert assigned_task_ids == top_ten_ids
+    assert assigned_task_ids.isdisjoint(excluded_ids)
+
+
+@pytest.mark.security
 def test_one_and_done_cancels_remaining_tasks_when_hash_recovered(
     app, client, db_session, monkeypatch
 ):

@@ -176,37 +176,14 @@ def test_217_jobs_start_starts_a_ready_job(client, admin_user):
 
 # ---------------------------------------------------------------------------
 # #218 — null-deref 500s where a clean 4xx is expected
+#
+# The three xfails here (getHashType, jobTasks, uploadCrackFile) went XPASS when
+# the guards landed, which per this file's convention is the signal to drop the
+# marker and fold them into the normal suite. Rather than duplicate them, they
+# have moved to tests/unit/test_api_issue_218.py, which covers the same three
+# endpoints plus the intermediate hops (job -> hashfile -> hashfilehashes ->
+# hash) that these never reached.
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="#218: HashfileHashes...first() is None -> .hash_id AttributeError -> 500")
-def test_218_get_hashtype_unknown_hashfile_returns_404(client, admin_user):
-    _auth(client, admin_user.api_key)
-    resp = client.get("/v1/getHashType/999999")
-    assert resp.status_code == 404
-
-
-@pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="#218: user caller has no Agents row -> agent.id AttributeError -> 500")
-def test_218_jobtasks_assignment_user_caller_no_500(client, admin_user):
-    # Route allows user=True, agent=True, but only an agent has an Agents row;
-    # a user caller hits agent.id on None. Should be handled gracefully.
-    _auth(client, admin_user.api_key)
-    resp = client.get("/v1/jobTasks/1")
-    assert resp.status_code in (200, 404)
-
-
-@pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="#218: JobTasks.query.get(bad) is None -> .job_id AttributeError -> 500")
-def test_218_uploadcrackfile_bad_jobtask_returns_404(client, agent_a):
-    _auth(client, agent_a.uuid)
-    resp = client.post(
-        "/v1/uploadCrackFile/999999",
-        data=json.dumps({"file": ""}),
-        content_type="application/json",
-    )
-    assert resp.status_code == 404
 
 
 @pytest.mark.security

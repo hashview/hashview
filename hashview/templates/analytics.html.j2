@@ -547,7 +547,7 @@ function hvRotMode(m){
         <div class="card-head">
             <span class="dot-led {{ 'run' if shared else 'idle' }}"></span><h3>Shared Passwords</h3>
             <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
-                <span class="mono" style="font-size:10.5px;color:var(--text-mute);">{{ shared | length }} groups</span>
+                <span class="mono" style="font-size:10.5px;color:var(--text-mute);">{{ shared_total }} groups</span>
                 {% if shared %}<a class="icon-btn no-print" title="Download a txt per group, zipped" href="/analytics/download/shared_zip?{{ scope_qs[1:] }}">{{ icon('download', size=15) }}</a>{% endif %}
             </div>
         </div>
@@ -568,6 +568,11 @@ function hvRotMode(m){
                 </form>
                 {% endfor %}
             </div>
+            {% if shared_total > shared | length %}
+            <div class="mono" style="margin-top:9px;font-size:10.5px;color:var(--text-mute);">
+                showing the top {{ shared | length }} of {{ shared_total }} groups — use the download button for all of them
+            </div>
+            {% endif %}
             {% endif %}
         </div>
     </div>
@@ -578,7 +583,7 @@ function hvRotMode(m){
     <div class="card-head">
         <span class="dot-led {{ 'off' if user_eq_pass else 'idle' }}"></span><h3>Username = Password</h3>
         <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
-            <span class="badge {{ 'red' if user_eq_pass else 'dim' }}" style="font-size:9.5px;">{{ user_eq_pass | length }} accounts</span>
+            <span class="badge {{ 'red' if user_eq_pass else 'dim' }}" style="font-size:9.5px;">{{ user_eq_pass_total }} accounts</span>
             {% if user_eq_pass %}<a class="icon-btn no-print" title="Download usernames" href="/analytics/download/fig8?{{ scope_qs[1:] }}">{{ icon('download', size=15) }}</a>{% endif %}
         </div>
     </div>
@@ -588,13 +593,18 @@ function hvRotMode(m){
             <thead><tr><th>Account</th><th>Password</th></tr></thead>
             <tbody>
                 {% for e in user_eq_pass %}
-                <tr>
+                <tr class="userpass-row">
                     <td class="mono" style="color:var(--text);">{{ e.u }}</td>
                     <td class="mono" style="color:var(--red);">{{ e.p }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
+        {% if user_eq_pass_total > user_eq_pass | length %}
+        <div class="mono" style="margin-top:9px;font-size:10.5px;color:var(--text-mute);">
+            showing {{ user_eq_pass | length }} of {{ user_eq_pass_total }} accounts — use the download button for all of them
+        </div>
+        {% endif %}
         {% endif %}
     </div>
 </div>

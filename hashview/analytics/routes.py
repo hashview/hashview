@@ -39,6 +39,16 @@ analytics = Blueprint('analytics', __name__)
 
 BLANK_LABEL = 'Blank (unset)'
 
+# Max rows the Shared Passwords and Username = Password cards put in the HTML.
+# These two lists are the only ones on the page whose length scales with the
+# size of the dataset rather than with a fixed number of buckets, and each
+# shared row is a whole <form>. Rendering them in full on a production hashfile
+# produced a ~50MB response and tens of thousands of DOM nodes, which locked up
+# the browser even though the server responded in under two seconds. The cards
+# show the highest-value rows and report the true total; the download endpoints
+# still serve the complete set.
+PREVIEW_LIMIT = 100
+
 
 def _scoped_hash_query(customer_id, hashfile_id, cracked=None):
     """Hashes joined to their HashfileHashes (account) rows, narrowed to the
@@ -482,11 +492,13 @@ def get_analytics():
         reused_pct=reused_pct,
         unique_pct=unique_pct,
         top_reuse_count=top_reuse_count,
-        shared=shared,
+        shared=shared[:PREVIEW_LIMIT],
+        shared_total=len(shared),
         masks=masks,
         length_dist=length_dist,
         class_buckets=class_buckets,
-        user_eq_pass=user_eq_pass,
+        user_eq_pass=user_eq_pass[:PREVIEW_LIMIT],
+        user_eq_pass_total=len(user_eq_pass),
         timeline=timeline,
         complexity_hist=complexity_hist,
         complexity_total=total_cracked,

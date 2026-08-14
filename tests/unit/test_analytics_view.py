@@ -406,3 +406,102 @@ def test_recovery_by_task_deleted_task_labelled(app, client):
     _login(client, admin)
     html = client.get("/analytics?customer_id=%d&hashfile_id=%d" % (cust.id, hf.id)).get_data(as_text=True)
     assert "(Task Deleted)" in html
+
+
+# --- payload bounding: the page must not render one DOM node per group ------
+# A production hashfile yields tens of thousands of shared-password groups and
+# username==password accounts. Rendering all of them produced a ~50MB response
+# that locked up the browser; the card now shows a capped preview and defers the
+# full set to the existing download endpoints.
+
+def _seed_many(n_shared=300, n_userpass=300):
+    """A customer whose scope has n_shared shared-password groups (2 accounts
+    each) and n_userpass accounts whose password equals their username."""
+    cust = Customers(name="Bulk Corp")
+    db.session.add(cust)
+    db.session.commit()
+    hf = Hashfiles(name="bulk_dump", customer_id=cust.id, owner_id=1, runtime=1)
+    db.session.add(hf)
+    db.session.commit()
+    for i in range(n_shared):
+        h = _hash(f"share{i}", f"Shared{i}!", True)
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id, username=f"u{i}a"))
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id, username=f"u{i}b"))
+    for i in range(n_userpass):
+        h = _hash(f"same{i}", f"selfuser{i}", True)
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id, username=f"selfuser{i}"))
+    db.session.commit()
+    return cust.id, hf.id
+
+
+def test_shared_and_userpass_cards_cap_rendered_rows(app, client):
+    """Only SHARED_PREVIEW_LIMIT rows reach the HTML, however many groups exist."""
+    from hashview.analytics.routes import PREVIEW_LIMIT
+
+    user = _admin(); _login(client, user)
+    customer_id, _hf = _seed_many()
+    resp = client.get(f"/analytics?customer_id={customer_id}")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+
+    # one <form> per rendered shared-password group
+    assert html.count('action="/analytics/download/shared"') == PREVIEW_LIMIT
+    # one <tr> per rendered username==password account
+    assert html.count('class="userpass-row"') == PREVIEW_LIMIT
+
+
+def test_capped_cards_report_the_full_totals(app, client):
+    """The capped cards still tell the operator the true totals, so the numbers
+    stay trustworthy and match what the download endpoints return."""
+    user = _admin(); _login(client, user)
+    customer_id, _hf = _seed_many()
+    html = client.get(f"/analytics?customer_id={customer_id}").get_data(as_text=True)
+    assert "300 groups" in html          # all shared groups counted, not just rendered
+    assert "300 accounts" in html        # all username==password accounts counted
+
+
+def test_analytics_response_stays_small_on_bulk_data(app, client):
+    """Regression guard on the hang itself: the rendered page must stay far
+    below the multi-megabyte payload that locked up the browser."""
+    user = _admin(); _login(client, user)
+    customer_id, _hf = _seed_many(n_shared=1500, n_userpass=1500)
+    resp = client.get(f"/analytics?customer_id={customer_id}")
+    assert resp.status_code == 200
+    assert len(resp.data) < 1_000_000, f"analytics page is {len(resp.data)} bytes"
+
+
+def test_shared_groups_need_two_distinct_named_accounts(app, client):
+    """A hash that appears in several hashfiles is still ONE account: it must not
+    register as a shared password, and rows with no username can't form a group.
+
+    This is the miscount that made every plaintext in a real dataset look
+    'shared' -- the group size counted join rows, not distinct usernames.
+    """
+    user = _admin(); _login(client, user)
+    cust = Customers(name="Dup Corp")
+    db.session.add(cust); db.session.commit()
+    hf1 = Hashfiles(name="f1", customer_id=cust.id, owner_id=1, runtime=1)
+    hf2 = Hashfiles(name="f2", customer_id=cust.id, owner_id=1, runtime=1)
+    db.session.add_all([hf1, hf2]); db.session.commit()
+
+    # same account, same hash, present in both hashfiles -> not shared
+    dup = _hash("dup", "DupPass1", True)
+    db.session.add(HashfileHashes(hash_id=dup.id, hashfile_id=hf1.id, username="dave"))
+    db.session.add(HashfileHashes(hash_id=dup.id, hashfile_id=hf2.id, username="dave"))
+    # two rows with no username at all -> not shared
+    anon = _hash("anon", "AnonPass1", True)
+    db.session.add(HashfileHashes(hash_id=anon.id, hashfile_id=hf1.id, username=None))
+    db.session.add(HashfileHashes(hash_id=anon.id, hashfile_id=hf2.id, username=None))
+    # genuinely shared by two different people -> counted
+    for ct, uname in (("realA", "erin"), ("realB", "frank")):
+        h = _hash(ct, "RealShared1", True)
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf1.id, username=uname))
+    db.session.commit()
+
+    html = client.get(f"/analytics?customer_id={cust.id}").get_data(as_text=True)
+    assert "1 groups" in html
+    # Assert against the shared card's own POST forms -- the plaintexts also
+    # appear in Top Passwords, which is a different (and correct) figure.
+    assert 'name="plaintext" value="RealShared1"' in html
+    assert 'name="plaintext" value="DupPass1"' not in html
+    assert 'name="plaintext" value="AnonPass1"' not in html

@@ -332,7 +332,11 @@ def get_analytics():
     total_cracked = len(corpus)
 
     freq = Counter()
-    shared_map = defaultdict(list)
+    # {plaintext: {username, ...}} -- a SET so one account is counted once no
+    # matter how many hashfiles its hash appears in. The Hashes -> HashfileHashes
+    # join is one-to-many, so a list here made every plaintext on a hash that
+    # lives in two hashfiles look like a shared password.
+    shared_map = defaultdict(set)
     length_counter = Counter()
     mask_counter = Counter()
     class_counts = [0, 0, 0, 0]          # index 0 -> 1 class ... index 3 -> 4 classes
@@ -342,7 +346,10 @@ def get_analytics():
     for plaintext, username in corpus:
         pword = plaintext or ''
         freq[pword] += 1
-        shared_map[pword].append(username)
+        # An unnamed row identifies no account, so it can never establish that a
+        # password is shared between people.
+        if username:
+            shared_map[pword].add(username)
         length_counter[len(pword)] += 1
         mask_counter[_mask(pword)] += 1
 
@@ -367,7 +374,7 @@ def get_analytics():
 
     shared = sorted(
         ({'plain': pw or BLANK_LABEL, 'plain_raw': pw, 'count': len(users),
-          'users': [_local_part(user) for user in users if user]}
+          'users': sorted(_local_part(user) for user in users)}
          for pw, users in shared_map.items() if len(users) > 1),
         key=lambda item: item['count'], reverse=True)
 
@@ -786,11 +793,13 @@ def _shared_groups(customer_id, hashfile_id):
     """{plaintext: [usernames]} for recovered passwords shared by >1 account in scope."""
     rows = (_scoped_hash_query(customer_id, hashfile_id, cracked=True)
             .with_entities(Hashes.plaintext, HashfileHashes.username).all())
-    groups = defaultdict(list)
+    groups = defaultdict(set)
     for plaintext, username in rows:
         if username:
-            groups[plaintext or ''].append(username)
-    return {pword: users for pword, users in groups.items() if len(users) > 1}
+            groups[plaintext or ''].add(username)
+    # Sets, not lists: the same account reached through two hashfiles is still
+    # one account and must not make a password look shared (matches the card).
+    return {pword: sorted(users) for pword, users in groups.items() if len(users) > 1}
 
 
 @analytics.route('/analytics/download/shared', methods=['POST'])

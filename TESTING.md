@@ -25,6 +25,7 @@ gates.
 | Security | `tests/security/` | `pytest tests/security` (tests marked `security`) | Yes |
 | Agent unit | `tests/agent_unit/` | `pytest tests/agent_unit` | No (imports `agent.*`) |
 | Integration (MySQL) | `tests/integration/` | `pytest tests/integration -m mysql` | Yes |
+| Analytics docker bug hunt | `tests/integration/test_analytics_docker_bugs.py` | `pytest` with `HASHVIEW_DOCKER_BASE_URL` set, against a running compose stack | No (plain HTTP + SQL) |
 | E2E (Playwright) | `tests/e2e/` | `pytest -m e2e` against a live host | No |
 | E2E crack harness | `tests/crack/`, `tests/e2e/crack/` | `tests/run_e2e_crack_compose.sh` | Mixed |
 
@@ -36,6 +37,8 @@ Markers are declared in `pytest.ini`:
 - `e2e_crack` — dockerized multi-agent real-crack e2e test (opt-in)
 - `mysql` — integration tests that run against a real MySQL/MariaDB backend
   (needs `HASHVIEW_TEST_DATABASE_URI`)
+- `docker_analytics` — `/analytics` bug hunt against a running docker stack
+  (needs `HASHVIEW_DOCKER_BASE_URL`)
 
 > **Note on invocation.** Suites are selected by *path*, not by a single marker.
 > CI runs `python -m pytest tests/unit tests/security tests/agent_unit ...`
@@ -98,6 +101,37 @@ Most tests set `HASHVIEW_DISABLE_SCHEDULER` (the unit conftest disables the
 background scheduler). `tests/unit/test_scheduler_integration.py` is the
 exception: it drives the real `data_retention_cleanup` entry point against a
 seeded DB to exercise the scheduled-cleanup path end to end.
+
+### Analytics docker bug suite
+
+`tests/integration/test_analytics_docker_bugs.py` drives `/analytics` and its
+download endpoints over real HTTP against a running `docker compose` stack. It
+seeds its own corpus straight into the MySQL container and deletes it again on
+teardown, because the bugs it targets need a shape the SQLite unit fixture can't
+produce: one hash reachable through two hashfiles, a `$HEX[...]` plaintext,
+domain-qualified and case-differing usernames, and a blank shared password.
+
+It is opt-in — without `HASHVIEW_DOCKER_BASE_URL` all twelve tests skip, so a
+plain `pytest tests/` (and CI) never writes to a live database.
+
+```bash
+docker compose up -d --build
+HASHVIEW_DOCKER_BASE_URL=http://127.0.0.1:5000 \
+HASHVIEW_DOCKER_DB_PORT=3306 \
+  python -m pytest tests/integration/test_analytics_docker_bugs.py -v
+```
+
+`HASHVIEW_DOCKER_DB_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_NAME` override the
+seeding connection (defaults: `127.0.0.1:3307`, `hashview`/`hashview`/`hashview`
+— set the port to whatever the `db` service publishes). Seeding needs
+`mysql-connector-python` and `bcrypt`, which come from `requirements.txt`.
+
+Six of the twelve are strict `xfail`s documenting bugs in `v0.8.3-dev`:
+**#385** (join-row double counting), **#386** (`$HEX[...]` shared-password
+download), **#387** (fig9 vs. the Shared Passwords card), **#388** (fig8
+case-sensitivity), **#389** (unknown `?type` serving an empty attachment), and the
+uncapped shared-password card fixed on `fix/analytics-page-hang`. Because they
+are strict, a fix turns the XPASS into a failure — remove the marker with the fix.
 
 ## Running E2E tests locally (live host)
 

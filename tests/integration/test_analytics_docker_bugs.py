@@ -14,10 +14,9 @@ Opt-in: they only run when ``HASHVIEW_DOCKER_BASE_URL`` is set, so a plain
     .venv/bin/python -m pytest tests/integration/test_analytics_docker_bugs.py -v
 
 Each test asserts what the page *should* say, so a failure is a bug in the app
-rather than in the test. The six that currently fail against v0.8.3-dev carry a
-strict xfail naming the issue they document (#385-#389, plus the uncapped
-shared-password card fixed on fix/analytics-page-hang); when a fix lands, the
-strict marker turns the XPASS into a failure so the marker gets removed with it.
+rather than in the test. The five that currently fail carry a strict xfail
+naming the issue they document (#385-#389); when a fix lands, the strict marker
+turns the XPASS into a failure so the marker gets removed with it.
 """
 import os
 import re
@@ -410,10 +409,6 @@ def test_hostile_plaintext_and_username_are_escaped(client, stack_url, seeded):
     assert "<img src=x onerror=alert(2)>" not in html
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG: the Shared Passwords card renders one form per group with no cap, which produced a "
-    "~50MB response on a production hashfile. Fixed on fix/analytics-page-hang, not yet in "
-    "v0.8.3-dev. Remove this marker once that fix merges."))
 def test_shared_card_caps_rendered_rows_but_reports_the_true_total(client, stack_url, seeded):
     """Regression for the 50MB analytics response: the card renders at most
     PREVIEW_LIMIT rows while still reporting every group."""

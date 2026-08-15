@@ -126,12 +126,11 @@ seeding connection (defaults: `127.0.0.1:3307`, `hashview`/`hashview`/`hashview`
 — set the port to whatever the `db` service publishes). Seeding needs
 `mysql-connector-python` and `bcrypt`, which come from `requirements.txt`.
 
-Six of the twelve are strict `xfail`s documenting bugs in `v0.8.3-dev`:
-**#385** (join-row double counting), **#386** (`$HEX[...]` shared-password
-download), **#387** (fig9 vs. the Shared Passwords card), **#388** (fig8
-case-sensitivity), **#389** (unknown `?type` serving an empty attachment), and the
-uncapped shared-password card fixed on `fix/analytics-page-hang`. Because they
-are strict, a fix turns the XPASS into a failure — remove the marker with the fix.
+Five of the twelve are strict `xfail`s documenting open bugs: **#385** (join-row
+double counting), **#386** (`$HEX[...]` shared-password download), **#387** (fig9
+vs. the Shared Passwords card), **#388** (fig8 case-sensitivity) and **#389**
+(unknown `?type` serving an empty attachment). Because they are strict, a fix
+turns the XPASS into a failure — remove the marker with the fix.
 
 ## Running E2E tests locally (live host)
 

@@ -533,6 +533,14 @@ paths:
         `size` is the line count; `byte_size` the on-disk bytes of the file at
         `path` (gzip-compressed for static lists); `checksum` the sha256 of
         that on-disk file.
+
+
+        For the job-scoped dynamic list "(DYNAMIC) Website Keywords", whose
+        content is crawled per job, `checksum` is reported for the copy
+        belonging to the calling agent's currently running job, so an agent
+        re-downloads when it moves between jobs. `path` is unchanged, so the
+        agent's local filename stays stable. Callers with no running job (the
+        UI, API keys) see the row's own stored values.
       operationId: listWordlists
       x-audience: both
       responses:
@@ -553,6 +561,13 @@ paths:
         Static wordlists are served exactly as stored (so the sha256 of the
         download matches the catalog `checksum`); dynamic wordlists are
         compressed on the fly.
+
+
+        The job-scoped "(DYNAMIC) Website Keywords" list resolves to the copy
+        belonging to the calling agent's currently active job, so two jobs
+        crawling different sites never receive each other's keywords. When that
+        job cannot be resolved, or its copy has not been generated yet, this
+        returns 404 rather than falling back to another job's file.
       operationId: downloadWordlist
       x-audience: both
       parameters:
@@ -625,8 +640,13 @@ paths:
       description: >-
         Rebuilds a dynamic wordlist from the database. For the crawl-based
         "(DYNAMIC) Website Keywords" list, the per-job crawl URL is resolved
-        from the calling agent's currently Running job task. Static wordlists
-        are unaffected. Always answers OK.
+        from the calling agent's currently active job task, and the result is
+        written to that job's own copy of the list rather than a file shared by
+        every job. The crawl runs once per job: a later task in the same job
+        reuses the copy instead of crawling the target site again. Static
+        wordlists are unaffected. Always answers OK, including when no job can
+        be resolved and nothing is regenerated -- the subsequent download is
+        what reports a missing list.
       operationId: updateDynamicWordlist
       x-audience: both
       parameters:

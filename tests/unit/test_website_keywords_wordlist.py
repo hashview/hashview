@@ -32,7 +32,8 @@ from hashview.setup import (_DYNAMIC_WORDLISTS, add_default_dynamic_wordlists,
                             default_dynamic_wordlists_need_added)
 from hashview.jobs.routes import _job_uses_website_keywords
 from hashview.utils.crawler import crawl_website_keywords
-from hashview.utils.utils import update_dynamic_wordlist, get_filehash, get_linecount
+from hashview.utils.utils import (update_dynamic_wordlist, get_filehash, get_linecount,
+                                  job_wordlist_path)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTROL = REPO_ROOT / "hashview" / "control"
@@ -342,8 +343,8 @@ def test_crawler_rejects_non_http_url():
 # 6. End-to-end regenerate via /v1/updateWordlist + download
 # ---------------------------------------------------------------------------
 
-def _running_agent_job(user, wl, url):
-    agent = Agents(name="a", src_ip="127.0.0.1", uuid="agent-wk", status="Working")
+def _running_agent_job(user, wl, url, uuid="agent-wk"):
+    agent = Agents(name="a", src_ip="127.0.0.1", uuid=uuid, status="Working")
     db.session.add(agent)
     job = Jobs(name="jr", status="Running", customer_id=1, owner_id=user.id, crawl_url=url)
     db.session.add(job)
@@ -381,11 +382,15 @@ def test_update_wordlist_resolves_job_crawls_and_downloads(app, client, monkeypa
 
     # the per-job URL was resolved from the agent's Running JobTask
     assert seen["url"] == "https://target.example"
-    # words written (sorted, unique) + metadata refreshed
-    assert wl_path.read_text().split() == ["bar", "baz", "foo"]
+    # words land in THIS JOB's copy, not the shared row path, so a second job
+    # crawling elsewhere cannot overwrite them
+    job_path = Path(job_wordlist_path(Wordlists.query.get(wl.id), job.id))
+    assert job_path.read_text().split() == ["bar", "baz", "foo"]
+    assert wl_path.read_text() == ""
+    # metadata describes the file that was just generated
     wl = Wordlists.query.get(wl.id)
-    assert wl.size == get_linecount(str(wl_path))
-    assert wl.checksum == get_filehash(str(wl_path))
+    assert wl.size == get_linecount(str(job_path))
+    assert wl.checksum == get_filehash(str(job_path))
 
     # download serves a gzip that decompresses to the crawled words
     resp = client.get(f"/v1/wordlists/{wl.id}")
@@ -410,3 +415,82 @@ def test_update_wordlist_no_job_url_leaves_file_unchanged(app, monkeypatch):
 
     update_dynamic_wordlist(wl.id, job_id=None)
     assert wl_path.read_text() == "preexisting\n"
+
+
+def _seeded_job_wordlist(user, url="https://target.example"):
+    """A Website Keywords row plus a job whose per-job copy already exists."""
+    wl_path = WORDLISTS_DIR / "dynamic-website-keywords.txt"
+    wl_path.write_text("")
+    wl = Wordlists(name=WL_NAME, owner_id=user.id, type="dynamic",
+                   path=str(wl_path), checksum="0" * 64, size=0)
+    db.session.add(wl)
+    job = Jobs(name="jd", status="Running", customer_id=1, owner_id=user.id, crawl_url=url)
+    db.session.add(job)
+    db.session.commit()
+    job_path = Path(job_wordlist_path(wl, job.id))
+    job_path.write_text("keyword\n")
+    return wl, job, job_path
+
+
+def test_deleting_a_job_removes_its_crawled_wordlist(app, client):
+    # Per-job crawl files are named after the job, so nothing else will ever
+    # reclaim them; job teardown has to.
+    user = _admin()
+    _login(client, user)
+    wl, job, job_path = _seeded_job_wordlist(user)
+    assert job_path.exists()
+
+    client.post(f"/jobs/delete/{job.id}")
+
+    assert not job_path.exists()
+    # the shared row file is untouched
+    assert Path(wl.path).exists()
+
+
+def test_deleting_a_job_over_the_api_removes_its_crawled_wordlist(app, client):
+    user = _admin()
+    wl, job, job_path = _seeded_job_wordlist(user)
+    client.set_cookie("uuid", user.api_key, domain=COOKIE_DOMAIN)
+
+    client.delete(f"/v1/jobs/{job.id}")
+
+    assert not job_path.exists()
+    assert Path(wl.path).exists()
+
+
+def test_concurrent_jobs_do_not_share_one_crawled_wordlist(app, client, monkeypatch):
+    # One Wordlists row, but its content is per job. Two jobs crawling different
+    # sites must never see each other's keywords: after job B regenerates, an
+    # agent on job A must still be served job A's words.
+    user = _admin()
+    db.session.add(Settings(retention_period=30, max_runtime_jobs=0, max_runtime_tasks=0))
+    db.session.commit()
+
+    wl_path = WORDLISTS_DIR / "dynamic-website-keywords.txt"
+    wl_path.write_text("")
+    wl = Wordlists(name=WL_NAME, owner_id=user.id, type="dynamic",
+                   path=str(wl_path), checksum="0" * 64, size=0)
+    db.session.add(wl)
+    db.session.commit()
+
+    agent_a, _ = _running_agent_job(user, wl, "https://acme.example", uuid="agent-a")
+    agent_b, _ = _running_agent_job(user, wl, "https://othercorp.example", uuid="agent-b")
+
+    def fake_crawl(url, settings):
+        return {"acme", "alpha"} if "acme" in url else {"othercorp", "omega"}
+    monkeypatch.setattr("hashview.utils.crawler.crawl_website_keywords", fake_crawl)
+
+    def words_for(agent):
+        client.set_cookie("uuid", agent.uuid, domain=COOKIE_DOMAIN)
+        assert client.get(f"/v1/updateWordlist/{wl.id}").status_code == 200
+        resp = client.get(f"/v1/wordlists/{wl.id}")
+        assert resp.status_code == 200
+        return sorted(gzip.decompress(resp.data).split())
+
+    assert words_for(agent_a) == [b"acme", b"alpha"]
+    assert words_for(agent_b) == [b"omega", b"othercorp"]
+
+    # Job B's regeneration must not have replaced what job A is served.
+    client.set_cookie("uuid", agent_a.uuid, domain=COOKIE_DOMAIN)
+    resp = client.get(f"/v1/wordlists/{wl.id}")
+    assert sorted(gzip.decompress(resp.data).split()) == [b"acme", b"alpha"]

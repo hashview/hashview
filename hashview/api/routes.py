@@ -48,9 +48,12 @@ from hashview.utils.utils import (
     import_hashfilehashes,
     ingest_static_wordlist_file,
     is_gzip,
+    is_job_scoped_wordlist,
+    job_wordlist_path,
     notify_admins,
     process_recovered_hash_notifications,
     rechunk_queued_tasks_for_hashtype,
+    remove_job_wordlist_files,
     slowest_benchmark,
     text_from_field,
     update_dynamic_wordlist,
@@ -240,6 +243,21 @@ def _agent_active_job_task(agent_id):
                     JobTasks.status.in_(_ACTIVE_JOBTASK_STATUSES))
             .order_by(JobTasks.id.desc())
             .first())
+
+
+def _caller_job_id():
+    """Job the requesting agent is currently running, or None.
+
+    Job-scoped dynamic wordlists (Website Keywords) hold different content per
+    job, so both the manifest and the download have to answer "which job is
+    asking". Non-agent callers (the UI, API keys) have no running job and get
+    the row's own path.
+    """
+    agent = Agents.query.filter_by(uuid=request.cookies.get('uuid')).first()
+    if not agent:
+        return None
+    job_task = _agent_active_job_task(agent.id)
+    return job_task.job_id if job_task else None
 
 
 def _parent_task_started_at(job_id, task_id):
@@ -804,9 +822,22 @@ def v1_api_get_wordlist():
 
     update_heartbeat(request.cookies.get('uuid'))
     wordlists = Wordlists.query.all()
+    entries = alchemy_to_native(wordlists)
+    # The agent caches a wordlist while the manifest checksum is unchanged, so a
+    # job-scoped list must advertise the checksum of the CALLER'S copy. Reporting
+    # the row's column would let an agent keep serving whichever job generated
+    # last. Not persisted -- it is a per-caller view of the same row.
+    job_id = _caller_job_id()
+    if job_id:
+        rows = {w.id: w for w in wordlists}
+        for entry in entries:
+            row = rows.get(entry.get('id'))
+            if is_job_scoped_wordlist(row):
+                path = job_wordlist_path(row, job_id)
+                entry['checksum'] = get_filehash(path) if os.path.exists(path) else ''
     message = {
         'status': 200,
-        'wordlists': alchemy_to_native(wordlists)
+        'wordlists': entries
     }
     return jsonify(message)
 
@@ -829,7 +860,11 @@ def v1_api_get_wordlist_download(wordlist_id):
     # by an upgrade -- return a clear JSON 404 instead of send_from_directory's
     # bare HTML page, so the agent logs an actionable body and the operator knows
     # to re-upload. (Mirrors the /v1/rules/<id> download handler.)
-    wordlist_name = os.path.basename(wordlist.path or '')
+    # A job-scoped dynamic list resolves to the calling agent's own copy, so two
+    # jobs crawling different sites never receive each other's keywords. When the
+    # job can't be resolved, or its copy hasn't been generated, this falls through
+    # to the 404 below rather than quietly serving another job's file.
+    wordlist_name = os.path.basename(job_wordlist_path(wordlist, _caller_job_id()) or '')
     src_path = os.path.join(wordlists_dir, wordlist_name)
     if not wordlist_name or not os.path.exists(src_path):
         return jsonify({'status': 404, 'type': 'Error',
@@ -1004,6 +1039,7 @@ def v1_api_delete_job(job_id):
     # a Queued/Running job can be deleted too.
     job_target = f'job:{job.id} {job.name!r}'
     try:
+        remove_job_wordlist_files(job_id)
         JobTasks.query.filter_by(job_id=job_id).delete()
         JobNotifications.query.filter_by(job_id=job_id).delete()
         db.session.delete(job)

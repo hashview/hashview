@@ -45,6 +45,7 @@ from hashview.utils.utils import (
     build_job_task_commands,
     dynamic_wordlist_ids,
     import_hashfilehashes,
+    remove_job_wordlist_files,
     save_file,
     try_commit,
     validate_hash_only_hashfile,
@@ -820,6 +821,7 @@ def jobs_delete(job_id):
         return redirect(url_for('jobs.jobs_list'))
     if current_user.admin or job.owner_id == current_user.id:
         job_target = f'job:{job.id} {job.name!r}'   # capture before delete (instance expires post-commit)
+        remove_job_wordlist_files(job_id)
         JobTasks.query.filter_by(job_id=job_id).delete()
         JobNotifications.query.filter_by(job_id=job_id).delete()
 

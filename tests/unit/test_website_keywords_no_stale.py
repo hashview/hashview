@@ -31,7 +31,8 @@ from pathlib import Path
 import pytest
 
 from hashview.models import db, Users, Wordlists, Jobs, Tasks, JobTasks, Agents, Settings
-from hashview.utils.utils import update_dynamic_wordlist, get_filehash, get_linecount
+from hashview.utils.utils import (update_dynamic_wordlist, get_filehash, get_linecount,
+                                  job_wordlist_path)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTROL = REPO_ROOT / "hashview" / "control"
@@ -80,6 +81,15 @@ def _wordlist(user, initial=""):
     db.session.add(wordlist)
     db.session.commit()
     return wordlist, path
+
+
+def _job_path(wordlist, job):
+    """Where THIS job's copy of a job-scoped dynamic list lives.
+
+    Website Keywords is crawled per job, so the live file for a regeneration is
+    the job's own copy rather than the shared path stored on the row.
+    """
+    return Path(job_wordlist_path(wordlist, job.id))
 
 
 def _running_agent_job(user, wordlist, url, uuid="agent-stale"):
@@ -154,8 +164,9 @@ def test_preexisting_tmp_file_is_never_read_or_served(app, monkeypatch):
                         lambda url, settings: {"freshword"})
     update_dynamic_wordlist(wordlist.id, job_id=job.id)
 
-    assert path.read_text().split() == ["freshword"]
-    assert "stalecachedword" not in path.read_text()
+    live = _job_path(wordlist, job)
+    assert live.read_text().split() == ["freshword"]
+    assert "stalecachedword" not in live.read_text()
     # and the leftover is untouched, i.e. it was neither consumed nor moved
     assert stale_tmp.exists()
 
@@ -167,21 +178,24 @@ def test_preexisting_tmp_file_is_never_read_or_served(app, monkeypatch):
 def test_empty_crawl_result_blanks_the_previous_wordlist(app, monkeypatch):
     user = _admin()
     _settings()
-    wordlist, path = _wordlist(user, initial="previousrun\nanotherword\n")
+    wordlist, path = _wordlist(user)
     job = Jobs(name="j", status="Running", customer_id=1, owner_id=user.id,
                crawl_url="https://unreachable.invalid")
     db.session.add(job)
     db.session.commit()
+    # seed a previous run in THIS job's copy, which is what a re-crawl replaces
+    live = _job_path(wordlist, job)
+    live.write_text("previousrun\nanotherword\n")
 
     monkeypatch.setattr("hashview.utils.crawler.crawl_website_keywords",
                         lambda url, settings: set())
     update_dynamic_wordlist(wordlist.id, job_id=job.id)
 
-    assert path.read_text() == "", "a crawl that found nothing must yield a blank list"
+    assert live.read_text() == "", "a crawl that found nothing must yield a blank list"
     wordlist = Wordlists.query.get(wordlist.id)
     assert wordlist.byte_size == 0
-    assert wordlist.size == get_linecount(str(path))
-    assert wordlist.checksum == get_filehash(str(path))
+    assert wordlist.size == get_linecount(str(live))
+    assert wordlist.checksum == get_filehash(str(live))
 
 
 @pytest.mark.xfail(strict=True, reason="issue #377: a raising crawl leaves the "
@@ -250,12 +264,13 @@ def test_second_crawl_replaces_rather_than_unions(app, monkeypatch):
     monkeypatch.setattr("hashview.utils.crawler.crawl_website_keywords",
                         lambda url, settings: results.pop(0))
 
+    live = _job_path(wordlist, job)
     update_dynamic_wordlist(wordlist.id, job_id=job.id)
-    assert path.read_text().split() == ["firstcrawl", "shared"]
+    assert live.read_text().split() == ["firstcrawl", "shared"]
 
     update_dynamic_wordlist(wordlist.id, job_id=job.id)
-    assert path.read_text().split() == ["secondcrawl", "shared"]
-    assert "firstcrawl" not in path.read_text()
+    assert live.read_text().split() == ["secondcrawl", "shared"]
+    assert "firstcrawl" not in live.read_text()
 
 
 def test_different_job_urls_do_not_share_results(app, monkeypatch):
@@ -274,12 +289,16 @@ def test_different_job_urls_do_not_share_results(app, monkeypatch):
     monkeypatch.setattr("hashview.utils.crawler.crawl_website_keywords",
                         lambda url, settings: by_url[url])
 
+    live_a, live_b = _job_path(wordlist, job_a), _job_path(wordlist, job_b)
+
     update_dynamic_wordlist(wordlist.id, job_id=job_a.id)
-    assert path.read_text().split() == ["awords"]
+    assert live_a.read_text().split() == ["awords"]
 
     # job B's site yields nothing -> blank, NOT job A's leftovers
     update_dynamic_wordlist(wordlist.id, job_id=job_b.id)
-    assert path.read_text() == ""
+    assert live_b.read_text() == ""
+    # and job B's crawl leaves job A's own copy intact
+    assert live_a.read_text().split() == ["awords"]
 
 
 # ---------------------------------------------------------------------------

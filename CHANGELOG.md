@@ -59,6 +59,7 @@ Notable changes will be documented here
 - Pinned Python to 3.11+; added a ruff / pylint / bandit / pre-commit lint-and-security stack, a LICENSE, and substantially expanded automated tests (unit, agent, end-to-end, and security)
 
 ### Fixed
+- Two jobs using the (DYNAMIC) Website Keywords wordlist no longer overwrite each other's crawl results. Each job now gets its own copy of the list, so an agent is always served the keywords crawled for the job it is actually running; previously whichever job regenerated last won, and the other job cracked against the wrong site's keywords without reporting an error. A job's copy is crawled once and removed when the job is deleted or ages out under the retention policy.
 - The agent's HTTP/API layer is now resilient to non-200 and unexpected server responses instead of crashing with opaque errors
 - Command-injection hardening: hashcat is invoked as an argv list with no shell
 - CSRF: state-changing actions were moved from GET to POST and protected with CSRF tokens

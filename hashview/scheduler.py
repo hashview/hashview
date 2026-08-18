@@ -55,6 +55,7 @@ def _data_retention_cleanup_inner(db :SQLAlchemy, mailer :Mail, logger :Logger):
         Settings,
         Users,
     )
+    from hashview.utils.utils import remove_job_wordlist_files
 
     try_send_email_ = partial(try_send_email, mailer=mailer)
 
@@ -79,6 +80,7 @@ def _data_retention_cleanup_inner(db :SQLAlchemy, mailer :Mail, logger :Logger):
         if (error := try_send_email_(user, subject, message)):
             logger.error(error)
 
+        remove_job_wordlist_files(job.id)
         JobTasks.query.filter_by(job_id=job.id).delete()
         JobNotifications.query.filter_by(job_id=job.id).delete()
 
@@ -111,6 +113,7 @@ def _data_retention_cleanup_inner(db :SQLAlchemy, mailer :Mail, logger :Logger):
                 if (error := try_send_email_(user, subject, message)):
                     logger.error(error)
 
+                remove_job_wordlist_files(job.id)
                 JobTasks.query.filter_by(job_id=job.id).delete()
                 JobNotifications.query.filter_by(job_id=job.id).delete()
 

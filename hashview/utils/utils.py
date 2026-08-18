@@ -700,14 +700,67 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
 
     return True
 
+def is_job_scoped_wordlist(wordlist):
+    """True when a dynamic wordlist's CONTENT depends on which job is using it.
+
+    Website Keywords is crawled from the job's own ``crawl_url``, so one row
+    cannot describe one file: every job needs its own materialized copy. The
+    DB-derived dynamic lists (Passwords / Usernames / Customers / NTLM) are
+    global — they read the whole database and are identical for every job — so
+    they keep writing their single shared file.
+    """
+    return bool(wordlist) and wordlist.type == 'dynamic' and 'Website' in wordlist.name
+
+
+def job_wordlist_path(wordlist, job_id):
+    """On-disk path holding ``wordlist``'s content for one specific job.
+
+    ``.../dynamic-website-keywords.txt`` -> ``.../dynamic-website-keywords-job7.txt``.
+    Job-scoped lists only; global lists keep ``wordlist.path``.
+    """
+    if not is_job_scoped_wordlist(wordlist) or not job_id:
+        return wordlist.path
+    base, ext = os.path.splitext(wordlist.path)
+    return f'{base}-job{job_id}{ext}'
+
+
+def remove_job_wordlist_files(job_id):
+    """Delete the per-job copies of job-scoped dynamic wordlists for one job.
+
+    These files are named after the job (``...-job7.txt``), so once the job row
+    is gone nothing else can ever identify them -- every job-teardown path has
+    to call this or they accumulate forever.
+
+    Never raises. A missing file, or one already swept, must not abort a job
+    delete or take down the retention run mid-sweep.
+    """
+    if not job_id:
+        return
+    for wordlist in Wordlists.query.filter_by(type='dynamic').all():
+        if not is_job_scoped_wordlist(wordlist):
+            continue
+        path = job_wordlist_path(wordlist, job_id)
+        if path == wordlist.path:          # never touch the shared row file
+            continue
+        try:
+            os.remove(path)
+        except OSError:
+            continue
+        current_app.logger.debug('Removed per-job wordlist %s for job %s.', path, job_id)
+
+
 def _generate_website_keywords(wordlist, job_id):
     """Populate the (DYNAMIC) Website Keywords wordlist by crawling the job URL.
 
     The crawl result is written to a randomly-named file under control/tmp and
-    then atomically moved onto ``wordlist.path`` — so concurrent crawls never
-    collide on a filename or leave a partially-written live file. If no job URL
-    can be resolved (e.g. a manual UI refresh with no running job), the existing
-    file is left untouched.
+    then atomically moved onto the JOB'S copy of the wordlist (see
+    ``job_wordlist_path``) — so concurrent crawls neither collide on a filename
+    nor overwrite another job's keywords. If no job URL can be resolved (e.g. a
+    manual UI refresh with no running job), nothing is written.
+
+    Every request re-crawls and replaces the job's copy; a previous crawl is
+    never reused. See tests/unit/test_website_keywords_no_stale.py for the
+    contract.
     """
     settings = Settings.query.first()
     job = Jobs.query.get(job_id) if job_id else None
@@ -717,6 +770,8 @@ def _generate_website_keywords(wordlist, job_id):
             'Website Keywords update with no job URL (job_id=%s); leaving wordlist %s unchanged.',
             job_id, wordlist.id)
         return
+
+    dest = job_wordlist_path(wordlist, job_id)
 
     from hashview.utils.crawler import crawl_website_keywords
     words = crawl_website_keywords(target, settings)
@@ -728,10 +783,10 @@ def _generate_website_keywords(wordlist, job_id):
     # Atomic on the same filesystem (control/tmp and control/wordlists are
     # siblings); fall back to a copy+remove move across filesystems.
     try:
-        os.replace(tmp_path, wordlist.path)
+        os.replace(tmp_path, dest)
     except OSError:
         import shutil
-        shutil.move(tmp_path, wordlist.path)
+        shutil.move(tmp_path, dest)
 
 
 def update_dynamic_wordlist(wordlist_id, job_id=None):
@@ -784,15 +839,22 @@ def update_dynamic_wordlist(wordlist_id, job_id=None):
 
         file.close()
 
+    # Metadata describes the file that was just generated. For a job-scoped list
+    # that is the requesting job's copy, so these columns are "as of the last
+    # generation" rather than a property of the row; agents are served the
+    # checksum of their OWN job's file by the /v1/wordlists manifest instead.
+    generated_path = job_wordlist_path(wordlist, job_id)
+    if not os.path.exists(generated_path):
+        return
     # update line count
-    wordlist.size = get_linecount(wordlist.path)
+    wordlist.size = get_linecount(generated_path)
     # update file hash (dynamic wordlists stay UNCOMPRESSED on the server, so
     # the checksum remains the sha256 of the plaintext .txt; the agent skips
     # verification for dynamic wordlists since it can't recompute this from
     # the .gz it receives)
-    wordlist.checksum = get_filehash(wordlist.path)
+    wordlist.checksum = get_filehash(generated_path)
     # update on-disk size (bytes of the uncompressed .txt)
-    wordlist.byte_size = get_filesize(wordlist.path)
+    wordlist.byte_size = get_filesize(generated_path)
     # update last update
     wordlist.last_updated = datetime.today()
     db.session.commit()

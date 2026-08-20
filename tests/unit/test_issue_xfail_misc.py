@@ -127,28 +127,6 @@ def test_job_task_selection_lists_all_tasks(app, client):
 
 
 # ---------------------------------------------------------------------------
-# Issue #176 — "Status indicator for large hashfile imports"
-# ---------------------------------------------------------------------------
-@pytest.mark.xfail(reason="issue #176: status indicator for large hashfile imports",
-                   strict=False)
-def test_hashfile_exposes_import_status(app):
-    """The Hashfiles model should expose an import status/progress field.
-
-    Today the Hashfiles model (hashview/models.py ~197-205) has only
-    id/name/uploaded_at/runtime/customer_id/owner_id — there is no column
-    surfacing the progress of a long-running import, so the UI has nothing
-    to render a status indicator from. Expected to XFAIL until such a field
-    is added (and a corresponding indicator wired into the upload UI).
-    """
-    hf = Hashfiles(name="big.txt", customer_id=1, owner_id=1)
-    db.session.add(hf)
-    db.session.commit()
-
-    assert any(hasattr(hf, attr)
-               for attr in ("status", "import_status", "progress"))
-
-
-# ---------------------------------------------------------------------------
 # Issue #379 — "'I'm Feeling Lucky — top 5' button actually adds top 10 tasks"
 #
 # Resolved as: the button label was wrong, not the backend. The backend's

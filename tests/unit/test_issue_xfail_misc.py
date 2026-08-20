@@ -1,9 +1,11 @@
-"""xfail tests documenting open GitHub issues.
+"""Tests documenting GitHub issues (open ones as xfail, fixed ones as guards).
 
-Each test asserts the DESIRED behavior and is marked ``xfail(strict=False)``
-so the suite stays green whether the bug is still present (XFAIL) or has been
-fixed in the meantime (XPASS). They must always *collect* and *run* — never
-error — so seeding is kept minimal and self-contained.
+Tests for still-open issues assert the DESIRED behavior and are marked
+``xfail(strict=False)`` so the suite stays green whether the bug is still
+present (XFAIL) or has been fixed in the meantime (XPASS). Once an issue is
+fixed and closed, its marker is dropped and the test runs as a plain
+regression guard. They must always *collect* and *run* — never error — so
+seeding is kept minimal and self-contained.
 
 Style mirrors tests/unit/test_task_groups_routes.py / test_searches_routes.py.
 """
@@ -16,8 +18,8 @@ from hashview.models import (
     Hashes,
     HashfileHashes,
     Hashfiles,
-    JobTasks,
     Jobs,
+    JobTasks,
     TaskGroups,
     Tasks,
     db,
@@ -33,16 +35,14 @@ def _task(owner, name="t"):
 
 
 # ---------------------------------------------------------------------------
-# Issue #100 — "Rename Task Group after creation"
+# Issue #100 (closed) — "Rename Task Group after creation"
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(reason="issue #100: rename task group after creation",
-                   strict=False)
 def test_task_group_can_be_renamed_after_creation(app, client):
-    """POSTing the edit form should persist a new TaskGroups.name.
+    """POSTing the edit form persists a new TaskGroups.name.
 
     The rename/edit route lives at hashview/task_groups/routes.py
-    (``task_groups_edit`` at ~line 86, ``POST /task_groups/edit``). This is
-    implemented today, so the test is expected to XPASS.
+    (``task_groups_edit`` at ~line 86, ``POST /task_groups/edit``).
+    Regression guard for closed issue #100.
     """
     admin = make_admin()
     login(client, admin)
@@ -95,21 +95,19 @@ def test_db_password_with_percent_is_parsed():
 
 
 # ---------------------------------------------------------------------------
-# Issue #99 — "Long task list not scrollable"
+# Issue #99 (closed) — "Long task list not scrollable"
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(reason="issue #99: long task list not scrollable",
-                   strict=False)
 def test_job_task_selection_lists_all_tasks(app, client):
-    """The job task-selection page should render every available task.
+    """The job task-selection page renders every available task.
 
     Renders ``jobs_list_tasks`` (hashview/jobs/routes.py ~449,
     ``GET /jobs/<id>/tasks``) with ~25 seeded Tasks and asserts each task
     name appears, i.e. no server-side truncation of the list.
 
-    NOTE: the real issue #99 is a CSS/scroll-container problem in the
-    template — the long list overflows without a scrollbar. That is a
-    front-end concern and only partially unit-testable; here we can only
-    verify the server emits the full set of task names. Expected to XPASS.
+    NOTE: the real issue #99 was a CSS/scroll-container problem in the
+    template — a front-end concern only partially unit-testable; this
+    guards the server-side half (the full set of task names is emitted).
+    Regression guard for closed issue #99.
     """
     admin = make_admin()
     login(client, admin)

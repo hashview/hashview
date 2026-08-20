@@ -95,6 +95,34 @@ def test_db_password_with_percent_is_parsed():
 
 
 # ---------------------------------------------------------------------------
+# Issue #364 — "Move hashfile import to the background"
+# ---------------------------------------------------------------------------
+@pytest.mark.xfail(reason="issue #364: no persisted hashfile import status",
+                   strict=True)
+def test_hashfile_exposes_persisted_import_status(app):
+    """The Hashfiles model should persist the state of a running import.
+
+    Import runs synchronously inside the upload POST today, so progress is
+    reported only by the client-side modal (guarded in
+    test_jobs_assigned_hashfile.py). Once #364 moves the work to a
+    background thread the response returns first and that modal can no
+    longer observe the import — item 2 of #364 adds
+    ``Hashfiles.import_status`` ('importing' -> 'ready' / 'failed') so job
+    dispatch can gate on 'ready' and a poll endpoint can drive real
+    progress.
+
+    Strict so it fails loudly the moment the column lands, prompting a
+    rewrite into a real assertion rather than lingering as a stale XPASS
+    (which is exactly how the earlier #176 version of this test rotted).
+    """
+    hf = Hashfiles(name="big.txt", customer_id=1, owner_id=1)
+    db.session.add(hf)
+    db.session.commit()
+
+    assert hasattr(hf, "import_status")
+
+
+# ---------------------------------------------------------------------------
 # Issue #99 (closed) — "Long task list not scrollable"
 # ---------------------------------------------------------------------------
 def test_job_task_selection_lists_all_tasks(app, client):

@@ -198,3 +198,30 @@ def test_running_job_cannot_edit(app, client, tmp_snapshot):
     assert resp.status_code in (301, 302)
     assert Hashfiles.query.filter_by(name="ShouldNotImport").first() is None
     assert _new_files(tmp_dir, before) == set()
+
+
+def test_page_renders_the_import_progress_modal(app, client):
+    """The upload page ships the import progress indicator from issue #176.
+
+    #176 was delivered as a client-side modal (the ``hf-import-modal``
+    dialog in jobs_assigned_hashfiles.html.j2), not a persisted model
+    field, so this markup is the whole feature — nothing server-side
+    records import progress. Guard the three pieces the upload JS drives
+    by id so a template refactor can't silently drop the indicator.
+
+    Note this only covers imports that finish inside the upload request.
+    Reporting on an import that outlives the response needs a persisted
+    status column, tracked in #364.
+    """
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+
+    resp = client.get(f"/jobs/{job.id}/assigned_hashfile/")
+
+    assert resp.status_code == 200
+    body = resp.data
+    assert b'id="hf-import-modal"' in body
+    assert b'id="hf-step-upload"' in body
+    assert b'id="hf-step-import"' in body

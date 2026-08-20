@@ -57,6 +57,7 @@ Notable changes will be documented here
 - Quantities throughout the UI are thousands-separated
 - Alembic migrations for the dev line were consolidated into a single baseline
 - Pinned Python to 3.11+; added a ruff / pylint / bandit / pre-commit lint-and-security stack, a LICENSE, and substantially expanded automated tests (unit, agent, end-to-end, and security)
+- Every top-level page is now covered by a Playwright reachability test, and a guard fails CI when a new sidebar entry ships without one; Task Groups gained an end-to-end create/delete test
 
 ### Fixed
 - The agent's HTTP/API layer is now resilient to non-200 and unexpected server responses instead of crashing with opaque errors

@@ -30,17 +30,18 @@ Nine PRs are open against issues on the board. No new code required; this is rev
 | #356 | #355 | `$HEX[...]` decode in crack verifiers. **Caveat below.** |
 | #358 | #357 | UTF-8 hashfile download; covers all three severities in the issue. |
 | #391 | part of #385 | Analytics hang + shared-password miscount. Does **not** close #385. |
-| #400 | #377 | Website-keywords crawl collision. |
+| #400 | — (refs #377) | Website-keywords crawl collision. **Does not close #377** — see below. |
 | #408 | #105 | e2e coverage for every top-level page. |
 | #415 | #409, #410, #411 | Machine-account / history filtering. Green, awaiting review. |
 | #416 | #413, #414 | Server-side list filters; paginate and sort `/rules`. |
 
-Two things to fix while merging:
+Three things to fix while merging:
 
 - **PR #356's description overstates its diff.** The body claims it adds `verified`/`updated`/`unmatched`/`count` response fields and an `openapi.yaml` update. The actual diff touches only `hashview/utils/utils.py` and two test files — no route, no spec. It fixes #355 correctly; it does **not** fix #374. Do not close #374 on merge.
-- **PR #367 is superseded.** The `control/tmp` cleanup it proposes already landed (`api/routes.py:174-189` plus the three call sites). #226 is closed citing that code; close #367 without merging.
+- **PR #400 references #377 but does not fix it.** It fixes the job-collision bug (one shared wordlist row, concurrent jobs overwriting each other's crawl), which is worth merging. But `words = crawl_website_keywords(target, settings)` is still unguarded — it appears in the diff only as context — and the `try`/`except OSError` blocks it adds wrap the tmp-file write and move, not the crawl. A raising crawl still serves the previous run's file. Leave #377 open.
+- **PR #367 was superseded and is now closed.** The `control/tmp` cleanup it proposed already landed (`api/routes.py:174-189` plus the three call sites), and #226 is closed citing that code. One thing from it is worth salvaging: the merged fix shipped with **no regression test** — nothing in `tests/unit` or `tests/security` asserts the `control/tmp` listing is unchanged across a download — so the `call_on_close` hook could be deleted tomorrow with CI still green. #367's three tests are worth cherry-picking into a small test-only PR.
 
-**Exit criteria:** all nine merged or explicitly rejected; #218, #353, #355, #357, #377, #105, #409, #410, #411, #413, #414 closed.
+**Exit criteria:** all eight remaining merged or explicitly rejected; #218, #353, #355, #357, #105, #409, #410, #411, #413, #414 closed. #377 stays open.
 
 ---
 
@@ -111,7 +112,9 @@ The analytics page currently disagrees with itself: cards and their own download
 
 Verified in this pass: **#363** (per-row commits on hashfile import — batch the writes) and **#364** (move import to the background) are the same user complaint at two altitudes; do #363 first, since a fast import may make #364 optional. **#369**'s hard part is already done (`tasks/routes.py:396` and `:401` already distinguish job-held from group-held tasks); what remains is disabling the delete button and surfacing the reason. **#392** is a template-only filter with tests already written in PR #393 — merge that first so the xfails flip. **#135** (bulk job delete) should build on #416's pagination so select-all composes with paging. **#359** (combine several hashfiles at job creation) needs no migration. **#133** is a one-line template move (`jobs_add.html.j2:60-66` emits "add new" after the loop). **#382** is listed in Wave 1 but could ride along with any jobs-area PR rather than becoming a one-line PR of its own.
 
-Not independently verified in this pass — check before starting: #34 (potfile import), #101 (locally-transferred wordlists/hashfiles), #107 (password-complexity rules), #122 (manually attach hash:cleartext to a customer — must verify, never generate, per the standing rule), #123 (hex-charset wordlists; really "add mask/brute-force attack support", so scope it down), #361 (dynamic pane widths), #375 (cosmetic dropdown).
+Since verified as genuinely still open, with the gap located: #34 (no potfile-import mechanism at all; the `--potfile-path` handling at `utils.py:980` is unrelated), #101 (the wordlist half exists via the `wordlist_import.py` drop folder; the hashfile half does not), #107 (complexity buckets hardcoded in `analytics/routes.py`), #122 (no manual hash:cleartext path — and per the standing rule it must verify, never generate), #123 (no charset or mask-attack option exists anywhere, so this is really "add mask attack support" and should be scoped down), #375 (`jobs/forms.py:60-61` still carries a blank `------SELECT------` default alongside the single NTLM option).
+
+`#361` (dynamic pane widths) is closed — the phosphor redesign's `grid-template-columns: var(--sidebar-w) 1fr` plus the collapsible sidebar satisfies both halves of the ask.
 
 **#314** (Werkzeug caps pasted-hash form fields around 488KB) reads as an accepted limitation the maintainer already documented, not actionable work. Either raise `MAX_FORM_MEMORY_SIZE` in config or close it; do not leave it open as if it were a bug.
 
@@ -141,4 +144,6 @@ Each wave, when it starts, gets: a detailed task-by-task plan; one branch per lo
 
 ## Board hygiene done alongside this triage
 
-Closed as already fixed, each with a code citation: #92, #129, #130, #141, #164, #226. Closed as an environment/support thread: #116. Commented rather than closed: #171 (its premise names a helper that does not exist; the mutation audit is clean, but the read-side question above came out of it) and PR #367 (superseded by the merged cleanup).
+Closed as already fixed, each with a code citation: #92, #129, #130, #141, #164, #226, #361. Closed as an environment/support thread: #116. Closed as superseded: PR #367. Commented rather than closed: #171 (its premise names a helper that does not exist; the mutation audit is clean, but the read-side question above came out of it) and PR #400 (references #377 without fixing it).
+
+Nineteen older issues that this triage had not verified were then checked one at a time against the code — #34, #39, #57, #68, #73, #101, #107, #122, #123, #314, #361, #363, #364, #375, #377, #383, #394, #395, #396. Only #361 turned out to be resolved. The other eighteen are genuinely still open with the gap located, e.g. `config.py:19-24` still concatenates the DB password into the SQLAlchemy URI with no `quote_plus` (#57), `docker-compose.yml:25` still publishes `3306:3306` (#394), `setup/__init__.py:64,83` still call bare `os.replace` (#395), and `add_default_tasks` at `:24-41` still hardcodes `wl_id` 2/3 (#396). Worth knowing the board is not padded with stale entries.

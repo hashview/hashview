@@ -17,7 +17,7 @@ only looked for a trailing ``$``).
 
 import pytest
 
-from hashview.models import HashfileHashes, Hashfiles, Users, db
+from hashview.models import Hashes, HashfileHashes, Hashfiles, Users, db
 from hashview.utils.utils import import_hashfilehashes, is_machine_or_history_account
 
 NT = "8846f7eaee8fb117ad06bdd830b7586c"
@@ -89,7 +89,7 @@ def test_predicate_rejects(username):
     "",
     None,
 ])
-def test_predicate_accepts(username):
+def test_predicate_allows_real_accounts(username):
     assert is_machine_or_history_account(username) is False
 
 
@@ -120,6 +120,33 @@ def test_user_hash_non_ntlm_keeps_dollar_usernames(app, tmp_path):
     ), file_type="user_hash", hash_type="0")
 
     assert usernames == {"alice$"}
+
+
+@pytest.mark.security
+def test_user_hash_filters_when_hash_type_is_an_int(app, tmp_path):
+    """The API upload route is declared ``<int:hash_type>`` and passes the value
+    straight through, so the filter has to survive an int hash_type -- the form
+    path is the only one that hands it over as a string."""
+    usernames = _import(tmp_path, "uh_int.txt", (
+        f"alice:{NT}\n"
+        f"WIN10$:{NT}\n"
+    ), file_type="user_hash", hash_type=1000)
+
+    assert usernames == {"alice"}
+
+
+@pytest.mark.security
+def test_hash_only_dcc2_filters_machine_accounts(app, tmp_path):
+    """DCC2 is the one ``hash_only`` mode whose ciphertext carries a username
+    (``$DCC2$<iter>#<user>#<hash>``), so it is the one that can carry an AD
+    machine account. 2100 is UI-selectable, so this is reachable."""
+    usernames = _import(tmp_path, "dcc2.txt", (
+        "$DCC2$10240#alice#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        "$DCC2$10240#win10$#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+        "$DCC2$10240#alice_history0#cccccccccccccccccccccccccccccccc\n"
+    ), file_type="hash_only", hash_type="2100")
+
+    assert usernames == {"alice"}
 
 
 # --- issue #410: pwdump filter was case-sensitive --------------------------
@@ -171,9 +198,13 @@ def test_netntlm_filters_machine_account_history(app, tmp_path):
 @pytest.mark.security
 def test_filtered_rows_do_not_create_hash_rows(app, tmp_path):
     """The filter must run *before* import_hash_only, or the ciphertext lands in
-    `hashes` with no hashfile row pointing at it and still gets cracked."""
-    from hashview.models import Hashes
+    `hashes` with no hashfile row pointing at it and still gets cracked.
 
+    The unscoped `Hashes` query is deliberate: an orphaned row is by definition
+    not reachable through a hashfile-scoped join, so narrowing this to a join
+    would silently stop testing the thing it exists to test. Safe because the
+    ``app`` fixture is function-scoped.
+    """
     machine_nt = "8846f7eaee8fb117ad06bdd830b7586d"
     _import(tmp_path, "uh2.txt", (
         f"alice:{NT}\n"

@@ -609,11 +609,13 @@ def hexplain_to_text(hexplain):
 # dump is still recognised.
 _HISTORY_SUFFIX_RE = re.compile(r'_history\d*$', re.IGNORECASE)
 
-# Hashcat modes where machine-account/history semantics apply, i.e. the NTLM
-# family fed by AD dumps. Deliberately narrow: 'user:hash' is a generic format,
-# and silently dropping a trailing-'$' username out of an MD5 web-app dump
-# would be data loss rather than a fix.
-NTLM_FAMILY_HASH_TYPES = {'1000', '3000', '5500', '5600', '27000', '27100'}
+# Modes where machine-account/history semantics apply, i.e. the AD-fed NTLM
+# family: 1000 NTLM, 2100 DCC2, 3000 LM. Only consulted for the generic
+# 'user:hash'/'hash_only' formats, where a trailing-'$' username in a non-AD
+# dump (an MD5 web-app export, say) is a real account. NetNTLM modes are absent
+# on purpose: their ciphertexts are colon-delimited, so they arrive as
+# file_type 'NetNTLM', which filters unconditionally.
+_NTLM_FAMILY_HASH_TYPES = {'1000', '2100', '3000'}
 
 
 def is_machine_or_history_account(username):
@@ -640,6 +642,14 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
         username = None
         if len(line) > 0:
             if file_type == 'hash_only':
+                # DCC2 is the one hash_only mode whose ciphertext carries a
+                # username (extracted below), so it is the one that can carry an
+                # AD machine account. Filter before import_hash_only() or the
+                # ciphertext orphans in `hashes` and still gets cracked.
+                if str(hash_type) == '2100':
+                    dcc2_fields = line.lower().rstrip().split('#')
+                    if len(dcc2_fields) > 1 and is_machine_or_history_account(dcc2_fields[1]):
+                        continue
                 # forcing lower casing of hash as hashcat will return lower cased version of the has and we want to match what we imported.
                 if hash_type in ('300', '1731', '1000'):
                     hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
@@ -656,11 +666,12 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                     username = None
             elif file_type == 'user_hash':
                 if ':' in line:
-                    # NTDS dumps are routinely cut down to 'user:nthash', so this
-                    # format needs the same machine-account/history filtering as
-                    # pwdump. Filter before import_hash_only() or the ciphertext
-                    # lands in `hashes` orphaned and still gets cracked.
-                    if (str(hash_type) in NTLM_FAMILY_HASH_TYPES
+                    # NTDS dumps are routinely cut down to 'user:nthash', so AD
+                    # machine accounts and history rows reach this format too.
+                    # Filter before import_hash_only() or the ciphertext orphans
+                    # in `hashes` and still gets cracked. hash_type arrives as an
+                    # int on the API path (routes.py takes <int:hash_type>).
+                    if (str(hash_type) in _NTLM_FAMILY_HASH_TYPES
                             and is_machine_or_history_account(line.split(':')[0])):
                         continue
                     if hash_type == '300' or hash_type == '1731':
@@ -688,7 +699,6 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                 username = line.split(':')[0]
             elif file_type == 'pwdump':
                 # do we let user select LM so that we crack those instead of NTLM?
-                # First extracting usernames so we can filter out machine accounts
                 if is_machine_or_history_account(line.split(':')[0]):
                     continue
                 else:
@@ -701,7 +711,6 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                 else:
                     username = line.split('$')[3]
             elif file_type == 'NetNTLM':
-                # First extracting usernames so we can filter out machine accounts
                 # 5600, domain is case sensitve. Hashcat returns username in upper case.
                 if is_machine_or_history_account(line.split(':')[0]):
                     continue

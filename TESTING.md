@@ -145,8 +145,13 @@ unless `tests/seed_perf_db.py` has been run:
 docker compose cp tests/seed_perf_db.py app:/tmp/seed_perf_db.py
 docker compose exec -T -e PYTHONPATH=/ -e HASHVIEW_E2E_CUSTOMER_ID=1 \
   -w / app python /tmp/seed_perf_db.py
-./.venv/bin/python -m pytest tests/e2e/test_job_creation_perf.py -m e2e -s
+./.venv/bin/python -m pytest -m perf -s
 ```
+
+These tests carry the `perf` marker rather than `e2e`, so `pytest -m e2e` (what
+CI runs) does not collect them. That is deliberate: CI runs e2e under
+`HASHVIEW_E2E_STRICT` with a cap on skipped results, and since it never seeds the
+perf fixture these ten tests would skip there and trip the cap.
 
 The seeder is idempotent and its volumes are tunable:
 `HASHVIEW_PERF_HASHFILES` (default 30), `HASHVIEW_PERF_HASHES_PER_HASHFILE`

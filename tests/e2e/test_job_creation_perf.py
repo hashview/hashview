@@ -8,6 +8,11 @@ They only mean something against a database with volume in it. Run
 ``perf_fixture`` fixture skips the whole module when that data is absent, so an
 empty dev stack reports "skipped", never a bogus pass.
 
+Marked ``perf``, not ``e2e``, so ``pytest -m e2e`` does not collect them. CI runs
+the e2e suite under ``HASHVIEW_E2E_STRICT`` with a cap on skipped results, and
+these would skip there (CI never seeds the perf fixture) and trip that cap. Run
+them with ``pytest -m perf``.
+
 Two kinds of assertion here, because they fail for different reasons:
 
 * **Latency budgets** — wall-clock against localhost Docker, deliberately loose.
@@ -150,7 +155,7 @@ def perf_fixture(page, live_server, login, perf_env, fixture_counts):
     return {**perf_env, "perf_tasks": perf_tasks, "perf_hashfiles": perf_hashfiles}
 
 
-@pytest.mark.e2e
+@pytest.mark.perf
 def test_jobs_add_step_is_fast(page, live_server, perf_fixture):
     """Step 1 of the wizard is a name + customer form; it should be near-free.
 
@@ -167,7 +172,7 @@ def test_jobs_add_step_is_fast(page, live_server, perf_fixture):
     )
 
 
-@pytest.mark.e2e
+@pytest.mark.perf
 def test_hashfile_picker_does_not_scale_with_hashfile_count(
     page, live_server, perf_fixture
 ):
@@ -196,7 +201,7 @@ def test_hashfile_picker_does_not_scale_with_hashfile_count(
     )
 
 
-@pytest.mark.e2e
+@pytest.mark.perf
 def test_task_library_does_not_scale_with_task_table(page, live_server, perf_fixture):
     """The task-library step must not render the entire tasks table.
 
@@ -224,7 +229,7 @@ def test_task_library_does_not_scale_with_task_table(page, live_server, perf_fix
     )
 
 
-@pytest.mark.e2e
+@pytest.mark.perf
 def test_cracked_hashes_view_is_bounded(page, live_server, perf_fixture):
     """Viewing a hashfile's cracked hashes must not load the whole result set.
 
@@ -264,7 +269,7 @@ def test_cracked_hashes_view_is_bounded(page, live_server, perf_fixture):
     )
 
 
-@pytest.mark.e2e
+@pytest.mark.perf
 def test_assigning_a_task_is_fast(page, live_server, login, perf_fixture):
     """Adding one task to a job should cost one insert, not a full re-render.
 
@@ -322,7 +327,7 @@ def test_assigning_a_task_is_fast(page, live_server, login, perf_fixture):
     )
 
 
-@pytest.mark.e2e
+@pytest.mark.perf
 def test_job_summary_is_fast(page, live_server, perf_fixture):
     """The final review step aggregates the hashfile and resolves task names."""
     job_id = perf_fixture["job_id"]
@@ -366,7 +371,7 @@ PAYLOAD_BUDGET_KB = {
 MAX_MS_PER_HASHFILE = 1.0
 
 
-@pytest.mark.e2e
+@pytest.mark.perf
 @pytest.mark.xfail(
     strict=True,
     reason="Issue #422 (3): task library renders one form + CSRF token per row "
@@ -393,7 +398,7 @@ def test_task_library_payload_does_not_scale_with_task_table(
     )
 
 
-@pytest.mark.e2e
+@pytest.mark.perf
 @pytest.mark.xfail(
     strict=True,
     reason="Issue #422 (1): cracked-hash view loads and renders every cracked "
@@ -427,7 +432,7 @@ def test_cracked_hashes_payload_is_bounded(page, live_server, perf_fixture):
     )
 
 
-@pytest.mark.e2e
+@pytest.mark.perf
 @pytest.mark.xfail(
     strict=True,
     reason="Issue #422 (4): job summary resolves each assigned task's name "
@@ -453,7 +458,7 @@ def test_summary_payload_does_not_scale_with_task_table(
     )
 
 
-@pytest.mark.e2e
+@pytest.mark.perf
 @pytest.mark.xfail(
     strict=True,
     reason="Issue #422 (2): hashfile picker issues one cracked/total aggregate "

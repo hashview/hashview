@@ -9,6 +9,14 @@
 # Enable once per clone:
 #   git config core.hooksPath .githooks
 #
+# Keep that value relative, exactly as written above. Git resolves a relative
+# hooksPath against the top level of whichever working tree you run git from, so
+# each git worktree correctly uses its own .githooks/. An absolute path (e.g.
+# /Users/you/projects/hashview/.githooks) instead pins every worktree to the
+# main checkout's copy: edits to this script made in a worktree then have no
+# effect on a push from it, and you are silently testing the old version.
+# Check with: git config core.hooksPath
+#
 # Bypass (use sparingly):
 #   git push --no-verify
 

@@ -34,14 +34,17 @@ Nine PRs are open against issues on the board. No new code required; this is rev
 | #408 | #105 | e2e coverage for every top-level page. |
 | #415 | #409, #410, #411 | Machine-account / history filtering. Green, awaiting review. |
 | #416 | #413, #414 | Server-side list filters; paginate and sort `/rules`. |
+| #420 | #226 (reopened) | Makes the `control/tmp` cleanup actually run; see below. |
 
-Three things to fix while merging:
+Nine PRs plus #420. Three things to fix while merging:
 
 - **PR #356's description overstates its diff.** The body claims it adds `verified`/`updated`/`unmatched`/`count` response fields and an `openapi.yaml` update. The actual diff touches only `hashview/utils/utils.py` and two test files — no route, no spec. It fixes #355 correctly; it does **not** fix #374. Do not close #374 on merge.
 - **PR #400 references #377 but does not fix it.** It fixes the job-collision bug (one shared wordlist row, concurrent jobs overwriting each other's crawl), which is worth merging. But `words = crawl_website_keywords(target, settings)` is still unguarded — it appears in the diff only as context — and the `try`/`except OSError` blocks it adds wrap the tmp-file write and move, not the crawl. A raising crawl still serves the previous run's file. Leave #377 open.
-- **PR #367 was superseded and is now closed.** The `control/tmp` cleanup it proposed already landed (`api/routes.py:174-189` plus the three call sites), and #226 is closed citing that code. One thing from it is worth salvaging: the merged fix shipped with **no regression test** — nothing in `tests/unit` or `tests/security` asserts the `control/tmp` listing is unchanged across a download — so the `call_on_close` hook could be deleted tomorrow with CI still green. #367's three tests are worth cherry-picking into a small test-only PR.
+- **#226 was not fixed, and PR #367 should not have been closed.** I closed both citing `api/routes.py:174-189`, which registers its unlink with `response.call_on_close()`. That callback never runs: `send_from_directory` sets `direct_passthrough=True` (werkzeug `utils.py:482`) and `Response.get_app_iter` returns the raw file wrapper for that case instead of wrapping it in a `ClosingIterator` (`response.py:541-545`), so `Response.close()` is never invoked by the WSGI layer. `control/tmp` still grew on every agent poll. Two tests hid it — a unit test that called `response.close()` by hand, and a **strict xfail for this very issue** sitting in the same suite. #226 is reopened; **PR #420** fixes it with `after_this_request`, the mechanism PR #367 proposed all along.
 
-**Exit criteria:** all eight remaining merged or explicitly rejected; #218, #353, #355, #357, #105, #409, #410, #411, #413, #414 closed. #377 stays open.
+  The general lesson is worth carrying into the other waves: a green test that drives a helper directly can assert a contract the request path never exercises. Prefer a real request.
+
+**Exit criteria:** all nine remaining merged or explicitly rejected; #218, #226, #353, #355, #357, #105, #409, #410, #411, #413, #414 closed. #377 stays open.
 
 ---
 
@@ -144,6 +147,8 @@ Each wave, when it starts, gets: a detailed task-by-task plan; one branch per lo
 
 ## Board hygiene done alongside this triage
 
-Closed as already fixed, each with a code citation: #92, #129, #130, #141, #164, #226, #361. Closed as an environment/support thread: #116. Closed as superseded: PR #367. Commented rather than closed: #171 (its premise names a helper that does not exist; the mutation audit is clean, but the read-side question above came out of it) and PR #400 (references #377 without fixing it).
+Closed as already fixed, each with a code citation: #92, #129, #130, #141, #164, #361. (#226 was closed on the same basis and then **reopened** — the code it cited does not work; see Wave 0.) Closed as an environment/support thread: #116. Closed as superseded: PR #367 — also a mistake, corrected in a follow-up comment there. Commented rather than closed: #171 (its premise names a helper that does not exist; the mutation audit is clean, but the read-side question above came out of it) and PR #400 (references #377 without fixing it).
+
+One new issue came out of this pass: **#421** — the analytics and agent-download routes serve from `control/tmp` with no cleanup at all, and the analytics export body is `username:hash:plaintext`, so recovered credentials accumulate on disk outside any retention policy. Not folded into PR #420 because it is a retention question as much as a leak, and it spans two more blueprints.
 
 Nineteen older issues that this triage had not verified were then checked one at a time against the code — #34, #39, #57, #68, #73, #101, #107, #122, #123, #314, #361, #363, #364, #375, #377, #383, #394, #395, #396. Only #361 turned out to be resolved. The other eighteen are genuinely still open with the gap located, e.g. `config.py:19-24` still concatenates the DB password into the SQLAlchemy URI with no `quote_plus` (#57), `docker-compose.yml:25` still publishes `3306:3306` (#394), `setup/__init__.py:64,83` still call bare `os.replace` (#395), and `add_default_tasks` at `:24-41` still hardcodes `wl_id` 2/3 (#396). Worth knowing the board is not padded with stale entries.

@@ -12,7 +12,7 @@ Every status below was verified by reading the code on `v0.8.3-dev`, not by trus
 
 ## Sequencing principles
 
-1. **Merge before build.** Nine open PRs already implement fixes for open issues. Landing them removes work from the board at review cost only, and several later waves touch the same files.
+1. **Merge before build.** Ten open PRs already implement fixes for open issues. Landing them removes work from the board at review cost only, and several later waves touch the same files.
 2. **Correctness before features.** A wrong number on the analytics page is worse than a missing one, because nobody knows to distrust it.
 3. **One PR per code region, not one PR per issue.** Where several issues live in the same function, fixing them separately means three reviewers reading the same diff three times and two of them rebasing.
 4. **Decide the design questions first.** Four items on the board are questions, not defects. Implementing them before the question is answered is how you get a feature nobody wanted.
@@ -21,7 +21,7 @@ Every status below was verified by reading the code on `v0.8.3-dev`, not by trus
 
 ## Wave 0 — Land what is already written
 
-Nine PRs are open against issues on the board. No new code required; this is review-and-merge capacity, and it is the single highest-yield thing on this roadmap.
+Ten PRs are open against issues on the board. Nine need no new code; this is review-and-merge capacity, and it is the single highest-yield thing on this roadmap.
 
 | PR | Closes | Notes |
 |---|---|---|
@@ -36,7 +36,7 @@ Nine PRs are open against issues on the board. No new code required; this is rev
 | #416 | #413, #414 | Server-side list filters; paginate and sort `/rules`. |
 | #420 | #226 (reopened) | Makes the `control/tmp` cleanup actually run; see below. |
 
-Nine PRs plus #420. Three things to fix while merging:
+Three things to fix while merging:
 
 - **PR #356's description overstates its diff.** The body claims it adds `verified`/`updated`/`unmatched`/`count` response fields and an `openapi.yaml` update. The actual diff touches only `hashview/utils/utils.py` and two test files — no route, no spec. It fixes #355 correctly; it does **not** fix #374. Do not close #374 on merge.
 - **PR #400 references #377 but does not fix it.** It fixes the job-collision bug (one shared wordlist row, concurrent jobs overwriting each other's crawl), which is worth merging. But `words = crawl_website_keywords(target, settings)` is still unguarded — it appears in the diff only as context — and the `try`/`except OSError` blocks it adds wrap the tmp-file write and move, not the crawl. A raising crawl still serves the previous run's file. Leave #377 open.
@@ -44,7 +44,7 @@ Nine PRs plus #420. Three things to fix while merging:
 
   The general lesson is worth carrying into the other waves: a green test that drives a helper directly can assert a contract the request path never exercises. Prefer a real request.
 
-**Exit criteria:** all nine remaining merged or explicitly rejected; #218, #226, #353, #355, #357, #105, #409, #410, #411, #413, #414 closed. #377 stays open.
+**Exit criteria:** all ten merged or explicitly rejected; #218, #226, #353, #355, #357, #105, #409, #410, #411, #413, #414 closed. #377 stays open.
 
 ---
 

@@ -340,7 +340,6 @@ def test_225_crackfile_upload_rejects_unassigned_agent(client, agent_a, agent_b)
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="#226: rule download leaves the generated .gz in control/tmp forever")
 def test_226_rule_download_cleans_up_tmp(client, app, admin_user, tmp_path, monkeypatch):
     monkeypatch.setattr(app, "root_path", str(tmp_path))
     rules_dir = os.path.join(str(tmp_path), "control", "rules")

@@ -9,7 +9,10 @@ machine-readable surface fails here rather than silently blanking the dashboard
 Assertions are structural, never value-exact: speeds, timestamps and device
 names differ per machine.
 
-Versions in KNOWN_BROKEN_STATUS_JSON are xfail(strict=False). hashcat 7.0.0
+Versions in KNOWN_BROKEN_STATUS_JSON are xfail(strict=True) -- strict because
+the fixture is committed and the defect is deterministic, so an XPASS means the
+fixture was regenerated wrongly or a parser started tolerating broken JSON, and
+that must fail loudly rather than quietly rot the canary. hashcat 7.0.0
 emits structurally INVALID JSON from --status-json: each device object closes
 with a stray '}' instead of a ',' before the "power" key, so json.loads fails
 on every status line (upstream issue #4393). 7.1.0 fixed it. On 7.0.0 the agent

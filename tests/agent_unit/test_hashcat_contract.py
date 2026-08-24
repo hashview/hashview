@@ -49,7 +49,7 @@ def _versions():
 
 def _param(version):
     marks = [pytest.mark.xfail(reason="hashcat 7.0.0 emits invalid --status-json (upstream #4393)",
-                               strict=False)] if version in KNOWN_BROKEN_STATUS_JSON else []
+                               strict=True)] if version in KNOWN_BROKEN_STATUS_JSON else []
     return pytest.param(version, marks=marks)
 
 

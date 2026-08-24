@@ -38,7 +38,8 @@ These are what the tests assert; nothing else about hashcat's output is pinned.
 1. **`--status-json` status line.** Every line beginning with `{` parses as
    JSON, and each carries `estimated_stop` (integer epoch seconds),
    `recovered_hashes` (2-element array), and a `devices` array whose entries
-   carry `speed`, `device_type`, and `device_name`. `temp` is optional.
+   carry `speed`, `device_type`, and `device_name`. Per-device telemetry keys
+   like `temp` may be present but are not required.
    Consumer: `hashcatParser` and `parse_device_info`
    (`install/hashview-agent/hashview-agent.py`, `agent/bench.py`).
 2. **Benchmark speed line.** `hashcat -b -m <mode>` emits at least one
@@ -100,10 +101,10 @@ upstream change to a *pinned* version is also caught.
 
 The drift diff compares `summary.json`, not the raw capture. Raw output embeds
 timestamps, measured speeds, session ids, and temp paths, none of which are
-stable between runs. The summary keeps only the shape Hashview depends on:
-which keys appear in the status objects, which keys appear per device, which of
-our flags the binary advertises, the outfile field count, and the number of
-benchmark speed lines.
+stable between runs. The summary records only the keys Hashview actually reads,
+excluding per-device telemetry keys (temp, fanspeed, corespeed, memoryspeed,
+buslanes, power) that are reported conditionally per device and driver. This
+ensures the summary is stable across machines despite environmental differences.
 
 A stock `ubuntu-latest` runner with pocl and no GPU is sufficient; this was
 verified by running prebuilt 6.2.6 and 7.1.2 binaries in a clean

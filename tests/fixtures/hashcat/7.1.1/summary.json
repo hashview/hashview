@@ -20,17 +20,9 @@
   ],
   "benchmark_speed_lines": 1,
   "device_keys": [
-    "buslanes",
-    "corespeed",
-    "device_id",
     "device_name",
     "device_type",
-    "fanspeed",
-    "memoryspeed",
-    "power",
-    "speed",
-    "temp",
-    "util"
+    "speed"
   ],
   "has_parseable_status": true,
   "outfile_field_counts": [
@@ -40,16 +32,7 @@
   "status_keys": [
     "devices",
     "estimated_stop",
-    "guess",
-    "progress",
-    "recovered_hashes",
-    "recovered_salts",
-    "rejected",
-    "restore_point",
-    "session",
-    "status",
-    "target",
-    "time_start"
+    "recovered_hashes"
   ],
   "version": "v7.1.1"
 }

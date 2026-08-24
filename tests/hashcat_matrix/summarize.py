@@ -20,6 +20,16 @@ REQUIRED_FLAGS = [
     "--loopback", "--hex-salt", "-a", "-r", "-j", "-k",
 ]
 
+# Top-level keys that hashcat_status (install/hashview-agent/agent/status.py) reads.
+# The summary is diffed across machines in CI, so it must contain only
+# environment-independent facts, excluding per-device telemetry keys that vary by driver.
+REQUIRED_STATUS_KEYS = ["devices", "estimated_stop", "recovered_hashes"]
+
+# Per-device keys that hashcat_status and parse_device_info (install/hashview-agent/agent/bench.py)
+# read. Excludes temp, fanspeed, corespeed, memoryspeed, buslanes, power: their presence varies
+# by device and driver, making them unsuitable for cross-machine CI diff.
+REQUIRED_DEVICE_KEYS = ["device_name", "device_type", "speed"]
+
 
 def status_objects(capture_dir):
     """Every parseable --status-json object in the captured stdout."""
@@ -43,6 +53,10 @@ def summarize(capture_dir):
         for device in obj.get("devices") or []:
             device_keys.update(device.keys())
 
+    # Keep only the keys Hashview actually reads, not every key hashcat emits.
+    status_keys = sorted(status_keys & set(REQUIRED_STATUS_KEYS))
+    device_keys = sorted(device_keys & set(REQUIRED_DEVICE_KEYS))
+
     help_text = (capture_dir / "help.txt").read_text(encoding="utf-8", errors="replace")
     # Match the flag as a whole token so '-a' does not match '--attack-mode'.
     advertised = sorted(f for f in REQUIRED_FLAGS
@@ -58,11 +72,11 @@ def summarize(capture_dir):
     return {
         "advertised_flags": advertised,
         "benchmark_speed_lines": len(re.findall(r"Speed\.#\d+", bench)),
-        "device_keys": sorted(device_keys),
+        "device_keys": device_keys,
         "has_parseable_status": bool(objects),
         "outfile_field_counts": sorted({len(ln.split(":")) for ln in outfile_lines}),
         "outfile_line_count": len(outfile_lines),
-        "status_keys": sorted(status_keys),
+        "status_keys": status_keys,
         "version": (capture_dir / "version.txt").read_text(encoding="utf-8").strip(),
     }
 

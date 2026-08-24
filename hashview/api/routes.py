@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 from flask import (
     Blueprint,
+    after_this_request,
     current_app,
     jsonify,
     redirect,
@@ -184,9 +185,24 @@ def _remove_file(path):
 
 
 def _send_generated_file(directory, filename, **kwargs):
+    """Serve a control/tmp scratch file and delete it once served.
+
+    Unlinked via after_this_request rather than response.call_on_close():
+    send_from_directory() sets direct_passthrough, and werkzeug's
+    get_app_iter() returns the raw file wrapper for that case instead of
+    wrapping it in a ClosingIterator, so Response.close() -- and with it every
+    call_on_close callback -- never runs. The unlink therefore happens while
+    the file is still open for streaming, which is fine on POSIX: the fd stays
+    valid and the body is sent in full, only the directory entry goes away.
+    """
     file_path = os.path.join(directory, filename)
     response = send_from_directory(directory, filename, **kwargs)
-    response.call_on_close(lambda: _remove_file(file_path))
+
+    @after_this_request
+    def _cleanup(resp):        # pylint: disable=unused-variable
+        _remove_file(file_path)
+        return resp
+
     return response
 
 

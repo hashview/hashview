@@ -18,8 +18,12 @@ proves the agent's plumbing works but cannot detect upstream drift.
 
 Two concrete drift items already exist:
 
-- hashcat 7.1.2's release notes state it "restores backward compatibility in
-  machine-readable status view mode", which means 7.1.0 and 7.1.1 broke it.
+- hashcat 7.0.0 emits structurally invalid `--status-json`: each device object
+  closes with a stray `}` instead of a `,` before the `"power"` key, so every
+  status line fails `json.loads` (upstream issue #4393, fixed in 7.1.0). An
+  agent on 7.0.0 reports no status at all, and the dashboard goes blank with no
+  error anywhere. Confirmed by capturing real output from five releases; see
+  the matrix table below.
 - The unreleased 7.1.x changelog states "`--skip` and `--limit` now apply to the
   whole run". Those are the exact flags `build_hashcat_command` emits to slice
   work across agents. If that ships as written, chunk boundaries would be
@@ -111,14 +115,27 @@ Starting matrix:
 | Version | Blocking | Rationale |
 |---|---|---|
 | 6.2.6 | yes | The version `hashview/utils/hashcat_modes.py` is generated from |
-| 7.0.0 | yes | First 7.x release |
-| 7.1.0 | no | Known-broken machine-readable status |
-| 7.1.1 | no | Known-broken machine-readable status |
+| 7.0.0 | no | Emits structurally invalid `--status-json` (upstream #4393) |
+| 7.1.0 | yes | First release with valid 7.x status JSON |
+| 7.1.1 | yes | |
 | 7.1.2 | yes | Current release |
 
-7.1.0 and 7.1.1 are included deliberately as canaries: they demonstrate the job
-detects a real break. They are non-blocking so a known-bad upstream release
-does not hold CI red.
+7.0.0 is included deliberately as a canary: it demonstrates the job detects a
+real break. It is non-blocking so a known-bad upstream release does not hold CI
+red.
+
+This was confirmed empirically while building the fixtures, and it corrected a
+wrong assumption in the first draft of this design. The release notes for 7.1.2
+mention restoring "backward compatibility in machine-readable status view mode",
+which was read as 7.1.0 and 7.1.1 having broken `--status-json`. Captured output
+shows the opposite: 6.2.6, 7.1.0, 7.1.1 and 7.1.2 all produce valid JSON, while
+7.0.0 produces none — each device object closes with a stray `}` instead of a
+`,` before the `"power"` key. The 7.1.2 note evidently refers to the separate
+`--machine-readable` status view, not the JSON one.
+
+The practical consequence for Hashview: on hashcat 7.0.0 the agent's status
+poll silently yields nothing, because `hashcatParser` swallows unparseable
+lines. Operators on 7.0.0 should upgrade to 7.1.0 or later.
 
 Triggers: weekly schedule, `workflow_dispatch`, and pull requests touching
 `install/hashview-agent/**`, `hashview/utils/utils.py`,

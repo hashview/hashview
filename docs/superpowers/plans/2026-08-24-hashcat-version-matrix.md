@@ -609,10 +609,12 @@ machine-readable surface fails here rather than silently blanking the dashboard
 Assertions are structural, never value-exact: speeds, timestamps and device
 names differ per machine.
 
-Versions in KNOWN_BROKEN_STATUS_JSON are xfail(strict=False): hashcat 7.1.2's
-release notes state it "restores backward compatibility in machine-readable
-status view mode", i.e. 7.1.0 and 7.1.1 broke it. They are kept in the matrix
-as canaries proving these tests detect a real break.
+Versions in KNOWN_BROKEN_STATUS_JSON are xfail(strict=False). hashcat 7.0.0
+emits structurally INVALID JSON from --status-json: each device object closes
+with a stray '}' instead of a ',' before the "power" key, so json.loads fails
+on every status line (upstream issue #4393). 7.1.0 fixed it. On 7.0.0 the agent
+would therefore report no status at all, silently. It is kept in the matrix as
+a canary proving these tests detect a real break.
 """
 import importlib.util
 import json
@@ -632,7 +634,7 @@ _spec = importlib.util.spec_from_file_location("hv_hc_summarize", _SUMMARIZE_PAT
 summarize = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(summarize)
 
-KNOWN_BROKEN_STATUS_JSON = {"7.1.0", "7.1.1"}
+KNOWN_BROKEN_STATUS_JSON = {"7.0.0"}
 
 # The plaintext capture.sh cracks, and its NTLM hash.
 EXPECTED_PLAINTEXT = "password"
@@ -646,7 +648,7 @@ def _versions():
 
 
 def _param(version):
-    marks = [pytest.mark.xfail(reason="hashcat 7.1.0/7.1.1 broke machine-readable status",
+    marks = [pytest.mark.xfail(reason="hashcat 7.0.0 emits invalid --status-json (upstream #4393)",
                                strict=False)] if version in KNOWN_BROKEN_STATUS_JSON else []
     return pytest.param(version, marks=marks)
 
@@ -766,7 +768,7 @@ cd /tmp/hashview-hashcat-matrix
 python -m pytest tests/agent_unit/test_hashcat_contract.py -q -rxX
 ```
 
-Expected: all pass, with 7.1.0 / 7.1.1 status tests reported as `xfail` or `xpass` depending on what those releases actually emit.
+Expected: all pass, with the four 7.0.0 status tests reported as `xfail`. The captured fixtures confirm this is real: 6.2.6, 7.1.0, 7.1.1 and 7.1.2 each yield 2 parseable status objects, while 7.0.0 yields 0 parseable and 2 invalid.
 
 - [ ] **Step 4: Verify both coverage ratchets still hold**
 
@@ -988,9 +990,10 @@ jobs:
     name: "hashcat ${{ matrix.version }}"
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # 7.1.0 and 7.1.1 broke machine-readable status (7.1.2's notes say it
-    # restored backward compatibility). They stay in the matrix as canaries
-    # proving the contract tests detect a real break, but must not hold CI red.
+    # 7.0.0 emits structurally invalid --status-json (stray '}' before "power"
+    # in each device object; upstream issue #4393, fixed in 7.1.0). It stays in
+    # the matrix as a canary proving the contract tests detect a real break,
+    # but must not hold CI red.
     continue-on-error: ${{ matrix.blocking == false }}
     strategy:
       fail-fast: false
@@ -1001,13 +1004,13 @@ jobs:
             blocking: true
           - version: "7.0.0"
             sha256: "19e126642e1db7902125072dce539c53485c721735325a747bd03e8af3135d78"
-            blocking: true
+            blocking: false
           - version: "7.1.0"
             sha256: "37be13b2dfdd1da7a3f68847ff817a22c144fc8d76170f51aae412e8b3ee24fd"
-            blocking: false
+            blocking: true
           - version: "7.1.1"
             sha256: "e09f88233ae8a88e0e60d68c20e4f5094d9122af533a7d186a45d8d55d08f3a0"
-            blocking: false
+            blocking: true
           - version: "7.1.2"
             sha256: "80db0316387794ce9d14ed376da75b8a7742972485b45db790f5f8260307ff98"
             blocking: true
@@ -1288,10 +1291,16 @@ Three tiers guard it:
 | Pinned matrix | `.github/workflows/hashcat-matrix.yml` downloads each pinned release, captures fresh output, re-runs the contract, and checks `--skip`/`--limit` slicing | weekly, on dispatch, and on PRs touching the agent or the chunking/command builder |
 | Floating release check | Same, for any release newer than the matrix; opens an issue instead of failing | weekly and on dispatch |
 
-`7.1.0` and `7.1.1` are in the matrix deliberately: they broke machine-readable
-status output, which `7.1.2` restored. Their status assertions are non-strict
-`xfail` and their matrix legs are `continue-on-error`, so they demonstrate the
-tests catch a real break without holding CI red.
+`7.0.0` is in the matrix deliberately. It emits structurally invalid
+`--status-json`: each device object closes with a stray `}` instead of a `,`
+before the `"power"` key, so every status line fails `json.loads` (upstream
+issue #4393, fixed in 7.1.0). Because `hashcatParser` swallows unparseable
+lines, an agent running 7.0.0 reports no status at all and the dashboard simply
+goes blank. Its status assertions are non-strict `xfail` and its matrix leg is
+`continue-on-error`, so it demonstrates the tests catch a real break without
+holding CI red.
+
+**If you run hashcat 7.0.0 in production, upgrade to 7.1.0 or later.**
 
 ### Running the live tests locally
 

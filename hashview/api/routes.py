@@ -949,6 +949,12 @@ def v1_api_get_queue_assignment(job_task_id):
 
     # Get agent id from UUID
     agent = Agents.query.filter_by(uuid=request.cookies.get('uuid')).first()
+    if not agent:
+        return jsonify({
+            'status': 404,
+            'type': 'Error',
+            'msg': 'Agent not found'
+        }), 404
     job_task = JobTasks.query.filter_by(agent_id=agent.id).first()
 
     message = {
@@ -1675,18 +1681,48 @@ def v1_api_post_jobtask_crackfile_upload(job_task_id):
 
     # Get Hashtype from job_task_id
     job_task = JobTasks.query.get(job_task_id)
+    if not job_task:
+        return jsonify({
+            'status': 404,
+            'type': 'Error',
+            'msg': 'Job task not found'
+        }), 404
 
     # Get Job from job_task
     job = Jobs.query.get(job_task.job_id)
+    if not job:
+        return jsonify({
+            'status': 404,
+            'type': 'Error',
+            'msg': 'Job not found'
+        }), 404
 
     # Get hashfile from job
     hashfile = Hashfiles.query.get(job.hashfile_id)
+    if not hashfile:
+        return jsonify({
+            'status': 404,
+            'type': 'Error',
+            'msg': 'Hashfile not found'
+        }), 404
 
     # Get hashfilehashes from hashfile
     hashfilehashes = HashfileHashes.query.filter_by(hashfile_id=hashfile.id).first()
+    if not hashfilehashes:
+        return jsonify({
+            'status': 404,
+            'type': 'Error',
+            'msg': 'Hashfile hashes not found'
+        }), 404
 
     # Get single hash
     single_hash = Hashes.query.get(hashfilehashes.hash_id)
+    if not single_hash:
+        return jsonify({
+            'status': 404,
+            'type': 'Error',
+            'msg': 'Hash not found'
+        }), 404
 
     hash_type = single_hash.hash_type
 
@@ -1754,7 +1790,19 @@ def v1_api_getHashType(hashfile_id):
     
     update_heartbeat(request.cookies.get('uuid'))
     hashfile_hash = HashfileHashes.query.filter_by(hashfile_id = hashfile_id).first()
+    if not hashfile_hash:
+        return jsonify({
+            'status': 404,
+            'type': 'Error',
+            'msg': 'Hashfile not found'
+        }), 404
     hash = Hashes.query.get(hashfile_hash.hash_id)
+    if not hash:
+        return jsonify({
+            'status': 404,
+            'type': 'Error',
+            'msg': 'Hash not found'
+        }), 404
 
     message = {
         'status': 200,

@@ -373,7 +373,9 @@ echo "${unpacked}"
 
 - [ ] **Step 2: Write `tests/hashcat_matrix/capture.sh`**
 
-The synthetic corpus is a five-word wordlist whose third word is the plaintext of the one NTLM target, so `--skip 2 --limit 2` is the only slice that recovers it. `--status-timer=1` with `--runtime` bounded keeps the run short. stderr is captured separately rather than discarded, so a leg that produces no status lines can report why.
+The synthetic corpus is a five-word wordlist whose third word is the plaintext of the one NTLM target, so `--skip 2 --limit 2` is the only slice that recovers it. `--status-timer=1` keeps the run short. stderr is captured separately rather than discarded, so a leg that produces no status lines can report why.
+
+Every hashcat invocation redirects stdin from `/dev/null`. hashcat reads stdin for interactive keypress commands, so with stdin inherited its behaviour depends on what the caller happens to have attached — and it will consume the caller's input. A loop feeding versions on stdin gets silently truncated after the first iteration.
 
 ```bash
 #!/usr/bin/env bash
@@ -398,14 +400,14 @@ trap 'rm -rf "${work}"' EXIT
 printf 'aaaaaa\nbbbbbb\npassword\ncccccc\ndddddd\n' > "${work}/wordlist.txt"
 printf '8846f7eaee8fb117ad06bdd830b7586c\n' > "${work}/hashes.txt"
 
-"${hcbin}" --version > "${outdir}/version.txt" 2>>"${outdir}/stderr.txt"
-"${hcbin}" --help    > "${outdir}/help.txt"    2>>"${outdir}/stderr.txt"
+"${hcbin}" --version > "${outdir}/version.txt" 2>>"${outdir}/stderr.txt" </dev/null
+"${hcbin}" --help    > "${outdir}/help.txt"    2>>"${outdir}/stderr.txt" </dev/null
 
 # Benchmark: the agent runs `hashcat -b -m <mode>` and feeds stdout to
 # agent.bench.parse_benchmark_speed, which needs a `Speed.#<n>...: <n> <unit>H/s`
 # line. CUDA/HIP are ignored so a runner without them does not emit warnings.
 "${hcbin}" -b -m 1000 --backend-ignore-cuda --backend-ignore-hip \
-  > "${outdir}/benchmark.txt" 2>>"${outdir}/stderr.txt"
+  > "${outdir}/benchmark.txt" 2>>"${outdir}/stderr.txt" </dev/null
 
 # Crack: the exact flag set build_hashcat_command emits for attack mode 0.
 "${hcbin}" -O -w 3 --session capture -m 1000 \
@@ -414,7 +416,7 @@ printf '8846f7eaee8fb117ad06bdd830b7586c\n' > "${work}/hashes.txt"
   --outfile-format 1,3 --outfile "${outdir}/outfile.txt" \
   --status-json \
   "${work}/hashes.txt" "${work}/wordlist.txt" \
-  > "${outdir}/status.txt" 2>>"${outdir}/stderr.txt" || true
+  > "${outdir}/status.txt" 2>>"${outdir}/stderr.txt" </dev/null || true
 
 test -s "${outdir}/status.txt" || {
   echo "capture.sh: hashcat produced no stdout; stderr follows" >&2

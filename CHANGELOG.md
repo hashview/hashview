@@ -42,11 +42,7 @@ Notable changes will be documented here
 - Download an encrypted `mysqldump` of the database from Settings -> Data Management, protected by a one-time password
 
 **hashcat Version Interoperability CI**
-- Added a hashcat version interoperability CI matrix: offline contract tests run
-  Hashview's status/benchmark/outfile/flag parsers over committed captures from
-  five hashcat releases on every PR, and a scheduled workflow re-runs them
-  against the real binaries plus a live `--skip`/`--limit` slice check, filing an
-  issue when a newer hashcat release appears.
+- Added a hashcat version interoperability CI matrix: offline contract tests run Hashview's status/benchmark/outfile/flag parsers over committed captures from five hashcat releases on every PR, and a scheduled workflow re-runs them against the real binaries plus a live `--skip`/`--limit` slice check, filing an issue when a newer hashcat release appears.
 
 **Agent Management**
 - Configurable agent heartbeat timeout, with scheduled alerts when an agent goes offline or recovers

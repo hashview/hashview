@@ -23,6 +23,9 @@ Notable changes will be documented here
 **Audit & Error Logging**
 - On-disk JSON audit log of authentication and create/update/delete events, plus captured server errors, viewable and clearable from Settings
 
+**Length-Bucketed Dynamic Wordlists**
+- New `(DYNAMIC) Recovered Passwords (length ...)` wordlists split the recovered-password corpus by plaintext length into a fixed set of buckets — `0-5`, `6`, `7`, `8`, and a `9+` catch-all — so tasks can target only candidates of a relevant length. `$HEX[...]` plaintexts are decoded only to measure their true byte length for bucketing; they are stored in the wordlist in their original `$HEX[...]` form.
+
 **API Documentation**
 - The `/v1` API is now described by an OpenAPI spec with interactive Swagger UI at `/api/docs`
 - `DELETE /v1/hashfiles/<id>` to remove a hashfile via the API

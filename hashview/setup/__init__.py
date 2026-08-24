@@ -8,6 +8,7 @@ from hashview.models import Hashes, HashfileHashes, Rules, Settings, Tasks, User
 from hashview.utils.utils import (
     bytes_to_text,
     compress_to_gz,
+    dynamic_password_length_wordlists,
     get_filehash,
     get_filesize,
     get_linecount,
@@ -268,6 +269,8 @@ _DYNAMIC_WORDLISTS = (
     ('(DYNAMIC) All Customers',           'hashview/control/wordlists/dynamic-customers.txt'),
     ('(DYNAMIC) All NTLM Hashes',         'hashview/control/wordlists/dynamic-ntlm.txt'),
     ('(DYNAMIC) Website Keywords',        'hashview/control/wordlists/dynamic-website-keywords.txt'),
+    # Recovered passwords split into fixed length buckets (0-5, 6..8, 9+).
+    *dynamic_password_length_wordlists(),
 )
 
 

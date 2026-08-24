@@ -1,0 +1,25 @@
+hashcat (v7.0.0) starting in benchmark mode
+
+Benchmarking uses hand-optimized kernel code by default.
+You can use it in your cracking session by setting the -O option.
+Note: Using optimized kernel code limits the maximum supported password length.
+To disable the optimized kernel code in benchmark mode, use the -w option.
+
+Initializing bridges. Please be patient...Initialized bridgesInitializing backend runtimes. Please be patient...Initialized backend runtimesInitializing backend devices. Please be patient...Initialized backend devicesOpenCL API (OpenCL 3.0 PoCL 5.0+debian  Linux, None+Asserts, RELOC, SPIR, LLVM 16.0.6, SLEEF, DISTRO, POCL_DEBUG) - Platform #1 [The pocl project]
+==================================================================================================================================================
+* Device #01: cpu-haswell-VirtualApple @ 2.50GHz, 2942/5885 MB (1024 MB allocatable), 16MCU
+
+Benchmark relevant options:
+===========================
+* --backend-devices-virtmulti=1
+* --backend-devices-virthost=1
+* --optimized-kernel-enable
+
+-----------------------
+* Hash-Mode 1000 (NTLM)
+-----------------------
+
+Speed.#01........:   170.7 MH/s (90.83ms) @ Accel:1024 Loops:1024 Thr:1 Vec:8
+
+Started: Mon Aug 24 19:14:09 2026
+Stopped: Mon Aug 24 19:14:34 2026

@@ -1,0 +1,30 @@
+{
+  "advertised_flags": [
+    "--hex-salt",
+    "--limit",
+    "--loopback",
+    "--outfile",
+    "--outfile-format",
+    "--potfile-path",
+    "--session",
+    "--skip",
+    "--status",
+    "--status-timer",
+    "-O",
+    "-a",
+    "-j",
+    "-k",
+    "-m",
+    "-r",
+    "-w"
+  ],
+  "benchmark_speed_lines": 1,
+  "device_keys": [],
+  "outfile_field_counts": [
+    2
+  ],
+  "outfile_line_count": 1,
+  "status_keys": [],
+  "status_line_count": 0,
+  "version": "v7.0.0"
+}

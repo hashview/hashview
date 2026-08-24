@@ -118,6 +118,43 @@ def test_offline_and_recovery_write_audit_events(app, monkeypatch):
     assert "agent.recovered" in events
 
 
+@pytest.mark.xfail(
+    reason="issue #404: SELECT NOW() always fails on SQLite, so scheduler.py:257 "
+           "falls back to datetime.utcnow() while last_checkin holds the DB's "
+           "local time. On a database behind UTC the cutoff lands ahead of every "
+           "stored check-in and live agents are declared offline. The other "
+           "tests here hide this by stamping fixtures with utcnow() too, so both "
+           "sides agree by construction",
+    strict=False,
+)
+@pytest.mark.security
+def test_utcnow_fallback_does_not_flag_a_db_local_checkin(app, monkeypatch):
+    """A fresh check-in stored in DB-local time must not read as offline.
+
+    Simulates the real deployment shape the SQLite suite can't reach: MySQL on a
+    timezone behind UTC stamps ``last_checkin`` via ``func.now()``, so the stored
+    value is hours behind ``datetime.utcnow()``. The fallback cutoff is computed
+    in UTC, so the comparison at ``scheduler.py:260`` crosses clock domains.
+
+    The MySQL-backed counterpart is
+    ``tests/integration/test_clock_domains.py::test_fallback_does_not_declare_live_agents_offline``.
+    """
+    db_utc_offset = timedelta(hours=-8)
+    _settings(timeout=10)
+    # Checked in "just now" by the DB's clock, which is 8 hours behind UTC.
+    a = _agent("rigTZ", minutes_ago=None)
+    a.last_checkin = datetime.utcnow() + db_utc_offset
+    db.session.commit()
+
+    calls = []
+    monkeypatch.setattr(utils_mod, "notify_admins", lambda subj, msg: calls.append(subj))
+
+    _agent_health_check_inner(db, _LOG)
+
+    assert calls == [], f"live agent declared offline by a cross-domain cutoff: {calls}"
+    assert Agents.query.get(a.id).offline_notified is False
+
+
 @pytest.mark.security
 def test_register_default_jobs_includes_agent_health(app):
     """Regression: both create_app and the hashview.py entry point register jobs

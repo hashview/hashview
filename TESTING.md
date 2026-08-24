@@ -135,6 +135,46 @@ E2E notes:
   under test lives in docker so the runner doesn't import any `hashview.*`
   modules.
 
+### Job-creation performance suite
+
+`tests/e2e/test_job_creation_perf.py` measures the job wizard's latency and
+response sizes. It needs volume in the database to mean anything, so it skips
+unless `tests/seed_perf_db.py` has been run:
+
+```
+docker compose cp tests/seed_perf_db.py app:/tmp/seed_perf_db.py
+docker compose exec -T -e PYTHONPATH=/ -e HASHVIEW_E2E_CUSTOMER_ID=1 \
+  -w / app python /tmp/seed_perf_db.py
+./.venv/bin/python -m pytest -m perf -s
+```
+
+These tests carry the `perf` marker rather than `e2e`, so `pytest -m e2e` (what
+CI runs) does not collect them. That is deliberate: CI runs e2e under
+`HASHVIEW_E2E_STRICT` with a cap on skipped results, and since it never seeds the
+perf fixture these ten tests would skip there and trip the cap.
+
+The seeder is idempotent and its volumes are tunable:
+`HASHVIEW_PERF_HASHFILES` (default 30), `HASHVIEW_PERF_HASHES_PER_HASHFILE`
+(2000), `HASHVIEW_PERF_BIG_HASHFILE_HASHES` (50000),
+`HASHVIEW_PERF_BIG_CRACKED_RATIO` (0.6), `HASHVIEW_PERF_TASKS` (400). Re-running
+with a larger value tops the fixture up rather than duplicating it. Everything it
+creates is named `perf-hashfile-*`, `perf-big-hashfile`, or `perf-task-*`.
+
+The suite has two kinds of test:
+
+- **Latency budgets** (`test_*_is_fast`) — wall-clock medians against a budget,
+  each overridable with `HASHVIEW_PERF_BUDGET_<NAME>` (e.g.
+  `HASHVIEW_PERF_BUDGET_TASK_LIBRARY=4000`) for slower hardware. These pass at
+  the default fixture volume.
+- **Scaling guards** — payload sizes and per-row costs, which are
+  machine-independent. Four are strict `xfail`s against **issue #422**: the
+  hashfile picker's per-hashfile aggregate query, the task library and job
+  summary rendering per-row output for the entire `tasks` table, and the
+  unpaginated cracked-hash view. Drop a marker when its defect is fixed —
+  strict mode makes the suite fail on XPASS, so it will tell you.
+
+Run `-s` to get the timing table; each line is prefixed `[perf]`.
+
 ### Using the helper script
 
 ```

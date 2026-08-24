@@ -94,6 +94,28 @@ def test_hashfile_export_plains_only(app, client):
     assert "aaa111" not in body and "bbb222" not in body
 
 
+def test_hashfile_export_preserves_non_latin1_plaintext(app, client):
+    """A cracked plaintext containing characters above U+00FF (emoji, CJK,
+    Cyrillic -- the international-pwdump case) must round-trip through the
+    download unchanged. The old latin-1/errors='replace' encode silently
+    turned these into '?', corrupting the exported password file."""
+    user = _admin(); _login(client, user)
+    hf = Hashfiles(name="intl dump", customer_id=1, owner_id=user.id)
+    db.session.add(hf); db.session.commit()
+    plain = "пароль-密码-🔒"          # Cyrillic + CJK + emoji, all > U+00FF
+    h = Hashes(sub_ciphertext="0" * 8, ciphertext="ddd444", hash_type=0,
+               cracked=True, plaintext=plain)
+    db.session.add(h); db.session.commit()
+    db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    resp = client.get(f"/hashfiles/download/{hf.id}/plains")
+    assert resp.status_code == 200
+    body = resp.data.decode("utf-8")
+    assert plain in body
+    assert "?" not in body                # no lossy replacement occurred
+
+
 def test_hashfile_export_invalid_format_404(app, client):
     user = _admin(); _login(client, user)
     hf = _make_hashfile_with_hashes(user.id)

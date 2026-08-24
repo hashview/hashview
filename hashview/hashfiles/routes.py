@@ -268,8 +268,11 @@ def hashfiles_download(hashfile_id, fmt):
             lines.append(_decode_hex(h.plaintext))
 
     body = ('\n'.join(lines) + '\n') if lines else ''
-    buf = io.BytesIO(body.encode('latin-1', errors='replace'))
+    # UTF-8 (not latin-1): plaintext/usernames are stored as real Unicode, so
+    # any code point > U+00FF (emoji, CJK, Cyrillic) must survive the export
+    # rather than being lossily replaced with '?'.
+    buf = io.BytesIO(body.encode('utf-8'))
     buf.seek(0)
     safe = secure_filename(hashfile.name) or 'hashfile'
-    return send_file(buf, mimetype='text/plain', as_attachment=True,
+    return send_file(buf, mimetype='text/plain; charset=utf-8', as_attachment=True,
                      download_name=f"{safe}_{fmt}.txt")

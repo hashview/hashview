@@ -78,6 +78,7 @@ Notable changes will be documented here
 - Task/job max-runtime is enforced on the parent task rather than per chunk
 - Cracked-hash import compares hashes case-insensitively and normalizes the lookup so records stored (lowercased) by the hashfile import path match regardless of the submitted hash's case
 - Analytics decode `$HEX[...]` values before length/complexity analysis
+- Hashfile export downloads are UTF-8 encoded, so cracked plaintext/usernames containing non-Latin-1 characters (emoji, CJK, Cyrillic) are exported intact instead of being silently corrupted to `?`
 - Agents survive a server restart mid-task, and a bug where agent status could show as empty was fixed
 - Create/edit forms surface validation errors inside their modal instead of redirecting away
 - Several data-retention cleanup failures and hash-type/validator parsing bugs (e.g. PKZIP `$pkzip$`/`$pkzip2$`)

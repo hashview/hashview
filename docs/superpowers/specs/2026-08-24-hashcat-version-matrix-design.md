@@ -63,11 +63,23 @@ parser refactor wait on five binary downloads.
 
 ### Tier 1 — offline contract tests
 
-`tests/unit/test_hashcat_contract.py` runs the real parser functions over
+`tests/agent_unit/test_hashcat_contract.py` runs the real parser functions over
 committed golden fixtures at `tests/fixtures/hashcat/<version>/`, one directory
-per matrix version containing `status.jsonl`, `benchmark.txt`, `outfile.txt`,
-and `help.txt`. No hashcat binary, no network. Parameterised over every fixture
-directory present, so adding a version is a directory drop.
+per matrix version containing `version.txt`, `status.txt` (raw stdout, so the
+skip-non-JSON path is exercised too), `benchmark.txt`, `outfile.txt`,
+`help.txt`, and a derived `summary.json`. No hashcat binary, no network.
+Parameterised over every fixture directory present, so adding a version is a
+directory drop.
+
+It lives in `tests/agent_unit/` rather than `tests/unit/` because
+`unit-tests.yml` includes that directory in *both* coverage runs, so the test
+earns credit under `--cov=agent` and `--cov=hashview` alike.
+
+Reaching the status parser requires a prerequisite refactor: `hashcatParser`
+currently lives in `hashview-agent.py`, which calls `argparse.parse_args()` at
+import time and imports `psutil`, so no test can import it. It moves verbatim
+into a new dependency-free `install/hashview-agent/agent/status.py`, following
+the pattern `agent/bench.py` already set. Behaviour is unchanged.
 
 Runs in the existing `unit-tests.yml` job on every PR. This is the only tier
 that gates ordinary PRs.
@@ -77,10 +89,17 @@ that gates ordinary PRs.
 New workflow `.github/workflows/hashcat-matrix.yml`, one matrix leg per pinned
 version. Each leg installs `pocl-opencl-icd` and `p7zip-full`, downloads the
 sha256-pinned release archive from GitHub, and runs a capture script that
-produces the same four artifacts Tier 1 consumes. It then runs the Tier 1
-assertions against the freshly captured artifacts, plus the chunk-coverage
-check from contract item 5, and diffs the capture against the committed fixture
-so an upstream change to a *pinned* version is also caught.
+produces the same artifacts Tier 1 consumes. It then runs the Tier 1 assertions
+against the freshly captured artifacts, plus the chunk-coverage check from
+contract item 5, and diffs the capture against the committed fixture so an
+upstream change to a *pinned* version is also caught.
+
+The drift diff compares `summary.json`, not the raw capture. Raw output embeds
+timestamps, measured speeds, session ids, and temp paths, none of which are
+stable between runs. The summary keeps only the shape Hashview depends on:
+which keys appear in the status objects, which keys appear per device, which of
+our flags the binary advertises, the outfile field count, and the number of
+benchmark speed lines.
 
 A stock `ubuntu-latest` runner with pocl and no GPU is sufficient; this was
 verified by running prebuilt 6.2.6 and 7.1.2 binaries in a clean
@@ -121,9 +140,11 @@ title before creating one.
 
 | Component | Path | Responsibility |
 |---|---|---|
-| Capture script | `tests/hashcat_matrix/capture.sh` | Given an unpacked hashcat dir and an output dir, produce `status.jsonl`, `benchmark.txt`, `outfile.txt`, `help.txt`. Knows nothing about assertions. |
+| Status parser | `install/hashview-agent/agent/status.py` | Dependency-free `--status-json` parsing, extracted from `hashview-agent.py` so it is importable. |
+| Capture script | `tests/hashcat_matrix/capture.sh` | Given a hashcat binary and an output dir, produce `version.txt`, `status.txt`, `benchmark.txt`, `outfile.txt`, `help.txt`. Knows nothing about assertions. |
 | Fetch script | `tests/hashcat_matrix/fetch.sh` | Given a version and expected sha256, download, verify, and unpack a release. Knows nothing about capture. |
-| Contract assertions | `tests/unit/test_hashcat_contract.py` | Assert the five contract items against a fixture directory. Pure pytest, no subprocess. |
+| Summarizer | `tests/hashcat_matrix/summarize.py` | Reduce a capture to a volatile-free `summary.json` for the drift diff. |
+| Contract assertions | `tests/agent_unit/test_hashcat_contract.py` | Assert contract items 1-4 against a fixture directory. Pure pytest, no subprocess. |
 | Chunk coverage test | `tests/hashcat_matrix/test_chunk_coverage.py` | Contract item 5. Needs a live binary, so it is Tier 2 only. |
 | Fixtures | `tests/fixtures/hashcat/<version>/` | Committed captures. |
 | Workflow | `.github/workflows/hashcat-matrix.yml` | Tiers 2 and 3. |

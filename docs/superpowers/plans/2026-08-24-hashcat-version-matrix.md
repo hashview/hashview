@@ -1137,6 +1137,11 @@ jobs:
       # force-skipped this whole module even with HASHCAT_BIN set, which would
       # make this gate a no-op that always reports success.
       - name: Assert --skip/--limit slice semantics
+        # shell: bash is load-bearing. The default shell for `run:` is
+        # `bash -e {0}` WITHOUT pipefail, so `pytest | tee` would take tee's
+        # exit status and a failing pytest would go green. `shell: bash` runs
+        # `bash --noprofile --norc -eo pipefail {0}`.
+        shell: bash
         env:
           HASHCAT_BIN: ${{ steps.fetch.outputs.dir }}/hashcat.bin
         run: |
@@ -1214,8 +1219,13 @@ jobs:
         id: capture
         if: steps.newest.outputs.unpinned == 'true'
         continue-on-error: true
+        # VERSION comes from hashcat's release tag -- third-party data. Passing
+        # it through env: keeps it out of the script text; interpolating
+        # ${{ }} directly into run: would let a crafted tag name execute here.
+        env:
+          VERSION: ${{ steps.newest.outputs.version }}
         run: |
-          version='${{ steps.newest.outputs.version }}'
+          version="${VERSION}"
           url="https://github.com/hashcat/hashcat/releases/download/v${version}/hashcat-${version}.7z"
           mkdir -p "${RUNNER_TEMP}/hc"
           curl -fsSL --retry 3 -o "${RUNNER_TEMP}/hc/hashcat.7z" "$url"
@@ -1249,6 +1259,9 @@ jobs:
           SHA256: ${{ steps.capture.outputs.sha256 }}
           RESULT: ${{ steps.capture.outcome }}
         run: |
+          # The download may have failed before a checksum was computed; say so
+          # rather than rendering an empty sha for someone to paste into a pin.
+          sha_text="${SHA256:-(download failed - recompute before pinning)}"
           title="hashcat ${VERSION} is not in the interop matrix"
           existing="$(gh issue list --state open --search "\"${title}\" in:title" \
             --json number --jq '.[0].number // empty')"
@@ -1272,7 +1285,7 @@ jobs:
             echo
             echo '```yaml'
             echo "          - version: \"${VERSION}\""
-            echo "            sha256: \"${SHA256}\""
+            echo "            sha256: \"${sha_text}\""
             echo "            blocking: true"
             echo '```'
             echo

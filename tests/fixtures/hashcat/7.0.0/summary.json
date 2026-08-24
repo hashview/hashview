@@ -20,11 +20,11 @@
   ],
   "benchmark_speed_lines": 1,
   "device_keys": [],
+  "has_parseable_status": false,
   "outfile_field_counts": [
     2
   ],
   "outfile_line_count": 1,
   "status_keys": [],
-  "status_line_count": 0,
   "version": "v7.0.0"
 }

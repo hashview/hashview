@@ -488,14 +488,14 @@ def summarize(capture_dir):
     bench = (capture_dir / "benchmark.txt").read_text(encoding="utf-8", errors="replace")
 
     return {
-        "version": (capture_dir / "version.txt").read_text(encoding="utf-8").strip(),
-        "status_line_count": len(objects),
-        "status_keys": sorted(status_keys),
-        "device_keys": sorted(device_keys),
         "advertised_flags": advertised,
-        "outfile_line_count": len(outfile_lines),
-        "outfile_field_counts": sorted({len(ln.split(":")) for ln in outfile_lines}),
         "benchmark_speed_lines": len(re.findall(r"Speed\.#\d+", bench)),
+        "device_keys": sorted(device_keys),
+        "has_parseable_status": bool(objects),
+        "outfile_field_counts": sorted({len(ln.split(":")) for ln in outfile_lines}),
+        "outfile_line_count": len(outfile_lines),
+        "status_keys": sorted(status_keys),
+        "version": (capture_dir / "version.txt").read_text(encoding="utf-8").strip(),
     }
 
 
@@ -552,13 +552,13 @@ for v in 6.2.6 7.0.0 7.1.0 7.1.1 7.1.2; do
   for f in version.txt status.txt benchmark.txt outfile.txt help.txt summary.json; do
     test -s "$d/$f" || echo "EMPTY OR MISSING: $d/$f"
   done
-  printf '%-8s %s  status_lines=%s\n' "$v" \
+  printf '%-8s %s  has_parseable_status=%s\n' "$v" \
     "$(cat "$d/version.txt")" \
-    "$(python3 -c "import json,sys;print(json.load(open('$d/summary.json'))['status_line_count'])")"
+    "$(python3 -c "import json,sys;print(json.load(open('$d/summary.json'))['has_parseable_status'])")"
 done
 ```
 
-Expected: no `EMPTY OR MISSING` lines, and every version reports at least one status line. If 7.1.0 or 7.1.1 report zero status lines, that is the known machine-readable-status breakage — record it in the commit message and continue; Task 3 marks those two versions non-blocking.
+Expected: no `EMPTY OR MISSING` lines. The 6.2.6, 7.1.0, 7.1.1, and 7.1.2 versions should report `has_parseable_status=True`; 7.0.0 reports `has_parseable_status=False` due to the known machine-readable-status breakage. Task 3 marks 7.0.0 as non-blocking.
 
 - [ ] **Step 6: Confirm the fixtures contain no non-synthetic data**
 

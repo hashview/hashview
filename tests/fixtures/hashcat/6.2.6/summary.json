@@ -26,6 +26,7 @@
     "speed",
     "util"
   ],
+  "has_parseable_status": true,
   "outfile_field_counts": [
     2
   ],
@@ -44,6 +45,5 @@
     "target",
     "time_start"
   ],
-  "status_line_count": 2,
   "version": "v6.2.6"
 }

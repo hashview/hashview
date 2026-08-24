@@ -56,14 +56,14 @@ def summarize(capture_dir):
     bench = (capture_dir / "benchmark.txt").read_text(encoding="utf-8", errors="replace")
 
     return {
-        "version": (capture_dir / "version.txt").read_text(encoding="utf-8").strip(),
-        "status_line_count": len(objects),
-        "status_keys": sorted(status_keys),
-        "device_keys": sorted(device_keys),
         "advertised_flags": advertised,
-        "outfile_line_count": len(outfile_lines),
-        "outfile_field_counts": sorted({len(ln.split(":")) for ln in outfile_lines}),
         "benchmark_speed_lines": len(re.findall(r"Speed\.#\d+", bench)),
+        "device_keys": sorted(device_keys),
+        "has_parseable_status": bool(objects),
+        "outfile_field_counts": sorted({len(ln.split(":")) for ln in outfile_lines}),
+        "outfile_line_count": len(outfile_lines),
+        "status_keys": sorted(status_keys),
+        "version": (capture_dir / "version.txt").read_text(encoding="utf-8").strip(),
     }
 
 

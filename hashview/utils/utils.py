@@ -603,6 +603,31 @@ def hexplain_to_text(hexplain):
     except ValueError:
         return s
 
+# AD password-history rows are '<name>_history<n>' (secretsdump.py -history);
+# some dumpers omit the index. Anchored so a real account merely containing
+# '_history' (e.g. 'bob_historyclub') is kept, case-insensitive so an uppercased
+# dump is still recognised.
+_HISTORY_SUFFIX_RE = re.compile(r'_history\d*$', re.IGNORECASE)
+
+# Modes where machine-account/history semantics apply, i.e. the AD-fed NTLM
+# family: 1000 NTLM, 2100 DCC2, 3000 LM. Only consulted for the generic
+# 'user:hash'/'hash_only' formats, where a trailing-'$' username in a non-AD
+# dump (an MD5 web-app export, say) is a real account. NetNTLM modes are absent
+# on purpose: their ciphertexts are colon-delimited, so they arrive as
+# file_type 'NetNTLM', which filters unconditionally.
+_NTLM_FAMILY_HASH_TYPES = {'1000', '2100', '3000'}
+
+
+def is_machine_or_history_account(username):
+    """True for usernames Hashview must not import from an AD dump: machine
+    accounts (trailing '$', whose 120-char random password will never crack) and
+    NTLM password-history rows. Both inflate the account count and depress the
+    reported crack rate, and nothing filters at report time -- import is the
+    only place to drop them."""
+    name = (username or '').strip()
+    return name.endswith('$') or bool(_HISTORY_SUFFIX_RE.search(name))
+
+
 def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
     """Function to hashfile"""
 
@@ -617,6 +642,14 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
         username = None
         if len(line) > 0:
             if file_type == 'hash_only':
+                # DCC2 is the one hash_only mode whose ciphertext carries a
+                # username (extracted below), so it is the one that can carry an
+                # AD machine account. Filter before import_hash_only() or the
+                # ciphertext orphans in `hashes` and still gets cracked.
+                if str(hash_type) == '2100':
+                    dcc2_fields = line.lower().rstrip().split('#')
+                    if len(dcc2_fields) > 1 and is_machine_or_history_account(dcc2_fields[1]):
+                        continue
                 # forcing lower casing of hash as hashcat will return lower cased version of the has and we want to match what we imported.
                 if hash_type in ('300', '1731', '1000'):
                     hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
@@ -633,6 +666,14 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                     username = None
             elif file_type == 'user_hash':
                 if ':' in line:
+                    # NTDS dumps are routinely cut down to 'user:nthash', so AD
+                    # machine accounts and history rows reach this format too.
+                    # Filter before import_hash_only() or the ciphertext orphans
+                    # in `hashes` and still gets cracked. hash_type arrives as an
+                    # int on the API path (routes.py takes <int:hash_type>).
+                    if (str(hash_type) in _NTLM_FAMILY_HASH_TYPES
+                            and is_machine_or_history_account(line.split(':')[0])):
+                        continue
                     if hash_type == '300' or hash_type == '1731':
                         hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
                         username = line.split(':')[0]
@@ -658,9 +699,7 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                 username = line.split(':')[0]
             elif file_type == 'pwdump':
                 # do we let user select LM so that we crack those instead of NTLM?
-                # First extracting usernames so we can filter out machine accounts
-                if re.search(r"\$$", line.split(':')[0]) or "_history" in line.split(':')[0]:
-                #if '$' in line.split(':')[0]:
+                if is_machine_or_history_account(line.split(':')[0]):
                     continue
                 else:
                     hash_id = import_hash_only(line=line.split(':')[3].lower(), hash_type='1000')
@@ -672,10 +711,8 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                 else:
                     username = line.split('$')[3]
             elif file_type == 'NetNTLM':
-                # First extracting usernames so we can filter out machine accounts
                 # 5600, domain is case sensitve. Hashcat returns username in upper case.
-                if re.search(r"\$$", line.split(':')[0]):
-                #if '$' in line.split(':')[0]:
+                if is_machine_or_history_account(line.split(':')[0]):
                     continue
                 else:
                     # uppercase uesrname in line
@@ -1731,3 +1768,19 @@ def getTimeFormat(total_runtime): # Runtime in seconds
         return str(round(total_runtime/60)) + " minute(s)"
     elif total_runtime < 60:
         return "less then 1 minute"
+
+def apply_name_filter(query, column, search_term):
+    """Narrow `query` to rows whose `column` contains `search_term`.
+
+    Case-insensitive substring match, used by the listing pages so their filter
+    box searches the whole table rather than only the rows the current page
+    happened to render. An empty or whitespace-only term is a no-op.
+
+    LIKE wildcards in the user's input are escaped, so typing a literal '%' or
+    '_' matches that character instead of standing in for "anything".
+    """
+    term = (search_term or '').strip()
+    if not term:
+        return query
+    escaped = term.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+    return query.filter(column.ilike('%' + escaped + '%', escape='\\'))

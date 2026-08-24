@@ -14,10 +14,16 @@ from flask import (
 from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
-from hashview.models import Hashes, Jobs, JobTasks, Rules, Tasks, Users, Wordlists, db
+from hashview.models import Hashes, JobTasks, Rules, Tasks, Users, Wordlists, db
 from hashview.rules.forms import RulesForm
 from hashview.utils.audit import log_event
-from hashview.utils.utils import get_filehash, get_linecount, save_file, try_commit
+from hashview.utils.utils import (
+    apply_name_filter,
+    get_filehash,
+    get_linecount,
+    save_file,
+    try_commit,
+)
 
 rules = Blueprint('rules', __name__)
 
@@ -43,13 +49,49 @@ def _rule_ttype(task):
 @rules.route("/rules", methods=['GET'])
 @login_required
 def rules_list():
-    rules = Rules.query.all()
-    tasks = Tasks.query.all()
-    jobs = Jobs.query.all()
-    jobtasks = JobTasks.query.all()
+    # Pagination, sorting, and filtering mirror /tasks. The filter is applied
+    # to the query before .paginate() so it searches every rule rather than
+    # only the ones this page happens to render.
+    page = request.args.get('page', 1, type=int) or 1
+    per_page = 20
+
+    sort_by = request.args.get('sort_by', 'name', type=str)
+    sort_order = request.args.get('sort_order', 'asc', type=str)
+    descending = sort_order == 'desc'
+    name_filter = request.args.get('q', '', type=str).strip()
+
+    if sort_by == 'size':
+        query = Rules.query.order_by(
+            Rules.size.desc() if descending else Rules.size.asc())
+    elif sort_by == 'owner':
+        query = Rules.query.join(Users, Rules.owner_id == Users.id).order_by(
+            Users.first_name.desc() if descending else Users.first_name.asc())
+    elif sort_by == 'last_updated':
+        query = Rules.query.order_by(
+            Rules.last_updated.desc() if descending else Rules.last_updated.asc())
+    else:
+        # Default (and any unrecognised sort_by): by rule name.
+        sort_by = 'name'
+        query = Rules.query.order_by(
+            Rules.name.desc() if descending else Rules.name.asc())
+
+    query = apply_name_filter(query, Rules.name, name_filter)
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    rules = pagination.items
+
     users = Users.query.all()
 
-    # --- per-rule info-modal data ---
+    # --- per-rule info-modal data, for the rules on this page only ---
+    # Scoped to pagination.items so the cost is bounded by page size rather
+    # than by the size of the rules table.
+    rule_ids = [r.id for r in rules]
+    tasks = (Tasks.query.filter(Tasks.rule_id.in_(rule_ids)).all()
+             if rule_ids else [])
+    tasks_by_rule = {}
+    for t in tasks:
+        tasks_by_rule.setdefault(t.rule_id, []).append(t)
+
+    task_ids = [t.id for t in tasks]
     wl_names = {w.id: w.name for w in Wordlists.query.all()}
     user_names = {u.id: (((u.first_name or '') + ' ' + (u.last_name or '')).strip() or '—')
                   for u in users}
@@ -57,11 +99,13 @@ def rules_list():
         row.task_id: row.recovered_count
         for row in Hashes.query.with_entities(
             Hashes.task_id, db.func.count(Hashes.id).label('recovered_count')
-        ).filter(Hashes.cracked == '1').group_by(Hashes.task_id).all()
-    }
+        ).filter(Hashes.cracked == '1',
+                 Hashes.task_id.in_(task_ids)).group_by(Hashes.task_id).all()
+    } if task_ids else {}
     jobs_by_task = {}
-    for jt in jobtasks:
-        jobs_by_task.setdefault(jt.task_id, set()).add(jt.job_id)
+    if task_ids:
+        for jt in JobTasks.query.filter(JobTasks.task_id.in_(task_ids)).all():
+            jobs_by_task.setdefault(jt.task_id, set()).add(jt.job_id)
 
     rule_used_tasks = {}   # rule.id -> [{name, wordlist, type, hits}]
     rule_hits = {}         # rule.id -> summed historical hits
@@ -69,7 +113,7 @@ def rules_list():
     rule_job_count = {}    # rule.id -> number of distinct jobs using those tasks
     rule_owner = {}        # rule.id -> owner display name
     for rule in rules:
-        used = [t for t in tasks if t.rule_id == rule.id]
+        used = tasks_by_rule.get(rule.id, [])
         rows, job_ids, total = [], set(), 0
         for t in used:
             hits = recovered_by_task.get(t.id, 0)
@@ -87,10 +131,12 @@ def rules_list():
         rule_job_count[rule.id] = len(job_ids)
         rule_owner[rule.id] = user_names.get(rule.owner_id, '—')
 
-    return render_template('rules.html.j2', title='Rules', rules=rules, tasks=tasks, jobs=jobs,
-                           jobtasks=jobtasks, users=users, rule_used_tasks=rule_used_tasks,
+    return render_template('rules.html.j2', title='Rules', rules=rules,
+                           users=users, rule_used_tasks=rule_used_tasks,
                            rule_hits=rule_hits, rule_task_count=rule_task_count,
                            rule_job_count=rule_job_count, rule_owner=rule_owner, rulesForm=RulesForm(),
+                           pagination=pagination, sort_by=sort_by, sort_order=sort_order,
+                           name_filter=name_filter,
                            form_err=session.pop('rules_form_err', None))
 
 @rules.route("/rules/add", methods=['GET', 'POST'])

@@ -42,6 +42,7 @@ from hashview.models import (
 )
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
+    apply_name_filter,
     build_job_task_commands,
     dynamic_wordlist_ids,
     import_hashfilehashes,
@@ -93,11 +94,17 @@ def jobs_list():
     # Check if filtering by current user
     show_only_mine = request.args.get('show_only_mine', 'false')
 
+    # Name filter. Applied server-side, before pagination, so it searches every
+    # job rather than only the ones rendered on the current page.
+    name_filter = request.args.get('q', '', type=str).strip()
+
     # Build query based on filter
+    query = Jobs.query
     if show_only_mine == 'true':
-        pagination = Jobs.query.filter_by(owner_id=current_user.id).order_by(Jobs.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
-    else:
-        pagination = Jobs.query.order_by(Jobs.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
+        query = query.filter_by(owner_id=current_user.id)
+    query = apply_name_filter(query, Jobs.name, name_filter)
+    pagination = query.order_by(Jobs.created_at.desc()).paginate(
+        page=page, per_page=per_page, error_out=False)
 
     jobs = pagination.items
 
@@ -202,7 +209,8 @@ def jobs_list():
         job_task_count=job_task_count,
         job_notifs=job_notifs,
         pagination=pagination,
-        show_only_mine=show_only_mine
+        show_only_mine=show_only_mine,
+        name_filter=name_filter
     )
 
 @jobs.route("/jobs/add", methods=['GET', 'POST'])

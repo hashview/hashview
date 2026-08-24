@@ -9,6 +9,14 @@
 # Enable once per clone:
 #   git config core.hooksPath .githooks
 #
+# Keep that value relative, exactly as written above. Git resolves a relative
+# hooksPath against the top level of whichever working tree you run git from, so
+# each git worktree correctly uses its own .githooks/. An absolute path (e.g.
+# /Users/you/projects/hashview/.githooks) instead pins every worktree to the
+# main checkout's copy: edits to this script made in a worktree then have no
+# effect on a push from it, and you are silently testing the old version.
+# Check with: git config core.hooksPath
+#
 # Bypass (use sparingly):
 #   git push --no-verify
 
@@ -69,18 +77,45 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     commits=$(git rev-list "${range_args[@]}" 2>/dev/null)
     [ -z "$commits" ] && continue
 
-    # Combined diff of added lines only for the push range.
-    diff=$(git diff --unified=0 --no-color "${range_args[@]}" 2>/dev/null)
+    # Per-commit patch for the push range.
+    #
+    # Must be `git log -p`, not `git diff`: range_args uses rev-list syntax,
+    # and for a new branch that is `<sha> --not --remotes`. `git diff` does not
+    # understand --not/--remotes as range exclusion — it treats the extra revs
+    # as more sides to compare and emits a *combined* diff, which both omits
+    # real additions and attributes untouched upstream lines to the push. That
+    # made the scanner report "clean" on a commit holding an AWS key (#418).
+    # `git log -p` takes rev-list arguments natively. Merge commits are skipped
+    # by default, which is right: they add nothing the listed commits lack.
+    diff=$(git log -p --unified=0 --no-color --format='' "${range_args[@]}")
 
     # Files added/modified in this push.
-    changed_files=$(git diff --name-only --diff-filter=AM "${range_args[@]}" 2>/dev/null)
+    changed_files=$(git log --name-only --diff-filter=AM --format='' \
+                        "${range_args[@]}" | grep -v '^$' | sort -u)
+
+    # Every path touched by the push, any status. Used only for the sanity
+    # check below.
+    touched_files=$(git log --name-only --format='' "${range_args[@]}" \
+                        | grep -v '^$' | sort -u)
 
     # Commit messages (subject + body) for every commit in the push range,
     # prefixed with the short SHA so findings point at the offending commit.
     messages=$(git log --format='%h %B%n---END---' "${range_args[@]}" 2>/dev/null)
 
-    if [ -z "$diff" ] && [ -z "$messages" ]; then
-        continue
+    # Sanity check for gross breakage: files were touched but git returned no
+    # patch text at all. A backstop only — it catches a range that yields
+    # nothing, not one that yields the wrong thing. (In #418 the bad range
+    # still emitted combined-diff headers, so this check would NOT have caught
+    # it; the tests in tests/unit/test_prepush_hook.py are what guard that.)
+    #
+    # Keyed on touched_files rather than on the commit list, because an empty
+    # commit (git commit --allow-empty) legitimately has no patch and must
+    # still be pushable.
+    if [ -z "$diff" ] && [ -n "$touched_files" ]; then
+        printf '%spre-push: %s file(s) changed in this push but no diff could be computed.%s\n' \
+            "$RED" "$(printf '%s\n' "$touched_files" | wc -l | tr -d ' ')" "$RST" >&2
+        printf 'This is a bug in the hook, not a finding. Refusing to report a clean scan.\n' >&2
+        exit 1
     fi
 
     # --- Built-in patterns (scan added diff lines + commit messages) ---

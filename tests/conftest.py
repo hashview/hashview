@@ -97,7 +97,12 @@ def live_server():
 
 @pytest.fixture(autouse=True)
 def ensure_setup(page, live_server, request):
-    if not request.node.get_closest_marker("e2e"):
+    # The perf suite (tests/e2e/test_job_creation_perf.py) is marked `perf`
+    # rather than `e2e` so it stays out of the default e2e run, but it drives the
+    # same live host and needs the same first-run setup handled.
+    if not request.node.get_closest_marker("e2e") and not request.node.get_closest_marker(
+        "perf"
+    ):
         return
     if request.node.get_closest_marker("agent_sim"):
         return

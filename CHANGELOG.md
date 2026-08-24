@@ -47,7 +47,11 @@ Notable changes will be documented here
 - Per-hashfile `--hex-salt` option for salted hash types
 - New "Website Keywords" dynamic wordlist that crawls a per-job URL to build a targeted wordlist
 
+**Testing**
+- Job-creation performance e2e suite (`tests/e2e/test_job_creation_perf.py`) with a tunable volume seeder (`tests/seed_perf_db.py`), covering latency budgets for each wizard step plus strict-xfail scaling guards for the four endpoints in issue #422 whose cost grows with table size rather than page size
+
 ### Changed
+- The Rules listing is paginated (20 per page) with sortable Name / Rules / Owner / Last Updated columns and a server-side name filter, matching the Tasks listing
 - Reintroduced distributed chunking: eligible mask/wordlist tasks are split into per-agent chunks sized from each agent's benchmark, and a chunked task now appears as a single attack in the job editor
 - Wordlists are stored gzip-compressed at rest; agents sync and verify the compressed files
 - `/v1` list and detail endpoints now return native JSON instead of a JSON-encoded string, so clients no longer double-parse
@@ -61,6 +65,7 @@ Notable changes will be documented here
 ### Fixed
 - The Analytics page no longer hangs the browser on large datasets: the Shared Passwords and Username = Password cards render a capped preview (with the full total shown) instead of one form per group, and the complete lists remain available from the download buttons
 - Analytics counted a password as "shared" when a single account's hash appeared in more than one hashfile, or when the rows had no username at all; shared passwords are now grouped by distinct named account
+- The name filter on the Tasks and Jobs listings now searches every task/job instead of only the rows on the current page, so a match on a later page is no longer reported as "no match"
 - The agent's HTTP/API layer is now resilient to non-200 and unexpected server responses instead of crashing with opaque errors
 - Command-injection hardening: hashcat is invoked as an argv list with no shell
 - CSRF: state-changing actions were moved from GET to POST and protected with CSRF tokens
@@ -75,6 +80,8 @@ Notable changes will be documented here
 - Several data-retention cleanup failures and hash-type/validator parsing bugs (e.g. PKZIP `$pkzip$`/`$pkzip2$`)
 - The `main` -> v0.8.3 database upgrade is now idempotent under schema drift: migrations skip columns/tables that already exist instead of aborting on a duplicate-column error (which previously stranded the whole upgrade and left the app reporting "Unknown column"). The `tasks.hc_attackmode` conversion is also guarded so it can't misclassify tasks if re-run on an already-integer column. The `main` -> v0.8.3 upgrade also reconciles `jobs.limit_recovered` to the same `DEFAULT 0` a fresh install gets (it was previously added default-less on the main line), so an upgraded schema matches a freshly built one.
 - The "I'm Feeling Lucky" button on a job's task queue said "top 5" while actually assigning up to the top 10 historically effective tasks (or fewer, if fewer exist); the label now says "top 10" to match (#379)
+- The rules, wordlist and hashfile download endpoints now really do delete the scratch file they create in `control/tmp`. The previous cleanup was registered with `response.call_on_close()`, which never runs for a `send_from_directory` response because Werkzeug bypasses the closing wrapper for direct-passthrough responses — so the directory kept growing on every agent poll. Cleanup now runs via `after_this_request` (#226)
+- Machine accounts and NTLM password-history entries are now filtered on every import format that carries a username from an AD dump (pwdump, `user:hash`, NetNTLM, and DCC2 hash-only), instead of pwdump alone. Kerberos ticket imports are unchanged. An NTDS dump cut down to `user:hash` previously imported `COMPUTER$` and `COMPUTER$_history1` as if they were real accounts, inflating the hashfile's account count and depressing its reported crack rate (#409). The pwdump filter was also case-sensitive, so an uppercased `COMPUTER$_HISTORY0` slipped through (#410), and the NetNTLM filter only looked for a trailing `$` (#411). The history suffix is now matched anchored to the end of the name, so a real account such as `bob_historyclub` is no longer dropped. Filtering stays scoped to the NTLM family of hash types, so a trailing-`$` username in a non-NTLM `user:hash` dump is still imported.
 
 ### Security
 - The agent no longer runs any command through a shell. Rule files downloaded during sync are decompressed and installed in-process (`gzip` + `os.replace`) instead of shelling out to `gunzip`/`mv` with the server-supplied filename interpolated into the command line, and rule/wordlist names from the server are reduced to a plain filename before they are used as a path. A rule name carrying shell metacharacters (possible on installs upgraded from before the path randomization) can no longer execute on the agent host, and a corrupt download now skips that one rule instead of killing the agent. The agent image also no longer needs `gzip`/`coreutils`.

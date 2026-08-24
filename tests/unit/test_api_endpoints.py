@@ -1044,8 +1044,21 @@ def test_rules_download_serves_gzip_roundtrip(
 
 
 @pytest.mark.security
-def test_send_generated_file_removes_file_after_response_close(app, tmp_path):
-    """Generated API download files are removed after the response closes."""
+def test_send_generated_file_serves_payload_and_registers_cleanup(app, tmp_path):
+    """The helper serves the file and defers deletion to the request teardown.
+
+    Deliberately does NOT assert that ``response.close()`` deletes the file.
+    The previous version of this test did exactly that, and it passed for as
+    long as the cleanup was wired to ``response.call_on_close()`` -- which no
+    WSGI server ever invokes for a ``send_from_directory`` response, because
+    Werkzeug returns the raw file wrapper for direct-passthrough responses
+    instead of wrapping it in a ``ClosingIterator``. Calling ``close()`` by
+    hand was the only thing that made it fire, so the test asserted a contract
+    the production request path never exercised (#226).
+
+    The real end-to-end behaviour is covered per-route in
+    tests/unit/test_api_tmp_file_cleanup.py, which drives actual requests.
+    """
     from hashview.api import routes as api_routes
 
     tmp_dir = tmp_path / "control" / "tmp"
@@ -1056,10 +1069,9 @@ def test_send_generated_file_removes_file_after_response_close(app, tmp_path):
     with app.test_request_context("/v1/generated"):
         response = api_routes._send_generated_file(str(tmp_dir), generated.name)
         assert b"".join(response.response) == b"payload"
+        # Still on disk: the unlink runs when the request is finalized, which a
+        # bare test_request_context never reaches.
         assert generated.exists()
-
-        response.close()
-        assert not generated.exists()
 
 
 @pytest.mark.security

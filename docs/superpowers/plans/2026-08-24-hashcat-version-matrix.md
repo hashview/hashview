@@ -1397,7 +1397,7 @@ holding CI red.
 
 ### Running the live tests locally
 
-Needs a CPU OpenCL runtime (`pocl-opencl-icd`) and `p7zip-full`:
+Needs a CPU OpenCL runtime (`pocl-opencl-icd`, plus `ocl-icd-libopencl1` for the ICD loader) and `p7zip-full`:
 
 ```bash
 dir="$(tests/hashcat_matrix/fetch.sh 7.1.2 <sha256> /tmp/hc)"
@@ -1411,8 +1411,15 @@ Without `HASHCAT_BIN` these tests skip.
 Only do this deliberately. A fixture diff means either hashcat changed or the
 capture environment did; decide which before overwriting the evidence.
 
+The `rm -rf` is required, not tidiness: `capture.sh` only `mkdir -p`s its output
+directory, and both hashcat's `--outfile` and the script's `2>>` stderr capture
+append. Refreshing in place would leave duplicated outfile lines and accumulated
+stderr, inflating `summary.json` and failing the workflow's drift diff in a way
+that looks like upstream drift but is not. The workflow does the same `rm -rf`.
+
 ```bash
 dir="$(tests/hashcat_matrix/fetch.sh <version> <sha256> /tmp/hc)"
+rm -rf tests/fixtures/hashcat/<version>
 tests/hashcat_matrix/capture.sh "$dir/hashcat.bin" tests/fixtures/hashcat/<version>
 python tests/hashcat_matrix/summarize.py tests/fixtures/hashcat/<version>
 ```

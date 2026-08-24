@@ -1369,13 +1369,17 @@ python -m pytest tests/agent_unit --cov=agent --cov-report=term-missing --cov-fa
 
 - [ ] **Lint**
 
+These are the exact commands `lint.yml` and `pylint.yml` run. Note that ruff and
+pylint scan only `hashview/` and `hashview.py`, so the new test and script files
+are outside their scope; bandit, however, does scan `install/hashview-agent`, so
+`agent/status.py` must not introduce a new finding.
+
 ```bash
 cd /tmp/hashview-hashcat-matrix
-python -m ruff check .
-python -m pylint hashview --rcfile=$(test -f .pylintrc && echo .pylintrc || echo /dev/null) || true
+ruff check hashview/ hashview.py
+pylint --jobs=1 --rcfile=.pylintrc --reports=n --score=y hashview/ hashview.py
+bandit -r hashview install/hashview-agent -c pyproject.toml -b .bandit-baseline.json
 ```
-
-Match whatever `lint.yml` and `pylint.yml` actually invoke; read them first rather than assuming these commands.
 
 - [ ] **Confirm the branch and push**
 

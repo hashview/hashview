@@ -18,9 +18,14 @@ land without the per-chunk-keyspace work:
     (hashview/templates/_dash_jobs.html.j2:87,103) and score 0 seconds.
 
 NOT covered here: the headline #427 defect, that the parent ETA is a ``max()``
-over running chunks only and ignores queued ones. Asserting the desired value
-needs per-chunk keyspace, which is not carried on the group today (and overlaps
-#402); there is no unambiguous number to pin yet.
+over running chunks only and ignores queued ones. Not for lack of data --
+``JobTasks.chunk_limit``/``chunk_mask``, ``Rules.size``, ``Wordlists.size`` and
+``AgentBenchmarks.speed`` are all persisted, and ``plan_chunks`` already sizes
+each chunk to ~``Settings.chunk_target_duration`` on the slowest agent -- but
+because the *formula* is still an open design question (see #427: whether to
+reconstruct keyspace or derive from the chunk count, how to avoid double
+counting in-flight chunks, what to do when agents are shared across jobs).
+Pinning a number before that is settled would just pin one of the candidates.
 
 Overlap with PR #407 / branch test/agent-eta-clamp: that branch pins the
 *agent* side, clamping ``estimated_stop`` at the source so the sentinel is

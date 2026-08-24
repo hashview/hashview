@@ -812,11 +812,43 @@ canary proving these tests detect a real break."
 Contract item 5. This needs a real binary, so it is Tier 2 only and skips unless `HASHCAT_BIN` is set. The unreleased 7.1.x changelog states "`--skip` and `--limit` now apply to the whole run" — a semantics change to the flags `build_hashcat_command` uses for chunking. This test is what catches it.
 
 **Files:**
-- Create: `tests/hashcat_matrix/__init__.py` (empty), `tests/hashcat_matrix/test_chunk_coverage.py`
+- Create: `tests/hashcat_matrix/__init__.py` (empty), `tests/hashcat_matrix/conftest.py`, `tests/hashcat_matrix/test_chunk_coverage.py`
 - Modify: `pytest.ini`
 
 **Interfaces:**
 - Consumes: `HASHCAT_BIN` environment variable (absolute path to a `hashcat.bin`).
+
+- [ ] **Step 0: Neutralise the repo-root autouse e2e fixtures**
+
+`tests/conftest.py` declares `ensure_setup(page, live_server, request)` as `autouse=True`, so every test under `tests/` pulls in Playwright's `page` fixture and `live_server` — and `live_server` calls `_skip_or_fail(...)` when `HASHVIEW_E2E_BASE_URL` is unset. Without an override, this whole module skips **even when `HASHCAT_BIN` is set**, which would make the CI gate a silent no-op that always "passes". `tests/agent_unit/conftest.py` solves the same problem the same way.
+
+Create `tests/hashcat_matrix/conftest.py`:
+
+```python
+"""Neutralise the repo-root autouse e2e fixtures for this directory.
+
+tests/conftest.py declares an autouse ensure_setup(page, live_server, request),
+so every test under tests/ otherwise requests Playwright's `page` and the
+`live_server` fixture -- and `live_server` skips the test when
+HASHVIEW_E2E_BASE_URL is unset. These live hashcat tests need neither. Without
+these overrides the module skips even with HASHCAT_BIN set, turning the CI gate
+into a no-op that always reports success. tests/agent_unit/conftest.py does the
+same thing for the same reason.
+"""
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def ensure_setup():
+    """Override the parent autouse fixture so live_server is never requested."""
+    return
+
+
+@pytest.fixture(autouse=True)
+def configure_page():
+    """Override the parent autouse fixture so the Playwright page is never built."""
+    return
+```
 
 - [ ] **Step 1: Register the marker in `pytest.ini`**
 
@@ -908,7 +940,7 @@ cd /tmp/hashview-hashcat-matrix
 python -m pytest tests/hashcat_matrix -q -rs
 ```
 
-Expected: 4 skipped, reason "set HASHCAT_BIN to run live hashcat tests". No errors, no collection failures.
+Expected: 4 skipped, and the reason must be exactly `set HASHCAT_BIN to run live hashcat tests`. Read the `-rs` reason text — if it instead says `Set HASHVIEW_E2E_BASE_URL to run e2e tests against a live host`, Step 0's conftest is missing or wrong and the tests will skip in CI too.
 
 - [ ] **Step 4: Verify it passes against a real binary**
 
@@ -920,11 +952,11 @@ docker run --rm --platform linux/amd64 -v "$PWD":/repo -w /repo ubuntu:24.04 bas
   apt-get update -qq
   apt-get install -y -qq curl p7zip-full pocl-opencl-icd ocl-icd-libopencl1 python3 python3-pytest
   dir="$(tests/hashcat_matrix/fetch.sh 7.1.2 80db0316387794ce9d14ed376da75b8a7742972485b45db790f5f8260307ff98 /tmp/hc)"
-  HASHCAT_BIN="$dir/hashcat.bin" python3 -m pytest tests/hashcat_matrix -q -p no:cacheprovider
+  HASHCAT_BIN="$dir/hashcat.bin" python3 -m pytest tests/hashcat_matrix -q -rs -p no:cacheprovider
 '
 ```
 
-Expected: 4 passed.
+Expected: `4 passed`. If you see `4 skipped`, Step 0's conftest is missing or wrong — the tests are being force-skipped by the repo-root autouse e2e fixture and are proving nothing.
 
 - [ ] **Step 5: Confirm the default suite still ignores these tests**
 
@@ -1068,10 +1100,19 @@ jobs:
           python -m pytest tests/agent_unit/test_hashcat_contract.py -q -rxX \
             -k '${{ matrix.version }}'
 
+      # A skipped test exits 0, so assert these actually ran. The repo-root
+      # conftest declares an autouse Playwright/live_server fixture that once
+      # force-skipped this whole module even with HASHCAT_BIN set, which would
+      # make this gate a no-op that always reports success.
       - name: Assert --skip/--limit slice semantics
         env:
           HASHCAT_BIN: ${{ steps.fetch.outputs.dir }}/hashcat.bin
-        run: python -m pytest tests/hashcat_matrix -q
+        run: |
+          python -m pytest tests/hashcat_matrix -q -rs | tee "${RUNNER_TEMP}/slice.log"
+          if grep -q "skipped" "${RUNNER_TEMP}/slice.log"; then
+            echo "::error::live --skip/--limit tests were skipped; the gate proved nothing"
+            exit 1
+          fi
 
       # Structural drift against the committed fixture. Raw captures embed
       # timestamps and measured speeds, so compare the volatile-free summary.

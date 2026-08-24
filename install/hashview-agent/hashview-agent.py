@@ -20,7 +20,6 @@ import subprocess
 import time
 import uuid
 import zlib
-from datetime import datetime
 from threading import Thread
 
 import psutil
@@ -125,6 +124,8 @@ if not os.path.exists('agent/config.conf'):
     config.close()
 
 from agent.api import api  # noqa: E402 - config.conf must exist before agent.api loads it
+from agent.status import convert_speed, time_difference  # noqa: E402,F401 - re-exported for callers
+from agent.status import hashcat_status as hashcatParser  # noqa: E402
 
 
 def send_heartbeat(agent_status, hc_status):
@@ -534,82 +535,6 @@ def report_benchmark(results):
     return api.report_benchmark(results)
     #os.system(cmd)
 
-def time_difference(future_timestamp):
-    # Get the current time and calculate the difference
-    now = datetime.now()
-    future_time = datetime.fromtimestamp(future_timestamp)
-    delta = future_time - now
-
-    # If the time difference is negative (i.e., the timestamp is in the past), return immediately
-    if delta.total_seconds() < 0:
-        return "The specified time is in the past."
-
-    # Calculate each time component
-    years = delta.days // 365
-    months = (delta.days % 365) // 30
-    days = (delta.days % 365) % 30
-    hours, remainder = divmod(delta.seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
-
-    # Store non-zero values with their labels
-    components = [
-        (years, "year"),
-        (months, "month"),
-        (days, "day"),
-        (hours, "hour"),
-        (minutes, "minute"),
-        (seconds, "second")
-    ]
-
-    # Filter out components that are zero
-    components = [(value, name) for value, name in components if value > 0]
-
-    # If there are fewer than two components, just return the available values
-    if len(components) == 0:
-        return "The specified time is very close to now."
-    elif len(components) == 1:
-        return f"{components[0][0]} {components[0][1]}{'s' if components[0][0] > 1 else ''}"
-    
-    # Return only the largest two components
-    largest_two = components[:2]
-    return ', '.join(f"{value} {name}{'s' if value > 1 else ''}" for value, name in largest_two)
-
-def convert_speed(speed):
-    if speed > 1000000000:
-        return str(round((speed / 1000000000),1)) + " GH/s"
-    elif speed > 1000000:
-        return str(round((speed / 1000000), 1)) + " MH/s"
-    elif speed > 1000:
-        return str(round((speed / 1000), 1)) + " KH/s"
-    else:
-        return str(speed) + " H/s"
-
-def hashcatParser(filepath):
-    from agent.bench import parse_device_info
-    status = {}
-    # hashcat's stdout can contain arbitrary non-UTF-8 bytes (recovered plaintext
-    # / candidate bytes). We only need the ASCII --status-json lines, so decode
-    # tolerantly (errors='replace') instead of crashing on a stray byte.
-    with open(filepath, encoding='utf-8', errors='replace') as hashcat_output:
-        for line in hashcat_output:
-            # Iterate the whole file; the last valid status line wins. We read this
-            # while hashcat is still writing it (via tee), so a line can be partial
-            # or malformed -- skip those rather than aborting the status poll.
-            if not line.startswith('{'):
-                continue
-            try:
-                json_data = json.loads(line)
-                status['Time_Estimated'] = "(" + time_difference(json_data['estimated_stop']) + ")"
-                status['Recovered'] = (str(json_data['recovered_hashes'][0]) + "/"
-                                       + str(json_data['recovered_hashes'][1]))
-                status['Speed #'] = convert_speed(sum(d['speed'] for d in json_data['devices']))
-                gpu_count, gpu_model, temps = parse_device_info(json_data)
-                status['GPU_Count'] = gpu_count
-                status['GPU_Model'] = gpu_model
-                status['Temps'] = temps
-            except (ValueError, KeyError, IndexError, TypeError) as err:
-                LOG.debug('Skipping unparseable hashcat status line: %s', err)
-    return status
 
 def killHashcat(pid):
     if sys.platform == 'win32':

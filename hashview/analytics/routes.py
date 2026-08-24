@@ -39,6 +39,16 @@ analytics = Blueprint('analytics', __name__)
 
 BLANK_LABEL = 'Blank (unset)'
 
+# Max rows the Shared Passwords and Username = Password cards put in the HTML.
+# These two lists are the only ones on the page whose length scales with the
+# size of the dataset rather than with a fixed number of buckets, and each
+# shared row is a whole <form>. Rendering them in full on a production hashfile
+# produced a ~50MB response and tens of thousands of DOM nodes, which locked up
+# the browser even though the server responded in under two seconds. The cards
+# show the highest-value rows and report the true total; the download endpoints
+# still serve the complete set.
+PREVIEW_LIMIT = 100
+
 
 def _scoped_hash_query(customer_id, hashfile_id, cracked=None):
     """Hashes joined to their HashfileHashes (account) rows, narrowed to the
@@ -332,7 +342,11 @@ def get_analytics():
     total_cracked = len(corpus)
 
     freq = Counter()
-    shared_map = defaultdict(list)
+    # {plaintext: {username, ...}} -- a SET so one account is counted once no
+    # matter how many hashfiles its hash appears in. The Hashes -> HashfileHashes
+    # join is one-to-many, so a list here made every plaintext on a hash that
+    # lives in two hashfiles look like a shared password.
+    shared_map = defaultdict(set)
     length_counter = Counter()
     mask_counter = Counter()
     class_counts = [0, 0, 0, 0]          # index 0 -> 1 class ... index 3 -> 4 classes
@@ -342,7 +356,10 @@ def get_analytics():
     for plaintext, username in corpus:
         pword = plaintext or ''
         freq[pword] += 1
-        shared_map[pword].append(username)
+        # An unnamed row identifies no account, so it can never establish that a
+        # password is shared between people.
+        if username:
+            shared_map[pword].add(username)
         length_counter[len(pword)] += 1
         mask_counter[_mask(pword)] += 1
 
@@ -367,7 +384,7 @@ def get_analytics():
 
     shared = sorted(
         ({'plain': pw or BLANK_LABEL, 'plain_raw': pw, 'count': len(users),
-          'users': [_local_part(user) for user in users if user]}
+          'users': sorted(_local_part(user) for user in users)}
          for pw, users in shared_map.items() if len(users) > 1),
         key=lambda item: item['count'], reverse=True)
 
@@ -475,11 +492,13 @@ def get_analytics():
         reused_pct=reused_pct,
         unique_pct=unique_pct,
         top_reuse_count=top_reuse_count,
-        shared=shared,
+        shared=shared[:PREVIEW_LIMIT],
+        shared_total=len(shared),
         masks=masks,
         length_dist=length_dist,
         class_buckets=class_buckets,
-        user_eq_pass=user_eq_pass,
+        user_eq_pass=user_eq_pass[:PREVIEW_LIMIT],
+        user_eq_pass_total=len(user_eq_pass),
         timeline=timeline,
         complexity_hist=complexity_hist,
         complexity_total=total_cracked,
@@ -786,11 +805,13 @@ def _shared_groups(customer_id, hashfile_id):
     """{plaintext: [usernames]} for recovered passwords shared by >1 account in scope."""
     rows = (_scoped_hash_query(customer_id, hashfile_id, cracked=True)
             .with_entities(Hashes.plaintext, HashfileHashes.username).all())
-    groups = defaultdict(list)
+    groups = defaultdict(set)
     for plaintext, username in rows:
         if username:
-            groups[plaintext or ''].append(username)
-    return {pword: users for pword, users in groups.items() if len(users) > 1}
+            groups[plaintext or ''].add(username)
+    # Sets, not lists: the same account reached through two hashfiles is still
+    # one account and must not make a password look shared (matches the card).
+    return {pword: sorted(users) for pword, users in groups.items() if len(users) > 1}
 
 
 @analytics.route('/analytics/download/shared', methods=['POST'])

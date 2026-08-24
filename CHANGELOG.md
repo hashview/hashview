@@ -63,6 +63,8 @@ Notable changes will be documented here
 - Pinned Python to 3.11+; added a ruff / pylint / bandit / pre-commit lint-and-security stack, a LICENSE, and substantially expanded automated tests (unit, agent, end-to-end, and security)
 
 ### Fixed
+- The Analytics page no longer hangs the browser on large datasets: the Shared Passwords and Username = Password cards render a capped preview (with the full total shown) instead of one form per group, and the complete lists remain available from the download buttons
+- Analytics counted a password as "shared" when a single account's hash appeared in more than one hashfile, or when the rows had no username at all; shared passwords are now grouped by distinct named account
 - The name filter on the Tasks and Jobs listings now searches every task/job instead of only the rows on the current page, so a match on a later page is no longer reported as "no match"
 - The agent's HTTP/API layer is now resilient to non-200 and unexpected server responses instead of crashing with opaque errors
 - Command-injection hardening: hashcat is invoked as an argv list with no shell

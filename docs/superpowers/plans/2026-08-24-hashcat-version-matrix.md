@@ -611,7 +611,10 @@ machine-readable surface fails here rather than silently blanking the dashboard
 Assertions are structural, never value-exact: speeds, timestamps and device
 names differ per machine.
 
-Versions in KNOWN_BROKEN_STATUS_JSON are xfail(strict=False). hashcat 7.0.0
+Versions in KNOWN_BROKEN_STATUS_JSON are xfail(strict=True) -- strict because
+the fixture is committed and the defect is deterministic, so an XPASS means the
+fixture was regenerated wrongly or a parser started tolerating broken JSON, and
+that must fail loudly rather than quietly rot the canary. hashcat 7.0.0
 emits structurally INVALID JSON from --status-json: each device object closes
 with a stray '}' instead of a ',' before the "power" key, so json.loads fails
 on every status line (upstream issue #4393). 7.1.0 fixed it. On 7.0.0 the agent
@@ -651,7 +654,7 @@ def _versions():
 
 def _param(version):
     marks = [pytest.mark.xfail(reason="hashcat 7.0.0 emits invalid --status-json (upstream #4393)",
-                               strict=False)] if version in KNOWN_BROKEN_STATUS_JSON else []
+                               strict=True)] if version in KNOWN_BROKEN_STATUS_JSON else []
     return pytest.param(version, marks=marks)
 
 
@@ -770,7 +773,7 @@ cd /tmp/hashview-hashcat-matrix
 python -m pytest tests/agent_unit/test_hashcat_contract.py -q -rxX
 ```
 
-Expected: all pass, with the four 7.0.0 status tests reported as `xfail`. The captured fixtures confirm this is real: 6.2.6, 7.1.0, 7.1.1 and 7.1.2 each yield 2 parseable status objects, while 7.0.0 yields 0 parseable and 2 invalid.
+Expected: all pass, with the four 7.0.0 status tests reported as `xfail` (strict). The captured fixtures confirm this is real: 6.2.6, 7.1.0, 7.1.1 and 7.1.2 each yield 2 parseable status objects, while 7.0.0 yields 0 parseable and 2 invalid.
 
 - [ ] **Step 4: Verify both coverage ratchets still hold**
 
@@ -795,9 +798,11 @@ git add tests/agent_unit/test_hashcat_contract.py
 git commit -m "Add offline hashcat contract tests over the golden fixtures
 
 Runs the production status, benchmark, outfile and flag parsers against real
-captures from five hashcat releases. 7.1.0 and 7.1.1 are non-strict xfail for
-the status-json assertions: those releases broke machine-readable status, which
-7.1.2's notes say it restored. They stay in the matrix as canaries."
+captures from five hashcat releases. 7.0.0's status assertions are strict xfail:
+that release emits structurally invalid --status-json (stray '}' before the
+\"power\" key in each device object, upstream #4393, fixed in 7.1.0), so the
+agent running it would report no status at all. It stays in the matrix as a
+canary proving these tests detect a real break."
 ```
 
 ---
@@ -1298,7 +1303,7 @@ Three tiers guard it:
 before the `"power"` key, so every status line fails `json.loads` (upstream
 issue #4393, fixed in 7.1.0). Because `hashcatParser` swallows unparseable
 lines, an agent running 7.0.0 reports no status at all and the dashboard simply
-goes blank. Its status assertions are non-strict `xfail` and its matrix leg is
+goes blank. Its status assertions are strict `xfail` and its matrix leg is
 `continue-on-error`, so it demonstrates the tests catch a real break without
 holding CI red.
 

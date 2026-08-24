@@ -47,6 +47,9 @@ Notable changes will be documented here
 - Per-hashfile `--hex-salt` option for salted hash types
 - New "Website Keywords" dynamic wordlist that crawls a per-job URL to build a targeted wordlist
 
+**Testing**
+- Job-creation performance e2e suite (`tests/e2e/test_job_creation_perf.py`) with a tunable volume seeder (`tests/seed_perf_db.py`), covering latency budgets for each wizard step plus strict-xfail scaling guards for the four endpoints in issue #422 whose cost grows with table size rather than page size
+
 ### Changed
 - Reintroduced distributed chunking: eligible mask/wordlist tasks are split into per-agent chunks sized from each agent's benchmark, and a chunked task now appears as a single attack in the job editor
 - Wordlists are stored gzip-compressed at rest; agents sync and verify the compressed files

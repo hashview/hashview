@@ -12,9 +12,9 @@
     </div>
     <div style="display:flex; gap:10px;">
         {% if show_only_mine == 'true' %}
-            <a class="btn active" href="{{ url_for('jobs.jobs_list', show_only_mine='false', page=1) }}">{{ icon('users', size=15) }} All jobs</a>
+            <a class="btn active" href="{{ url_for('jobs.jobs_list', show_only_mine='false', page=1, q=name_filter) }}">{{ icon('users', size=15) }} All jobs</a>
         {% else %}
-            <a class="btn" href="{{ url_for('jobs.jobs_list', show_only_mine='true', page=1) }}">{{ icon('users', size=15) }} Only mine</a>
+            <a class="btn" href="{{ url_for('jobs.jobs_list', show_only_mine='true', page=1, q=name_filter) }}">{{ icon('users', size=15) }} Only mine</a>
         {% endif %}
         <a class="btn btn-primary" href="{{ url_for('jobs.jobs_add') }}">{{ icon('plus', size=15) }} New Job</a>
     </div>
@@ -22,8 +22,15 @@
 
 <div class="card">
     <div class="card-head" style="justify-content:flex-end;">
-        <span style="color:var(--text-mute); display:inline-flex;">{{ icon('search', size=16) }}</span>
-        <input type="text" id="job-filter" class="input" style="width:260px; flex:none;" placeholder="filter jobs…" autocomplete="off" oninput="hvFilterJobs(this.value)">
+        {# Server-side filter: submits so it searches every job, not just this page. #}
+        <form method="GET" action="{{ url_for('jobs.jobs_list') }}" style="display:flex; align-items:center; gap:8px; margin:0;">
+            <input type="hidden" name="show_only_mine" value="{{ show_only_mine }}">
+            <span style="color:var(--text-mute); display:inline-flex;">{{ icon('search', size=16) }}</span>
+            <input type="text" id="job-filter" name="q" value="{{ name_filter }}" class="input" style="width:260px; flex:none;" placeholder="filter jobs…" autocomplete="off">
+            {% if name_filter %}
+            <a class="icon-btn" href="{{ url_for('jobs.jobs_list', show_only_mine=show_only_mine) }}" title="Clear filter">{{ icon('x', size=15) }}</a>
+            {% endif %}
+        </form>
     </div>
     {% if jobs %}
     <table class="tbl">
@@ -97,9 +104,13 @@
                 </td>
             </tr>
             {% endfor %}
-            <tr id="job-no-match" style="display:none;"><td colspan="9" style="text-align:center; padding:28px 16px; color:var(--text-mute);" class="mono">No jobs match that filter.</td></tr>
         </tbody>
     </table>
+    {% elif name_filter %}
+    <div class="card-body" style="text-align:center; padding:48px 24px;">
+        <div class="mono" style="color:var(--text-dim); margin-bottom:14px;">No jobs match &ldquo;{{ name_filter }}&rdquo;.</div>
+        <a class="btn" href="{{ url_for('jobs.jobs_list', show_only_mine=show_only_mine) }}">Clear filter</a>
+    </div>
     {% else %}
     <div class="card-body" style="text-align:center; padding:48px 24px;">
         <div class="mono" style="color:var(--text-dim); margin-bottom:14px;">No jobs found.</div>
@@ -111,7 +122,7 @@
 {% if pagination.pages and pagination.pages > 1 %}
 <div class="pager">
     {% if pagination.has_prev %}
-        <a class="pager-btn" href="{{ url_for('jobs.jobs_list', page=pagination.prev_num, show_only_mine=show_only_mine) }}">‹ Prev</a>
+        <a class="pager-btn" href="{{ url_for('jobs.jobs_list', page=pagination.prev_num, show_only_mine=show_only_mine, q=name_filter) }}">‹ Prev</a>
     {% else %}
         <span class="pager-btn disabled">‹ Prev</span>
     {% endif %}
@@ -120,14 +131,14 @@
             {% if p == pagination.page %}
                 <span class="pager-btn active">{{ p }}</span>
             {% else %}
-                <a class="pager-btn" href="{{ url_for('jobs.jobs_list', page=p, show_only_mine=show_only_mine) }}">{{ p }}</a>
+                <a class="pager-btn" href="{{ url_for('jobs.jobs_list', page=p, show_only_mine=show_only_mine, q=name_filter) }}">{{ p }}</a>
             {% endif %}
         {% else %}
             <span class="pager-btn disabled">…</span>
         {% endif %}
     {% endfor %}
     {% if pagination.has_next %}
-        <a class="pager-btn" href="{{ url_for('jobs.jobs_list', page=pagination.next_num, show_only_mine=show_only_mine) }}">Next ›</a>
+        <a class="pager-btn" href="{{ url_for('jobs.jobs_list', page=pagination.next_num, show_only_mine=show_only_mine, q=name_filter) }}">Next ›</a>
     {% else %}
         <span class="pager-btn disabled">Next ›</span>
     {% endif %}
@@ -190,17 +201,6 @@
         }
     }, true);
 })();
-function hvFilterJobs(q){
-    q = (q || '').trim().toLowerCase();
-    var shown = 0;
-    document.querySelectorAll('#job-tbody tr[data-name]').forEach(function(tr){
-        var hit = !q || (tr.getAttribute('data-name') || '').indexOf(q) !== -1;
-        tr.style.display = hit ? '' : 'none';
-        if (hit) shown++;
-    });
-    var none = document.getElementById('job-no-match');
-    if (none) none.style.display = shown === 0 ? '' : 'none';
-}
 </script>
 
 {# ---- per-job modals (native <dialog>, no framework) ---- #}

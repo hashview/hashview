@@ -51,6 +51,7 @@ Notable changes will be documented here
 - Job-creation performance e2e suite (`tests/e2e/test_job_creation_perf.py`) with a tunable volume seeder (`tests/seed_perf_db.py`), covering latency budgets for each wizard step plus strict-xfail scaling guards for the four endpoints in issue #422 whose cost grows with table size rather than page size
 
 ### Changed
+- The Rules listing is paginated (20 per page) with sortable Name / Rules / Owner / Last Updated columns and a server-side name filter, matching the Tasks listing
 - Reintroduced distributed chunking: eligible mask/wordlist tasks are split into per-agent chunks sized from each agent's benchmark, and a chunked task now appears as a single attack in the job editor
 - Wordlists are stored gzip-compressed at rest; agents sync and verify the compressed files
 - `/v1` list and detail endpoints now return native JSON instead of a JSON-encoded string, so clients no longer double-parse
@@ -62,6 +63,7 @@ Notable changes will be documented here
 - Pinned Python to 3.11+; added a ruff / pylint / bandit / pre-commit lint-and-security stack, a LICENSE, and substantially expanded automated tests (unit, agent, end-to-end, and security)
 
 ### Fixed
+- The name filter on the Tasks and Jobs listings now searches every task/job instead of only the rows on the current page, so a match on a later page is no longer reported as "no match"
 - The agent's HTTP/API layer is now resilient to non-200 and unexpected server responses instead of crashing with opaque errors
 - Command-injection hardening: hashcat is invoked as an argv list with no shell
 - CSRF: state-changing actions were moved from GET to POST and protected with CSRF tokens

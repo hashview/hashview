@@ -11,7 +11,7 @@
 <div class="page-head">
     <div>
         <h1 class="page-title">Rules</h1>
-        <div class="page-sub">// {{ rules|length | commafy }} rulesets applied as mutations over wordlists</div>
+        <div class="page-sub">// {{ pagination.total | commafy }} ruleset{{ '' if pagination.total == 1 else 's' }} applied as mutations over wordlists · page {{ pagination.page }}/{{ pagination.pages or 1 }}</div>
     </div>
     <button type="button" class="btn btn-primary" onclick="document.getElementById('upload-rule-modal').showModal()">{{ icon('upload', size=15) }} Upload rules</button>
 </div>
@@ -19,17 +19,45 @@
 <div class="card">
     {# ---- filter bar: magnifying glass beside the input, top-right of the card ---- #}
     <div class="card-head" style="justify-content:flex-end;">
-        <span style="color:var(--text-mute); display:inline-flex;">{{ icon('search', size=16) }}</span>
-        <input type="text" id="rule-filter" class="input" style="width:260px; flex:none;" placeholder="filter rules…" autocomplete="off" oninput="hvFilterRules(this.value)">
+        {# Server-side filter: submits so it searches every rule, not just this page. #}
+        <form method="GET" action="{{ url_for('rules.rules_list') }}" style="display:flex; align-items:center; gap:8px; margin:0;">
+            <input type="hidden" name="sort_by" value="{{ sort_by }}">
+            <input type="hidden" name="sort_order" value="{{ sort_order }}">
+            <span style="color:var(--text-mute); display:inline-flex;">{{ icon('search', size=16) }}</span>
+            <input type="text" id="rule-filter" name="q" value="{{ name_filter }}" class="input" style="width:260px; flex:none;" placeholder="filter rules…" autocomplete="off">
+            {% if name_filter %}
+            <a class="icon-btn" href="{{ url_for('rules.rules_list', sort_by=sort_by, sort_order=sort_order) }}" title="Clear filter">{{ icon('x', size=15) }}</a>
+            {% endif %}
+        </form>
     </div>
     {% if rules %}
     <table class="tbl">
         <thead>
             <tr>
-                <th>Name</th>
-                <th>Rules</th>
-                <th>Owner</th>
-                <th>Last Updated</th>
+                <th>
+                    <a href="{{ url_for('rules.rules_list', sort_by='name', sort_order='desc' if sort_by == 'name' and sort_order == 'asc' else 'asc', page=1, q=name_filter) }}" style="color:inherit; text-decoration:none; display:inline-flex; align-items:center; gap:4px;">
+                        Name
+                        {% if sort_by == 'name' %}<span class="mono" style="font-size:9px;">{{ '▲' if sort_order == 'asc' else '▼' }}</span>{% endif %}
+                    </a>
+                </th>
+                <th>
+                    <a href="{{ url_for('rules.rules_list', sort_by='size', sort_order='desc' if sort_by == 'size' and sort_order == 'asc' else 'asc', page=1, q=name_filter) }}" style="color:inherit; text-decoration:none; display:inline-flex; align-items:center; gap:4px;">
+                        Rules
+                        {% if sort_by == 'size' %}<span class="mono" style="font-size:9px;">{{ '▲' if sort_order == 'asc' else '▼' }}</span>{% endif %}
+                    </a>
+                </th>
+                <th>
+                    <a href="{{ url_for('rules.rules_list', sort_by='owner', sort_order='desc' if sort_by == 'owner' and sort_order == 'asc' else 'asc', page=1, q=name_filter) }}" style="color:inherit; text-decoration:none; display:inline-flex; align-items:center; gap:4px;">
+                        Owner
+                        {% if sort_by == 'owner' %}<span class="mono" style="font-size:9px;">{{ '▲' if sort_order == 'asc' else '▼' }}</span>{% endif %}
+                    </a>
+                </th>
+                <th>
+                    <a href="{{ url_for('rules.rules_list', sort_by='last_updated', sort_order='desc' if sort_by == 'last_updated' and sort_order == 'asc' else 'asc', page=1, q=name_filter) }}" style="color:inherit; text-decoration:none; display:inline-flex; align-items:center; gap:4px;">
+                        Last Updated
+                        {% if sort_by == 'last_updated' %}<span class="mono" style="font-size:9px;">{{ '▲' if sort_order == 'asc' else '▼' }}</span>{% endif %}
+                    </a>
+                </th>
                 <th class="center">Control</th>
             </tr>
         </thead>
@@ -55,9 +83,13 @@
                 </td>
             </tr>
             {% endfor %}
-            <tr id="rule-no-match" style="display:none;"><td colspan="5" style="text-align:center; padding:28px 16px; color:var(--text-mute);" class="mono">No rules match that filter.</td></tr>
         </tbody>
     </table>
+    {% elif name_filter %}
+    <div class="card-body" style="text-align:center; padding:48px 24px;">
+        <div class="mono" style="color:var(--text-dim); margin-bottom:14px;">No rules match &ldquo;{{ name_filter }}&rdquo;.</div>
+        <a class="btn" href="{{ url_for('rules.rules_list', sort_by=sort_by, sort_order=sort_order) }}">Clear filter</a>
+    </div>
     {% else %}
     <div class="card-body" style="text-align:center; padding:48px 24px;">
         <div class="mono" style="color:var(--text-dim); margin-bottom:14px;">No rules found.</div>
@@ -65,6 +97,32 @@
     </div>
     {% endif %}
 </div>
+
+{% if pagination.pages and pagination.pages > 1 %}
+<div class="pager">
+    {% if pagination.has_prev %}
+        <a class="pager-btn" href="{{ url_for('rules.rules_list', page=pagination.prev_num, sort_by=sort_by, sort_order=sort_order, q=name_filter) }}">&lsaquo; Prev</a>
+    {% else %}
+        <span class="pager-btn disabled">&lsaquo; Prev</span>
+    {% endif %}
+    {% for p in pagination.iter_pages(left_edge=2, right_edge=2, left_current=2, right_current=2) %}
+        {% if p %}
+            {% if p == pagination.page %}
+                <span class="pager-btn active">{{ p }}</span>
+            {% else %}
+                <a class="pager-btn" href="{{ url_for('rules.rules_list', page=p, sort_by=sort_by, sort_order=sort_order, q=name_filter) }}">{{ p }}</a>
+            {% endif %}
+        {% else %}
+            <span class="pager-btn disabled">&hellip;</span>
+        {% endif %}
+    {% endfor %}
+    {% if pagination.has_next %}
+        <a class="pager-btn" href="{{ url_for('rules.rules_list', page=pagination.next_num, sort_by=sort_by, sort_order=sort_order, q=name_filter) }}">Next &rsaquo;</a>
+    {% else %}
+        <span class="pager-btn disabled">Next &rsaquo;</span>
+    {% endif %}
+</div>
+{% endif %}
 
 {# ---- upload-rule modal (opened from the "Upload rules" button) ---- #}
 <dialog class="hv-dialog" id="upload-rule-modal" style="max-width:560px; width:92vw;">
@@ -196,20 +254,6 @@
     </div>
 </dialog>
 {% endfor %}
-
-<script>
-function hvFilterRules(q){
-    q = (q || '').trim().toLowerCase();
-    var shown = 0;
-    document.querySelectorAll('#rule-tbody tr[data-name]').forEach(function(tr){
-        var hit = !q || (tr.getAttribute('data-name') || '').indexOf(q) !== -1;
-        tr.style.display = hit ? '' : 'none';
-        if (hit) shown++;
-    });
-    var none = document.getElementById('rule-no-match');
-    if (none) none.style.display = shown === 0 ? '' : 'none';
-}
-</script>
 
 {# Reopen the Upload-rule modal after a failed submit, error shown inside it. #}
 {% if form_err %}

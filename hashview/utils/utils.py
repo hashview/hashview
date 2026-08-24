@@ -1768,3 +1768,19 @@ def getTimeFormat(total_runtime): # Runtime in seconds
         return str(round(total_runtime/60)) + " minute(s)"
     elif total_runtime < 60:
         return "less then 1 minute"
+
+def apply_name_filter(query, column, search_term):
+    """Narrow `query` to rows whose `column` contains `search_term`.
+
+    Case-insensitive substring match, used by the listing pages so their filter
+    box searches the whole table rather than only the rows the current page
+    happened to render. An empty or whitespace-only term is a no-op.
+
+    LIKE wildcards in the user's input are escaped, so typing a literal '%' or
+    '_' matches that character instead of standing in for "anything".
+    """
+    term = (search_term or '').strip()
+    if not term:
+        return query
+    escaped = term.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+    return query.filter(column.ilike('%' + escaped + '%', escape='\\'))

@@ -17,7 +17,7 @@ from hashview.models import (
 )
 from hashview.tasks.forms import TasksForm
 from hashview.utils.audit import log_event
-from hashview.utils.utils import try_commit
+from hashview.utils.utils import apply_name_filter, try_commit
 
 tasks = Blueprint('tasks', __name__)
 
@@ -43,6 +43,10 @@ def tasks_list():
     # Get sorting parameters
     sort_by = request.args.get('sort_by', 'name', type=str)
     sort_order = request.args.get('sort_order', 'asc', type=str)
+
+    # Name filter. Applied server-side, before pagination, so it searches every
+    # task rather than only the ones rendered on the current page.
+    name_filter = request.args.get('q', '', type=str).strip()
 
     # Build the query with sorting
     if sort_by == 'recovered':
@@ -76,6 +80,8 @@ def tasks_list():
             query = Tasks.query.order_by(Tasks.name.desc())
         else:
             query = Tasks.query.order_by(Tasks.name.asc())
+
+    query = apply_name_filter(query, Tasks.name, name_filter)
 
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     tasks = pagination.items
@@ -130,7 +136,7 @@ def tasks_list():
         seen.add(job.id)
         jobs_by_task.setdefault(jt.task_id, []).append(job)
 
-    return render_template('tasks.html.j2', title='tasks', tasks=tasks, users=users, jobs=jobs, job_tasks=job_tasks, jobs_by_task=jobs_by_task, wordlists=wordlists, task_groups=task_groups, task_recovery_performance=task_recovery_performance, pagination=pagination, sort_by=sort_by, sort_order=sort_order, rules=Rules.query.all(), wl_filesize=wl_filesize, tasks_in_jobs=tasks_in_jobs, tasksForm=TasksForm(), form_err=session.pop('tasks_form_err', None))
+    return render_template('tasks.html.j2', title='tasks', tasks=tasks, users=users, jobs=jobs, job_tasks=job_tasks, jobs_by_task=jobs_by_task, wordlists=wordlists, task_groups=task_groups, task_recovery_performance=task_recovery_performance, pagination=pagination, sort_by=sort_by, sort_order=sort_order, name_filter=name_filter, rules=Rules.query.all(), wl_filesize=wl_filesize, tasks_in_jobs=tasks_in_jobs, tasksForm=TasksForm(), form_err=session.pop('tasks_form_err', None))
 
 @tasks.route("/tasks/add", methods=['GET', 'POST'])
 @login_required

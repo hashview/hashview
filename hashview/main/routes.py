@@ -210,6 +210,18 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
         for hf_id, tid, cnt in rows:
             recovered_by_hf_task[(hf_id, tid)] = cnt
 
+    # Total accounts (HashfileHashes rows) per hashfile -- the denominator for the
+    # per-task "recovered / total" display on the dashboard.
+    hashfile_totals = {}
+    if hashfile_ids:
+        rows = (db.session.query(HashfileHashes.hashfile_id,
+                                 db.func.count(HashfileHashes.id))
+                .filter(HashfileHashes.hashfile_id.in_(hashfile_ids))
+                .group_by(HashfileHashes.hashfile_id)
+                .all())
+        for hf_id, cnt in rows:
+            hashfile_totals[hf_id] = cnt
+
     out = {}
     for job in running_jobs:
         order, by_task = [], {}
@@ -270,6 +282,17 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
             eta = (max((a['eta'] for a in active), key=_eta_seconds, default='')
                    if active else '')
 
+            # Distinct agent(s) currently working this task (from its Running
+            # chunks): a single name, or "Nx Agents" when chunked across several.
+            agent_names = sorted({a['agent'] for a in active
+                                  if a['agent'] and a['agent'] != '—'})
+            if len(agent_names) == 1:
+                agent_display = agent_names[0]
+            elif len(agent_names) > 1:
+                agent_display = '%dx Agents' % len(agent_names)
+            else:
+                agent_display = ''
+
             task = tasks_by_id.get(task_id)
             groups.append({
                 'task_id': task_id,
@@ -280,6 +303,7 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
                 'queued': queued, 'canceled': canceled,
                 'is_chunked': is_chunked,
                 'expandable': bool(running) and is_chunked,
+                'agent_display': agent_display,
                 'recovered': recovered_by_hf_task.get((job.hashfile_id, task_id), 0),
                 'rate': _fmt(rate_hps) if rate_hps else '',
                 'eta': eta,
@@ -288,6 +312,7 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
 
         out[job.id] = {
             'groups': groups,
+            'hashfile_total': hashfile_totals.get(job.hashfile_id, 0),
             'tasks_total': len(groups),
             'tasks_done': sum(1 for g in groups if g['status'] == 'Completed'),
             'tasks_running': sum(1 for g in groups if g['status'] == 'Running'),

@@ -69,7 +69,7 @@
                 <td class="mono" style="color:var(--text-dim);"><div title="{{ ns.owner }}" style="max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ ns.owner }}</div></td>
                 <td class="mono" style="color:var(--text-mute);font-size:11.5px;">{{ job.created_at.strftime('%b %d %H:%M') if job.created_at else '—' }}</td>
                 <td class="center">
-                    <div style="display:flex; gap:4px; justify-content:center;">
+                    <div style="display:flex; gap:4px; justify-content:flex-end;">
                         {% if job.status == 'Ready' %}
                             <form method="POST" action="{{ url_for('jobs.jobs_start', job_id=job.id) }}" style="display:contents">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

@@ -108,14 +108,27 @@ def _build_repo(tmp_path):
     return upstream, clone
 
 
-def _run_hook(clone, upstream, local_ref, local_sha, remote_sha):
-    """Invoke the hook exactly as git would, and return its combined output."""
-    stdin = f"{local_ref} {local_sha} {local_ref} {remote_sha}\n"
-    proc = subprocess.run(
+def _run_hook_refs(clone, upstream, refs):
+    """Invoke the hook as git would for one or more ref updates.
+
+    `refs` is a sequence of (local_ref, local_sha, remote_sha) triples, one per
+    line of the hook's stdin protocol. Returns the CompletedProcess so callers
+    can assert on exit status as well as output.
+    """
+    stdin = "".join(
+        f"{local_ref} {local_sha} {local_ref} {remote_sha}\n"
+        for local_ref, local_sha, remote_sha in refs
+    )
+    return subprocess.run(
         ["bash", str(clone / ".githooks" / "pre-push"), "origin", str(upstream)],
         cwd=clone, input=stdin, capture_output=True, text=True,
         env=_clean_env(),
     )
+
+
+def _run_hook(clone, upstream, local_ref, local_sha, remote_sha):
+    """Invoke the hook exactly as git would, and return its combined output."""
+    proc = _run_hook_refs(clone, upstream, [(local_ref, local_sha, remote_sha)])
     return proc.stdout + proc.stderr
 
 
@@ -275,3 +288,47 @@ def test_deletion_push_is_skipped(tmp_path):
     out = _scan_output(_run_hook(clone, upstream, "refs/heads/gone", ZERO, ZERO))
 
     assert "sensitive-content scan clean" in out
+
+
+def test_deletion_only_push_skips_the_test_gate(tmp_path):
+    """A delete-only push must not run ruff/bandit/pytest.
+
+    The scan loop already skipped deletions, but the gate below it ran
+    unconditionally, so `git push origin --delete <branch>` paid for the full
+    fast test suite. There is no diff to lint and no commit to test: the push
+    removes a ref. Deleting a batch of merged branches timed out at two minutes
+    because of this, which is what pushes people toward --no-verify.
+    """
+    upstream, clone = _build_repo(tmp_path)
+
+    proc = _run_hook_refs(clone, upstream, [("refs/heads/gone", ZERO, ZERO)])
+    out = proc.stdout + proc.stderr
+
+    assert "pre-push: running ruff" not in out, \
+        "the test gate must not run when every ref update is a deletion"
+    assert proc.returncode == 0, f"delete-only push must succeed, got:\n{out}"
+
+
+def test_push_mixing_a_deletion_and_an_update_still_runs_the_gate(tmp_path):
+    """One real ref update is enough to require the gate.
+
+    Guards the obvious over-correction: keying the skip off "saw a deletion"
+    rather than "saw *only* deletions" would let a branch update ride along
+    with a delete and skip linting and tests entirely.
+    """
+    upstream, clone = _build_repo(tmp_path)
+    base = _git(clone, "rev-parse", "origin/main").strip()
+    _git(clone, "checkout", "-q", "main")
+    (clone / "helper.py").write_text("def add(a, b):\n    return a + b\n")
+    _git(clone, "add", "helper.py")
+    _git(clone, "commit", "-q", "-m", "add helper")
+    sha = _git(clone, "rev-parse", "HEAD").strip()
+
+    proc = _run_hook_refs(clone, upstream, [
+        ("refs/heads/gone", ZERO, ZERO),
+        ("refs/heads/main", sha, base),
+    ])
+    out = proc.stdout + proc.stderr
+
+    assert "pre-push: running ruff" in out, \
+        "a real ref update alongside a deletion must still be gated"

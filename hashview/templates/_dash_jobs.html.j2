@@ -125,7 +125,7 @@
                 {% for job in queued_jobs %}
                     {% set qt = namespace(v=0) %}{% for jt in job_tasks %}{% if jt.job_id == job.id %}{% set qt.v = qt.v + 1 %}{% endif %}{% endfor %}
                     <tr>
-                        <td class="mono" style="color:var(--text-mute);">{{ job.id }}</td>
+                        <td class="mono" style="color:var(--text-mute);">{{ loop.index }}</td>
                         <td style="font-weight:500;">{{ job.name }}</td>
                         <td style="color:var(--text-dim);">{% for c in customers %}{% if c.id == job.customer_id %}{{ c.name }}{% endif %}{% endfor %}</td>
                         <td class="center num">{{ qt.v }}</td>

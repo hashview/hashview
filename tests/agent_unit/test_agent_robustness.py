@@ -107,7 +107,6 @@ def test_envelope_family_returns_none_on_bad_response(monkeypatch, body):
     assert api.updateJobTask(1, "Running") is None
     assert api.sendError("x") is None
     assert api.getHashType(1) is None
-    assert api.updateDynamicWordlists(1) is None
 
 
 @pytest.mark.parametrize("body", [None, "<html>500</html>"])
@@ -184,12 +183,13 @@ def test_upload_cracks_defers_when_hashtype_missing(tmp_path, monkeypatch):
     agent_main.upload_cracks({"id": 1, "hashfile_id": 2}, {"id": 5, "task_id": 9})   # no raise
 
 
-def test_maybe_update_dynamic_wordlist_handles_none(monkeypatch):
+def test_maybe_update_dynamic_wordlist_handles_no_data(monkeypatch):
+    # The task's wordlist is dynamic, but the by-id download returns no data;
+    # the agent logs and returns without crashing (nothing written).
     monkeypatch.setattr(agent_main, "getWordlists",
-                        lambda: [{"id": 3, "type": "dynamic"}])
-    monkeypatch.setattr(agent_main, "updateDynamicWordlists", lambda wid: None)
-    monkeypatch.setattr(agent_main, "sync_wordlists", lambda: None)
-    agent_main.maybe_update_dynamic_wordlist({"wl_id": 3})   # no None['msg'] -> TypeError
+                        lambda: [{"id": 3, "type": "dynamic", "path": "dyn.txt"}])
+    monkeypatch.setattr(agent_main.api, "get_wordlists_file", lambda wid: None)
+    agent_main.maybe_update_dynamic_wordlist({"wl_id": 3})   # no raise
 
 
 # ---------------------------------------------------------------------------

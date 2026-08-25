@@ -737,39 +737,6 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
 
     return True
 
-def _generate_website_keywords(wordlist, job_id):
-    """Populate the (DYNAMIC) Website Keywords wordlist by crawling the job URL.
-
-    The crawl result is written to a randomly-named file under control/tmp and
-    then atomically moved onto ``wordlist.path`` — so concurrent crawls never
-    collide on a filename or leave a partially-written live file. If no job URL
-    can be resolved (e.g. a manual UI refresh with no running job), the existing
-    file is left untouched.
-    """
-    settings = Settings.query.first()
-    job = Jobs.query.get(job_id) if job_id else None
-    target = job.crawl_url if (job and job.crawl_url) else None
-    if not target:
-        current_app.logger.warning(
-            'Website Keywords update with no job URL (job_id=%s); leaving wordlist %s unchanged.',
-            job_id, wordlist.id)
-        return
-
-    from hashview.utils.crawler import crawl_website_keywords
-    words = crawl_website_keywords(target, settings)
-
-    tmp_path = os.path.join(current_app.root_path, 'control/tmp', secrets.token_hex(8) + '.txt')
-    with open(tmp_path, 'w') as tmp:
-        for word in sorted(words):
-            tmp.write(word + '\n')
-    # Atomic on the same filesystem (control/tmp and control/wordlists are
-    # siblings); fall back to a copy+remove move across filesystems.
-    try:
-        os.replace(tmp_path, wordlist.path)
-    except OSError:
-        import shutil
-        shutil.move(tmp_path, wordlist.path)
-
 
 # Fixed set of length buckets for recovered-password dynamic wordlists.
 # Tokens: 'a-b' -> a <= len <= b (combined low bucket); 'N+' -> len >= N
@@ -859,19 +826,22 @@ def generate_recovered_password_wordlist(path, min_length=0, max_length=None):
             fh.write(entry.plaintext + '\n')
 
 
-def update_dynamic_wordlist(wordlist_id, job_id=None):
+def update_dynamic_wordlist(wordlist_id, dest_path=None):
     """Function to update dynamic wordlist.
 
-    ``job_id`` (resolved server-side from the requesting agent's running job)
-    is used by crawl-based wordlists to read the per-job target URL.
+    ``dest_path`` selects where the generated content is written. When ``None``
+    (the UI "refresh" path) the content goes to the shared, canonical
+    ``wordlist.path`` and the row's ``size``/``checksum``/``byte_size`` metadata
+    is refreshed. When set (the on-demand agent download) the content goes to
+    that caller-supplied path — a per-request unique temp file — and the row's
+    metadata is left untouched, so the download is side-effect-free on the DB.
+    Returns the path that was written.
     """
 
     wordlist = Wordlists.query.get(wordlist_id)
+    target_path = dest_path or wordlist.path
 
-    if 'Website' in wordlist.name:
-        # Crawl-based: generate into a random tmp file + atomic replace.
-        _generate_website_keywords(wordlist, job_id)
-    elif 'Passwords' in wordlist.name:
+    if 'Passwords' in wordlist.name:
         # Recovered passwords. A "(length ...)" token in the name selects the
         # length window (see _length_bucket_bounds); without one, the whole
         # recovered corpus is written. All generation is delegated to the
@@ -879,12 +849,12 @@ def update_dynamic_wordlist(wordlist_id, job_id=None):
         bounds = _length_bucket_bounds(wordlist.name)
         min_length, max_length = bounds if bounds is not None else (0, None)
         generate_recovered_password_wordlist(
-            wordlist.path, min_length=min_length, max_length=max_length
+            target_path, min_length=min_length, max_length=max_length
         )
     else:
         # Text-derived dynamic wordlists (usernames, customers, NTLM
         # ciphertexts): all stored as text, written directly as UTF-8.
-        file = open(wordlist.path, 'w', encoding='utf-8')
+        file = open(target_path, 'w', encoding='utf-8')
         if 'Usernames' in wordlist.name:
             usernames = HashfileHashes.query.distinct('username')
             username_set = set()
@@ -913,18 +883,25 @@ def update_dynamic_wordlist(wordlist_id, job_id=None):
 
         file.close()
 
-    # update line count
-    wordlist.size = get_linecount(wordlist.path)
-    # update file hash (dynamic wordlists stay UNCOMPRESSED on the server, so
-    # the checksum remains the sha256 of the plaintext .txt; the agent skips
-    # verification for dynamic wordlists since it can't recompute this from
-    # the .gz it receives)
-    wordlist.checksum = get_filehash(wordlist.path)
-    # update on-disk size (bytes of the uncompressed .txt)
-    wordlist.byte_size = get_filesize(wordlist.path)
-    # update last update
-    wordlist.last_updated = datetime.today()
-    db.session.commit()
+    # Only the canonical-path (UI refresh) generation owns the row's metadata.
+    # An on-demand download generates into a per-request temp file, so it must
+    # not touch these columns (they don't describe that transient file, and
+    # concurrent jobs would race on the row).
+    if dest_path is None:
+        # update line count
+        wordlist.size = get_linecount(wordlist.path)
+        # update file hash (dynamic wordlists stay UNCOMPRESSED on the server, so
+        # the checksum remains the sha256 of the plaintext .txt; the agent skips
+        # verification for dynamic wordlists since it can't recompute this from
+        # the .gz it receives)
+        wordlist.checksum = get_filehash(wordlist.path)
+        # update on-disk size (bytes of the uncompressed .txt)
+        wordlist.byte_size = get_filesize(wordlist.path)
+        # update last update
+        wordlist.last_updated = datetime.today()
+        db.session.commit()
+
+    return target_path
 
 def hashtypes_in_use():
     """Set of distinct hash_type values currently present in the hashes table.

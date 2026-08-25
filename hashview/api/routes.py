@@ -822,65 +822,45 @@ def v1_api_get_wordlist_download(wordlist_id):
 
     wordlists_dir = os.path.join(current_app.root_path, 'control/wordlists')
     tmp_dir = os.path.join(current_app.root_path, 'control/tmp')
-    # Resolve by basename against the wordlists dir rather than trusting a
-    # possibly-relative wordlist.path against the CWD (legacy rows can hold a
-    # relative path). When the row outlives its file -- e.g. a wordlist stranded
-    # by an upgrade -- return a clear JSON 404 instead of send_from_directory's
-    # bare HTML page, so the agent logs an actionable body and the operator knows
-    # to re-upload. (Mirrors the /v1/rules/<id> download handler.)
-    wordlist_name = os.path.basename(wordlist.path or '')
-    src_path = os.path.join(wordlists_dir, wordlist_name)
-    if not wordlist_name or not os.path.exists(src_path):
-        return jsonify({'status': 404, 'type': 'Error',
-                        'msg': 'Wordlist file missing on disk: ' + (wordlist_name or '(no path)')}), 404
 
     if wordlist.type == 'static':
-        # Stored compressed at rest: serve the .gz directly. The stored bytes
-        # are stable, so the agent's sha256(.gz) matches the DB checksum.
+        # Static lists are stored compressed at rest: serve the .gz directly. The
+        # stored bytes are stable, so the agent's sha256(.gz) matches the DB
+        # checksum. Resolve by basename against the wordlists dir rather than
+        # trusting a possibly-relative wordlist.path against the CWD (legacy rows
+        # can hold a relative path). When the row outlives its file -- e.g. a
+        # wordlist stranded by an upgrade -- return a clear JSON 404 instead of
+        # send_from_directory's bare HTML page, so the agent logs an actionable
+        # body and the operator knows to re-upload. (Mirrors /v1/rules/<id>.)
+        wordlist_name = os.path.basename(wordlist.path or '')
+        src_path = os.path.join(wordlists_dir, wordlist_name)
+        if not wordlist_name or not os.path.exists(src_path):
+            return jsonify({'status': 404, 'type': 'Error',
+                            'msg': 'Wordlist file missing on disk: ' + (wordlist_name or '(no path)')}), 404
         return send_from_directory(wordlists_dir, wordlist_name, mimetype='application/octet-stream')
 
-    # Dynamic wordlists stay uncompressed on the server (regenerated from the
-    # DB via /v1/updateWordlist). Compress the current .txt into control/tmp
-    # and serve that. No shell; pure-Python streamed gzip -9.
+    # Dynamic lists are regenerated from the DB on demand and served gzipped.
+    # Generate into a per-request unique temp file (never the shared
+    # wordlist.path); the DB row metadata is deliberately left untouched
+    # (dest_path is set).
+    tmp_txt = os.path.join(tmp_dir, secrets.token_hex(8) + '.txt')
+    update_dynamic_wordlist(wordlist_id, dest_path=tmp_txt)
+
+    # Compress the plaintext into control/tmp and serve that. No shell; pure-
+    # Python streamed gzip -9. Both temp files live under control/tmp and are
+    # cleaned up: the .txt now, the .gz after the response is streamed.
     tmp_gz = os.path.join(tmp_dir, secrets.token_hex(8) + '.gz')
-    compress_to_gz(src_path, tmp_gz, 9)
+    compress_to_gz(tmp_txt, tmp_gz, 9)
+    _remove_file(tmp_txt)
     return _send_generated_file(
         tmp_dir, os.path.basename(tmp_gz), mimetype='application/octet-stream')
-
-# Update Dynamic Wordlist
-@api.route('/v1/updateWordlist/<int:wordlist_id>', methods=['GET'])
-def v1_api_get_update_wordlist(wordlist_id):
-    if not is_authorized(user=True, agent=True, request=request):
-        return redirect("/v1/not_authorized")
-
-    update_heartbeat(request.cookies.get('uuid'))
-
-    # Resolve the job this agent is currently running so crawl-based dynamic
-    # wordlists (Website Keywords) can read the per-job target URL. The
-    # heartbeat assigns the dispatched JobTask agent_id + 'Running' before the
-    # agent calls this, so the most-recent Running task for the agent is it.
-    job_id = None
-    agent = Agents.query.filter_by(uuid=request.cookies.get('uuid')).first()
-    if agent:
-        running = JobTasks.query.filter_by(agent_id=agent.id, status='Running') \
-                                .order_by(JobTasks.id.desc()).first()
-        if running:
-            job_id = running.job_id
-
-    update_dynamic_wordlist(wordlist_id, job_id)
-    message = {
-        'status': 200,
-        'type': 'message',
-        'msg': 'OK'
-    }
-    return jsonify(message)
 
 # Create new wordlist
 @api.route('/v1/wordlists/add/<wordlist_name>', methods=['POST'])
 def v1_api_add_wordlist(wordlist_name):
     # Authorization check. This is a user-upload action — it resolves the
     # caller to a Users row by api_key — so it's user-only. The agent never
-    # POSTs here (it only GETs wordlists / updateWordlist), so requiring a user
+    # POSTs here (it only GETs wordlists), so requiring a user
     # credential refuses agent uuids cleanly instead of letting them through to
     # a "User not found" 403.
     if not is_authorized(user=True, agent=False, request=request):

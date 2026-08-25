@@ -1,7 +1,6 @@
 """Additional branch-coverage tests for hashview/jobs/routes.py.
 
 Covers the uncovered line ranges:
-  76-78    _job_uses_website_keywords helper
   210-213  jobs_add with add_new customer
   219      jobs_add bad priority when weights enabled
   265-266  jobs_assigned_hashfile redirect on running/queued job
@@ -19,7 +18,6 @@ Covers the uncovered line ranges:
   713      jobs_assign_notifications - hash_completion_slack
   735,746  jobs_assign_notification_hashes - GET and multi-method POST
   755-756  jobs_delete - job not found
-  779-791  jobs_website_keywords
   909      jobs_stop - job not found
 """
 
@@ -923,109 +921,6 @@ def test_jobs_delete_not_found_flashes(app, client):
     resp = client.post("/jobs/delete/99999", follow_redirects=True)
     assert resp.status_code == 200
     assert b"not found" in resp.data.lower() or b"deleted" in resp.data.lower()
-
-
-# ---------------------------------------------------------------------------
-# jobs_website_keywords — redirect when no website-keyword tasks (lines 779-781)
-# ---------------------------------------------------------------------------
-
-def test_jobs_website_keywords_redirects_when_no_website_task(app, client):
-    user = _nonadmin()
-    customer = _make_customer()
-    job = _make_job(user.id, customer.id)
-    _login(client, user)
-
-    resp = client.get(f"/jobs/{job.id}/website", follow_redirects=False)
-    assert resp.status_code in (301, 302)
-    assert resp.headers["Location"].endswith(f"/jobs/{job.id}/summary")
-
-
-# ---------------------------------------------------------------------------
-# jobs_website_keywords — GET renders when website task present (lines 782-792)
-# ---------------------------------------------------------------------------
-
-def test_jobs_website_keywords_renders_when_website_task_present(app, client):
-    """When a job has a task using (DYNAMIC) Website Keywords, the form renders."""
-    user = _nonadmin()
-    customer = _make_customer()
-    job = _make_job(user.id, customer.id)
-    # Create a "Website Keywords" dynamic wordlist
-    wl = Wordlists(name="(DYNAMIC) Website Keywords", owner_id=user.id,
-                   type="dynamic",
-                   path="control/wordlists/dynamic-website-keywords.txt",
-                   size=0, checksum="0" * 64)
-    db.session.add(wl)
-    db.session.commit()
-    task = _make_task(user.id, wl.id, name="website-task")
-    jt = JobTasks(job_id=job.id, task_id=task.id, status="Not Started")
-    db.session.add(jt)
-    db.session.commit()
-    _login(client, user)
-
-    resp = client.get(f"/jobs/{job.id}/website")
-    assert resp.status_code == 200
-    assert b"website" in resp.data.lower() or b"crawl" in resp.data.lower()
-
-
-# ---------------------------------------------------------------------------
-# jobs_website_keywords — GET with hashfile+hash_notifications exercises
-# _job_has_alert_hashes true branch (line 78)
-# ---------------------------------------------------------------------------
-
-def test_jobs_website_keywords_with_alert_hashes_shows_alert_step(app, client):
-    """When a job has hash notifications, _job_has_alert_hashes returns True (line 78)."""
-    user = _nonadmin()
-    customer = _make_customer()
-    job = _make_job(user.id, customer.id)
-    # Attach a hashfile and a hash notification
-    hf, h = _attach_hashfile(job, user.id, cracked=False, name="alert-hf.txt")
-    db.session.add(HashNotifications(owner_id=user.id, hash_id=h.id, method="email"))
-    db.session.commit()
-    # Website Keywords wordlist
-    wl = Wordlists(name="(DYNAMIC) Website Keywords", owner_id=user.id,
-                   type="dynamic",
-                   path="control/wordlists/dynamic-website-keywords.txt",
-                   size=0, checksum="0" * 64)
-    db.session.add(wl)
-    db.session.commit()
-    task = _make_task(user.id, wl.id, name="website-task-alert")
-    jt = JobTasks(job_id=job.id, task_id=task.id, status="Not Started")
-    db.session.add(jt)
-    db.session.commit()
-    _login(client, user)
-
-    resp = client.get(f"/jobs/{job.id}/website")
-    assert resp.status_code == 200
-
-
-# ---------------------------------------------------------------------------
-# jobs_website_keywords — POST updates crawl_url (line 785-787)
-# ---------------------------------------------------------------------------
-
-def test_jobs_website_keywords_post_saves_url(app, client):
-    """POSTing the website keywords form should save the crawl URL."""
-    user = _nonadmin()
-    customer = _make_customer()
-    job = _make_job(user.id, customer.id)
-    wl = Wordlists(name="(DYNAMIC) Website Keywords", owner_id=user.id,
-                   type="dynamic",
-                   path="control/wordlists/dynamic-website-keywords.txt",
-                   size=0, checksum="0" * 64)
-    db.session.add(wl)
-    db.session.commit()
-    task = _make_task(user.id, wl.id, name="website-task2")
-    jt = JobTasks(job_id=job.id, task_id=task.id, status="Not Started")
-    db.session.add(jt)
-    db.session.commit()
-    _login(client, user)
-
-    resp = client.post(f"/jobs/{job.id}/website",
-                       data={"crawl_url": "https://example.com"},
-                       follow_redirects=False)
-    assert resp.status_code in (301, 302)
-    assert resp.headers["Location"].endswith(f"/jobs/{job.id}/summary")
-    db.session.expire_all()
-    assert Jobs.query.get(job.id).crawl_url == "https://example.com"
 
 
 # ---------------------------------------------------------------------------

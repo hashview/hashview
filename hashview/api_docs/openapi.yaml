@@ -551,8 +551,12 @@ paths:
       summary: Download a wordlist (gzipped)
       description: >-
         Static wordlists are served exactly as stored (so the sha256 of the
-        download matches the catalog `checksum`); dynamic wordlists are
-        compressed on the fly.
+        download matches the catalog `checksum`). Dynamic wordlists are
+        regenerated from the database on demand and served gzipped: each request
+        rebuilds the list into its own unique temp file. The catalog
+        `checksum`/`size` are NOT updated by a download (they reflect the last UI
+        refresh), so agents fetch dynamic lists by id per task rather than
+        caching on the catalog checksum.
       operationId: downloadWordlist
       x-audience: both
       parameters:
@@ -615,33 +619,6 @@ paths:
                   - $ref: '#/components/schemas/ApiError'
               examples:
                 added: {value: {status: 200, type: message, msg: Wordlist added, wordlist_id: 6}}
-        '302':
-          $ref: '#/components/responses/NotAuthorizedRedirect'
-
-  /v1/updateWordlist/{wordlist_id}:
-    get:
-      tags: [Wordlists, Agent Protocol]
-      summary: Regenerate a dynamic wordlist
-      description: >-
-        Rebuilds a dynamic wordlist from the database. For the crawl-based
-        "(DYNAMIC) Website Keywords" list, the per-job crawl URL is resolved
-        from the calling agent's currently Running job task. Static wordlists
-        are unaffected. Always answers OK.
-      operationId: updateDynamicWordlist
-      x-audience: both
-      parameters:
-        - name: wordlist_id
-          in: path
-          required: true
-          schema: {type: integer}
-      responses:
-        '200':
-          description: Acknowledged (even when there was nothing to update).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiMessage'
-              example: {status: 200, type: message, msg: OK}
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
 
@@ -1484,10 +1461,6 @@ components:
         limit_recovered:
           type: boolean
           description: One-and-done mode — cancel remaining tasks after the first recovery.
-        crawl_url:
-          type: string
-          nullable: true
-          description: URL crawled for the "(DYNAMIC) Website Keywords" wordlist.
 
     JobTask:
       type: object
@@ -1543,11 +1516,6 @@ components:
         max_runtime_jobs: {type: integer, nullable: true, description: Hours; 0 disables.}
         max_runtime_tasks: {type: integer, nullable: true, description: Hours; 0 disables.}
         enabled_job_weights: {type: boolean}
-        crawl_min_word_length: {type: integer}
-        crawl_user_agent: {type: string}
-        crawl_force_lowercase: {type: boolean}
-        crawl_depth: {type: integer}
-        crawl_threads: {type: integer}
         email_enabled: {type: boolean}
         pushover_enabled: {type: boolean}
         slack_enabled: {type: boolean}
@@ -1786,7 +1754,7 @@ components:
               nullable: true
               allOf:
                 - $ref: '#/components/schemas/Job'
-              example: {"id": 12, "name": "acme-ntlm", "status": "Running", "priority": 3, "customer_id": 1, "owner_id": 1, "hashfile_id": 9, "limit_recovered": false, "crawl_url": null}
+              example: {"id": 12, "name": "acme-ntlm", "status": "Running", "priority": 3, "customer_id": 1, "owner_id": 1, "hashfile_id": 9, "limit_recovered": false}
 
     JobTaskResponse:
       allOf:

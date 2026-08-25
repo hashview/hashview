@@ -85,6 +85,26 @@ def test_passwords_branch_writes_cracked_plaintexts(app, tmp_path):
 
 
 @pytest.mark.security
+def test_dest_path_writes_there_and_leaves_row_metadata(app, tmp_path):
+    """With dest_path (the on-demand download path), content goes to that file,
+    the canonical wordlist.path is untouched, and the row metadata is NOT
+    updated."""
+    _make_user(app)
+    wl = _make_wordlist(app, tmp_path, "(DYNAMIC) All Customers")
+    db.session.add(Customers(name="AcmeCorp"))
+    db.session.commit()
+
+    dest = str(tmp_path / "per-request.txt")
+    returned = update_dynamic_wordlist(wl.id, dest_path=dest)
+
+    assert returned == dest
+    assert open(dest).read().splitlines() == ["acmecorp"]
+    assert open(wl.path).read() == ""          # canonical file untouched
+    wl = Wordlists.query.get(wl.id)
+    assert wl.size == 0 and wl.checksum == ""  # metadata skipped on download
+
+
+@pytest.mark.security
 def test_usernames_branch_splits_domain_user(app, tmp_path):
     _make_user(app)
     wl = _make_wordlist(app, tmp_path, "(DYNAMIC) All Usernames")

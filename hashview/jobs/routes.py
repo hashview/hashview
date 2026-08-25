@@ -524,9 +524,7 @@ def jobs_list_tasks(job_id):
         task_meta[t.id] = {'name': t.name, 'type': label, 'wordlist': wl_names.get(t.wl_id)}
 
     # Does this job have per-hash alerts? Drives the conditional "Alert Hashes" wizard step.
-    alert_hashes = False
-    if job.hashfile_id:
-        alert_hashes = db.session.query(HashNotifications).join(HashfileHashes, HashNotifications.hash_id == HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id == job.hashfile_id).first() is not None
+    alert_hashes = _job_has_alert_hashes(job)
 
     # One card per logical assignment: chunk rows of a split task collapse to a
     # single entry (the editor shows the attack once, not once per chunk).

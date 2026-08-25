@@ -42,7 +42,6 @@ from hashview.models import (
     Rules,
     Tasks,
     Users,
-    Wordlists,
 )
 from hashview.models import db as _db
 
@@ -382,27 +381,6 @@ def test_229_rules_list_is_native_json(client, admin_user):
     resp = client.get("/v1/rules")
     body = _json_body(resp)
     assert isinstance(body["rules"], list)
-
-
-# ---------------------------------------------------------------------------
-# #230 — /v1/updateWordlist mutates state, so it should accept POST
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="#230: route is GET-only for a state-mutating action")
-def test_230_update_wordlist_accepts_post(client, admin_user, monkeypatch):
-    monkeypatch.setattr(api_routes, "update_dynamic_wordlist", lambda *a, **kw: None)
-    wl = Wordlists(
-        name="dyn", owner_id=admin_user.id, type="dynamic",
-        path="/nonexistent/dyn.txt", size=1, checksum="0" * 64,
-    )
-    _db.session.add(wl)
-    _db.session.commit()
-
-    _auth(client, admin_user.api_key)
-    resp = client.post(f"/v1/updateWordlist/{wl.id}")
-    assert resp.status_code != 405
 
 
 # ---------------------------------------------------------------------------

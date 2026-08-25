@@ -21,7 +21,6 @@ from hashview.models import db as _db
 def _settings(auth_method='local', groups=None, secret='sek', complete=True):
     s = Settings(
         retention_period=30, max_runtime_jobs=0, max_runtime_tasks=0,
-        crawl_min_word_length=8, crawl_user_agent='x', crawl_depth=2, crawl_threads=5,
         auth_method=auth_method,
         azure_tenant_id=('tid' if complete else None),
         azure_client_id=('cid' if complete else None),

@@ -261,16 +261,6 @@ def test_runtime_cap_disabled_never_cancels(app, client):
 
 # --- read endpoints ---------------------------------------------------------
 
-def test_get_update_wordlist_returns_ok(app, client, monkeypatch):
-    _user()
-    # patch the heavy regeneration helper at its use site in the route module
-    monkeypatch.setattr("hashview.api.routes.update_dynamic_wordlist",
-                        lambda wid, jid: None)
-    client.set_cookie("uuid", "user-key", domain=DOMAIN)
-    resp = client.get("/v1/updateWordlist/1")
-    assert _body(resp)["status"] == 200
-
-
 def test_get_queue_assignment_returns_assigned_task(app, client):
     agent = _agent(uuid="qa-agent", status="Working")
     jt = JobTasks(job_id=1, task_id=2, status="Running", priority=3, agent_id=agent.id)

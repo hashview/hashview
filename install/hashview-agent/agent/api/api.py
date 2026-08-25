@@ -109,15 +109,6 @@ def tasks(task_id):
     response = http.get('/v1/tasks/' + str(task_id))
     return _extract(response, 'tasks', 'task')
 
-def updateDynamicWordlists(wordlist_id):
-    response = http.get('/v1/updateWordlist/' + str(wordlist_id))
-    decoded_response = _load(response, 'updateDynamicWordlists')
-    if decoded_response is None:
-        return None
-    if decoded_response.get('type') == 'message' and decoded_response.get('status') == 200:
-        return decoded_response
-    LOG.warning('updateDynamicWordlists: unexpected response type %s.', decoded_response.get('type'))
-
 def get_hashfile(hashfile_id):
     return http.get('/v1/hashfiles/' + str(hashfile_id))
 

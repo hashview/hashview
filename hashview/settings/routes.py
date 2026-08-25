@@ -78,11 +78,6 @@ def settings_list():
             settings.enabled_job_weights = hashview_form.enabled_job_weights.data
             settings.enabled_chunking = hashview_form.enabled_chunking.data
             settings.chunk_target_duration = hashview_form.chunk_target_duration.data
-            settings.crawl_min_word_length = hashview_form.crawl_min_word_length.data
-            settings.crawl_user_agent = hashview_form.crawl_user_agent.data
-            settings.crawl_force_lowercase = hashview_form.crawl_force_lowercase.data
-            settings.crawl_depth = hashview_form.crawl_depth.data
-            settings.crawl_threads = hashview_form.crawl_threads.data
             settings.email_enabled = hashview_form.email_enabled.data
             settings.pushover_enabled = hashview_form.pushover_enabled.data
             settings.slack_enabled = hashview_form.slack_enabled.data
@@ -121,11 +116,6 @@ def settings_list():
             hashview_form.enabled_job_weights.data = settings.enabled_job_weights
             hashview_form.enabled_chunking.data = settings.enabled_chunking
             hashview_form.chunk_target_duration.data = settings.chunk_target_duration
-            hashview_form.crawl_min_word_length.data = settings.crawl_min_word_length
-            hashview_form.crawl_user_agent.data = settings.crawl_user_agent
-            hashview_form.crawl_force_lowercase.data = settings.crawl_force_lowercase
-            hashview_form.crawl_depth.data = settings.crawl_depth
-            hashview_form.crawl_threads.data = settings.crawl_threads
             hashview_form.email_enabled.data = settings.email_enabled
             hashview_form.pushover_enabled.data = settings.pushover_enabled
             hashview_form.slack_enabled.data = settings.slack_enabled

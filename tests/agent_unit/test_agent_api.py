@@ -198,29 +198,6 @@ def test_tasks_exits_on_426(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# updateDynamicWordlists
-# ---------------------------------------------------------------------------
-
-def test_updatedynamicwordlists_returns_decoded_response_on_200(monkeypatch):
-    payload = {"type": "message", "status": 200, "msg": "updated"}
-    captured = {}
-
-    def fake_get(path):
-        captured["path"] = path
-        return json.dumps(payload)
-
-    monkeypatch.setattr(http, "get", fake_get)
-    assert api.updateDynamicWordlists(4) == payload
-    assert captured["path"] == "/v1/updateWordlist/4"
-
-
-def test_updatedynamicwordlists_exits_on_426(monkeypatch):
-    monkeypatch.setattr(http, "get", lambda path: json.dumps(VERSION_MISMATCH))
-    with pytest.raises(SystemExit):
-        api.updateDynamicWordlists(4)
-
-
-# ---------------------------------------------------------------------------
 # get_hashfile (passthrough)
 # ---------------------------------------------------------------------------
 

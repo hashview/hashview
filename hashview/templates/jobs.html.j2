@@ -38,7 +38,7 @@
             <tr>
                 <th>Job</th><th>Customer</th><th>Hashfile</th>
                 <th class="center">Status</th><th class="center">Cracked</th><th class="center">Priority</th>
-                <th>Owner</th><th>Created</th><th class="center">Control</th>
+                <th>Owner</th><th>Created</th><th class="center" style="width:180px;">Control</th>
             </tr>
         </thead>
         <tbody id="job-tbody">
@@ -69,37 +69,33 @@
                 <td class="mono" style="color:var(--text-dim);"><div title="{{ ns.owner }}" style="max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ ns.owner }}</div></td>
                 <td class="mono" style="color:var(--text-mute);font-size:11.5px;">{{ job.created_at.strftime('%b %d %H:%M') if job.created_at else '—' }}</td>
                 <td class="center">
-                    <button type="button" class="icon-btn" id="jobmenubtn-{{ job.id }}" popovertarget="jobmenu-{{ job.id }}" title="Actions" aria-label="Actions">{{ icon('dots', size=16) }}</button>
-                    <div class="job-menu" popover="auto" id="jobmenu-{{ job.id }}" data-anchor="jobmenubtn-{{ job.id }}">
+                    <div style="display:flex; gap:4px; justify-content:center;">
                         {% if job.status == 'Ready' %}
                             <form method="POST" action="{{ url_for('jobs.jobs_start', job_id=job.id) }}" style="display:contents">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit" class="mi go">{{ icon('play', size=15) }} Start</button>
+                                <button type="submit" class="icon-btn act-go" title="Start">{{ icon('play', size=15) }}</button>
                             </form>
                         {% elif job.status == 'Queued' or job.status == 'Running' %}
                             <form method="POST" action="{{ url_for('jobs.jobs_stop', job_id=job.id) }}" style="display:contents">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit" class="mi stop">{{ icon('stop', size=15) }} Stop</button>
+                                <button type="submit" class="icon-btn act-stop" title="Stop">{{ icon('stop', size=15) }}</button>
                             </form>
-                        {% elif job.status == 'Completed' %}
-                            <span class="mi disabled" style="color:var(--green);">{{ icon('check', size=15) }} Completed</span>
                         {% elif job.status == 'Canceled' %}
                             <form method="POST" action="{{ url_for('jobs.jobs_start', job_id=job.id) }}" style="display:contents">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit" class="mi">{{ icon('refresh', size=15) }} Restart</button>
+                                <button type="submit" class="icon-btn act-go" title="Restart">{{ icon('refresh', size=15) }}</button>
                             </form>
                         {% endif %}
                         {% if job.status != 'Incomplete' %}
-                            <a class="mi" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}">{{ icon('chart', size=15) }} Analytics</a>
-                            <button type="button" class="mi" onclick="this.closest('[popover]').hidePopover(); document.getElementById('info-{{ job.id }}').showModal();">{{ icon('info', size=15) }} Info</button>
+                            <a class="icon-btn" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="Analytics">{{ icon('chart', size=15) }}</a>
+                            <button type="button" class="icon-btn" title="Info" onclick="document.getElementById('info-{{ job.id }}').showModal()">{{ icon('info', size=15) }}</button>
                         {% endif %}
                         {% if job.status == 'Running' or job.status == 'Queued' %}
-                            <span class="mi disabled" title="Locked while active">{{ icon('edit', size=15) }} Edit</span>
+                            <span class="icon-btn" style="opacity:.4; cursor:not-allowed;" title="Locked while active">{{ icon('edit', size=15) }}</span>
                         {% else %}
-                            <a class="mi" href="{{ url_for('jobs.jobs_assigned_hashfile', job_id=job.id) }}">{{ icon('edit', size=15) }} Edit</a>
+                            <a class="icon-btn" href="{{ url_for('jobs.jobs_assigned_hashfile', job_id=job.id) }}" title="Edit">{{ icon('edit', size=15) }}</a>
                         {% endif %}
-                        <div class="sep"></div>
-                        <button type="button" class="mi danger" onclick="this.closest('[popover]').hidePopover(); document.getElementById('del-{{ job.id }}').showModal();">{{ icon('trash', size=15) }} Delete</button>
+                        <button type="button" class="icon-btn act-del" title="Delete" onclick="document.getElementById('del-{{ job.id }}').showModal()">{{ icon('trash', size=15) }}</button>
                     </div>
                 </td>
             </tr>
@@ -144,64 +140,6 @@
     {% endif %}
 </div>
 {% endif %}
-
-<style>
-.job-menu {
-    position: fixed; inset: auto; margin: 0;
-    min-width: 170px; padding: 5px;
-    background: var(--surface-2);
-    border: 1px solid var(--border-soft);
-    border-radius: 9px;
-    box-shadow: 0 10px 28px rgba(0,0,0,.5);
-}
-.job-menu .mi {
-    display: flex; align-items: center; gap: 9px;
-    width: 100%; box-sizing: border-box;
-    padding: 7px 10px; margin: 0;
-    font-family: var(--mono); font-size: 12px; letter-spacing: .3px;
-    color: var(--text-dim);
-    background: none; border: 0; border-radius: 6px;
-    text-align: left; text-decoration: none; cursor: pointer;
-    white-space: nowrap;
-}
-.job-menu .mi:hover { background: var(--surface-3); color: var(--text); }
-.job-menu .mi .ico { width: 15px; height: 15px; flex: none; }
-.job-menu .mi.go:hover { color: var(--green); }
-.job-menu .mi.stop:hover { color: var(--amber); }
-.job-menu .mi.danger { color: var(--red); }
-.job-menu .mi.danger:hover { background: var(--surface-3); color: var(--red); }
-.job-menu .mi.disabled { opacity: .4; cursor: default; }
-.job-menu .mi.disabled:hover { background: none; color: inherit; }
-.job-menu .sep { height: 1px; background: var(--border-soft); margin: 4px 2px; }
-</style>
-<script>
-// Position each job actions popover next to its trigger button (top layer escapes
-// the card's overflow:hidden). Drops below the button, flips above near the viewport
-// bottom, and right-aligns to the button edge.
-(function(){
-    function place(menu){
-        var btn = document.getElementById(menu.getAttribute('data-anchor'));
-        if(!btn) return;
-        var r = btn.getBoundingClientRect();
-        var mw = menu.offsetWidth, mh = menu.offsetHeight;
-        var left = r.right - mw;
-        var maxLeft = window.innerWidth - mw - 8;
-        if(left > maxLeft) left = maxLeft;
-        if(left < 8) left = 8;
-        var top = r.bottom + 4;
-        if(top + mh > window.innerHeight - 8) top = r.top - mh - 4;
-        if(top < 8) top = 8;
-        menu.style.left = left + 'px';
-        menu.style.top = top + 'px';
-    }
-    document.addEventListener('toggle', function(e){
-        var t = e.target;
-        if(t && t.classList && t.classList.contains('job-menu') && e.newState === 'open'){
-            place(t);
-        }
-    }, true);
-})();
-</script>
 
 {# ---- per-job modals (native <dialog>, no framework) ---- #}
 {% for job in jobs %}

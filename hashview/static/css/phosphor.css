@@ -639,7 +639,8 @@ html[data-scanlines="off"] .scanlines { display: none; }
   text-transform: uppercase;
   color: var(--text-mute);
   font-weight: 500;
-  padding: 0 14px 9px;
+  padding: 9px 14px;
+  vertical-align: middle;
   border-bottom: 1px solid var(--border);
 }
 .tbl td {

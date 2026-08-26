@@ -11,7 +11,7 @@ import struct
 from datetime import datetime
 
 import requests
-from flask import current_app, url_for
+from flask import after_this_request, current_app, send_from_directory, url_for
 from flask_mail import Message
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -35,6 +35,40 @@ from hashview.models import (
 )
 from hashview.utils.chunking import is_chunkable, plan_chunks
 from hashview.utils.hashcat_modes import HASH_ONLY_AUTO_RULES
+
+
+def remove_file(path):
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+    except OSError as error:
+        # Don't fail the request, but surface the problem so an admin can
+        # troubleshoot temp files stacking up in control/tmp (see issue #226).
+        current_app.logger.warning(
+            'Failed to remove temporary file %s: %s', path, error)
+
+
+def send_generated_file(directory, filename, **kwargs):
+    """Serve a control/tmp scratch file and delete it once served.
+
+    Unlinked via after_this_request rather than response.call_on_close():
+    send_from_directory() sets direct_passthrough, and werkzeug's
+    get_app_iter() returns the raw file wrapper for that case instead of
+    wrapping it in a ClosingIterator, so Response.close() -- and with it every
+    call_on_close callback -- never runs. The unlink therefore happens while
+    the file is still open for streaming, which is fine on POSIX: the fd stays
+    valid and the body is sent in full, only the directory entry goes away.
+    """
+    file_path = os.path.join(directory, filename)
+    response = send_from_directory(directory, filename, **kwargs)
+
+    @after_this_request
+    def _cleanup(resp):        # pylint: disable=unused-variable
+        remove_file(file_path)
+        return resp
+
+    return response
 
 
 def try_commit(context=''):

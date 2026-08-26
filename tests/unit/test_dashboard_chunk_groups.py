@@ -226,10 +226,10 @@ def test_dashboard_recovered_links_to_analytics(app, client):
     assert 'class="rec-x-link"' in html
     assert f'customer_id={job.customer_id}' in html
     assert f'hashfile_id={job.hashfile_id}' in html
-    # task_a's parent recovered is 4; its active chunk (chunk 3) recovered is 7 --
-    # both are now links (X wrapped in an anchor).
-    assert '>4</a>' in html      # task row X
-    assert '>7</a>' in html      # per-chunk X
+    # the whole "X/Y" is the link now: >=3 anchors (2 task rows + task_a's active
+    # chunk), and the /Y denominator closes the anchor (both X and Y enclosed).
+    assert html.count('class="rec-x-link"') >= 3
+    assert '/0</span></a>' in html   # hashfile_unrecovered (Y) is 0 here
 
 
 @pytest.mark.security

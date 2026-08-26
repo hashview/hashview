@@ -1,5 +1,5 @@
 """Flask routes to handle Notifications"""
-from flask import Blueprint, flash, redirect, render_template, url_for
+from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from hashview.jobs.forms import JobsNewHashFileForm
@@ -102,4 +102,62 @@ def notifications_hash_delete(notification_id):
             flash('Notification could not be deleted — it may have already been removed.', 'danger')
     else:
         flash('You do not have rights to delete this notification!', 'danger')
+    return redirect(url_for('notifications.notifications_list'))
+
+
+@notifications.route("/notifications/bulk_delete", methods=['POST'])
+@login_required
+def notifications_bulk_delete():
+    """Delete several notifications at once (from the notifications list's bulk-select
+    bar). Handles both kinds -- each submitted id is prefixed with its type
+    ("job:<id>" / "hash:<id>"). A notification is deletable only by its owner or an
+    admin; each id is guarded independently -- one skip never aborts the batch -- and
+    a per-outcome summary is flashed. Mirrors the /jobs and /tasks bulk-delete flow."""
+    models = {'job': JobNotifications, 'hash': HashNotifications}
+    deleted = skipped_rights = skipped_missing = failed = 0
+    seen = set()
+    for raw in request.form.getlist('notification_ids'):
+        kind, _, sid = raw.partition(':')
+        model = models.get(kind)
+        if model is None:
+            continue
+        try:
+            nid = int(sid)
+        except (TypeError, ValueError):
+            continue
+        if (kind, nid) in seen:
+            continue
+        seen.add((kind, nid))
+
+        notification = model.query.get(nid)
+        if notification is None:
+            skipped_missing += 1
+            continue
+        if not (current_user.admin or notification.owner_id == current_user.id):
+            skipped_rights += 1
+            continue
+        db.session.delete(notification)
+        if try_commit(f'delete {kind} notification {nid}'):
+            deleted += 1
+        else:
+            failed += 1
+
+    parts = []
+    if deleted:
+        parts.append(f'{deleted} deleted')
+    if skipped_rights:
+        parts.append(f'{skipped_rights} skipped — insufficient rights')
+    if skipped_missing:
+        parts.append(f'{skipped_missing} skipped — not found')
+    if failed:
+        parts.append(f'{failed} failed')
+
+    if not parts:
+        flash('No notifications selected for deletion.', 'warning')
+    elif deleted and not (skipped_rights or skipped_missing or failed):
+        flash(', '.join(parts) + '.', 'success')
+    elif deleted:
+        flash(', '.join(parts) + '.', 'warning')
+    else:
+        flash(', '.join(parts) + '.', 'danger')
     return redirect(url_for('notifications.notifications_list'))

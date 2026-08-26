@@ -45,6 +45,15 @@
     </div>
 </div>
 
+{% if job_notifications or hash_notifications %}
+<div class="notif-bulkbar" id="notif-bulkbar">
+    <span class="notif-sel-count"><span id="notif-sel-count">0</span> selected</span>
+    <span style="flex:1;"></span>
+    <button type="button" class="btn" onclick="hvNotifClearSel()">Clear</button>
+    <button type="button" class="btn btn-danger" onclick="hvNotifOpenBulkDel()">{{ icon('trash', size=15) }} Delete selected</button>
+</div>
+{% endif %}
+
 {# ---------- Job notifications ---------- #}
 <div class="card">
     <div class="card-head">
@@ -54,13 +63,16 @@
     </div>
     {% if job_notifications %}
     <table class="tbl" style="table-layout:fixed;">
-        <colgroup><col style="width:24%;"><col style="width:34%;"><col style="width:15%;"><col style="width:15%;"><col style="width:12%;"></colgroup>
+        <colgroup><col style="width:34px;"><col style="width:24%;"><col style="width:34%;"><col style="width:15%;"><col style="width:15%;"><col style="width:12%;"></colgroup>
         <thead>
-            <tr><th>Job Name</th><th>Hash File</th><th></th><th>Method</th><th style="text-align:right;">Control</th></tr>
+            <tr><th style="text-align:center;"><input type="checkbox" class="hv-check notif-select-all" onclick="hvNotifToggleAll(this)" title="Select all job notifications"></th><th>Job Name</th><th>Hash File</th><th></th><th>Method</th><th style="text-align:right;">Control</th></tr>
         </thead>
         <tbody>
             {% for job_notification in job_notifications %}
             <tr>
+                <td class="center">
+                    <input type="checkbox" class="hv-check notif-check" value="job:{{ job_notification.id }}" data-kind="job" data-name="{% for job in jobs %}{% if job.id == job_notification.job_id %}{{ job.name }}{% endif %}{% endfor %} · {{ job_notification.method|upper }}" onchange="hvNotifSelChanged()">
+                </td>
                 <td style="font-weight:500;">
                     {% for job in jobs %}{% if job.id == job_notification.job_id %}<span style="display:inline-flex; align-items:center; gap:7px;">{{ icon('jobs', size=14) }} {{ job.name }} <span class="mono" style="color:var(--text-mute); font-weight:400;">#{{ job.id }}</span></span>{% endif %}{% endfor %}
                 </td>
@@ -92,14 +104,18 @@
     </div>
     {% if hash_notifications %}
     <table class="tbl" style="table-layout:fixed;">
-        <colgroup><col style="width:24%;"><col style="width:34%;"><col style="width:15%;"><col style="width:15%;"><col style="width:12%;"></colgroup>
+        <colgroup><col style="width:34px;"><col style="width:24%;"><col style="width:34%;"><col style="width:15%;"><col style="width:15%;"><col style="width:12%;"></colgroup>
         <thead>
-            <tr><th>Account</th><th>Hash</th><th>Hashtype</th><th>Method</th><th style="text-align:right;">Control</th></tr>
+            <tr><th style="text-align:center;"><input type="checkbox" class="hv-check notif-select-all" onclick="hvNotifToggleAll(this)" title="Select all hash notifications"></th><th>Account</th><th>Hash</th><th>Hashtype</th><th>Method</th><th style="text-align:right;">Control</th></tr>
         </thead>
         <tbody>
             {% for hash_notification in hash_notifications %}
             {% set hash = hashes.get(hash_notification.hash_id) %}
             <tr>
+                <td class="center">
+                    {% set _acct = hash_account.get(hash_notification.hash_id) %}
+                    <input type="checkbox" class="hv-check notif-check" value="hash:{{ hash_notification.id }}" data-kind="hash" data-name="{{ (_acct | jinja_hex_decode) if _acct else 'recovered hash' }} · {{ hash_notification.method|upper }}" onchange="hvNotifSelChanged()">
+                </td>
                 <td class="mono" style="word-break:break-all;">
                     {% set acct = hash_account.get(hash_notification.hash_id) %}
                     {% if acct %}<span style="display:inline-flex; align-items:center; gap:7px;">{{ icon('key', size=13) }} {{ acct | jinja_hex_decode }}</span>{% else %}<span style="color:var(--text-mute);">&mdash;</span>{% endif %}
@@ -150,5 +166,100 @@
     </div>
 </dialog>
 {% endfor %}
+
+{# ---- bulk-delete confirm modal (native <dialog>, no framework) ---- #}
+<dialog class="hv-dialog" id="notif-bulk-del-modal" style="max-width:620px; width:94vw;">
+    <div class="hv-dialog-head">
+        <span style="color:var(--red); display:inline-flex;">{{ icon('trash', size=16) }}</span>
+        <div style="line-height:1.2;">
+            <h3 style="margin:0;" id="notif-bulk-title">Delete notifications?</h3>
+            <div class="mono" style="font-size:10px; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-mute); margin-top:3px;">this permanently removes the selected notifications</div>
+        </div>
+        <button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close" style="margin-left:auto;">{{ icon('x', size=15) }}</button>
+    </div>
+    <div class="hv-dialog-body" style="max-height:52vh; overflow-y:auto;">
+        <div class="mono" style="font-size:11px; color:var(--text-mute); margin-bottom:10px;">The following will be permanently deleted:</div>
+        <div id="notif-bulk-list"></div>
+    </div>
+    <div class="hv-dialog-foot">
+        <button class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+        <form id="notif-bulk-form" action="{{ url_for('notifications.notifications_bulk_delete') }}" method="POST" style="display:inline;">
+            <span id="notif-bulk-hidden"></span>
+            <button type="submit" class="btn btn-danger">{{ icon('trash', size=15) }} Delete <span id="notif-bulk-btn-count">0</span></button>
+        </form>
+    </div>
+</dialog>
+
+<script>
+// ---- bulk selection + bulk delete (notifications list; spans both tables) ----
+var NOTIF_JOB_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-mute); flex:none;"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>';
+var NOTIF_HASH_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-mute); flex:none;"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3L21 2m-4 4l3 3m-6 0l3 3"/></svg>';
+function hvNotifSelected(){
+    return Array.prototype.slice.call(document.querySelectorAll('.notif-check:checked'));
+}
+function hvNotifSyncSelectAll(){
+    // Each table's select-all reflects only its own rows.
+    document.querySelectorAll('.notif-select-all').forEach(function(sa){
+        var tbl = sa.closest('table');
+        if (!tbl) return;
+        var all = tbl.querySelectorAll('.notif-check').length;
+        var checked = tbl.querySelectorAll('.notif-check:checked').length;
+        sa.checked = all > 0 && checked === all;
+        sa.indeterminate = checked > 0 && checked < all;
+    });
+}
+function hvNotifSelChanged(){
+    var n = hvNotifSelected().length;
+    var cEl = document.getElementById('notif-sel-count'); if (cEl) cEl.textContent = n;
+    var bar = document.getElementById('notif-bulkbar'); if (bar) bar.classList.toggle('on', n > 0);
+    hvNotifSyncSelectAll();
+}
+function hvNotifToggleAll(cb){
+    var tbl = cb.closest('table');
+    if (tbl) tbl.querySelectorAll('.notif-check').forEach(function(c){ c.checked = cb.checked; });
+    hvNotifSelChanged();
+}
+function hvNotifClearSel(){
+    document.querySelectorAll('.notif-check').forEach(function(c){ c.checked = false; });
+    hvNotifSelChanged();
+}
+function hvNotifOpenBulkDel(){
+    var sel = hvNotifSelected();
+    if (!sel.length) return;
+    var list = document.getElementById('notif-bulk-list');
+    var hidden = document.getElementById('notif-bulk-hidden');
+    list.innerHTML = ''; hidden.innerHTML = '';
+    sel.forEach(function(c){
+        var row = document.createElement('div');
+        row.className = 'notif-bulk-row';
+        var ico = document.createElement('span');
+        ico.style.cssText = 'display:inline-flex; flex:none;';
+        ico.innerHTML = (c.getAttribute('data-kind') === 'hash') ? NOTIF_HASH_ICON : NOTIF_JOB_ICON;  // static markup, safe
+        var name = document.createElement('span');
+        name.className = 'mono'; name.style.color = 'var(--text)';
+        name.textContent = c.getAttribute('data-name') || '';   // textContent — XSS-safe
+        row.appendChild(ico); row.appendChild(name);
+        list.appendChild(row);
+        var inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = 'notification_ids'; inp.value = c.value;
+        hidden.appendChild(inp);
+    });
+    var n = sel.length;
+    document.getElementById('notif-bulk-title').textContent =
+        'Delete ' + n + ' notification' + (n === 1 ? '' : 's') + '?';
+    document.getElementById('notif-bulk-btn-count').textContent = n;
+    var m = document.getElementById('notif-bulk-del-modal');
+    try { m.showModal(); } catch (e) { m.setAttribute('open', ''); }
+}
+</script>
+
+<style>
+.notif-bulkbar { display:none; align-items:center; gap:12px; margin:0 0 14px; padding:11px 16px;
+    border:1px solid var(--primary-dim); border-radius:10px; background:rgba(var(--primary-rgb),0.07); box-shadow:var(--glow-sm); }
+.notif-bulkbar.on { display:flex; }
+.notif-sel-count { color:var(--primary); text-shadow:var(--glow-text); font-family:var(--mono); font-size:13px; letter-spacing:.3px; }
+.notif-bulk-row { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border-soft); }
+.notif-bulk-row:last-child { border-bottom:none; }
+</style>
 
 {% endblock content %}

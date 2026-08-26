@@ -72,6 +72,36 @@ def test_admin_pass_needs_changed_detects_default(app):
     assert admin_pass_needs_changed(db, bcrypt) is False
 
 
+def test_admin_pass_needs_changed_caches_bcrypt(app, monkeypatch):
+    """The cost-12 bcrypt KDF runs on every request via the setup gate, so it must
+    run at most once per unchanged admin hash and re-run only when the hash changes."""
+    add_admin_user(db, bcrypt)  # id=1, still on the default password
+    calls = {"n": 0}
+    real = bcrypt.check_password_hash
+
+    def counting(pw_hash, password):
+        calls["n"] += 1
+        return real(pw_hash, password)
+
+    monkeypatch.setattr(bcrypt, "check_password_hash", counting)
+
+    # First call runs the KDF; repeated calls with the same stored hash are cached.
+    assert admin_pass_needs_changed(db, bcrypt) is True
+    assert admin_pass_needs_changed(db, bcrypt) is True
+    assert admin_pass_needs_changed(db, bcrypt) is True
+    assert calls["n"] == 1
+
+    # Changing the admin password changes the stored hash -> cache miss -> re-runs once.
+    user = Users.query.get(1)
+    user.password = bcrypt.generate_password_hash("a-much-better-password").decode("utf-8")
+    db.session.commit()
+    assert admin_pass_needs_changed(db, bcrypt) is False
+    assert calls["n"] == 2
+    # The new verdict is itself cached.
+    assert admin_pass_needs_changed(db, bcrypt) is False
+    assert calls["n"] == 2
+
+
 def test_settings_needs_added_toggles(app):
     assert settings_needs_added(db) is True
     db.session.add(Settings(retention_period=1, max_runtime_tasks=0, max_runtime_jobs=0))

@@ -334,7 +334,25 @@ def admin_pass_needs_changed(db :SQLAlchemy, bcrypt :Bcrypt) -> bool:
     if result is None:
         return True
     current_password_hash, *_ = result
-    return bcrypt.check_password_hash(current_password_hash, DEFAULT_PASSWORD)
+
+    # bcrypt.check_password_hash runs a full cost-12 KDF (~250ms of CPU). This gate
+    # fires on every non-static request (it is wired as a before_request hook), so
+    # cache the verdict keyed on the stored admin hash and only re-run the KDF when
+    # that hash actually changes (i.e. the admin password was changed). Keying on
+    # the hash value means no explicit cache invalidation is needed and every
+    # transition (default -> changed -> default) stays correct. Cached on app
+    # config so it never leaks across app instances (tests) or worker processes.
+    from flask import current_app, has_app_context
+    app = current_app._get_current_object() if has_app_context() else None
+    if app is not None:
+        cached = app.config.get('_ADMIN_PASS_DEFAULT_CACHE')
+        if cached is not None and cached[0] == current_password_hash:
+            return cached[1]
+
+    needs_changed = bool(bcrypt.check_password_hash(current_password_hash, DEFAULT_PASSWORD))
+    if app is not None:
+        app.config['_ADMIN_PASS_DEFAULT_CACHE'] = (current_password_hash, needs_changed)
+    return needs_changed
 
 
 def settings_needs_added(db :SQLAlchemy) -> bool:

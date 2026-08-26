@@ -242,6 +242,30 @@ def test_dashboard_summary_json(app, client):
     assert "kpi" in data["kpis_html"]
 
 
+def test_chart_data_buckets_by_rolling_day(app):
+    """_chart_data buckets cracked hashes into the 7 rolling 24h windows. Pin the
+    counts so the single-query rewrite keeps the exact per-window semantics."""
+    now = datetime.now()
+    # 2 recovered ~12h ago (today bucket, index 6), 1 ~36h ago (yesterday, index 5),
+    # 1 ~8 days ago (outside the 7-day window -> counted in no bucket).
+    seed = [now - timedelta(hours=12), now - timedelta(hours=12),
+            now - timedelta(hours=36), now - timedelta(days=8)]
+    for i, ts in enumerate(seed):
+        db.session.add(Hashes(sub_ciphertext=("q" + str(i)).ljust(8, "0")[:8],
+                              ciphertext="c", hash_type=1000, cracked=True,
+                              plaintext="pw", recovered_at=ts))
+    # An uncracked hash recovered recently must never be counted.
+    db.session.add(Hashes(sub_ciphertext="u0", ciphertext="c", hash_type=1000,
+                          cracked=False, recovered_at=now - timedelta(hours=1)))
+    db.session.commit()
+
+    labels, values = main_routes._chart_data()
+    assert len(labels) == 7 and len(values) == 7
+    assert values[6] == 2      # today (last 24h)
+    assert values[5] == 1      # 24-48h ago
+    assert sum(values) == 3    # the 8-day-old and the uncracked one are excluded
+
+
 def test_dashboard_fleet_fragment(app, client):
     # /dashboard/fleet returns the agent-fleet modal contents (polled while open).
     from hashview.models import Agents

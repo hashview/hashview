@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from flask import Blueprint, flash, jsonify, make_response, redirect, render_template, request
 from flask_login import current_user, login_required
-from sqlalchemy import and_
+from sqlalchemy import and_, case
 
 from hashview.models import (
     Agents,
@@ -40,16 +40,25 @@ def _chart_data():
     """
     today = datetime.now()
     labels = [(today - timedelta(days=i)).strftime("%b-%d") for i in range(6, -1, -1)]
-    values = [
-        Hashes.query.filter(
-            and_(
-                (Hashes.cracked == 1),
-                (Hashes.recovered_at > today - timedelta(days=i + 1)),
-                (Hashes.recovered_at < today - timedelta(days=i)),
-            )
-        ).count()
-        for i in range(6, -1, -1)
+
+    # One index-bounded query with a conditional SUM per rolling 24h window, instead
+    # of 7 separate COUNTs. The WHERE bounds the scan to the 7-day window (served by
+    # the (cracked, recovered_at) index); the per-bucket CASE uses the exact same
+    # exclusive window bounds as before, so the numbers are unchanged.
+    bounds = [(today - timedelta(days=i + 1), today - timedelta(days=i)) for i in range(6, -1, -1)]
+    buckets = [
+        db.func.coalesce(db.func.sum(case(
+            (and_(Hashes.recovered_at > lo, Hashes.recovered_at < hi), 1), else_=0)), 0)
+        for lo, hi in bounds
     ]
+    row = db.session.query(*buckets).filter(
+        and_(
+            Hashes.cracked == 1,
+            Hashes.recovered_at > today - timedelta(days=7),
+            Hashes.recovered_at < today,
+        )
+    ).first()
+    values = [int(v or 0) for v in row] if row else [0] * 7
     return labels, values
 
 

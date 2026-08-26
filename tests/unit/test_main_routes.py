@@ -242,6 +242,32 @@ def test_dashboard_summary_json(app, client):
     assert "kpi" in data["kpis_html"]
 
 
+def test_static_assets_versioned_caching(app, client):
+    """Versioned static URLs (?v=) get far-future immutable caching; un-versioned
+    ones keep the default revalidate behavior so an upgrade never serves stale CSS."""
+    r = client.get("/static/css/phosphor.css?v=test")
+    assert r.status_code == 200
+    cc = r.headers.get("Cache-Control") or ""
+    assert "max-age=31536000" in cc and "immutable" in cc
+
+    r2 = client.get("/static/css/phosphor.css")
+    assert "31536000" not in (r2.headers.get("Cache-Control") or "")
+
+
+def test_api_docs_swagger_self_hosted(app, client):
+    """The API docs page serves Swagger UI from static/ (no third-party CDN), so it
+    works on network-isolated rigs."""
+    admin = make_admin()
+    login(client, admin)
+    r = client.get("/api/docs")
+    assert r.status_code == 200
+    assert b"jsdelivr" not in r.data and b"cdn." not in r.data
+    assert b"swagger-ui-bundle.js" in r.data
+    # the vendored assets are actually served
+    assert client.get("/static/js/swagger-ui-bundle.js").status_code == 200
+    assert client.get("/static/css/swagger-ui.css").status_code == 200
+
+
 def test_chart_data_buckets_by_rolling_day(app):
     """_chart_data buckets cracked hashes into the 7 rolling 24h windows. Pin the
     counts so the single-query rewrite keeps the exact per-window semantics."""

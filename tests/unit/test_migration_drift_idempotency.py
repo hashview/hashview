@@ -24,7 +24,7 @@ from sqlalchemy import text
 
 MIGRATIONS_DIR = str(Path(__file__).resolve().parents[2] / "migrations")
 BASE_REV = "8027c2d2b40a"      # what the drifted field DB was stamped at
-DEV_HEAD = "b9d3f4a1c2e5"
+DEV_HEAD = "f1a2b3c4d5e6"
 
 
 def _drifted_app(tmp_path, drop_columns=()):
@@ -47,6 +47,12 @@ def _drifted_app(tmp_path, drop_columns=()):
     with app.app_context():
         db.create_all()
         for table, col in drop_columns:
+            # A main-era schema missing this column wouldn't carry a dev-head index
+            # on it either; SQLite also refuses to drop an indexed column, so drop
+            # any dependent index first. The migration tail re-adds both.
+            for ix in sa_inspect(db.engine).get_indexes(table):
+                if col in ix["column_names"]:
+                    db.session.execute(text(f'DROP INDEX IF EXISTS {ix["name"]}'))
             db.session.execute(text(f"ALTER TABLE {table} DROP COLUMN {col}"))
         db.session.commit()
         # Point Alembic below the tail: schema ahead, bookkeeping behind == drift.

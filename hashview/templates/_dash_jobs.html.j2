@@ -16,7 +16,7 @@
     <div class="term-divider">running jobs</div>
     <div style="margin-top:14px;">
         {% for job in running_jobs %}
-            {% set d = (job_dash.get(job.id) if job_dash is defined else none) or {'groups': [], 'hashfile_total': 0, 'tasks_total': 0, 'tasks_done': 0, 'tasks_running': 0, 'chunks_total': 0, 'chunks_done': 0, 'chunks_active': 0} %}
+            {% set d = (job_dash.get(job.id) if job_dash is defined else none) or {'groups': [], 'hashfile_unrecovered': 0, 'tasks_total': 0, 'tasks_done': 0, 'tasks_running': 0, 'chunks_total': 0, 'chunks_done': 0, 'chunks_active': 0} %}
             {% if job.started_at %}
                 {% set job_elapsed = (datetime.now() - job.started_at).total_seconds() %}
                 {% set job_remaining = (settings.max_runtime_jobs * 3600 - job_elapsed) if settings and settings.max_runtime_jobs else 0 %}
@@ -83,7 +83,7 @@
                                             {% endif %}
                                         </div>
                                     </td>
-                                    <td class="center num"><span style="color:{{ 'var(--primary)' if g.recovered else 'var(--text-mute)' }};">{{ g.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span></td>
+                                    <td class="center num"><span style="color:{{ 'var(--primary)' if g.recovered else 'var(--text-mute)' }};">{{ g.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_unrecovered|commafy }}</span></td>
                                     <td class="center num" style="color:var(--text-dim);">{{ g.rate or '—' }}</td>
                                     <td class="center num" style="color:{{ 'var(--amber)' if g.eta else 'var(--text-mute)' }};">{{ g.eta or '—' }}</td>
                                     <td class="center">{% if g.status == 'Running' %}<a class="icon-btn" href="{{ url_for('main.stop_task', job_id=job.id, task_id=g.task_id) }}" title="Stop task">{{ icon('stop', size=15) }}</a>{% endif %}</td>
@@ -100,7 +100,7 @@
                                         <td class="mono center" style="color:var(--text-dim);">#{{ ch.chunk_no }}{% if ch.chunk_total %}<span style="color:var(--text-mute);">/{{ ch.chunk_total }}</span>{% endif %}</td>
                                         <td class="mono" style="color:var(--text-dim);">{{ ch.agent }}</td>
                                         <td></td>
-                                        <td class="center num" style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy if ch.recovered else '—' }}</td>
+                                        <td class="center num">{% if ch.recovered is not none %}<span style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_unrecovered|commafy }}</span>{% else %}—{% endif %}</td>
                                         <td class="center num" style="color:var(--text-dim);">{{ ch.rate or '—' }}</td>
                                         <td class="center num" style="color:{{ 'var(--amber)' if ch.eta else 'var(--text-mute)' }};">{{ ch.eta or '—' }}</td>
                                         <td></td>

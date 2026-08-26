@@ -6,6 +6,7 @@ chunks). These pin that math and the grouped /dashboard/jobs render.
 """
 
 import json
+from datetime import datetime
 
 import pytest
 
@@ -36,7 +37,8 @@ def _seed_running_job():
     db.session.add(hf)
     db.session.commit()
     job = Jobs(name="Q2 Pentest", owner_id=user.id, customer_id=cust.id,
-               hashfile_id=hf.id, status="Running", priority=3)
+               hashfile_id=hf.id, status="Running", priority=3,
+               started_at=datetime(2020, 1, 1))
     db.session.add(job)
     db.session.commit()
 
@@ -75,7 +77,8 @@ def _seed_running_job():
     # 4 cracked hashes credited to task A, present in THIS job's hashfile
     for i in range(4):
         h = Hashes(sub_ciphertext=f"{i:032x}", ciphertext=f"c{i}",
-                   hash_type=1000, cracked=True, task_id=task_a.id)
+                   hash_type=1000, cracked=True, task_id=task_a.id,
+                   recovered_at=datetime(2021, 1, 1))
         db.session.add(h)
         db.session.commit()
         db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
@@ -147,7 +150,8 @@ def test_recovered_counts_per_account_in_hashfile(app, db_session):
     # per account, matching the recovered totals shown elsewhere (email/analytics).
     job, task_a, _ = _seed_running_job()          # 4 single-account cracks
     shared = Hashes(sub_ciphertext="ab" * 16, ciphertext="shared",
-                    hash_type=1000, cracked=True, task_id=task_a.id)
+                    hash_type=1000, cracked=True, task_id=task_a.id,
+                    recovered_at=datetime(2021, 1, 1))
     db.session.add(shared)
     db.session.commit()
     for uname in ("alice", "bob"):
@@ -156,6 +160,32 @@ def test_recovered_counts_per_account_in_hashfile(app, db_session):
     db.session.commit()
     g = {grp['task_id']: grp for grp in _build(job)['groups']}[task_a.id]
     assert g['recovered'] == 6                     # 4 + 2 accounts on the shared hash
+
+
+@pytest.mark.security
+def test_recovered_scoped_to_run_and_unrecovered_denominator(app, db_session):
+    # X counts only cracks from the CURRENT run (recovered_at >= job.started_at);
+    # an earlier crack of the same task/hashfile is excluded. The job-level
+    # denominator is the hashfile's UNRECOVERED (uncracked) accounts.
+    job, task_a, _ = _seed_running_job()          # 4 cracked this run (recovered_at 2021)
+    old = Hashes(sub_ciphertext="cd" * 16, ciphertext="old", hash_type=1000,
+                 cracked=True, task_id=task_a.id, recovered_at=datetime(2019, 1, 1))
+    db.session.add(old)
+    db.session.commit()
+    db.session.add(HashfileHashes(hash_id=old.id, hashfile_id=job.hashfile_id))
+    for i in range(3):                            # 3 still-uncracked accounts
+        u = Hashes(sub_ciphertext=f"{i + 50:032x}", ciphertext=f"u{i}",
+                   hash_type=1000, cracked=False)
+        db.session.add(u)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=u.id, hashfile_id=job.hashfile_id))
+    db.session.commit()
+
+    dash = _build(job)
+    g = {grp['task_id']: grp for grp in dash['groups']}[task_a.id]
+    assert g['recovered'] == 4                     # the pre-run crack (2019) is excluded
+    # hashfile: 4 (run) + 1 (old) cracked + 3 uncracked = 8 total, 5 cracked -> 3 left
+    assert dash['hashfile_unrecovered'] == 3
 
 
 @pytest.mark.security

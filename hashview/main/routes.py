@@ -188,30 +188,22 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
     expands to its ACTIVE (Running) chunks. Returns
     {job_id: {groups: [...], tasks_total/done/running, chunks_total/done/active}}.
     """
-    running_ids = {j.id for j in running_jobs}
-    task_ids = {jt.task_id for jt in job_tasks if jt.job_id in running_ids}
-    # Recovered count per (hashfile, task): cracked hashes credited to the task
-    # that actually live in THIS job's hashfile. Scoping by hashfile_id matters
-    # because a task is reusable across jobs/hashfiles -- counting Hashes.task_id
-    # alone credited cracks from every other job that ran the same task. Counted
-    # per HashfileHashes (account) row, matching the recovered counts shown
-    # elsewhere (job-completion email, analytics).
     hashfile_ids = {j.hashfile_id for j in running_jobs}
-    recovered_by_hf_task = {}
-    if task_ids and hashfile_ids:
-        rows = (db.session.query(HashfileHashes.hashfile_id, Hashes.task_id,
+    # Cracked accounts per hashfile (any task, current state) -- subtracted from
+    # the hashfile total to get the "unrecovered left" denominator on the dashboard.
+    hashfile_cracked = {}
+    if hashfile_ids:
+        rows = (db.session.query(HashfileHashes.hashfile_id,
                                  db.func.count(HashfileHashes.id))
                 .join(Hashes, Hashes.id == HashfileHashes.hash_id)
                 .filter(Hashes.cracked == 1,
-                        Hashes.task_id.in_(task_ids),
                         HashfileHashes.hashfile_id.in_(hashfile_ids))
-                .group_by(HashfileHashes.hashfile_id, Hashes.task_id)
+                .group_by(HashfileHashes.hashfile_id)
                 .all())
-        for hf_id, tid, cnt in rows:
-            recovered_by_hf_task[(hf_id, tid)] = cnt
+        for hf_id, cnt in rows:
+            hashfile_cracked[hf_id] = cnt
 
-    # Total accounts (HashfileHashes rows) per hashfile -- the denominator for the
-    # per-task "recovered / total" display on the dashboard.
+    # Total accounts (HashfileHashes rows) per hashfile.
     hashfile_totals = {}
     if hashfile_ids:
         rows = (db.session.query(HashfileHashes.hashfile_id,
@@ -232,6 +224,20 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
                 by_task[jt.task_id] = []
                 order.append(jt.task_id)
             by_task[jt.task_id].append(jt)
+
+        # Hashes recovered by each task for THIS job's hashfile since the current
+        # run started (recovered_at >= job.started_at), counted per account.
+        recovered_by_task = {}
+        if job.hashfile_id and job.started_at and by_task:
+            rows = (db.session.query(Hashes.task_id, db.func.count(HashfileHashes.id))
+                    .join(HashfileHashes, HashfileHashes.hash_id == Hashes.id)
+                    .filter(Hashes.cracked == 1,
+                            Hashes.task_id.in_(list(by_task.keys())),
+                            HashfileHashes.hashfile_id == job.hashfile_id,
+                            Hashes.recovered_at >= job.started_at)
+                    .group_by(Hashes.task_id)
+                    .all())
+            recovered_by_task = {tid: cnt for tid, cnt in rows}
 
         groups = []
         chunks_total = chunks_done = chunks_active = 0
@@ -271,12 +277,22 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
                 bench = agent.benchmark if agent else None
                 rate_hps += _hps(bench)
                 rec = recovered_list.get(c.agent_id, '')
+                rec_str = rec.split(' ')[0] if rec else ''   # hashcat "X/Y" (drop the %)
+                # Chunk X = hashcat's recovered count for this agent's session. The
+                # /Y denominator shown in the template is the job's DB-computed
+                # "unrecovered left" (hashfile_unrecovered), same as the task row --
+                # so hashcat's own total is dropped here. Numeric so |commafy adds
+                # thousands separators.
+                rec_x = None
+                if rec_str:
+                    head = rec_str.split('/')[0]
+                    rec_x = int(head) if head.isdigit() else None
                 active.append({
                     'chunk_no': c.chunk_no,
                     'chunk_total': c.chunk_total,
                     'agent': agent.name if agent else '—',
                     'rate': bench or '—',
-                    'recovered': rec.split(' ')[0] if rec else '',
+                    'recovered': rec_x,
                     'eta': _eta_text(time_estimated_list.get(c.agent_id, '')),
                 })
             eta = (max((a['eta'] for a in active), key=_eta_seconds, default='')
@@ -304,7 +320,7 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
                 'is_chunked': is_chunked,
                 'expandable': bool(running) and is_chunked,
                 'agent_display': agent_display,
-                'recovered': recovered_by_hf_task.get((job.hashfile_id, task_id), 0),
+                'recovered': recovered_by_task.get(task_id, 0),
                 'rate': _fmt(rate_hps) if rate_hps else '',
                 'eta': eta,
                 'active_chunks': active,
@@ -312,7 +328,8 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
 
         out[job.id] = {
             'groups': groups,
-            'hashfile_total': hashfile_totals.get(job.hashfile_id, 0),
+            'hashfile_unrecovered': max(hashfile_totals.get(job.hashfile_id, 0)
+                                        - hashfile_cracked.get(job.hashfile_id, 0), 0),
             'tasks_total': len(groups),
             'tasks_done': sum(1 for g in groups if g['status'] == 'Completed'),
             'tasks_running': sum(1 for g in groups if g['status'] == 'Running'),

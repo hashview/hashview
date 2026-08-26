@@ -135,7 +135,12 @@ E2E notes:
   under test lives in docker so the runner doesn't import any `hashview.*`
   modules.
 
-### Job-creation performance suite
+### Performance suites
+
+Two modules carry the `perf` marker and share one fixture:
+`tests/e2e/test_job_creation_perf.py` (the job wizard) and
+`tests/e2e/test_api_hashfile_listing_perf.py` (the `/v1` hashfile listing
+routes). Everything below applies to both.
 
 `tests/e2e/test_job_creation_perf.py` measures the job wizard's latency and
 response sizes. It needs volume in the database to mean anything, so it skips
@@ -151,7 +156,7 @@ docker compose exec -T -e PYTHONPATH=/ -e HASHVIEW_E2E_CUSTOMER_ID=1 \
 These tests carry the `perf` marker rather than `e2e`, so `pytest -m e2e` (what
 CI runs) does not collect them. That is deliberate: CI runs e2e under
 `HASHVIEW_E2E_STRICT` with a cap on skipped results, and since it never seeds the
-perf fixture these ten tests would skip there and trip the cap.
+perf fixture these tests would skip there and trip the cap.
 
 The seeder is idempotent and its volumes are tunable:
 `HASHVIEW_PERF_HASHFILES` (default 30), `HASHVIEW_PERF_HASHES_PER_HASHFILE`
@@ -159,6 +164,12 @@ The seeder is idempotent and its volumes are tunable:
 `HASHVIEW_PERF_BIG_CRACKED_RATIO` (0.6), `HASHVIEW_PERF_TASKS` (400). Re-running
 with a larger value tops the fixture up rather than duplicating it. Everything it
 creates is named `perf-hashfile-*`, `perf-big-hashfile`, or `perf-task-*`.
+
+**Seed with `HASHVIEW_PERF_TASKS=2000` for the task-payload xfails.** Issue
+#422's measurements were taken at 2,000 tasks, and two of its strict `xfail`s
+(`task_library` and `summary` payloads) are calibrated to that. At the seeder's
+default of 400 both payloads come in under budget, so both XPASS and the suite
+reports two failures that are a fixture-volume artifact, not a fixed defect.
 
 The suite has two kinds of test:
 
@@ -174,6 +185,31 @@ The suite has two kinds of test:
   strict mode makes the suite fail on XPASS, so it will tell you.
 
 Run `-s` to get the timing table; each line is prefixed `[perf]`.
+
+#### API hashfile-listing suite
+
+`tests/e2e/test_api_hashfile_listing_perf.py` covers
+`GET /v1/hashfiles/hash_type/<t>` and `GET /v1/customers/<id>/hashfiles`, both
+of which compute cracked/total counts one hashfile at a time.
+
+It asserts a **ratio**, not a millisecond budget, because replacing the loop
+with one grouped query does not make either route free — the grouped query still
+walks every `hashfile_hashes` row of that type. At fixture volume the two
+implementations are only ~1.8x apart in absolute terms, which is too narrow to
+pin on unknown hardware. Each test therefore measures the same route for a hash
+type with *no* hashfiles, uses that as the fixed-cost floor, and asserts on
+`(measured - floor) / floor`. Both terms move together, so the threshold travels
+between machines. Override with `HASHVIEW_PERF_MAX_LOOP_COST_RATIO` and
+`HASHVIEW_PERF_MAX_CUSTOMER_LOOP_COST_RATIO`.
+
+One strict `xfail` against **issue #228**, on the by-hash-type route (three
+queries per hashfile: an ORM `get` plus two counts). Confirmed to flip: patching
+a `GROUP BY` into a running stack moves it from 2.5x to 1.0x and the marker
+XPASSes, which is the signal to delete it.
+
+The customer-scoped route is *not* marked `xfail`, deliberately. It runs one
+combined aggregate per hashfile rather than three queries, measures under the
+ceiling today, and is kept as a regression guard instead of a defect marker.
 
 ### Using the helper script
 

@@ -52,6 +52,7 @@ Notable changes will be documented here
 
 **Testing**
 - Job-creation performance e2e suite (`tests/e2e/test_job_creation_perf.py`) with a tunable volume seeder (`tests/seed_perf_db.py`), covering latency budgets for each wizard step plus strict-xfail scaling guards for the four endpoints in issue #422 whose cost grows with table size rather than page size
+- API hashfile-listing performance suite (`tests/e2e/test_api_hashfile_listing_perf.py`), sharing that seeder. Asserts loop cost as a ratio to a same-route zero-hashfile floor rather than an absolute budget, so the threshold survives a change of hardware; carries a strict-xfail scaling guard for issue #228 (`GET /v1/hashfiles/hash_type/<t>` runs an ORM get plus two counts per matching hashfile) and a passing regression guard on `GET /v1/customers/<id>/hashfiles`, which runs one combined aggregate per hashfile and measures under the ceiling today
 
 ### Changed
 - The Rules listing is paginated (20 per page) with sortable Name / Rules / Owner / Last Updated columns and a server-side name filter, matching the Tasks listing

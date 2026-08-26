@@ -342,6 +342,16 @@ class Hashes(db.Model):
     recovered_by = db.Column(db.Integer, nullable=True)
     plaintext = db.Column(db.String(256), index=True)
 
+    # Composite indexes leading with the equality column (cracked) so the hot
+    # dashboard/tasks aggregates over this multi-million-row table are index-driven
+    # instead of full scans + filesorts:
+    #   (cracked, recovered_at) -> recovery feed ORDER BY recovered_at, chart ranges
+    #   (cracked, task_id)      -> per-task recovered counts (GROUP BY task_id)
+    __table_args__ = (
+        db.Index('ix_hashes_cracked_recovered_at', 'cracked', 'recovered_at'),
+        db.Index('ix_hashes_cracked_task_id', 'cracked', 'task_id'),
+    )
+
 class JobNotifications(db.Model):
     """Class object to represent JobNotifications"""
 
@@ -355,5 +365,6 @@ class HashNotifications(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     owner_id = db.Column(db.Integer, nullable=False)
-    hash_id = db.Column(db.Integer, nullable=False)
+    # Indexed: joined to hashfile_hashes.hash_id on the hot /jobs alert-hash check.
+    hash_id = db.Column(db.Integer, nullable=False, index=True)
     method = db.Column(db.String(6), nullable=False)    # email, push

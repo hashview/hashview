@@ -215,7 +215,8 @@ def test_dashboard_jobs_renders_one_row_per_task(app, client):
 
 @pytest.mark.security
 def test_dashboard_recovered_links_to_analytics(app, client):
-    """The recovered "X" on each task row links to that job's hashfile analytics."""
+    """The recovered "X" on both the task row and the per-chunk sub-row links to
+    that job's hashfile analytics."""
     from tests.unit.helpers import login, make_admin
     job, _, _ = _seed_running_job()
     login(client, make_admin())
@@ -225,6 +226,10 @@ def test_dashboard_recovered_links_to_analytics(app, client):
     assert 'class="rec-x-link"' in html
     assert f'customer_id={job.customer_id}' in html
     assert f'hashfile_id={job.hashfile_id}' in html
+    # task_a's parent recovered is 4; its active chunk (chunk 3) recovered is 7 --
+    # both are now links (X wrapped in an anchor).
+    assert '>4</a>' in html      # task row X
+    assert '>7</a>' in html      # per-chunk X
 
 
 @pytest.mark.security

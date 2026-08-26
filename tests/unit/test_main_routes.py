@@ -242,6 +242,23 @@ def test_dashboard_summary_json(app, client):
     assert "kpi" in data["kpis_html"]
 
 
+def test_recovery_feed_caps_at_100(app):
+    """The live recovery feed returns up to 100 deduped entries (was 10)."""
+    for i in range(120):
+        h = Hashes(sub_ciphertext=f"r{i:07d}", ciphertext=f"c{i}", hash_type=1000,
+                   cracked=True, plaintext=f"pw{i}",
+                   recovered_at=datetime(2024, 1, 1) + timedelta(minutes=i))
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=1, username=f"u{i}"))
+    db.session.commit()
+
+    feed = main_routes._recovery_feed()
+    assert len(feed) == 100
+    # newest-first: the last-seeded recovery (u119) leads the feed
+    assert feed[0]["account"] == "u119"
+
+
 def test_static_assets_versioned_caching(app, client):
     """Versioned static URLs (?v=) get far-future immutable caching; un-versioned
     ones keep the default revalidate behavior so an upgrade never serves stale CSS."""

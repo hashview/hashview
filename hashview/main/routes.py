@@ -87,7 +87,7 @@ def _relative_time(dt):
 
 
 def _recovery_feed():
-    """Most-recent recovered passwords for the live feed (max 10, deduped)."""
+    """Most-recent recovered passwords for the live feed (max 100, deduped)."""
     from hashview.jobs.forms import JobsNewHashFileForm
     hash_type_names = {}
     try:
@@ -104,17 +104,17 @@ def _recovery_feed():
     users = Users.query.all()
     user_names = {u.id: ((u.first_name or '') + ' ' + (u.last_name or '')).strip() for u in users}
 
-    # Last 10 recovered passwords, deduped by (hash_id, username). The hash↔hashfile_hashes
+    # Last 100 recovered passwords, deduped by (hash_id, username). The hash↔hashfile_hashes
     # join is one-to-many (same hash across hashfiles / repeated username rows), so a plain
-    # LIMIT 10 gets eaten by duplicates. We fetch a bounded window of the most-recent joined
-    # rows and dedupe by (hash_id, username) — collapsing exact duplicates while keeping
-    # distinct accounts that happen to share the same password.
+    # LIMIT gets eaten by duplicates. We fetch a wider window of the most-recent joined rows
+    # and dedupe by (hash_id, username) — collapsing exact duplicates while keeping distinct
+    # accounts that happen to share the same password — then cap the output at 100.
     recent_rows = db.session.query(Hashes, HashfileHashes.username) \
         .join(HashfileHashes, Hashes.id == HashfileHashes.hash_id) \
         .filter(Hashes.cracked == True) \
         .filter(Hashes.recovered_at.isnot(None)) \
         .order_by(Hashes.recovered_at.desc()) \
-        .limit(100).all()
+        .limit(500).all()
     recovery_feed = []
     seen = set()
     for h, username in recent_rows:
@@ -131,7 +131,7 @@ def _recovery_feed():
             'type': hash_type_names.get(str(h.hash_type), str(h.hash_type)),
             'recovered_by': user_names.get(h.recovered_by) or '—',
         })
-        if len(recovery_feed) >= 10:
+        if len(recovery_feed) >= 100:
             break
     return recovery_feed
 

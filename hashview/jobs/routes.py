@@ -800,6 +800,17 @@ def jobs_assign_notification_hashes(job_id, method):
     }
     return render_template('jobs_assigned_notifications_hashes.html.j2', title='Assigned Hash Notifications', job=job, hashes=hashes, notified_ids=notified_ids)
 
+def _delete_job(job):
+    """Delete one job and its dependent rows (job tasks + notifications) in a
+    single transaction. Returns try_commit()'s result. Shared by the single
+    (jobs_delete) and bulk (jobs_bulk_delete) delete paths so both cascade the
+    same way."""
+    JobTasks.query.filter_by(job_id=job.id).delete()
+    JobNotifications.query.filter_by(job_id=job.id).delete()
+    db.session.delete(job)
+    return try_commit(f'delete job {job.id}')
+
+
 @jobs.route("/jobs/delete/<int:job_id>", methods=['GET', 'POST'])
 @login_required
 def jobs_delete(job_id):
@@ -811,11 +822,7 @@ def jobs_delete(job_id):
         return redirect(url_for('jobs.jobs_list'))
     if current_user.admin or job.owner_id == current_user.id:
         job_target = f'job:{job.id} {job.name!r}'   # capture before delete (instance expires post-commit)
-        JobTasks.query.filter_by(job_id=job_id).delete()
-        JobNotifications.query.filter_by(job_id=job_id).delete()
-
-        db.session.delete(job)
-        if not try_commit(f'delete job {job_id}'):
+        if not _delete_job(job):
             flash('Job could not be deleted — it may have already been removed.', 'danger')
             return redirect(url_for('jobs.jobs_list'))
         log_event('job.delete', target=job_target)
@@ -823,6 +830,67 @@ def jobs_delete(job_id):
         return redirect(url_for('jobs.jobs_list'))
 
     flash('You do not have rights to delete this job!', 'danger')
+    return redirect(url_for('jobs.jobs_list'))
+
+
+@jobs.route("/jobs/bulk_delete", methods=['POST'])
+@login_required
+def jobs_bulk_delete():
+    """Delete several jobs at once (from the jobs list's bulk-select bar).
+
+    Mirrors the selectability rule enforced in the UI: a job is deletable only by
+    its owner or an admin, and only when it is not Running or Queued. Each id is
+    guarded independently -- one skipped/failed job never aborts the batch -- and a
+    per-outcome summary is flashed."""
+    deleted = skipped_active = skipped_rights = skipped_missing = failed = 0
+    seen = set()
+    for raw in request.form.getlist('job_ids'):
+        try:
+            job_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if job_id in seen:
+            continue
+        seen.add(job_id)
+
+        job = Jobs.query.get(job_id)
+        if job is None:
+            skipped_missing += 1
+            continue
+        if not (current_user.admin or job.owner_id == current_user.id):
+            skipped_rights += 1
+            continue
+        if job.status in ('Running', 'Queued'):
+            skipped_active += 1
+            continue
+
+        job_target = f'job:{job.id} {job.name!r}'
+        if _delete_job(job):
+            log_event('job.delete', target=job_target)
+            deleted += 1
+        else:
+            failed += 1
+
+    parts = []
+    if deleted:
+        parts.append(f'{deleted} deleted')
+    if skipped_active:
+        parts.append(f'{skipped_active} skipped — running or queued')
+    if skipped_rights:
+        parts.append(f'{skipped_rights} skipped — insufficient rights')
+    if skipped_missing:
+        parts.append(f'{skipped_missing} skipped — not found')
+    if failed:
+        parts.append(f'{failed} failed')
+
+    if not parts:
+        flash('No jobs selected for deletion.', 'warning')
+    elif deleted and not (skipped_active or skipped_rights or skipped_missing or failed):
+        flash(', '.join(parts) + '.', 'success')
+    elif deleted:
+        flash(', '.join(parts) + '.', 'warning')
+    else:
+        flash(', '.join(parts) + '.', 'danger')
     return redirect(url_for('jobs.jobs_list'))
 
 @jobs.route("/jobs/<int:job_id>/summary", methods=['GET', 'POST'])

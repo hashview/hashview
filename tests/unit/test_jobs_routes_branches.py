@@ -924,6 +924,57 @@ def test_jobs_delete_not_found_flashes(app, client):
 
 
 # ---------------------------------------------------------------------------
+# jobs_bulk_delete — owner/admin + not-running/queued gating
+# ---------------------------------------------------------------------------
+
+def test_jobs_bulk_delete_enforces_owner_and_status(app, client):
+    """Owner (non-admin) bulk-deletes their non-active jobs; running/queued and
+    non-owned jobs are skipped, and the skips don't abort the batch."""
+    user = _nonadmin()
+    other = _nonadmin(email="bulk-other@example.com")
+    customer = _make_customer()
+    _login(client, user)
+
+    ok1 = _make_job(user.id, customer.id, name="bulk-ok-1", status="Completed")
+    ok2 = _make_job(user.id, customer.id, name="bulk-ok-2", status="Canceled")
+    running = _make_job(user.id, customer.id, name="bulk-run", status="Running")
+    queued = _make_job(user.id, customer.id, name="bulk-que", status="Queued")
+    not_mine = _make_job(other.id, customer.id, name="bulk-not-mine", status="Completed")
+    ids = [ok1.id, ok2.id, running.id, queued.id, not_mine.id]
+
+    resp = client.post("/jobs/bulk_delete",
+                       data={"job_ids": [str(i) for i in ids] + ["999999"]},
+                       follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"2 deleted" in resp.data
+    assert b"running or queued" in resp.data
+    assert b"insufficient rights" in resp.data
+
+    remaining = {j.id for j in Jobs.query.all()}
+    assert ok1.id not in remaining and ok2.id not in remaining      # deleted
+    assert running.id in remaining and queued.id in remaining       # active -> kept
+    assert not_mine.id in remaining                                 # not owner -> kept
+
+
+def test_jobs_bulk_delete_admin_deletes_any_non_active(app, client):
+    """An admin can bulk-delete another user's jobs, but running/queued stay skipped."""
+    admin = _admin()
+    owner = _nonadmin(email="bulk-owner@example.com")
+    customer = _make_customer()
+    _login(client, admin)
+
+    done = _make_job(owner.id, customer.id, name="bulk-admin-done", status="Completed")
+    running = _make_job(owner.id, customer.id, name="bulk-admin-run", status="Running")
+
+    client.post("/jobs/bulk_delete",
+                data={"job_ids": [str(done.id), str(running.id)]},
+                follow_redirects=True)
+    remaining = {j.id for j in Jobs.query.all()}
+    assert done.id not in remaining        # admin deleted another user's non-active job
+    assert running.id in remaining         # running -> still skipped
+
+
+# ---------------------------------------------------------------------------
 # jobs_stop — job not found (line 909)
 # ---------------------------------------------------------------------------
 

@@ -33,10 +33,16 @@
         </form>
     </div>
     {% if jobs %}
+    <div class="job-bulkbar" id="job-bulkbar">
+        <span class="job-sel-count"><span id="job-sel-count">0</span> selected</span>
+        <span style="flex:1;"></span>
+        <button type="button" class="btn" onclick="hvJobClearSel()">Clear</button>
+        <button type="button" class="btn btn-danger" onclick="hvJobOpenBulkDel()">{{ icon('trash', size=15) }} Delete selected</button>
+    </div>
     <table class="tbl">
         <thead>
             <tr>
-                <th>Job</th><th>Customer</th><th>Hashfile</th>
+                <th style="width:34px; text-align:center;"><input type="checkbox" class="hv-check" id="job-select-all" onclick="hvJobToggleAll(this)" title="Select all deletable jobs"></th><th>Job</th><th>Customer</th><th>Hashfile</th>
                 <th class="center">Status</th><th class="center">Cracked</th><th class="center">Priority</th>
                 <th>Owner</th><th>Created</th><th class="center" style="width:180px;">Control</th>
             </tr>
@@ -48,6 +54,14 @@
             {% for h in hashfiles %}{% if h.id == job.hashfile_id %}{% set ns.hf = h.name %}{% endif %}{% endfor %}
             {% for u in users %}{% if u.id == job.owner_id %}{% set ns.owner = u.first_name ~ ' ' ~ u.last_name %}{% endif %}{% endfor %}
             <tr data-name="{{ job.name|lower }} {{ ns.cust|lower }}">
+                <td class="center">
+                    {% set can_del = (current_user.admin or job.owner_id == current_user.id) and job.status not in ['Running', 'Queued'] %}
+                    {% if can_del %}
+                    <input type="checkbox" class="hv-check job-check" value="{{ job.id }}" data-name="{{ job.name }}" data-customer="{{ ns.cust }}" onchange="hvJobSelChanged()">
+                    {% elif job.status in ['Running', 'Queued'] %}
+                    <span class="job-lock" title="{{ job.status }} — stop the job before deleting">{{ icon('lock', size=15) }}</span>
+                    {% endif %}
+                </td>
                 <td style="font-weight:500;"><div title="{{ job.name }}" style="max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ job.name }}</div></td>
                 <td style="color:var(--text-dim);"><div title="{{ ns.cust }}" style="max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ ns.cust }}</div></td>
                 <td class="mono" style="color:var(--text-dim);"><div title="{{ ns.hf }}" style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ ns.hf }}</div></td>
@@ -209,5 +223,94 @@
     </div>
 </dialog>
 {% endfor %}
+
+{# ---- bulk-delete confirmation (one modal for the whole selected set) ---- #}
+<dialog class="hv-dialog" id="job-bulk-del-modal" style="max-width:620px; width:94vw;">
+    <div class="hv-dialog-head">
+        <span style="color:var(--red); display:inline-flex;">{{ icon('trash', size=16) }}</span>
+        <div style="line-height:1.2;">
+            <h3 style="margin:0;" id="job-bulk-title">Delete jobs?</h3>
+            <div class="mono" style="font-size:10px; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-mute); margin-top:3px;">this permanently removes the jobs and their task queue</div>
+        </div>
+        <button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close" style="margin-left:auto;">{{ icon('x', size=15) }}</button>
+    </div>
+    <div class="hv-dialog-body" style="max-height:52vh; overflow-y:auto;">
+        <div class="mono" style="font-size:11px; color:var(--text-mute); margin-bottom:10px;">The following will be permanently deleted:</div>
+        <div id="job-bulk-list"></div>
+    </div>
+    <div class="hv-dialog-foot">
+        <button class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+        <form id="job-bulk-form" action="{{ url_for('jobs.jobs_bulk_delete') }}" method="POST" style="display:inline;">
+            <span id="job-bulk-hidden"></span>
+            <button type="submit" class="btn btn-danger">{{ icon('trash', size=15) }} Delete <span id="job-bulk-btn-count">0</span></button>
+        </form>
+    </div>
+</dialog>
+
+<script>
+// ---- bulk selection + bulk delete (jobs list) ----
+var JOB_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-mute); flex:none;"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>';
+function hvJobSelected(){
+    return Array.prototype.slice.call(document.querySelectorAll('.job-check:checked'));
+}
+function hvJobSelChanged(){
+    var n = hvJobSelected().length;
+    var all = document.querySelectorAll('.job-check').length;
+    var cEl = document.getElementById('job-sel-count'); if (cEl) cEl.textContent = n;
+    var bar = document.getElementById('job-bulkbar'); if (bar) bar.classList.toggle('on', n > 0);
+    var sa = document.getElementById('job-select-all');
+    if (sa) { sa.checked = n > 0 && n === all; sa.indeterminate = n > 0 && n < all; }
+}
+function hvJobToggleAll(cb){
+    document.querySelectorAll('.job-check').forEach(function(c){ c.checked = cb.checked; });
+    hvJobSelChanged();
+}
+function hvJobClearSel(){
+    document.querySelectorAll('.job-check').forEach(function(c){ c.checked = false; });
+    hvJobSelChanged();
+}
+function hvJobOpenBulkDel(){
+    var sel = hvJobSelected();
+    if (!sel.length) return;
+    var list = document.getElementById('job-bulk-list');
+    var hidden = document.getElementById('job-bulk-hidden');
+    list.innerHTML = ''; hidden.innerHTML = '';
+    sel.forEach(function(c){
+        var row = document.createElement('div');
+        row.className = 'job-bulk-row';
+        var ico = document.createElement('span');
+        ico.style.cssText = 'display:inline-flex; flex:none;';
+        ico.innerHTML = JOB_ICON;                       // static markup, safe
+        var name = document.createElement('span');
+        name.className = 'mono'; name.style.color = 'var(--text)';
+        name.textContent = c.getAttribute('data-name') || '';   // textContent — XSS-safe
+        var meta = document.createElement('span');
+        meta.style.color = 'var(--text-mute)';
+        var cust = c.getAttribute('data-customer') || '';
+        meta.textContent = cust ? ' · ' + cust : '';
+        row.appendChild(ico); row.appendChild(name); row.appendChild(meta);
+        list.appendChild(row);
+        var inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = 'job_ids'; inp.value = c.value;
+        hidden.appendChild(inp);
+    });
+    var n = sel.length;
+    document.getElementById('job-bulk-title').textContent =
+        'Delete ' + n + ' job' + (n === 1 ? '' : 's') + '?';
+    document.getElementById('job-bulk-btn-count').textContent = n;
+    var m = document.getElementById('job-bulk-del-modal');
+    try { m.showModal(); } catch (e) { m.setAttribute('open', ''); }
+}
+</script>
+
+<style>
+.job-bulkbar { display:none; align-items:center; gap:12px; margin:0 16px 14px; padding:11px 16px;
+    border:1px solid var(--primary-dim); border-radius:10px; background:rgba(var(--primary-rgb),0.07); box-shadow:var(--glow-sm); }
+.job-bulkbar.on { display:flex; }
+.job-sel-count { color:var(--primary); text-shadow:var(--glow-text); font-family:var(--mono); font-size:13px; letter-spacing:.3px; }
+.job-lock { color:var(--text-mute); display:inline-flex; }
+.job-bulk-row { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border-soft); }
+.job-bulk-row:last-child { border-bottom:none; }
+</style>
 
 {% endblock %}

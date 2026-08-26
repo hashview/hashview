@@ -1,4 +1,5 @@
 """Flask routes to handle Tasks"""
+import json
 import os
 
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
@@ -119,6 +120,10 @@ def tasks_list():
     # too); the list view uses this to disable the edit button for those tasks.
     tasks_in_jobs = {jt.task_id for jt in job_tasks}
 
+    # Tasks that belong to a task group can't be bulk-deleted (the delete routes skip
+    # them); the list view padlocks these so the checkbox isn't offered.
+    tasks_in_task_groups = _task_group_task_ids(task_groups)
+
     # DISTINCT jobs each task is used in, for the info modal's "Used in N jobs"
     # panel. Collapse chunk rows so a job the task was split across is listed once
     # (not once per chunk); a task used more than once in the same job also lists
@@ -136,7 +141,7 @@ def tasks_list():
         seen.add(job.id)
         jobs_by_task.setdefault(jt.task_id, []).append(job)
 
-    return render_template('tasks.html.j2', title='tasks', tasks=tasks, users=users, jobs=jobs, job_tasks=job_tasks, jobs_by_task=jobs_by_task, wordlists=wordlists, task_groups=task_groups, task_recovery_performance=task_recovery_performance, pagination=pagination, sort_by=sort_by, sort_order=sort_order, name_filter=name_filter, rules=Rules.query.all(), wl_filesize=wl_filesize, tasks_in_jobs=tasks_in_jobs, tasksForm=TasksForm(), form_err=session.pop('tasks_form_err', None))
+    return render_template('tasks.html.j2', title='tasks', tasks=tasks, users=users, jobs=jobs, job_tasks=job_tasks, jobs_by_task=jobs_by_task, wordlists=wordlists, task_groups=task_groups, task_recovery_performance=task_recovery_performance, pagination=pagination, sort_by=sort_by, sort_order=sort_order, name_filter=name_filter, rules=Rules.query.all(), wl_filesize=wl_filesize, tasks_in_jobs=tasks_in_jobs, tasks_in_task_groups=tasks_in_task_groups, tasksForm=TasksForm(), form_err=session.pop('tasks_form_err', None))
 
 @tasks.route("/tasks/add", methods=['GET', 'POST'])
 @login_required
@@ -383,6 +388,33 @@ def task_edit(task_id):
     flash('You are unauthorized to edit this task.', 'danger')
     return redirect(url_for('tasks.tasks_list'))
 
+def _task_group_task_ids(task_groups):
+    """Set of task ids that belong to any task group. `TaskGroups.tasks` holds a
+    JSON list of ints (see task_groups routes); parse it exactly rather than a
+    substring match so task 1 isn't reported as a member because some group
+    contains task 10. Shared by the list view (to show a padlock) and both delete
+    paths (to skip in-group tasks) so the UI and backend agree."""
+    ids = set()
+    for tg in task_groups:
+        try:
+            parsed = json.loads(tg.tasks) if tg.tasks else []
+        except (ValueError, TypeError):
+            continue
+        for tid in parsed:
+            try:
+                ids.add(int(tid))
+            except (TypeError, ValueError):
+                continue
+    return ids
+
+
+def _delete_task(task):
+    """Delete one task row. Returns try_commit()'s result. Shared by the single
+    (tasks_delete) and bulk (tasks_bulk_delete) delete paths."""
+    db.session.delete(task)
+    return try_commit(f'delete task {task.id}')
+
+
 @tasks.route("/tasks/delete/<int:task_id>", methods=['POST'])
 @login_required
 def tasks_delete(task_id):
@@ -402,14 +434,12 @@ def tasks_delete(task_id):
                 flash('Can not delete. Task is associated to one or more jobs.', 'danger')
                 return redirect(url_for('tasks.tasks_list'))
 
-        for task_group in task_groups:
-            if str(task_id) in task_group.tasks:
-                flash('Can not delete. The Task is associated to one or more Task Groups.', 'danger')
-                return redirect(url_for('tasks.tasks_list'))
+        if task_id in _task_group_task_ids(task_groups):
+            flash('Can not delete. The Task is associated to one or more Task Groups.', 'danger')
+            return redirect(url_for('tasks.tasks_list'))
 
         task_target = f'task:{task.id} {task.name!r}'
-        db.session.delete(task)
-        if not try_commit(f'delete task {task_id}'):
+        if not _delete_task(task):
             flash('Task could not be deleted — it may have already been removed.', 'danger')
             return redirect(url_for('tasks.tasks_list'))
         log_event('task.delete', target=task_target)
@@ -418,3 +448,71 @@ def tasks_delete(task_id):
     else:
         flash('You are unauthorized to delete this task.', 'danger')
         return redirect(url_for('tasks.tasks_list'))
+
+
+@tasks.route("/tasks/bulk_delete", methods=['POST'])
+@login_required
+def tasks_bulk_delete():
+    """Delete several tasks at once (from the tasks list's bulk-select bar).
+
+    Mirrors the UI selectability rule and the single-delete guards: a task is
+    deletable only by its owner or an admin, and only when it isn't assigned to a
+    job (nor to a task group). Each id is guarded independently -- one skip never
+    aborts the batch -- and a per-outcome summary is flashed."""
+    deleted = skipped_job = skipped_group = skipped_rights = skipped_missing = failed = 0
+    job_task_ids = {jt.task_id for jt in JobTasks.query.all()}
+    group_task_ids = _task_group_task_ids(TaskGroups.query.all())
+    seen = set()
+    for raw in request.form.getlist('task_ids'):
+        try:
+            task_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if task_id in seen:
+            continue
+        seen.add(task_id)
+
+        task = Tasks.query.get(task_id)
+        if task is None:
+            skipped_missing += 1
+            continue
+        if not (current_user.admin or task.owner_id == current_user.id):
+            skipped_rights += 1
+            continue
+        if task_id in job_task_ids:
+            skipped_job += 1
+            continue
+        if task_id in group_task_ids:
+            skipped_group += 1
+            continue
+
+        task_target = f'task:{task.id} {task.name!r}'
+        if _delete_task(task):
+            log_event('task.delete', target=task_target)
+            deleted += 1
+        else:
+            failed += 1
+
+    parts = []
+    if deleted:
+        parts.append(f'{deleted} deleted')
+    if skipped_job:
+        parts.append(f'{skipped_job} skipped — assigned to a job')
+    if skipped_group:
+        parts.append(f'{skipped_group} skipped — in a task group')
+    if skipped_rights:
+        parts.append(f'{skipped_rights} skipped — insufficient rights')
+    if skipped_missing:
+        parts.append(f'{skipped_missing} skipped — not found')
+    if failed:
+        parts.append(f'{failed} failed')
+
+    if not parts:
+        flash('No tasks selected for deletion.', 'warning')
+    elif deleted and not (skipped_job or skipped_group or skipped_rights or skipped_missing or failed):
+        flash(', '.join(parts) + '.', 'success')
+    elif deleted:
+        flash(', '.join(parts) + '.', 'warning')
+    else:
+        flash(', '.join(parts) + '.', 'danger')
+    return redirect(url_for('tasks.tasks_list'))

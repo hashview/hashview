@@ -115,9 +115,16 @@
         </form>
     </div>
     {% if tasks %}
+    <div class="task-bulkbar" id="task-bulkbar">
+        <span class="task-sel-count"><span id="task-sel-count">0</span> selected</span>
+        <span style="flex:1;"></span>
+        <button type="button" class="btn" onclick="hvTaskClearSel()">Clear</button>
+        <button type="button" class="btn btn-danger" onclick="hvTaskOpenBulkDel()">{{ icon('trash', size=15) }} Delete selected</button>
+    </div>
     <table class="tbl">
         <thead>
             <tr>
+                <th style="width:34px; text-align:center;"><input type="checkbox" class="hv-check" id="task-select-all" onclick="hvTaskToggleAll(this)" title="Select all deletable tasks"></th>
                 <th>
                     <a href="{{ url_for('tasks.tasks_list', sort_by='name', sort_order='desc' if sort_by == 'name' and sort_order == 'asc' else 'asc', page=1, q=name_filter) }}" style="color:inherit; text-decoration:none; display:inline-flex; align-items:center; gap:4px;">
                         Task Name
@@ -148,12 +155,19 @@
         <tbody id="task-tbody">
             {% for task in tasks %}
             <tr data-name="{{ task.name|lower }}">
-                <td style="font-weight:500;">
-                    <span style="display:inline-flex; align-items:center; gap:9px;">
-                        <span style="color:var(--text-mute); display:inline-flex;">{{ icon('task', size=16) }}</span>
-                        {{ task.name }}
-                    </span>
+                <td class="center">
+                    {% set in_job = tasks_in_jobs is defined and task.id in tasks_in_jobs %}
+                    {% set in_group = tasks_in_task_groups is defined and task.id in tasks_in_task_groups %}
+                    {% set can_del = (current_user.admin or task.owner_id == current_user.id) and not in_job and not in_group %}
+                    {% if can_del %}
+                    <input type="checkbox" class="hv-check task-check" value="{{ task.id }}" data-name="{{ task.name }}" onchange="hvTaskSelChanged()">
+                    {% elif in_job %}
+                    <span class="task-lock" title="Assigned to a job — remove it from the job before deleting">{{ icon('lock', size=15) }}</span>
+                    {% elif in_group %}
+                    <span class="task-lock" title="In a task group — remove it from the group before deleting">{{ icon('lock', size=15) }}</span>
+                    {% endif %}
                 </td>
+                <td style="font-weight:500;">{{ task.name }}</td>
                 <td style="color:var(--text-dim);">
                     {% for user in users %}
                         {% if user.id == task.owner_id %}
@@ -441,5 +455,90 @@
 })();
 </script>
 {% endif %}
+
+{# ---- bulk-delete confirmation (one modal for the whole selected set) ---- #}
+<dialog class="hv-dialog" id="task-bulk-del-modal" style="max-width:620px; width:94vw;">
+    <div class="hv-dialog-head">
+        <span style="color:var(--red); display:inline-flex;">{{ icon('trash', size=16) }}</span>
+        <div style="line-height:1.2;">
+            <h3 style="margin:0;" id="task-bulk-title">Delete tasks?</h3>
+            <div class="mono" style="font-size:10px; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-mute); margin-top:3px;">this permanently removes the selected tasks</div>
+        </div>
+        <button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close" style="margin-left:auto;">{{ icon('x', size=15) }}</button>
+    </div>
+    <div class="hv-dialog-body" style="max-height:52vh; overflow-y:auto;">
+        <div class="mono" style="font-size:11px; color:var(--text-mute); margin-bottom:10px;">The following will be permanently deleted:</div>
+        <div id="task-bulk-list"></div>
+    </div>
+    <div class="hv-dialog-foot">
+        <button class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+        <form id="task-bulk-form" action="{{ url_for('tasks.tasks_bulk_delete') }}" method="POST" style="display:inline;">
+            <span id="task-bulk-hidden"></span>
+            <button type="submit" class="btn btn-danger">{{ icon('trash', size=15) }} Delete <span id="task-bulk-btn-count">0</span></button>
+        </form>
+    </div>
+</dialog>
+
+<script>
+// ---- bulk selection + bulk delete (tasks list) ----
+var TASK_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-mute); flex:none;"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>';
+function hvTaskSelected(){
+    return Array.prototype.slice.call(document.querySelectorAll('.task-check:checked'));
+}
+function hvTaskSelChanged(){
+    var n = hvTaskSelected().length;
+    var all = document.querySelectorAll('.task-check').length;
+    var cEl = document.getElementById('task-sel-count'); if (cEl) cEl.textContent = n;
+    var bar = document.getElementById('task-bulkbar'); if (bar) bar.classList.toggle('on', n > 0);
+    var sa = document.getElementById('task-select-all');
+    if (sa) { sa.checked = n > 0 && n === all; sa.indeterminate = n > 0 && n < all; }
+}
+function hvTaskToggleAll(cb){
+    document.querySelectorAll('.task-check').forEach(function(c){ c.checked = cb.checked; });
+    hvTaskSelChanged();
+}
+function hvTaskClearSel(){
+    document.querySelectorAll('.task-check').forEach(function(c){ c.checked = false; });
+    hvTaskSelChanged();
+}
+function hvTaskOpenBulkDel(){
+    var sel = hvTaskSelected();
+    if (!sel.length) return;
+    var list = document.getElementById('task-bulk-list');
+    var hidden = document.getElementById('task-bulk-hidden');
+    list.innerHTML = ''; hidden.innerHTML = '';
+    sel.forEach(function(c){
+        var row = document.createElement('div');
+        row.className = 'task-bulk-row';
+        var ico = document.createElement('span');
+        ico.style.cssText = 'display:inline-flex; flex:none;';
+        ico.innerHTML = TASK_ICON;                       // static markup, safe
+        var name = document.createElement('span');
+        name.className = 'mono'; name.style.color = 'var(--text)';
+        name.textContent = c.getAttribute('data-name') || '';   // textContent — XSS-safe
+        row.appendChild(ico); row.appendChild(name);
+        list.appendChild(row);
+        var inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = 'task_ids'; inp.value = c.value;
+        hidden.appendChild(inp);
+    });
+    var n = sel.length;
+    document.getElementById('task-bulk-title').textContent =
+        'Delete ' + n + ' task' + (n === 1 ? '' : 's') + '?';
+    document.getElementById('task-bulk-btn-count').textContent = n;
+    var m = document.getElementById('task-bulk-del-modal');
+    try { m.showModal(); } catch (e) { m.setAttribute('open', ''); }
+}
+</script>
+
+<style>
+.task-bulkbar { display:none; align-items:center; gap:12px; margin:0 16px 14px; padding:11px 16px;
+    border:1px solid var(--primary-dim); border-radius:10px; background:rgba(var(--primary-rgb),0.07); box-shadow:var(--glow-sm); }
+.task-bulkbar.on { display:flex; }
+.task-sel-count { color:var(--primary); text-shadow:var(--glow-text); font-family:var(--mono); font-size:13px; letter-spacing:.3px; }
+.task-lock { color:var(--text-mute); display:inline-flex; }
+.task-bulk-row { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border-soft); }
+.task-bulk-row:last-child { border-bottom:none; }
+</style>
 
 {% endblock content %}

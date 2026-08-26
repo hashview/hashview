@@ -102,6 +102,101 @@ def test_tasks_delete_owner_happy_path(app, client):
     assert Tasks.query.get(task.id) is None  # deleted
 
 
+# ------------------------------------------------------------ tasks_bulk_delete
+
+def test_tasks_bulk_delete_enforces_owner_job_and_group(app, client):
+    """Owner (non-admin) bulk-deletes free tasks; tasks in a job, in a task group,
+    or owned by someone else are skipped, and the skips don't abort the batch."""
+    owner = _nonadmin()
+    other = Users(first_name="Ot", last_name="Her", email_address="other-tbulk@example.com",
+                  password="x" * 60, admin=False)
+    db.session.add(other)
+    db.session.commit()
+    _login(client, owner)
+
+    ok1 = _make_task(owner.id, name="tbulk-ok-1")
+    ok2 = _make_task(owner.id, name="tbulk-ok-2")
+    in_job = _make_task(owner.id, name="tbulk-injob")
+    db.session.add(JobTasks(job_id=1, task_id=in_job.id, status="Not Started"))
+    in_group = _make_task(owner.id, name="tbulk-ingroup")
+    db.session.add(TaskGroups(name="tg-bulk", owner_id=owner.id, tasks=f'["{in_group.id}"]'))
+    not_mine = _make_task(other.id, name="tbulk-notmine")
+    db.session.commit()
+
+    ids = [ok1.id, ok2.id, in_job.id, in_group.id, not_mine.id]
+    resp = client.post("/tasks/bulk_delete",
+                       data={"task_ids": [str(i) for i in ids] + ["999999"]},
+                       follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"2 deleted" in resp.data
+    assert b"assigned to a job" in resp.data
+    assert b"in a task group" in resp.data
+    assert b"insufficient rights" in resp.data
+
+    remaining = {t.id for t in Tasks.query.all()}
+    assert ok1.id not in remaining and ok2.id not in remaining      # deleted
+    assert in_job.id in remaining and in_group.id in remaining      # associated -> kept
+    assert not_mine.id in remaining                                 # not owner -> kept
+
+
+def test_tasks_bulk_delete_admin_deletes_any_free_task(app, client):
+    """An admin can bulk-delete another user's free task, but a job-assigned one is skipped."""
+    admin = _admin()
+    owner = _nonadmin()
+    _login(client, admin)
+    free = _make_task(owner.id, name="tbulk-admin-free")
+    in_job = _make_task(owner.id, name="tbulk-admin-injob")
+    db.session.add(JobTasks(job_id=1, task_id=in_job.id, status="Not Started"))
+    db.session.commit()
+
+    client.post("/tasks/bulk_delete",
+                data={"task_ids": [str(free.id), str(in_job.id)]},
+                follow_redirects=True)
+    remaining = {t.id for t in Tasks.query.all()}
+    assert free.id not in remaining        # admin deleted another user's free task
+    assert in_job.id in remaining          # in a job -> still skipped
+
+
+def test_tasks_list_padlocks_in_group_task(app, client):
+    """The list view offers a checkbox for a free task but a padlock (no checkbox)
+    for a task that belongs to a task group -- matching the backend's skip rule so
+    the UI never offers a deletion the bulk route would reject."""
+    owner = _nonadmin()
+    _login(client, owner)
+    free = _make_task(owner.id, name="tlist-free")
+    in_group = _make_task(owner.id, name="tlist-ingroup")
+    # str([id]) is exactly how the task_groups routes persist membership.
+    db.session.add(TaskGroups(name="tg-list", owner_id=owner.id, tasks=str([in_group.id])))
+    db.session.commit()
+
+    resp = client.get("/tasks")
+    assert resp.status_code == 200
+    # free task: selectable checkbox present
+    assert f'task-check" value="{free.id}"'.encode() in resp.data
+    # in-group task: no checkbox, padlock instead
+    assert f'task-check" value="{in_group.id}"'.encode() not in resp.data
+    assert b"In a task group" in resp.data
+
+
+def test_tasks_list_substring_id_not_falsely_padlocked(app, client):
+    """A group containing task 10 must not padlock task 1 -- the membership check
+    parses the JSON list rather than substring-matching the stored string."""
+    admin = _admin()
+    _login(client, admin)
+    # Make ids where one is a substring of the other (e.g. 1 vs 10+).
+    low = _make_task(admin.id, name="tlist-low")
+    others = [_make_task(admin.id, name=f"tlist-pad-{i}") for i in range(12)]
+    big = others[-1]
+    assert str(low.id) in str(big.id)  # substring relationship holds for this test
+    db.session.add(TaskGroups(name="tg-sub", owner_id=admin.id, tasks=str([big.id])))
+    db.session.commit()
+
+    resp = client.get("/tasks")
+    assert resp.status_code == 200
+    assert f'task-check" value="{low.id}"'.encode() in resp.data      # still selectable
+    assert f'task-check" value="{big.id}"'.encode() not in resp.data  # padlocked
+
+
 # ------------------------------------------------------------------ task_edit
 
 def test_task_edit_blocked_when_assigned_to_job(app, client):

@@ -2,7 +2,8 @@
 
   - Hashfile export route serves 4 formats (hashes / all / cracked / plains),
     hex-decoding stored plaintext, and offers them via a modal on the list page.
-  - Wordlist download serves the stored file (static .gz / dynamic .txt).
+  - Wordlist download serves the stored .gz for static lists, and regenerates
+    dynamic lists from the database into a scratch .txt.
   - Rule download serves the raw rule file.
 
 Uses the in-memory SQLite app from tests/unit/conftest.py; UI routes are
@@ -11,8 +12,18 @@ real control dirs are touched (send_from_directory resolves abspath(dirname)).
 """
 
 import gzip
+import os
 
-from hashview.models import Hashes, HashfileHashes, Hashfiles, Rules, Users, Wordlists, db
+from hashview.models import (
+    Customers,
+    Hashes,
+    HashfileHashes,
+    Hashfiles,
+    Rules,
+    Users,
+    Wordlists,
+    db,
+)
 
 
 def _admin():
@@ -177,18 +188,22 @@ def test_wordlist_download_static_gz(app, client, tmp_path):
 
 
 def test_wordlist_download_dynamic_txt(app, client, tmp_path):
+    """A dynamic list is served as uncompressed text, built from the database
+    rather than from whatever the last refresh left at wordlist.path."""
     user = _admin()
     _login(client, user)
+    db.session.add_all([Customers(name="alpha"), Customers(name="bravo")])
+    db.session.commit()
     txt = tmp_path / "dyn.txt"
-    txt.write_bytes(b"alpha\nbravo\n")
+    txt.write_bytes(b"")
     wl = Wordlists(name="(DYNAMIC) All Customers", owner_id=user.id, type="dynamic",
-                   path=str(txt), checksum="0" * 64, size=2)
+                   path=str(txt), checksum="0" * 64, size=0)
     db.session.add(wl)
     db.session.commit()
 
     resp = client.get(f"/wordlists/download/{wl.id}")
     assert resp.status_code == 200
-    assert resp.data == b"alpha\nbravo\n"
+    assert sorted(resp.data.decode().split()) == ["alpha", "bravo"]
     assert ".txt" in resp.headers.get("Content-Disposition", "")
 
 
@@ -201,6 +216,125 @@ def test_wordlist_download_missing_file_redirects(app, client, tmp_path):
     db.session.commit()
     resp = client.get(f"/wordlists/download/{wl.id}", follow_redirects=False)
     assert resp.status_code == 302
+
+
+# ---------------------------------------------------------------------------
+# Dynamic wordlist download regenerates on demand
+#
+# Dynamic lists are derived from the database, and nothing writes the canonical
+# file at wordlist.path except the manual "refresh" button -- so serving that
+# file hands the operator whatever the last refresh left behind, which on a
+# fresh install is the zero-byte seed placeholder. The download regenerates
+# into a per-request temp file instead, matching GET /v1/wordlists/<id>.
+# ---------------------------------------------------------------------------
+
+def _tmp_dir_entries(app):
+    return set(os.listdir(os.path.join(app.root_path, "control", "tmp")))
+
+
+def _cracked(plaintext, ciphertext):
+    h = Hashes(sub_ciphertext="0" * 8, ciphertext=ciphertext, hash_type=1000,
+               cracked=True, plaintext=plaintext)
+    db.session.add(h)
+    db.session.commit()
+    return h
+
+
+def _dynamic_wordlist(owner_id, path, name="(DYNAMIC) All Recovered Passwords"):
+    wl = Wordlists(name=name, owner_id=owner_id, type="dynamic",
+                   path=str(path), checksum="0" * 64, size=0)
+    db.session.add(wl)
+    db.session.commit()
+    return wl
+
+
+def test_dynamic_wordlist_download_regenerates_from_database(app, client, tmp_path):
+    """The seeded placeholder is empty; the download must still carry the
+    recovered plaintexts that exist in the database."""
+    user = _admin()
+    _login(client, user)
+    _cracked("Summer2026!", "aaa111")
+    _cracked("Winter1", "bbb222")
+    placeholder = tmp_path / "dynamic-all.txt"
+    placeholder.write_bytes(b"")
+    wl = _dynamic_wordlist(user.id, placeholder)
+
+    resp = client.get(f"/wordlists/download/{wl.id}")
+
+    assert resp.status_code == 200
+    assert sorted(resp.data.decode().split()) == ["Summer2026!", "Winter1"]
+
+
+def test_dynamic_wordlist_download_does_not_serve_stale_file(app, client, tmp_path):
+    """Content left on disk by an earlier refresh must not be served once the
+    database has moved on."""
+    user = _admin()
+    _login(client, user)
+    _cracked("fresh-plain", "aaa111")
+    stale = tmp_path / "dynamic-all.txt"
+    stale.write_bytes(b"stale-plain\n")
+    wl = _dynamic_wordlist(user.id, stale)
+
+    body = client.get(f"/wordlists/download/{wl.id}").data.decode()
+
+    assert "fresh-plain" in body
+    assert "stale-plain" not in body
+
+
+def test_dynamic_wordlist_download_works_when_file_missing(app, client, tmp_path):
+    """A dynamic list is derived from the database, so a missing on-disk file
+    is not an error -- it regenerates rather than redirecting."""
+    user = _admin()
+    _login(client, user)
+    _cracked("only-plain", "aaa111")
+    wl = _dynamic_wordlist(user.id, tmp_path / "never-created.txt")
+
+    resp = client.get(f"/wordlists/download/{wl.id}", follow_redirects=False)
+
+    assert resp.status_code == 200
+    assert resp.data.decode().split() == ["only-plain"]
+
+
+def test_dynamic_wordlist_download_leaves_canonical_file_untouched(app, client, tmp_path):
+    """Regeneration goes to a per-request temp file, never the shared path, so
+    concurrent downloads cannot truncate the file out from under each other."""
+    user = _admin()
+    _login(client, user)
+    _cracked("fresh-plain", "aaa111")
+    canonical = tmp_path / "dynamic-all.txt"
+    canonical.write_bytes(b"stale-plain\n")
+    wl = _dynamic_wordlist(user.id, canonical)
+
+    client.get(f"/wordlists/download/{wl.id}")
+
+    assert canonical.read_bytes() == b"stale-plain\n"
+    assert wl.size == 0 and wl.checksum == "0" * 64
+
+
+def test_dynamic_wordlist_download_cleans_up_its_temp_files(app, client, tmp_path):
+    """The generated .txt is scratch; control/tmp must not accumulate it."""
+    user = _admin()
+    _login(client, user)
+    _cracked("only-plain", "aaa111")
+    wl = _dynamic_wordlist(user.id, tmp_path / "dynamic-all.txt")
+    before = _tmp_dir_entries(app)
+
+    assert client.get(f"/wordlists/download/{wl.id}").status_code == 200
+
+    assert _tmp_dir_entries(app) == before
+
+
+def test_dynamic_wordlist_download_names_the_attachment_after_the_wordlist(app, client, tmp_path):
+    """The regenerated temp file's random name must not leak into the download."""
+    user = _admin()
+    _login(client, user)
+    _cracked("only-plain", "aaa111")
+    wl = _dynamic_wordlist(user.id, tmp_path / "dynamic-all.txt")
+
+    cd = client.get(f"/wordlists/download/{wl.id}").headers.get("Content-Disposition", "")
+
+    assert "attachment" in cd
+    assert "DYNAMIC_All_Recovered_Passwords.txt" in cd
 
 
 def test_wordlists_page_renders_download_links(app, client, tmp_path):

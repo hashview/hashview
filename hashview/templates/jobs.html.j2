@@ -70,7 +70,7 @@
                     {% set cr = job_cracked.get(job.id) if job_cracked is defined else none %}
                     {% if cr and cr.total %}
                     <div class="mono num" style="font-size:12.5px;white-space:nowrap;">
-                        <span style="color:{{ 'var(--primary)' if cr.cracked else 'var(--text-dim)' }};{% if cr.cracked %}text-shadow:var(--glow-text);{% endif %}">{{ "{:,}".format(cr.cracked) }}</span><span style="color:var(--text-mute);">/{{ "{:,}".format(cr.total) }}</span>
+                        <span style="color:{{ 'var(--primary)' if cr.cracked else 'var(--text-dim)' }};{% if cr.cracked %}text-shadow:var(--glow-text);{% endif %}"><a class="rec-x-link" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="View hashfile analytics">{{ "{:,}".format(cr.cracked) }}</a></span><span style="color:var(--text-mute);">/{{ "{:,}".format(cr.total) }}</span>
                     </div>
                     <div style="height:3px;width:84px;margin:6px auto 0;border-radius:2px;background:var(--surface-3);overflow:hidden;">
                         <div style="height:100%;width:{{ cr.pct }}%;background:linear-gradient(90deg,var(--primary-deep),var(--primary));box-shadow:var(--glow-sm);"></div>
@@ -170,7 +170,7 @@
     <div class="hv-dialog-body" style="max-height:72vh; overflow-y:auto;">
         <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
             {{ status_badge(job.status) }}
-            <span class="mono" style="font-size:12.5px;">{% if cr %}<span style="color:var(--text);">{{ "{:,}".format(cr.cracked) }}</span><span style="color:var(--text-mute);"> / {{ "{:,}".format(cr.total) }} hashes recovered</span>{% endif %}</span>
+            <span class="mono" style="font-size:12.5px;">{% if cr %}<span style="color:var(--text);">{% if job.hashfile_id %}<a class="rec-x-link" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="View hashfile analytics">{{ "{:,}".format(cr.cracked) }}</a>{% else %}{{ "{:,}".format(cr.cracked) }}{% endif %}</span><span style="color:var(--text-mute);"> / {{ "{:,}".format(cr.total) }} hashes recovered</span>{% endif %}</span>
             <span style="margin-left:auto; display:inline-block; text-align:center; line-height:1;">
                 <span class="mono" style="font-size:24px; color:var(--primary); text-shadow:var(--glow-text);">{{ cr.pct if cr else 0 }}<span style="font-size:12px;">%</span></span>
                 <span class="mono" style="display:block; font-size:9px; letter-spacing:1px; color:var(--text-mute); margin-top:2px;">CRACKED</span>

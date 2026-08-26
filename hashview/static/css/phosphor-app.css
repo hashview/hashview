@@ -412,3 +412,9 @@ html[data-sidebar="collapsed"] .agent-mini { display: none; }
 html[data-sidebar="collapsed"] .user-chip { justify-content: center; padding-left: 0; padding-right: 0; }
 html[data-sidebar="collapsed"] .user-chip > div:not(.avatar),
 html[data-sidebar="collapsed"] .user-chip > a { display: none; }
+
+/* Recovered-count "X" that links to the hashfile analytics page (jobs list +
+   dashboard). Inherits the surrounding number's color; underline on hover to
+   signal it's a link. */
+.rec-x-link { color: inherit; text-decoration: none; cursor: pointer; }
+.rec-x-link:hover { text-decoration: underline; text-underline-offset: 2px; }

@@ -214,6 +214,20 @@ def test_dashboard_jobs_renders_one_row_per_task(app, client):
 
 
 @pytest.mark.security
+def test_dashboard_recovered_links_to_analytics(app, client):
+    """The recovered "X" on each task row links to that job's hashfile analytics."""
+    from tests.unit.helpers import login, make_admin
+    job, _, _ = _seed_running_job()
+    login(client, make_admin())
+    resp = client.get("/dashboard/jobs")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'class="rec-x-link"' in html
+    assert f'customer_id={job.customer_id}' in html
+    assert f'hashfile_id={job.hashfile_id}' in html
+
+
+@pytest.mark.security
 def test_parent_rate_sums_all_running_chunks(app, db_session):
     """The parent task Rate is the SUM of every running chunk's agent speed."""
     user = Users(first_name="A", last_name="D", email_address="sum@e.com",

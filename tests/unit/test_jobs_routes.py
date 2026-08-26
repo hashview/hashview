@@ -114,6 +114,30 @@ def test_jobs_list_batched_cracked_progress(app, client):
     assert b"42.9" in resp.data
 
 
+def test_jobs_list_recovered_links_to_analytics(app, client):
+    """The recovered "X" in the /jobs list links to the job's hashfile analytics."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    hf = Hashfiles(name="hf-link", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+    h = Hashes(sub_ciphertext="0" * 8, ciphertext="abc", hash_type=1000,
+               cracked=True, plaintext="pw")
+    db.session.add(h)
+    db.session.commit()
+    db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+    _job(admin, cust, name="LinkJob", hashfile_id=hf.id)
+
+    resp = client.get("/jobs")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'class="rec-x-link"' in html
+    assert f'customer_id={cust.id}' in html
+    assert f'hashfile_id={hf.id}' in html
+
+
 def test_jobs_add_get_renders(app, client):
     admin = make_admin()
     login(client, admin)

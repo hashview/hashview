@@ -81,6 +81,39 @@ def test_jobs_list_shows_job(app, client):
     assert b"VisibleJob" in resp.data
 
 
+def test_jobs_list_batched_cracked_progress(app, client):
+    """The /jobs list computes cracked/total/pct per hashfile in one grouped query.
+    Pin the rendered numbers: 3 cracked of 7 -> '/ 7 hashes recovered' and 42.9%.
+    Two jobs share the hashfile (grouped-dict lookup must serve both) and a third
+    job has no hashfile (must default to 0/0 without error)."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+
+    hf = Hashfiles(name="hf-batch", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+    for i in range(7):
+        h = Hashes(sub_ciphertext=("z" + str(i)).ljust(32, "0")[:32],
+                   ciphertext=("y" + str(i)).ljust(32, "0")[:32],
+                   hash_type=1000, cracked=(i < 3), plaintext="pw" if i < 3 else None)
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    _job(admin, cust, name="SharedA", hashfile_id=hf.id)
+    _job(admin, cust, name="SharedB", hashfile_id=hf.id)
+    _job(admin, cust, name="NoHashfile")  # hashfile_id=None -> 0/0 default
+
+    resp = client.get("/jobs")
+    assert resp.status_code == 200
+    assert b"SharedA" in resp.data and b"SharedB" in resp.data and b"NoHashfile" in resp.data
+    # total (batched COUNT) and pct (batched cracked SUM) both render
+    assert b"/ 7 hashes recovered" in resp.data
+    assert b"42.9" in resp.data
+
+
 def test_jobs_add_get_renders(app, client):
     admin = make_admin()
     login(client, admin)

@@ -99,31 +99,35 @@ def jobs_list():
     job_tasks = JobTasks.query.all()
     tasks = Tasks.query.all()
 
-    # Per-job cracked progress: cracked / total hashes in the job's hashfile.
-    # Cached per hashfile_id so jobs sharing a hashfile are only queried once.
-    job_cracked = {}
-    _hf_cracked = {}
-    for job in jobs:
-        hfid = job.hashfile_id
-        if not hfid:
-            job_cracked[job.id] = {'cracked': 0, 'total': 0, 'pct': 0}
-            continue
-        if hfid not in _hf_cracked:
-            agg = db.session.query(
-                func.count(Hashes.id),
-                func.coalesce(func.sum(case((Hashes.cracked == True, 1), else_=0)), 0)
-            ).join(HashfileHashes, Hashes.id == HashfileHashes.hash_id) \
-             .filter(HashfileHashes.hashfile_id == hfid).first()
-            total = agg[0] or 0
-            cracked = int(agg[1] or 0)
-            _hf_cracked[hfid] = {
-                'cracked': cracked,
-                'total': total,
-                'pct': round((cracked / total * 100), 1) if total else 0,
-            }
-        job_cracked[job.id] = _hf_cracked[hfid]
+    # --- per-hashfile facts for the jobs on this page ---
+    # Count / cracked-count / representative hash type, plus which hashfiles carry
+    # per-hash alerts, computed in TWO grouped queries over the page's hashfile ids
+    # instead of three separate queries per hashfile (the old N+1 was this page's
+    # dominant cost -- up to ~3 big-table queries per distinct hashfile).
+    page_hashfile_ids = {job.hashfile_id for job in jobs if job.hashfile_id}
 
-    # --- per-job info-modal data: hash type, runtime, task count, notifications ---
+    _hf_stats = {}
+    if page_hashfile_ids:
+        for hfid, total, cracked, mode in db.session.query(
+            HashfileHashes.hashfile_id,
+            func.count(Hashes.id),
+            func.coalesce(func.sum(case((Hashes.cracked == True, 1), else_=0)), 0),
+            func.min(Hashes.hash_type),
+        ).join(Hashes, Hashes.id == HashfileHashes.hash_id) \
+         .filter(HashfileHashes.hashfile_id.in_(page_hashfile_ids)) \
+         .group_by(HashfileHashes.hashfile_id).all():
+            _hf_stats[hfid] = {'total': total or 0, 'cracked': int(cracked or 0), 'mode': mode}
+
+    _hf_with_alerts = set()
+    if page_hashfile_ids:
+        _hf_with_alerts = {
+            r[0] for r in db.session.query(HashfileHashes.hashfile_id)
+            .join(HashNotifications, HashNotifications.hash_id == HashfileHashes.hash_id)
+            .filter(HashfileHashes.hashfile_id.in_(page_hashfile_ids))
+            .group_by(HashfileHashes.hashfile_id).all()
+        }
+
+    # Friendly hash-type names (mode int -> label) from the upload form choices.
     hash_type_names = {}
     try:
         _f = JobsNewHashFileForm()
@@ -150,12 +154,22 @@ def jobs_list():
     for n in JobNotifications.query.all():
         jn_by_job.setdefault(n.job_id, set()).add(n.method)
 
+    # Assemble per-job display data from the batched facts above -- no per-job queries.
+    job_cracked = {}
     job_hash_type = {}
     job_runtime = {}
     job_notifs = {}
-    _hf_type = {}
-    _hf_perhash = {}
     for job in jobs:
+        hfid = job.hashfile_id
+        stats = _hf_stats.get(hfid) if hfid else None
+        total = stats['total'] if stats else 0
+        cracked = stats['cracked'] if stats else 0
+        job_cracked[job.id] = {
+            'cracked': cracked,
+            'total': total,
+            'pct': round((cracked / total * 100), 1) if total else 0,
+        }
+
         # runtime: started -> ended (or now if running); total run time even if canceled;
         # '-' when the job never started (e.g. still queued)
         if job.started_at:
@@ -165,17 +179,14 @@ def jobs_list():
             job_runtime[job.id] = '%dh %dm' % (int(secs // 3600), int((secs % 3600) // 60))
         else:
             job_runtime[job.id] = '-'
-        if job.hashfile_id:
-            if job.hashfile_id not in _hf_type:
-                mode = db.session.query(func.min(Hashes.hash_type)).join(HashfileHashes, Hashes.id == HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id == job.hashfile_id).scalar()
-                _hf_type[job.hashfile_id] = hash_type_names.get(str(mode), str(mode)) if mode is not None else None
-            job_hash_type[job.id] = _hf_type[job.hashfile_id]
-            if job.hashfile_id not in _hf_perhash:
-                _hf_perhash[job.hashfile_id] = db.session.query(HashNotifications).join(HashfileHashes, HashNotifications.hash_id == HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id == job.hashfile_id).first() is not None
-            per_hash = _hf_perhash[job.hashfile_id]
+
+        if stats and stats['mode'] is not None:
+            mode = stats['mode']
+            job_hash_type[job.id] = hash_type_names.get(str(mode), str(mode))
         else:
             job_hash_type[job.id] = None
-            per_hash = False
+
+        per_hash = bool(hfid and hfid in _hf_with_alerts)
         methods = jn_by_job.get(job.id, set())
         job_notifs[job.id] = {'email': 'email' in methods, 'pushover': 'push' in methods, 'per_hash': per_hash}
 

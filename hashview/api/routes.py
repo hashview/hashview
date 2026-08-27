@@ -1550,32 +1550,45 @@ def v1_api_get_hashfiles_by_hash_type(hash_type):
     # hash_type lives on Hashes (per-hash), not on Hashfiles: a file can hold
     # mixed types, so match via the HashfileHashes junction and scope the
     # counts to THIS hash_type within each file.
-    matching_ids = [row[0] for row in
-                    db.session.query(HashfileHashes.hashfile_id)
-                    .join(Hashes, Hashes.id == HashfileHashes.hash_id)
-                    .filter(Hashes.hash_type == hash_type)
-                    .distinct().all()]
+    #
+    # One grouped query, not one per hashfile (issue #228). The previous form
+    # took a DISTINCT list of hashfile ids and then, for each, ran an ORM
+    # Hashfiles.query.get() plus two separate COUNTs -- three round trips per
+    # matching file. Joining from Hashfiles and grouping does the same work in
+    # a single statement.
+    #
+    # Joining FROM Hashfiles also subsumes the old `if hashfile is None:
+    # continue` guard: a HashfileHashes row pointing at a deleted hashfile has
+    # no row to join to, so it drops out instead of needing a lookup to
+    # discover it is an orphan.
+    rows = db.session.query(
+            Hashfiles.id,
+            Hashfiles.name,
+            Hashfiles.customer_id,
+            Hashfiles.owner_id,
+            Hashfiles.uploaded_at,
+            func.count(Hashes.id),
+            func.coalesce(func.sum(case((Hashes.cracked == True, 1), else_=0)), 0),  # noqa: E712
+        ) \
+        .join(HashfileHashes, HashfileHashes.hashfile_id == Hashfiles.id) \
+        .join(Hashes, Hashes.id == HashfileHashes.hash_id) \
+        .filter(Hashes.hash_type == hash_type) \
+        .group_by(Hashfiles.id) \
+        .order_by(Hashfiles.id) \
+        .all()
 
     results = []
-    for hashfile_id in matching_ids:
-        hashfile = Hashfiles.query.get(hashfile_id)
-        if hashfile is None:
-            continue
-        base = db.session.query(Hashes.id) \
-            .join(HashfileHashes, HashfileHashes.hash_id == Hashes.id) \
-            .filter(HashfileHashes.hashfile_id == hashfile_id) \
-            .filter(Hashes.hash_type == hash_type)
-        total = base.count()
-        cracked = base.filter(Hashes.cracked == '1').count()
+    for (hashfile_id, name, customer_id, owner_id,
+         uploaded_at, total, cracked) in rows:
         results.append({
-            'id': hashfile.id,
-            'name': hashfile.name,
-            'customer_id': hashfile.customer_id,
-            'owner_id': hashfile.owner_id,
-            'uploaded_at': hashfile.uploaded_at.isoformat() if hashfile.uploaded_at else None,
+            'id': hashfile_id,
+            'name': name,
+            'customer_id': customer_id,
+            'owner_id': owner_id,
+            'uploaded_at': uploaded_at.isoformat() if uploaded_at else None,
             'hash_type': hash_type,
-            'total_hashes': total,
-            'cracked_hashes': cracked,
+            'total_hashes': int(total or 0),
+            'cracked_hashes': int(cracked or 0),
         })
 
     # Structured list (not AlchemyEncoder) because the count fields are

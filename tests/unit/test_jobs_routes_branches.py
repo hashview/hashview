@@ -1048,3 +1048,36 @@ def test_jobs_notifications_get_no_settings(app, client):
 
     resp = client.get(f"/jobs/{job.id}/notifications")
     assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# jobs_list_tasks — _job_has_alert_hashes drives the "Alert Hashes" step
+# ---------------------------------------------------------------------------
+
+def test_jobs_list_tasks_with_alert_hashes_shows_alert_step(app, client):
+    """When the job's hashfile has a per-hash alert, the stepper reveals the
+    conditional Alert Hashes step (_job_has_alert_hashes true branch)."""
+    user = _nonadmin()
+    customer = _make_customer()
+    job = _make_job(user.id, customer.id)
+    hf, h = _attach_hashfile(job, user.id, cracked=False, name="alert-hf.txt")
+    db.session.add(HashNotifications(owner_id=user.id, hash_id=h.id, method="email"))
+    db.session.commit()
+    _login(client, user)
+
+    resp = client.get(f"/jobs/{job.id}/tasks")
+    assert resp.status_code == 200
+    assert b"show-alert" in resp.data
+
+
+def test_jobs_list_tasks_without_alert_hashes_hides_alert_step(app, client):
+    """With no hashfile attached, _job_has_alert_hashes is False and the
+    Alert Hashes step stays hidden."""
+    user = _nonadmin()
+    customer = _make_customer()
+    job = _make_job(user.id, customer.id)
+    _login(client, user)
+
+    resp = client.get(f"/jobs/{job.id}/tasks")
+    assert resp.status_code == 200
+    assert b"show-alert" not in resp.data

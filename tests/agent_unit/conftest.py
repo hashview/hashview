@@ -33,7 +33,7 @@ if "agent.config" not in sys.modules:
     _config_stub.Config = Config
     sys.modules["agent.config"] = _config_stub
 
-import pytest
+import pytest  # noqa: E402 - after the agent.config stub is installed
 
 
 @pytest.fixture(autouse=True)

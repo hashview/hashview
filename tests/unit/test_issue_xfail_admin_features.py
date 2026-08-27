@@ -26,15 +26,13 @@ import pytest
 
 from hashview.models import (
     Agents,
-    Customers,
-    JobTasks,
     Jobs,
+    JobTasks,
     Settings,
-    Users,
     Wordlists,
 )
 from hashview.models import db as _db
-from hashview.utils.audit import configure_audit_logging, log_event, logs_dir
+from hashview.utils.audit import configure_audit_logging, logs_dir
 
 from .helpers import login, make_admin, make_customer, make_user
 

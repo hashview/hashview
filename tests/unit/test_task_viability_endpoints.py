@@ -7,7 +7,7 @@ from datetime import datetime
 
 import pytest
 
-from hashview.models import AgentBenchmarks, Agents, Rules, Tasks, Users, Wordlists
+from hashview.models import AgentBenchmarks, Agents, Tasks, Users
 from hashview.models import db as _db
 
 DOMAIN = "localhost.test"

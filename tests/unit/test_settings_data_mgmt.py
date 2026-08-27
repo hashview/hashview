@@ -37,10 +37,13 @@ def _cracked(ciphertext):
 
 
 def test_purge_cracked_resets_hashes(app, client):
-    user = _admin(); _login(client, user)
-    _cracked("aaa"); _cracked("bbb")
+    user = _admin()
+    _login(client, user)
+    _cracked("aaa")
+    _cracked("bbb")
     uncracked = Hashes(sub_ciphertext="0" * 8, ciphertext="ccc", hash_type=1000, cracked=False)
-    db.session.add(uncracked); db.session.commit()
+    db.session.add(uncracked)
+    db.session.commit()
 
     resp = client.post("/settings/purge_cracked")
     assert resp.status_code == 302                       # redirect back to settings
@@ -57,7 +60,8 @@ def test_purge_cracked_resets_hashes(app, client):
 
 
 def test_purge_cracked_requires_admin(app, client):
-    user = _admin(admin=False); _login(client, user)
+    user = _admin(admin=False)
+    _login(client, user)
     _cracked("aaa")
     resp = client.post("/settings/purge_cracked")
     assert resp.status_code == 403
@@ -65,7 +69,8 @@ def test_purge_cracked_requires_admin(app, client):
 
 
 def test_clear_temp_flashes_success(app, client, monkeypatch):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     # Don't touch the real control/tmp dir — pretend it's already empty.
     monkeypatch.setattr("hashview.settings.routes.os.scandir", lambda path: iter([]))
     resp = client.get("/settings/clear_temp")
@@ -80,18 +85,21 @@ def test_clear_temp_flashes_success(app, client, monkeypatch):
 def _settings_row(channel=None):
     s = Settings(retention_period=1, max_runtime_jobs=0, max_runtime_tasks=0,
                  slack_enabled=True, slack_bot_token="xoxb-x", slack_admin_channel=channel)
-    db.session.add(s); db.session.commit()
+    db.session.add(s)
+    db.session.commit()
     return s
 
 
 def test_send_test_admin_slack_forbidden_for_non_admin(app, client):
-    user = _admin(admin=False); _login(client, user)
+    user = _admin(admin=False)
+    _login(client, user)
     resp = client.get("/settings/send_test_admin_slack")
     assert resp.status_code == 403
 
 
 def test_send_test_admin_slack_no_room_flashes(app, client, monkeypatch):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     _settings_row(channel=None)
     calls = []
     monkeypatch.setattr("hashview.settings.routes.send_slack_channel",
@@ -105,7 +113,8 @@ def test_send_test_admin_slack_no_room_flashes(app, client, monkeypatch):
 
 
 def test_send_test_admin_slack_posts_to_room(app, client, monkeypatch):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     _settings_row(channel="C0ADMIN")
     calls = []
     monkeypatch.setattr("hashview.settings.routes.send_slack_channel",

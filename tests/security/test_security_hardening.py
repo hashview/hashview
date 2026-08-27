@@ -25,8 +25,6 @@ their own per-issue modules so each tracks a GitHub issue:
 This module deliberately contains only PASSING security tests.
 """
 
-import os
-import subprocess
 
 import pytest
 
@@ -34,17 +32,15 @@ from hashview import create_app
 from hashview.models import (
     Customers,
     Hashes,
-    Hashfiles,
     HashfileHashes,
+    Hashfiles,
     Jobs,
-    JobTasks,
     Rules,
     Tasks,
     Users,
     Wordlists,
     db,
 )
-
 
 # --------------------------------------------------------------------------- #
 # App / fixtures                                                              #
@@ -228,8 +224,9 @@ def test_agents_download_os_system_uses_trusted_version_only(nocsrf_app, monkeyp
     client = app.test_client()
     _login(client, user)
 
-    import hashview.agents.routes as agents_routes
     from flask import Response
+
+    import hashview.agents.routes as agents_routes
 
     captured = {}
 

@@ -6,11 +6,9 @@ at commit ``34cdd15``.
 """
 
 import os
-import subprocess
 import tarfile
 
 import pytest
-from flask_login import login_user
 
 from hashview.models import Users, db
 

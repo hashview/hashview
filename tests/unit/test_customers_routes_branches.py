@@ -18,15 +18,13 @@ import pytest
 
 from hashview.models import (
     Customers,
+    Hashes,
     HashfileHashes,
     Hashfiles,
     HashNotifications,
-    Hashes,
-    Jobs,
     Users,
     db,
 )
-
 
 # ------------------------------------------------------------------ helpers
 

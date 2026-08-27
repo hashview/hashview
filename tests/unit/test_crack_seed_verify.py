@@ -15,6 +15,7 @@ def _load(name, filename):
 def _make_app(tmp_path):
     from flask import Flask
     from flask_bcrypt import Bcrypt
+
     from hashview.models import db
     app = Flask(__name__, root_path=str(tmp_path))
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{tmp_path/'t.db'}"
@@ -57,8 +58,7 @@ def test_seed_creates_full_job_and_authorizes_agents(tmp_path):
     manifest = _manifest(tmp_path)
     seed.seed(app, manifest)
 
-    from hashview.models import (Agents, Hashes, JobTasks, Jobs, Rules,
-                                 Tasks, Wordlists)
+    from hashview.models import Agents, Hashes, Jobs, JobTasks, Rules, Tasks, Wordlists
     with app.app_context():
         assert Wordlists.query.count() == 2
         assert Rules.query.count() == 1

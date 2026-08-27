@@ -20,7 +20,6 @@ import pytest
 from alembic.config import Config as AlembicConfig
 from alembic.script import ScriptDirectory
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / "migrations"
 
@@ -29,7 +28,7 @@ def _downs(down_revision):
     """Normalise a down_revision (None | str | tuple) to a tuple of ids."""
     if down_revision is None:
         return ()
-    if isinstance(down_revision, (tuple, list)):
+    if isinstance(down_revision, tuple | list):
         return tuple(down_revision)
     return (down_revision,)
 

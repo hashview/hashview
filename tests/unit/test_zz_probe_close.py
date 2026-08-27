@@ -1,4 +1,5 @@
 import os
+
 from hashview.models import Rules, Users, db
 
 DOMAIN = "localhost.test"
@@ -6,11 +7,13 @@ DOMAIN = "localhost.test"
 def test_probe(app, client):
     u = Users(first_name="A", last_name="B", email_address="a@e.com",
               password="x", admin=True, api_key="k")
-    db.session.add(u); db.session.commit()
+    db.session.add(u)
+    db.session.commit()
     src = os.path.join(app.root_path, "control", "rules", "probe_rule.txt")
     open(src, "wb").write(b"body\n")
     r = Rules(name="r", owner_id=u.id, path="control/rules/probe_rule.txt", checksum="x")
-    db.session.add(r); db.session.commit()
+    db.session.add(r)
+    db.session.commit()
     client.set_cookie("uuid", "k", domain=DOMAIN)
     tmp = os.path.join(app.root_path, "control", "tmp")
     before = set(os.listdir(tmp))

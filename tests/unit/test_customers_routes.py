@@ -1,7 +1,6 @@
 """Regression tests for customers routes/helpers (function-coverage batch)."""
 
 from hashview.models import (
-    Customers,
     Hashes,
     HashfileHashes,
     Hashfiles,

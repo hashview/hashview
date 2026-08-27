@@ -16,11 +16,11 @@ import tempfile
 import uuid
 
 import pytest
-from hypothesis import HealthCheck, given, settings, strategies as st
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
 from hashview.models import Hashes, HashfileHashes, Hashfiles, Users, db
 from hashview.utils.utils import import_hashfilehashes
-
 
 # --- strategies -------------------------------------------------------------
 

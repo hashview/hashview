@@ -346,7 +346,7 @@ def test_post_hashfile_upload_invalid_customer(app, client):
 
 
 def test_post_hashfile_upload_creates_hashfile(app, client):
-    user = _user()
+    _user()
     cust = Customers(name="UpCo")
     db.session.add(cust)
     db.session.commit()

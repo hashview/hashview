@@ -7,7 +7,6 @@ from hashview.models import Users, db
 from hashview.users.forms import UsersForm
 from tests.unit.helpers import login, make_admin, make_user
 
-
 # --- _safe_next (open-redirect guard) --------------------------------------
 
 def test_safe_next_allows_relative(app):

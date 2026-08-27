@@ -28,12 +28,10 @@ Known bugs noted (documented in prose, not asserted via xfail):
     bug; no runtime impact.
 """
 
-import pytest
 from unittest.mock import patch
 
-from hashview.models import JobTasks, Rules, TaskGroups, Tasks, Users, Wordlists, db
+from hashview.models import Rules, Tasks, Users, Wordlists, db
 from hashview.tasks.routes import _human_size
-
 
 # ---------------------------------------------------------------- helpers
 

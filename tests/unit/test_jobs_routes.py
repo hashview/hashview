@@ -5,20 +5,17 @@ Covers the 13 previously-uncovered jobs route handlers plus the JobsForm
 and DB side effects against the in-memory app.
 """
 
-import io
 
 from hashview.jobs.forms import JobsForm
 from hashview.models import (
     Hashes,
     HashfileHashes,
     Hashfiles,
-    JobNotifications,
     Jobs,
     JobTasks,
     Settings,
     TaskGroups,
     Tasks,
-    Wordlists,
     db,
 )
 from hashview.utils.utils import ingest_static_wordlist_file

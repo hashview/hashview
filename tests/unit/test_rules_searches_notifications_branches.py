@@ -6,8 +6,6 @@ Login helper mirrors the pattern in test_tasks_routes_guards.py.
 """
 
 import io
-import os
-import tempfile
 from unittest.mock import patch
 
 import pytest
@@ -16,17 +14,15 @@ from hashview.models import (
     Customers,
     Hashes,
     HashfileHashes,
-    HashNotifications,
     Hashfiles,
+    HashNotifications,
     JobNotifications,
-    Jobs,
     Rules,
     Settings,
     Tasks,
     Users,
     db,
 )
-
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -406,7 +402,7 @@ class TestRulesDelete:
         admin = _admin()
         _login(client, admin)
         path = _make_rule_file(tmp_path)
-        rule = _make_rule(admin.id, path)
+        _make_rule(admin.id, path)
 
         # mode-0 task with no rule_id — will never appear in rule_used_tasks
         t = Tasks(name="dict-no-rule", owner_id=admin.id, hc_attackmode=0,
@@ -669,14 +665,15 @@ class TestSearches:
 
     def test_get_rows_no_matching_customer(self, app, client):
         """Cover get_rows when no customer matches the hashfile (col stays 'None')."""
-        from hashview.searches.routes import get_rows
         import io as _io
+
+        from hashview.searches.routes import get_rows
 
         admin = _admin()
         _login(client, admin)
         h = self._make_hash(ciphertext="exp04hash")
         cust = self._make_customer(name="OtherCo")
-        hf = self._make_hashfile(admin.id, cust.id, name="other.txt")
+        self._make_hashfile(admin.id, cust.id, name="other.txt")
         # Use a DIFFERENT customer id in hashfile so the match fails
         hf2 = Hashfiles(name="nomatch.txt", customer_id=9999, owner_id=admin.id)
         db.session.add(hf2)

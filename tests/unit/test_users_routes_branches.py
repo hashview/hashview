@@ -16,7 +16,6 @@ from flask_bcrypt import Bcrypt
 
 from hashview.models import Users, db
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -692,7 +691,7 @@ class TestResetRequest:
         assert resp.status_code == 200
 
     def test_post_known_email_redirects(self, app, client):
-        user = _make_user(app, email="resetreq@example.com")
+        _make_user(app, email="resetreq@example.com")
         resp = client.post(
             "/reset_password",
             data={"email": "resetreq@example.com"},
@@ -794,7 +793,7 @@ class TestResetToken:
         user = _make_user(app, email="tokenpostinvalid@example.com")
         old_hash = user.password
 
-        resp = client.post(
+        client.post(
             f"/reset_password/{user.id}/bogus.token.here",
             data={"password": "Attacker1234!abc", "confirm_password": "Attacker1234!abc"},
             follow_redirects=False,

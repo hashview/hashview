@@ -28,7 +28,6 @@ import pytest
 from hashview.models import Agents, Hashes, HashfileHashes, Users
 from hashview.models import db as _db
 
-
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------

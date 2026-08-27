@@ -19,7 +19,6 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-
 EXAMPLE_WORDLIST = Path(__file__).parent / "example_wordlist.txt"
 EXAMPLE_RULE = Path(__file__).parent / "example_rule.rule"
 

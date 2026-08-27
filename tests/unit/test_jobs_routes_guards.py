@@ -224,6 +224,7 @@ def _attach_hashfile(job, owner_id, cracked=False, name="hf-jobs.txt"):
 
 def test_jobs_list_renders_progress_runtime_and_filter(app, client):
     from datetime import datetime, timedelta
+
     from hashview.models import JobNotifications
     user = _nonadmin()
     customer = _make_customer()
@@ -335,7 +336,7 @@ def test_jobs_list_tasks_renders(app, client):
     job = _make_job(user.id, customer.id)
     _attach_hashfile(job, user.id)
     wl = _make_wordlist(user.id)
-    task = _make_task(user.id, wl.id, name="assignable")
+    _make_task(user.id, wl.id, name="assignable")
     _login(client, user)
 
     resp = client.get(f"/jobs/{job.id}/tasks")
@@ -347,6 +348,7 @@ def test_jobs_list_tasks_renders(app, client):
 
 def test_jobs_assign_task_group_assigns_all_and_skips_static_dupes(app, client):
     import json as _json
+
     from hashview.models import TaskGroups
     user = _nonadmin()
     customer = _make_customer()

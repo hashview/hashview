@@ -15,20 +15,19 @@ Both tests use the in-memory SQLite fixtures from
 the parent autouse fixtures (Playwright live_server) are skipped.
 """
 
-from datetime import datetime
-
 import json
+from datetime import datetime
 
 import pytest
 
 from hashview.models import (
     Agents,
     Customers,
-    HashfileHashes,
     Hashes,
+    HashfileHashes,
     Hashfiles,
-    JobTasks,
     Jobs,
+    JobTasks,
     Tasks,
     Users,
 )

@@ -12,12 +12,11 @@ related records" and explicitly calls out that the prior implementation
 """
 
 import pytest
-from flask_login import login_user
 
 from hashview.models import (
     Customers,
-    HashfileHashes,
     Hashes,
+    HashfileHashes,
     Hashfiles,
     Jobs,
     Users,

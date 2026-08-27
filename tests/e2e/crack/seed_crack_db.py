@@ -13,16 +13,32 @@ import os
 import secrets
 import sys
 
-import hashview
 from flask import Flask
 from flask_bcrypt import Bcrypt
 
-from hashview.models import (Agents, Customers, HashfileHashes, Hashes,
-                             Hashfiles, JobTasks, Jobs, Rules, Settings, Tasks,
-                             Users, Wordlists, db)
-from hashview.utils.utils import (build_hashcat_command, get_filehash,
-                                  get_linecount, get_md5_hash,
-                                  ingest_static_wordlist_file, ntlm_hash_hex)
+import hashview
+from hashview.models import (
+    Agents,
+    Customers,
+    Hashes,
+    HashfileHashes,
+    Hashfiles,
+    Jobs,
+    JobTasks,
+    Rules,
+    Settings,
+    Tasks,
+    Users,
+    db,
+)
+from hashview.utils.utils import (
+    build_hashcat_command,
+    get_filehash,
+    get_linecount,
+    get_md5_hash,
+    ingest_static_wordlist_file,
+    ntlm_hash_hex,
+)
 
 
 def build_app():
@@ -148,7 +164,7 @@ def main():
     if len(sys.argv) < 2:
         print("usage: seed_crack_db.py <manifest.json>", file=sys.stderr)
         return 2
-    with open(sys.argv[1], "r", encoding="utf-8") as f:
+    with open(sys.argv[1], encoding="utf-8") as f:
         manifest = json.load(f)
     seed(build_app(), manifest)
     print("seed_crack_db: ok")

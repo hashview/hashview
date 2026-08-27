@@ -20,7 +20,6 @@ import os
 
 import pytest
 
-
 if importlib.util.find_spec("flask") is None:
     collect_ignore_glob = ["test_*.py"]
 

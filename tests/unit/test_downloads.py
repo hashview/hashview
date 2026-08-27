@@ -54,7 +54,8 @@ def _make_hashfile_with_hashes(owner_id):
 # ---------------------------------------------------------------------------
 
 def test_hashfile_export_hashes_only(app, client):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     hf = _make_hashfile_with_hashes(user.id)
     resp = client.get(f"/hashfiles/download/{hf.id}/hashes")
     assert resp.status_code == 200
@@ -66,7 +67,8 @@ def test_hashfile_export_hashes_only(app, client):
 
 
 def test_hashfile_export_all(app, client):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     hf = _make_hashfile_with_hashes(user.id)
     body = client.get(f"/hashfiles/download/{hf.id}/all").data.decode("latin-1")
     lines = body.split("\n")
@@ -77,19 +79,21 @@ def test_hashfile_export_all(app, client):
 
 
 def test_hashfile_export_cracked_only(app, client):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     hf = _make_hashfile_with_hashes(user.id)
     body = client.get(f"/hashfiles/download/{hf.id}/cracked").data.decode("latin-1")
-    lines = [l for l in body.split("\n") if l]
+    lines = [ln for ln in body.split("\n") if ln]
     assert sorted(lines) == sorted(["aaa111:Passw0rd!", "bbb222:letmein"])
     assert "ccc333" not in body
 
 
 def test_hashfile_export_plains_only(app, client):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     hf = _make_hashfile_with_hashes(user.id)
     body = client.get(f"/hashfiles/download/{hf.id}/plains").data.decode("latin-1")
-    lines = [l for l in body.split("\n") if l]
+    lines = [ln for ln in body.split("\n") if ln]
     assert sorted(lines) == sorted(["Passw0rd!", "letmein"])
     assert "aaa111" not in body and "bbb222" not in body
 
@@ -99,13 +103,16 @@ def test_hashfile_export_preserves_non_latin1_plaintext(app, client):
     Cyrillic -- the international-pwdump case) must round-trip through the
     download unchanged. The old latin-1/errors='replace' encode silently
     turned these into '?', corrupting the exported password file."""
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     hf = Hashfiles(name="intl dump", customer_id=1, owner_id=user.id)
-    db.session.add(hf); db.session.commit()
+    db.session.add(hf)
+    db.session.commit()
     plain = "пароль-密码-🔒"          # Cyrillic + CJK + emoji, all > U+00FF
     h = Hashes(sub_ciphertext="0" * 8, ciphertext="ddd444", hash_type=0,
                cracked=True, plaintext=plain)
-    db.session.add(h); db.session.commit()
+    db.session.add(h)
+    db.session.commit()
     db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
     db.session.commit()
 
@@ -117,7 +124,8 @@ def test_hashfile_export_preserves_non_latin1_plaintext(app, client):
 
 
 def test_hashfile_export_invalid_format_404(app, client):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     hf = _make_hashfile_with_hashes(user.id)
     assert client.get(f"/hashfiles/download/{hf.id}/bogus").status_code == 404
 
@@ -130,10 +138,13 @@ def test_hashfile_export_requires_login(app, client):
 
 
 def test_hashfiles_page_renders_download_modal(app, client):
-    user = _admin(); _login(client, user)
-    Hashfiles.query.delete(); db.session.commit()
+    user = _admin()
+    _login(client, user)
+    Hashfiles.query.delete()
+    db.session.commit()
     hf = Hashfiles(name="render dump", customer_id=1, owner_id=user.id)
-    db.session.add(hf); db.session.commit()
+    db.session.add(hf)
+    db.session.commit()
     resp = client.get("/hashfiles")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
@@ -147,13 +158,15 @@ def test_hashfiles_page_renders_download_modal(app, client):
 # ---------------------------------------------------------------------------
 
 def test_wordlist_download_static_gz(app, client, tmp_path):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     gz = tmp_path / "abc.gz"
     with gzip.open(str(gz), "wb") as f:
         f.write(b"word1\nword2\n")
     wl = Wordlists(name="Rockyou", owner_id=user.id, type="static",
                    path=str(gz), checksum="0" * 64, size=2)
-    db.session.add(wl); db.session.commit()
+    db.session.add(wl)
+    db.session.commit()
 
     resp = client.get(f"/wordlists/download/{wl.id}")
     assert resp.status_code == 200
@@ -164,12 +177,14 @@ def test_wordlist_download_static_gz(app, client, tmp_path):
 
 
 def test_wordlist_download_dynamic_txt(app, client, tmp_path):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     txt = tmp_path / "dyn.txt"
     txt.write_bytes(b"alpha\nbravo\n")
     wl = Wordlists(name="(DYNAMIC) All Customers", owner_id=user.id, type="dynamic",
                    path=str(txt), checksum="0" * 64, size=2)
-    db.session.add(wl); db.session.commit()
+    db.session.add(wl)
+    db.session.commit()
 
     resp = client.get(f"/wordlists/download/{wl.id}")
     assert resp.status_code == 200
@@ -178,19 +193,23 @@ def test_wordlist_download_dynamic_txt(app, client, tmp_path):
 
 
 def test_wordlist_download_missing_file_redirects(app, client, tmp_path):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     wl = Wordlists(name="Gone", owner_id=user.id, type="static",
                    path=str(tmp_path / "nope.gz"), checksum="0" * 64, size=0)
-    db.session.add(wl); db.session.commit()
+    db.session.add(wl)
+    db.session.commit()
     resp = client.get(f"/wordlists/download/{wl.id}", follow_redirects=False)
     assert resp.status_code == 302
 
 
 def test_wordlists_page_renders_download_links(app, client, tmp_path):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     wl = Wordlists(name="Rockyou", owner_id=user.id, type="static",
                    path=str(tmp_path / "abc.gz"), checksum="0" * 64, size=2)
-    db.session.add(wl); db.session.commit()
+    db.session.add(wl)
+    db.session.commit()
     html = client.get("/wordlists").get_data(as_text=True)
     assert f"/wordlists/download/{wl.id}" in html
 
@@ -200,12 +219,14 @@ def test_wordlists_page_renders_download_links(app, client, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_rule_download(app, client, tmp_path):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     rule_file = tmp_path / "best64.rule"
     rule_file.write_text(":\nl\nu\n")
     rule = Rules(name="Best64", owner_id=user.id, path=str(rule_file),
                  checksum="0" * 64, size=3)
-    db.session.add(rule); db.session.commit()
+    db.session.add(rule)
+    db.session.commit()
 
     resp = client.get(f"/rules/download/{rule.id}")
     assert resp.status_code == 200
@@ -214,18 +235,22 @@ def test_rule_download(app, client, tmp_path):
 
 
 def test_rule_download_missing_file_redirects(app, client, tmp_path):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     rule = Rules(name="Gone", owner_id=user.id, path=str(tmp_path / "nope.rule"),
                  checksum="0" * 64, size=0)
-    db.session.add(rule); db.session.commit()
+    db.session.add(rule)
+    db.session.commit()
     resp = client.get(f"/rules/download/{rule.id}", follow_redirects=False)
     assert resp.status_code == 302
 
 
 def test_rules_page_renders_download_link(app, client, tmp_path):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     rule = Rules(name="Best64", owner_id=user.id, path=str(tmp_path / "best64.rule"),
                  checksum="0" * 64, size=3)
-    db.session.add(rule); db.session.commit()
+    db.session.add(rule)
+    db.session.commit()
     html = client.get("/rules").get_data(as_text=True)
     assert f"/rules/download/{rule.id}" in html

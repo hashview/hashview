@@ -83,7 +83,7 @@ def apply_rule(word, rule_line):
 
 def _load_rule_lines(path):
     lines = []
-    with open(path, "r", encoding="utf-8", errors="surrogateescape") as f:
+    with open(path, encoding="utf-8", errors="surrogateescape") as f:
         for raw in f:
             line = raw.rstrip("\n")
             stripped = line.strip()
@@ -108,7 +108,7 @@ def _iter_words(path):
 
 
 def _load_targets(path):
-    with open(path, "r", encoding="utf-8", errors="surrogateescape") as f:
+    with open(path, encoding="utf-8", errors="surrogateescape") as f:
         return [line.rstrip("\n") for line in f if line.strip()]
 
 

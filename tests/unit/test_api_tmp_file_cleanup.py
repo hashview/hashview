@@ -7,7 +7,7 @@ its own temp file so the directory does not grow without bound.
 
 import os
 
-from hashview.models import Hashes, Hashfiles, HashfileHashes, Rules, Users, Wordlists, db
+from hashview.models import Hashes, HashfileHashes, Hashfiles, Rules, Users, Wordlists, db
 
 DOMAIN = "localhost.test"
 

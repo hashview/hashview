@@ -27,7 +27,6 @@ from datetime import datetime
 import pytest
 from sqlalchemy import inspect, text
 
-
 pytestmark = pytest.mark.mysql
 
 

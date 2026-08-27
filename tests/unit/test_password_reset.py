@@ -91,7 +91,7 @@ def test_reset_token_invalid_does_not_change_password(app, client, existing_user
     bogus_token = "not.a.valid.jwt"
 
     # Try to POST a new password with a bogus token.
-    resp = client.post(
+    client.post(
         f"/reset_password/{existing_user.id}/{bogus_token}",
         data={"password": "attackerpassword99", "confirm_password": "attackerpassword99"},
         follow_redirects=False,

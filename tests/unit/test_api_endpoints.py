@@ -884,6 +884,75 @@ def test_hashfiles_by_hash_type_lists_matching_with_counts(client, admin_user):
 
 
 @pytest.mark.security
+def test_hashfiles_by_hash_type_lists_each_hashfile_once(client, admin_user):
+    """One row per hashfile, however many matching hashes it holds.
+
+    This is the assertion that matters, and it bites: since #228 the route
+    joins Hashfiles to the junction table, so dropping the GROUP BY emits one
+    row per *hash*. Verified by removing it and watching this fail.
+
+    The id-order assertion below is deliberately weaker. The route now says
+    ``.order_by(Hashfiles.id)``, which MySQL needs because ``GROUP BY`` does not
+    imply an ordering, but sqlite returns grouped rows in rowid order anyway --
+    so removing the ``order_by`` does *not* fail this test here. It documents
+    the intent and only earns its keep against a real MySQL backend; treat it
+    as a statement of contract rather than a guard.
+    """
+    cust = Customers(name="OrderCo")
+    _db.session.add(cust)
+    _db.session.commit()
+
+    hashfiles = [
+        Hashfiles(name=f"order-{n}", customer_id=cust.id, owner_id=admin_user.id)
+        for n in range(4)
+    ]
+    _db.session.add_all(hashfiles)
+    _db.session.commit()
+
+    # Differing hash counts: a join without GROUP BY would emit one row per
+    # hash, so the counts double as a duplication check.
+    for index, hashfile in enumerate(hashfiles):
+        for _ in range(index + 1):
+            _seed_hash(hashfile.id, 4242, False)
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.get("/v1/hashfiles/hash_type/4242")
+
+    body = _json_body(resp)
+    assert body["status"] == 200
+    returned_ids = [entry["id"] for entry in body["hashfiles"]]
+    assert returned_ids == sorted(hf.id for hf in hashfiles)
+    assert [entry["total_hashes"] for entry in body["hashfiles"]] == [1, 2, 3, 4]
+
+
+@pytest.mark.security
+def test_hashfiles_by_hash_type_counts_a_fully_cracked_file(client, admin_user):
+    """total == cracked when every matching hash is cracked.
+
+    The cracked figure is a SUM over a CASE wrapped in COALESCE; this covers the
+    all-ones end of it, where the mixed-type test above covers the zero end (a
+    file with no cracked hashes of the queried type must report 0, not null).
+    """
+    cust = Customers(name="AllCrackedCo")
+    _db.session.add(cust)
+    _db.session.commit()
+    hashfile = Hashfiles(
+        name="all-cracked", customer_id=cust.id, owner_id=admin_user.id
+    )
+    _db.session.add(hashfile)
+    _db.session.commit()
+    for _ in range(3):
+        _seed_hash(hashfile.id, 4243, True)
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.get("/v1/hashfiles/hash_type/4243")
+
+    entry = _json_body(resp)["hashfiles"][0]
+    assert entry["total_hashes"] == 3
+    assert entry["cracked_hashes"] == 3
+
+
+@pytest.mark.security
 def test_hashfiles_by_hash_type_unused_type_returns_empty_list(client, admin_user):
     """A hash type with no hashfiles is a valid empty result, not an error."""
     client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")

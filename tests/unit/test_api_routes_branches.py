@@ -1895,12 +1895,17 @@ def test_hashfile_get_no_cookie_redirects(client):
 
 @pytest.mark.security
 def test_hashfiles_by_hash_type_hashfile_missing_in_loop(client, admin_user):
-    """GET /v1/hashfiles/hash_type/<n> skips hashfile_id rows where Hashfiles.get()
-    returns None (line 1165: the `continue` guard in the loop).
+    """GET /v1/hashfiles/hash_type/<n> ignores junction rows whose hashfile is gone.
 
-    We create a HashfileHashes row pointing to a nonexistent hashfile_id and
-    a hash of the queried type, then verify no crash occurs and the result list
-    is empty.
+    We create a HashfileHashes row pointing to a nonexistent hashfile_id and a
+    hash of the queried type, then verify no crash occurs and the result list is
+    empty.
+
+    This used to be an explicit `if hashfile is None: continue` guard inside a
+    per-hashfile loop. Since #228 the route joins from Hashfiles and groups, so
+    an orphaned junction row has nothing to join to and drops out on its own.
+    The assertion is unchanged because the behaviour is: the test pins the
+    contract, not the mechanism.
     """
     # Create a hash of type 7777 but link it to a nonexistent hashfile
     h = Hashes(sub_ciphertext="7" * 32, ciphertext="ghost7777", hash_type=7777, cracked=False)

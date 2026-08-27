@@ -52,7 +52,7 @@ Notable changes will be documented here
 
 **Testing**
 - Job-creation performance e2e suite (`tests/e2e/test_job_creation_perf.py`) with a tunable volume seeder (`tests/seed_perf_db.py`), covering latency budgets for each wizard step plus strict-xfail scaling guards for the four endpoints in issue #422 whose cost grows with table size rather than page size
-- API hashfile-listing performance suite (`tests/e2e/test_api_hashfile_listing_perf.py`), sharing that seeder. Asserts loop cost as a ratio to a same-route zero-hashfile floor rather than an absolute budget, so the threshold survives a change of hardware; carries a strict-xfail scaling guard for issue #228 (`GET /v1/hashfiles/hash_type/<t>` runs an ORM get plus two counts per matching hashfile) and a passing regression guard on `GET /v1/customers/<id>/hashfiles`, which runs one combined aggregate per hashfile and measures under the ceiling today
+- API hashfile-listing performance suite (`tests/e2e/test_api_hashfile_listing_perf.py`), sharing that seeder. Asserts loop cost as a ratio to a same-route zero-hashfile floor rather than an absolute budget, so the threshold survives a change of hardware; carries regression guards for issue #228 (fixed in this release; the guard remains so a per-hashfile loop cannot return) and on `GET /v1/customers/<id>/hashfiles`, which runs one combined aggregate per hashfile and measures under the ceiling today
 
 ### Changed
 - The Rules listing is paginated (20 per page) with sortable Name / Rules / Owner / Last Updated columns and a server-side name filter, matching the Tasks listing
@@ -68,6 +68,7 @@ Notable changes will be documented here
 - Every top-level page is now covered by a Playwright reachability test, and a guard fails CI when a new sidebar entry ships without one; Task Groups gained an end-to-end create/delete test
 
 ### Fixed
+- `GET /v1/hashfiles/hash_type/<t>` now answers with one grouped query instead of three per matching hashfile (issue #228). It previously took a DISTINCT list of hashfile ids and, for each, ran an ORM lookup plus two separate COUNTs, so the work above the fixed request cost grew with the number of matching files. On a production instance holding 7.85M NTLM hashes the endpoint took 549 seconds to return 13 KB — past every default client timeout, so callers saw not a slow listing but no listing, indistinguishable from a customer having no hashfiles. Response content is unchanged (verified byte-identical against MySQL for a populated type, an empty type and an unknown type), and results are now returned in hashfile-id order, which `GROUP BY` alone does not guarantee
 - The Analytics page no longer hangs the browser on large datasets: the Shared Passwords and Username = Password cards render a capped preview (with the full total shown) instead of one form per group, and the complete lists remain available from the download buttons
 - Analytics counted a password as "shared" when a single account's hash appeared in more than one hashfile, or when the rows had no username at all; shared passwords are now grouped by distinct named account
 - The name filter on the Tasks and Jobs listings now searches every task/job instead of only the rows on the current page, so a match on a later page is no longer reported as "no match"

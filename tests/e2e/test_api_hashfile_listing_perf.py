@@ -42,10 +42,10 @@ by 1.4x at worst, and the grouped version clears it by 1.5x at worst. Both
 margins are real but neither is enormous, so
 ``HASHVIEW_PERF_MAX_LOOP_COST_RATIO`` exists for hardware where they are not.
 
-This was verified in both directions rather than assumed: patching the
-``GROUP BY`` into a running stack turned the xfail below into an XPASS, which
-under ``strict=True`` fails the suite. That is the signal to delete the marker,
-and it has been confirmed to fire.
+Both regimes were measured on a running stack, and the by-hash-type route now
+uses the grouped form, so it sits in the lower band. The strict ``xfail`` that
+pinned issue #228 has been removed along with the defect; what remains is a
+guard against the per-hashfile loop coming back.
 
 Note the ratio understates production. On a real instance with 7.85M hashes of
 one type the same endpoint takes 549 s, far worse than scaling this fixture
@@ -180,19 +180,17 @@ def test_empty_hash_type_listing_is_fast(api, seeded_hashfiles):
 
 
 @pytest.mark.perf
-@pytest.mark.xfail(
-    strict=True,
-    reason="Issue #228: /v1/hashfiles/hash_type/<t> resolves each matching "
-    "hashfile with its own ORM get plus two count queries, so the work above "
-    "the fixed request cost grows with the number of matching hashfiles "
-    "instead of being one grouped query.",
-)
 def test_hash_type_listing_loop_cost_is_bounded(api, seeded_hashfiles):
     """Isolate the per-hashfile loop from fixed request overhead.
 
     Both measurements hit the same route with the same auth, so everything
     except the loop cancels: one hash type has every seeded hashfile, the other
     has none.
+
+    This carried a strict ``xfail`` for issue #228 until the route was rewritten
+    to one grouped query. The marker is gone because the defect is: it measured
+    2.04x-2.65x before and 0.92x-1.00x after, against a 1.5x ceiling. It stays
+    as a guard so a reintroduced per-hashfile loop fails here.
     """
     floor_ms, _, _ = time_get(api, f"/v1/hashfiles/hash_type/{UNUSED_HASH_TYPE}")
     median, samples, body = time_get(api, f"/v1/hashfiles/hash_type/{SEEDED_HASH_TYPE}")

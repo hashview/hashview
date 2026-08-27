@@ -429,6 +429,7 @@ def test_download_dynamic_compressed_on_the_fly(app, client, monkeypatch):
     # than compressing the stored .txt; make regeneration reproduce the stored
     # bytes so we still verify on-the-fly gzip and the untouched DB checksum.
     import shutil
+
     import hashview.api.routes as routes_mod
     def _regen(wl_id, dest_path=None):
         shutil.copyfile(Wordlists.query.get(wl_id).path, dest_path)

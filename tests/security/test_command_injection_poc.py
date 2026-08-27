@@ -129,10 +129,13 @@ def test_rules_download_compresses_with_pure_python_gzip(monkeypatch):
             captured["level"] = level
 
         import hashview.api.routes as api_routes
+        import hashview.utils.utils as utils_mod
 
         monkeypatch.setattr(api_routes, "compress_to_gz", fake_compress_to_gz)
+        # The response is built by send_generated_file(), which lives in utils
+        # and therefore resolves send_from_directory from that module.
         monkeypatch.setattr(
-            api_routes,
+            utils_mod,
             "send_from_directory",
             lambda *args, **kwargs: Response("ok", status=200),
         )
@@ -204,10 +207,12 @@ def test_rules_download_traversal_neutralized(monkeypatch):
             served["directory"] = directory
             return Response("ok", status=200)
 
-        import hashview.api.routes as api_routes
+        import hashview.utils.utils as utils_mod
 
+        # Patch where the name is resolved: the route serves via
+        # send_generated_file(), which looks up send_from_directory in utils.
         monkeypatch.setattr(
-            api_routes, "send_from_directory", sentinel_send_from_directory
+            utils_mod, "send_from_directory", sentinel_send_from_directory
         )
 
         client = app.test_client()

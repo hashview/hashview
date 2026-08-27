@@ -77,6 +77,7 @@ Notable changes will be documented here
 - Command-injection hardening: hashcat is invoked as an argv list with no shell
 - CSRF: state-changing actions were moved from GET to POST and protected with CSRF tokens
 - Fixed an open redirect on the login page
+- Downloading a dynamic wordlist from the web UI no longer returns an empty file: the list is regenerated from the database for the download, instead of serving whatever the last manual refresh left on disk (a zero-byte placeholder on a fresh install)
 - Wordlists with legacy/relative paths no longer 404; the download route returns a clear error and paths self-heal on startup
 - The API returns JSON (not an HTML error page) for empty or invalid request bodies
 - Task/job max-runtime is enforced on the parent task rather than per chunk

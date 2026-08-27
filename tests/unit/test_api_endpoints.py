@@ -1128,7 +1128,7 @@ def test_send_generated_file_serves_payload_and_registers_cleanup(app, tmp_path)
     The real end-to-end behaviour is covered per-route in
     tests/unit/test_api_tmp_file_cleanup.py, which drives actual requests.
     """
-    from hashview.api import routes as api_routes
+    from hashview.utils import utils as utils_mod
 
     tmp_dir = tmp_path / "control" / "tmp"
     tmp_dir.mkdir(parents=True)
@@ -1136,7 +1136,7 @@ def test_send_generated_file_serves_payload_and_registers_cleanup(app, tmp_path)
     generated.write_bytes(b"payload")
 
     with app.test_request_context("/v1/generated"):
-        response = api_routes._send_generated_file(str(tmp_dir), generated.name)
+        response = utils_mod.send_generated_file(str(tmp_dir), generated.name)
         assert b"".join(response.response) == b"payload"
         # Still on disk: the unlink runs when the request is finalized, which a
         # bare test_request_context never reaches.
@@ -1146,16 +1146,16 @@ def test_send_generated_file_serves_payload_and_registers_cleanup(app, tmp_path)
 @pytest.mark.security
 def test_remove_file_logs_warning_on_oserror(app, tmp_path, monkeypatch):
     """A cleanup failure is logged (not swallowed) so admins can troubleshoot."""
-    from hashview.api import routes as api_routes
+    from hashview.utils import utils as utils_mod
 
     def boom(_path):
         raise OSError("permission denied")
 
-    monkeypatch.setattr(api_routes.os, "remove", boom)
+    monkeypatch.setattr(utils_mod.os, "remove", boom)
 
     with app.app_context():
-        with mock.patch.object(api_routes.current_app.logger, "warning") as warn:
-            api_routes._remove_file(str(tmp_path / "stuck.txt"))
+        with mock.patch.object(utils_mod.current_app.logger, "warning") as warn:
+            utils_mod.remove_file(str(tmp_path / "stuck.txt"))
 
     assert warn.called
     logged = " ".join(str(a) for a in warn.call_args.args)

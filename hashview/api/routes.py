@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 
 from flask import (
     Blueprint,
-    after_this_request,
     current_app,
     jsonify,
     redirect,
@@ -52,6 +51,8 @@ from hashview.utils.utils import (
     notify_admins,
     process_recovered_hash_notifications,
     rechunk_queued_tasks_for_hashtype,
+    remove_file,
+    send_generated_file,
     slowest_benchmark,
     text_from_field,
     update_dynamic_wordlist,
@@ -170,40 +171,6 @@ def versionCheck(agent_version):
         return True
     else:
         return False
-
-
-def _remove_file(path):
-    try:
-        os.remove(path)
-    except FileNotFoundError:
-        pass
-    except OSError as error:
-        # Don't fail the request, but surface the problem so an admin can
-        # troubleshoot temp files stacking up in control/tmp (see issue #226).
-        current_app.logger.warning(
-            'Failed to remove temporary file %s: %s', path, error)
-
-
-def _send_generated_file(directory, filename, **kwargs):
-    """Serve a control/tmp scratch file and delete it once served.
-
-    Unlinked via after_this_request rather than response.call_on_close():
-    send_from_directory() sets direct_passthrough, and werkzeug's
-    get_app_iter() returns the raw file wrapper for that case instead of
-    wrapping it in a ClosingIterator, so Response.close() -- and with it every
-    call_on_close callback -- never runs. The unlink therefore happens while
-    the file is still open for streaming, which is fine on POSIX: the fd stays
-    valid and the body is sent in full, only the directory entry goes away.
-    """
-    file_path = os.path.join(directory, filename)
-    response = send_from_directory(directory, filename, **kwargs)
-
-    @after_this_request
-    def _cleanup(resp):        # pylint: disable=unused-variable
-        _remove_file(file_path)
-        return resp
-
-    return response
 
 
 @api.route('/v1/not_authorized', methods=['GET', 'POST'])
@@ -716,7 +683,7 @@ def v1_api_get_rules_download(rules_id):
 
     tmp_gz = os.path.join(tmp_dir, secrets.token_hex(8) + '.gz')
     compress_to_gz(src_path, tmp_gz, 9)
-    return _send_generated_file(
+    return send_generated_file(
         tmp_dir, os.path.basename(tmp_gz), mimetype='application/octet-stream')
 
 # Create new rule
@@ -851,8 +818,8 @@ def v1_api_get_wordlist_download(wordlist_id):
     # cleaned up: the .txt now, the .gz after the response is streamed.
     tmp_gz = os.path.join(tmp_dir, secrets.token_hex(8) + '.gz')
     compress_to_gz(tmp_txt, tmp_gz, 9)
-    _remove_file(tmp_txt)
-    return _send_generated_file(
+    remove_file(tmp_txt)
+    return send_generated_file(
         tmp_dir, os.path.basename(tmp_gz), mimetype='application/octet-stream')
 
 # Create new wordlist
@@ -1464,7 +1431,7 @@ def v1_api_get_hashfile(hashfile_id):
         for result in dbresults:
             file_object.write(result[0].ciphertext + '\n')
 
-    return _send_generated_file(tmp_dir, random_hex)
+    return send_generated_file(tmp_dir, random_hex)
 
 @api.route('/v1/hashfiles/<int:hashfile_id>', methods=['DELETE'])
 def v1_api_delete_hashfile(hashfile_id):
@@ -2034,7 +2001,7 @@ def v1_api_hashes_import(hash_type):
                 'msg': 'Failed to open file.'
             })
     finally:
-        _remove_file(file_path)
+        remove_file(file_path)
 
     # Send per-hash "recovered" notifications (email/push/slack) for any now-cracked watched hash.
     process_recovered_hash_notifications()

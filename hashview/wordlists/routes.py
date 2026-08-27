@@ -19,7 +19,12 @@ from werkzeug.utils import secure_filename
 
 from hashview.models import Hashes, JobTasks, Rules, Tasks, Users, Wordlists, db
 from hashview.utils.audit import log_event
-from hashview.utils.utils import ingest_static_wordlist_file, try_commit, update_dynamic_wordlist
+from hashview.utils.utils import (
+    ingest_static_wordlist_file,
+    send_generated_file,
+    try_commit,
+    update_dynamic_wordlist,
+)
 from hashview.utils.wordlist_import import list_importable, run_import_async
 from hashview.wordlists.forms import WordlistsForm
 
@@ -228,8 +233,25 @@ def wordlists_delete(wordlist_id):
 @login_required
 def wordlists_download(wordlist_id):
     """Deliver a wordlist's contents. Static wordlists are stored compressed and
-    served as-is (.gz); dynamic wordlists are stored uncompressed (.txt)."""
+    served as-is (.gz); dynamic wordlists are regenerated from the database on
+    demand and served uncompressed (.txt)."""
     wordlist = Wordlists.query.get_or_404(wordlist_id)
+
+    if wordlist.type == 'dynamic':
+        # Nothing keeps the canonical file at wordlist.path current -- only the
+        # manual refresh button writes it, so on a fresh install it is still the
+        # zero-byte seed placeholder. Regenerate instead, into a per-request
+        # unique temp file rather than the shared path, so concurrent downloads
+        # can't truncate the file out from under each other. The DB row's
+        # size/checksum metadata is deliberately left alone; this mirrors
+        # GET /v1/wordlists/<id>.
+        tmp_dir = os.path.join(current_app.root_path, 'control/tmp')
+        tmp_txt = os.path.join(tmp_dir, secrets.token_hex(8) + '.txt')
+        update_dynamic_wordlist(wordlist_id, dest_path=tmp_txt)
+        download_name = (secure_filename(wordlist.name) or 'wordlist') + '.txt'
+        return send_generated_file(tmp_dir, os.path.basename(tmp_txt),
+                                   as_attachment=True, download_name=download_name)
+
     if not wordlist.path or not os.path.exists(wordlist.path):
         flash('Wordlist file not found on disk.', 'danger')
         return redirect(url_for('wordlists.wordlists_list'))

@@ -77,7 +77,7 @@ def main():
         except OSError:
             continue
         for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 total += 1
                 key = f"{rel}::{node.name}"
                 if not (body_lines(node) & executed) and key not in allow:

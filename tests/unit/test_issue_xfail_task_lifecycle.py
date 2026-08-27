@@ -36,7 +36,6 @@ from hashview.models import (
 )
 from hashview.utils.utils import build_hashcat_command, get_md5_hash
 
-
 DOMAIN = "localhost.test"
 
 

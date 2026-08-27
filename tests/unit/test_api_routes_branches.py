@@ -37,7 +37,6 @@ from hashview.models import (
     Hashes,
     HashfileHashes,
     Hashfiles,
-    JobNotifications,
     Jobs,
     JobTasks,
     Rules,
@@ -45,6 +44,8 @@ from hashview.models import (
     Tasks,
     Users,
     Wordlists,
+)
+from hashview.models import (
     db as _db,
 )
 from hashview.utils.utils import get_md5_hash
@@ -1020,8 +1021,6 @@ def test_hashfile_upload_all_file_formats_validation_path(
 def test_hashfile_get_returns_file(client, app, admin_user, monkeypatch):
     """GET /v1/hashfiles/<id> writes a temp file and serves it."""
     # Patch the hard-coded path in the route to use a real writable location
-    import hashview.api.routes as routes_mod
-    import tempfile
 
     # The route writes to 'hashview/control/tmp/' (relative to cwd), so we
     # need that path to exist. Create it temporarily.
@@ -1945,9 +1944,6 @@ def test_search_null_json_body_returns_500(client, admin_user):
 def test_customers_add_exception_path_returns_500(client, admin_user, monkeypatch):
     """POST /v1/customers/add where db.session.commit raises an exception returns
     500 (lines 368-369)."""
-    import hashview.api.routes as routes_mod
-    original_commit = _db.session.commit
-
     def raise_on_commit():
         raise RuntimeError("simulated DB error")
 

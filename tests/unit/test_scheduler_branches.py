@@ -16,14 +16,12 @@ import time
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
-import pytest
-
 from hashview.models import (
     Customers,
     Hashes,
     HashfileHashes,
-    HashNotifications,
     Hashfiles,
+    HashNotifications,
     JobNotifications,
     Jobs,
     JobTasks,
@@ -33,7 +31,6 @@ from hashview.models import (
     db,
 )
 from hashview.scheduler import _data_retention_cleanup_inner, try_send_email
-
 
 # ---------------------------------------------------------------------------
 # Helpers (mirrors the pattern in test_scheduler_retention_inner.py)

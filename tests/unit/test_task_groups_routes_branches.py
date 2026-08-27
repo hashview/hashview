@@ -15,10 +15,7 @@ Covers:
 
 import json
 
-import pytest
-
 from hashview.models import Hashes, TaskGroups, Tasks, Users, db
-
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -395,7 +392,8 @@ def test_assigned_tasks_promote_already_first(app, client):
     assert resp.status_code in (301, 302)
     db.session.refresh(tg)
     # order unchanged
-    import ast; stored = ast.literal_eval(tg.tasks)  # safe: str(list) literals only
+    import ast
+    stored = ast.literal_eval(tg.tasks)  # safe: str(list) literals only
     assert stored[0] == t1.id
 
 
@@ -414,7 +412,8 @@ def test_assigned_tasks_promote_middle_element(app, client):
     )
     assert resp.status_code in (301, 302)
     db.session.refresh(tg)
-    import ast; stored = ast.literal_eval(tg.tasks)  # safe: str(list) literals only
+    import ast
+    stored = ast.literal_eval(tg.tasks)  # safe: str(list) literals only
     assert stored.index(t2.id) < stored.index(t1.id)
 
 
@@ -461,7 +460,8 @@ def test_assigned_tasks_demote_already_last(app, client):
     )
     assert resp.status_code in (301, 302)
     db.session.refresh(tg)
-    import ast; stored = ast.literal_eval(tg.tasks)  # safe: str(list) literals only
+    import ast
+    stored = ast.literal_eval(tg.tasks)  # safe: str(list) literals only
     assert stored[-1] == t2.id
 
 
@@ -480,7 +480,8 @@ def test_assigned_tasks_demote_first_element(app, client):
     )
     assert resp.status_code in (301, 302)
     db.session.refresh(tg)
-    import ast; stored = ast.literal_eval(tg.tasks)  # safe: str(list) literals only
+    import ast
+    stored = ast.literal_eval(tg.tasks)  # safe: str(list) literals only
     assert stored.index(t1.id) > stored.index(t2.id)
 
 
@@ -499,7 +500,8 @@ def test_assigned_tasks_demote_middle_element(app, client):
     )
     assert resp.status_code in (301, 302)
     db.session.refresh(tg)
-    import ast; stored = ast.literal_eval(tg.tasks)  # safe: str(list) literals only
+    import ast
+    stored = ast.literal_eval(tg.tasks)  # safe: str(list) literals only
     assert stored.index(t2.id) > stored.index(t3.id)
 
 

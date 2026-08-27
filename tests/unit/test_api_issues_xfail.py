@@ -40,11 +40,9 @@ from hashview.models import (
     Jobs,
     JobTasks,
     Rules,
-    Tasks,
     Users,
 )
 from hashview.models import db as _db
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

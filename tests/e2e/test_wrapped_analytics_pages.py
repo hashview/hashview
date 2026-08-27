@@ -15,7 +15,7 @@ def _assert_page_ok(page, live_server, path, landmarks):
         "NameError",
     ):
         assert marker not in content, f"{marker!r} found in {path} response"
-    assert any(l in content for l in landmarks), (
+    assert any(ln in content for ln in landmarks), (
         f"None of {landmarks} found in {path} response"
     )
 

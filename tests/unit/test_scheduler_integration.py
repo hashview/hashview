@@ -35,7 +35,6 @@ from hashview.models import (
 )
 from hashview.scheduler import data_retention_cleanup
 
-
 RETENTION_DAYS = 30
 
 

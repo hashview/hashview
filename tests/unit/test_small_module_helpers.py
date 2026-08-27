@@ -10,7 +10,7 @@ import io
 import pytest
 from wtforms.validators import ValidationError
 
-from hashview.models import Hashfiles, Jobs, Rules, Tasks, Wordlists, db
+from hashview.models import Hashfiles, Jobs, Rules, Wordlists, db
 from tests.unit.helpers import login, make_admin, make_customer
 
 

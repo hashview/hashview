@@ -36,12 +36,9 @@ from hashview.models import (
     Hashes,
     HashfileHashes,
     Hashfiles,
-    JobNotifications,
     Jobs,
     JobTasks,
-    Rules,
     Settings,
-    Tasks,
     Users,
     Wordlists,
 )
@@ -317,7 +314,7 @@ def test_uploadcrackfile_marks_hash_cracked(
         lambda *a, **kw: None,
     )
     job, jt, h = _seed_job_for_crack(admin_user, ciphertext="abcd1234ef")
-    hex_plain = "password".encode().hex()  # hashcat hex_plain field
+    hex_plain = b"password".hex()  # hashcat hex_plain field
 
     _auth(client, authorized_agent.uuid)
     resp = client.post(f"/v1/uploadCrackFile/{jt.id}",
@@ -348,7 +345,7 @@ def test_uploadcrackfile_one_and_done_cancels_remaining_tasks(
     other = JobTasks(job_id=job.id, task_id=8, status="Queued")
     _db.session.add(other)
     _db.session.commit()
-    hex_plain = "letmein".encode().hex()
+    hex_plain = b"letmein".hex()
 
     _auth(client, authorized_agent.uuid)
     resp = client.post(f"/v1/uploadCrackFile/{jt.id}",
@@ -549,6 +546,7 @@ def test_wordlist_download_dynamic_compresses_on_the_fly(
     # compressing the stored .txt; make regeneration reproduce the stored bytes
     # so we still verify the on-the-fly gzip.
     import shutil
+
     import hashview.api.routes as routes_mod
     def _regen(wl_id, dest_path=None):
         shutil.copyfile(Wordlists.query.get(wl_id).path, dest_path)

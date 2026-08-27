@@ -6,10 +6,11 @@ the DB. Reads two live MySQL databases:
   HASHVIEW_FRESH_DB_URI     - dev schema built from empty (parity oracle)
 """
 import os
+
 import pytest
 from sqlalchemy import create_engine, text
 
-from tests.migration.expected_hex import USERNAME_CASES, PLAINTEXT_CASES
+from tests.migration.expected_hex import PLAINTEXT_CASES, USERNAME_CASES
 
 DEV_HEAD = "f1a2b3c4d5e6"
 

@@ -1,18 +1,21 @@
-import requests
+import builtins
 import json
 import logging
-from agent.config import Config
+
+import requests
+
 # to supress SSL Error messages
 import urllib3
-import builtins
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+
+from agent.config import Config
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Share the agent's logger so transport-layer diagnostics land in the same stream
 # as the rest of the agent instead of bare prints.
 LOG = logging.getLogger('hashview-agent')
-
-from requests.packages.urllib3.util.retry import Retry
-from requests.adapters import HTTPAdapter
 
 # Retry transient failures so a brief server outage (restart/redeploy) is ridden
 # out rather than surfacing as an error. allowed_methods=None retries POST too,
@@ -50,7 +53,7 @@ def _scheme():
 def get(url):
     path = _scheme()
 
-    with open('VERSION.TXT', 'r') as f:
+    with open('VERSION.TXT') as f:
         version = f.readline().strip('\n')
 
     cookie = {
@@ -82,7 +85,7 @@ def get(url):
 def post(url, data):
     path = _scheme()
 
-    with open('VERSION.TXT', 'r') as f:
+    with open('VERSION.TXT') as f:
         version = f.readline().strip('\n')
 
     path += Config.HASHVIEW_SERVER + ':' + Config.HASHVIEW_PORT + url

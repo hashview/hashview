@@ -30,7 +30,6 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-
 from agent.api import api
 from agent.http import http
 

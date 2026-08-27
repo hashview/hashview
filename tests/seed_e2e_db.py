@@ -22,11 +22,11 @@ from flask_bcrypt import Bcrypt
 from hashview.config import Config
 from hashview.models import (
     Customers,
-    HashfileHashes,
     Hashes,
+    HashfileHashes,
     Hashfiles,
-    JobTasks,
     Jobs,
+    JobTasks,
     Settings,
     Tasks,
     Users,

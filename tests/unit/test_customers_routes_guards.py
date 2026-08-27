@@ -7,9 +7,9 @@ blocked while jobs exist, happy path including the hashfile cascade).
 
 from hashview.models import (
     Customers,
+    Hashes,
     HashfileHashes,
     Hashfiles,
-    Hashes,
     Jobs,
     Users,
     db,

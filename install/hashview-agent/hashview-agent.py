@@ -2,29 +2,28 @@ import sys
 
 # Hashview supports Python 3.11 and newer (matches the server's setup.py floor).
 # Checked before any third-party import so an unsupported runtime fails cleanly.
-if sys.version_info < (3, 11):
+if sys.version_info < (3, 11):  # noqa: UP036 - runtime guard for older interpreters
     sys.stderr.write('Hashview agent requires Python 3.11 or newer.\n')
     sys.exit(1)
 
 import argparse
-import os
-import socket
-import uuid
+import builtins
 import gzip
+import hashlib
 import json
 import logging
+import os
 import secrets
-import hashlib
-import zlib
-import psutil
-import re
 import signal
-import builtins
-import time
+import socket
 import subprocess
+import time
+import uuid
+import zlib
+from datetime import datetime
 from threading import Thread
-from datetime import datetime, timedelta
 
+import psutil
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--debug", action="store_true", help="increase output verbosity")
@@ -59,7 +58,7 @@ class Manifest:
     def _load(self):
         if os.path.exists(self.path):
             try:
-                with open(self.path, "r") as f:
+                with open(self.path) as f:
                     self.data = json.load(f)
             except Exception:
                 # Corrupt or empty file – start fresh
@@ -125,7 +124,8 @@ if not os.path.exists('agent/config.conf'):
 
     config.close()
 
-from agent.api import api
+from agent.api import api  # noqa: E402 - config.conf must exist before agent.api loads it
+
 
 def send_heartbeat(agent_status, hc_status):
     return api.heartbeat(agent_status, hc_status)
@@ -143,7 +143,7 @@ def getHashcatPid():
                     for cli_args in pinfo['cmdline']:
                         if 'hc_cracked_' in cli_args:
                             return pinfo['pid']
-            except:
+            except Exception:
                 return False
     return False
 
@@ -590,7 +590,7 @@ def hashcatParser(filepath):
     # hashcat's stdout can contain arbitrary non-UTF-8 bytes (recovered plaintext
     # / candidate bytes). We only need the ASCII --status-json lines, so decode
     # tolerantly (errors='replace') instead of crashing on a stray byte.
-    with open(filepath, 'r', encoding='utf-8', errors='replace') as hashcat_output:
+    with open(filepath, encoding='utf-8', errors='replace') as hashcat_output:
         for line in hashcat_output:
             # Iterate the whole file; the last valid status line wins. We read this
             # while hashcat is still writing it (via tee), so a line can be partial
@@ -838,7 +838,7 @@ def handle_heartbeat():
 
 
 def main():
-    from agent import config            # noqa: F401 - imported for its config side effects
+    from agent import config  # noqa: F401 - imported for its config side effects
     builtins.state = 'debug' if args.debug else 'normal'
     LOG.info('Hashview agent started (polling every %ss).', HEARTBEAT_INTERVAL)
 

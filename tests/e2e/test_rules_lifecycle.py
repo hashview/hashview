@@ -14,7 +14,6 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-
 EXAMPLE_RULE = Path(__file__).parent / "example_rule.rule"
 
 # Form submits here POST then redirect+reload. Playwright's click auto-waits for

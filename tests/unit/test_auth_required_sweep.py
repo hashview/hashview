@@ -14,7 +14,6 @@ import re
 
 import pytest
 
-
 # Routes that intentionally allow anonymous access.
 PUBLIC_PREFIXES = (
     "/login",
@@ -38,7 +37,7 @@ def _dummy_value(converter: str) -> str:
 def _materialize_path(rule) -> str:
     """Convert ``/jobs/<int:job_id>`` -> ``/jobs/1``."""
     parts = []
-    for converter, _, variable in rule._converters and [] or []:  # noqa: E501  (placeholder)
+    for _converter, _, variable in rule._converters and [] or []:  # noqa: E501  (placeholder)
         parts.append(variable)
     # Use Werkzeug's own substitution by walking the rule's _trace
     path = rule.rule

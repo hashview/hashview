@@ -7,7 +7,7 @@ import sys
 from flask import Flask
 from flask_bcrypt import Bcrypt
 
-from hashview.models import HashfileHashes, Hashes, JobTasks, Jobs, db
+from hashview.models import Hashes, HashfileHashes, Jobs, JobTasks, db
 
 
 def build_app():

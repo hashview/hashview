@@ -69,7 +69,8 @@ def _seed():
 
 
 def test_analytics_all_scope(app, client):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     _seed()
     resp = client.get("/analytics")
     assert resp.status_code == 200
@@ -84,7 +85,8 @@ def test_analytics_all_scope(app, client):
 
 
 def test_analytics_customer_scope(app, client):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     customer_id, _hf = _seed()
     resp = client.get(f"/analytics?customer_id={customer_id}")
     assert resp.status_code == 200
@@ -93,11 +95,12 @@ def test_analytics_customer_scope(app, client):
     assert "rollup" in html                          # rollup shown when a customer is selected
     assert "Acme Corp" in html
     # hashfile select is enabled (has the per-file option) in customer scope
-    assert f"hashfile_id" in html
+    assert "hashfile_id" in html
 
 
 def test_analytics_hashfile_scope(app, client):
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     customer_id, hashfile_id = _seed()
     resp = client.get(f"/analytics?customer_id={customer_id}&hashfile_id={hashfile_id}")
     assert resp.status_code == 200
@@ -108,11 +111,14 @@ def test_analytics_hashfile_scope(app, client):
 
 def test_analytics_empty_scope_renders(app, client):
     """A customer/hashfile with no cracked hashes must still render (placeholders)."""
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     cust = Customers(name="Empty Co")
-    db.session.add(cust); db.session.commit()
+    db.session.add(cust)
+    db.session.commit()
     hf = Hashfiles(name="nada", customer_id=cust.id, owner_id=1, runtime=0)
-    db.session.add(hf); db.session.commit()
+    db.session.add(hf)
+    db.session.commit()
     h = _hash("eee", None, False)
     db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id, username="nobody"))
     db.session.commit()
@@ -124,14 +130,18 @@ def test_analytics_empty_scope_renders(app, client):
 
 def test_analytics_pattern_intelligence(app, client):
     """The Pattern Intelligence section: base words, themes, years, and endings."""
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     cust = Customers(name="Acme Corp")
-    db.session.add(cust); db.session.commit()
+    db.session.add(cust)
+    db.session.commit()
     hf = Hashfiles(name="corp_dump", customer_id=cust.id, owner_id=1, runtime=3600)
-    db.session.add(hf); db.session.commit()
+    db.session.add(hf)
+    db.session.commit()
     # a real wordlist task to attribute one crack to (the rest stay task_id=None)
     task = Tasks(name="RockYou", hc_attackmode=0, owner_id=1)
-    db.session.add(task); db.session.commit()
+    db.session.add(task)
+    db.session.commit()
 
     rows = [
         ("h1", "Summer2024!", "alice", task.id),   # base 'summer', season, year, ends '!'
@@ -163,7 +173,8 @@ def test_analytics_pattern_intelligence(app, client):
 
 def test_analytics_download_recovered_scoped(app, client):
     """The summary's download buttons hit the existing scoped download endpoint."""
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     customer_id, hashfile_id = _seed()
     resp = client.get(f"/analytics/download?type=found&customer_id={customer_id}&hashfile_id={hashfile_id}")
     assert resp.status_code == 200
@@ -173,7 +184,8 @@ def test_analytics_download_recovered_scoped(app, client):
 
 def test_analytics_summary_above_donuts(app, client):
     """The scope summary card (with its download buttons) sits above the donuts."""
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     customer_id, _hf = _seed()
     html = client.get(f"/analytics?customer_id={customer_id}").get_data(as_text=True)
     assert html.index("Customer Summary") < html.index("Hashes Recovered")
@@ -188,10 +200,14 @@ def test_recovery_over_time_hourly_toggle_and_48h_cap(app, client):
     """Recovery Over Time buckets by hour, offers a Cumulative/Per-hour toggle,
     and caps the visible window to 48 hours (older recoveries fold into the
     cumulative baseline rather than widening the x-axis)."""
-    user = _admin(); _login(client, user)
-    cust = Customers(name="Tempo Inc"); db.session.add(cust); db.session.commit()
+    user = _admin()
+    _login(client, user)
+    cust = Customers(name="Tempo Inc")
+    db.session.add(cust)
+    db.session.commit()
     hf = Hashfiles(name="dump", customer_id=cust.id, owner_id=1, runtime=0)
-    db.session.add(hf); db.session.commit()
+    db.session.add(hf)
+    db.session.commit()
 
     base = datetime(2026, 3, 2, 10, 0, 0)
     # recent cluster (2 @ 10:00, 1 @ 11:00) + one recovery 5 days earlier
@@ -199,7 +215,8 @@ def test_recovery_over_time_hourly_toggle_and_48h_cap(app, client):
     for i, ts in enumerate(stamps):
         h = Hashes(sub_ciphertext="0" * 8, ciphertext=f"c{i}", hash_type=1000,
                    cracked=True, plaintext=f"p{i}", recovered_at=ts)
-        db.session.add(h); db.session.commit()
+        db.session.add(h)
+        db.session.commit()
         db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id, username=f"u{i}"))
     db.session.commit()
 
@@ -217,7 +234,8 @@ def test_recovery_over_time_hourly_toggle_and_48h_cap(app, client):
 
 def test_shared_password_row_download(app, client):
     """Clicking a shared-password row POSTs the plaintext and downloads its users."""
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     customer_id, _hf = _seed()
     resp = client.post("/analytics/download/shared",
                        data={"plaintext": "Password1", "customer_id": str(customer_id), "hashfile_id": ""})
@@ -232,7 +250,8 @@ def test_shared_password_zip_download(app, client):
     """The card's download button zips one txt per shared-password group."""
     import io
     import zipfile
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     customer_id, _hf = _seed()
     resp = client.get(f"/analytics/download/shared_zip?customer_id={customer_id}")
     assert resp.status_code == 200
@@ -246,7 +265,8 @@ def test_shared_password_zip_download(app, client):
 
 def test_download_fig9_shared_password_accounts(app, client):
     """fig9 download serves the shared-password usernames as a .txt attachment."""
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     customer_id, hashfile_id = _seed()
     resp = client.get(f"/analytics/download/fig9?customer_id={customer_id}&hashfile_id={hashfile_id}")
     assert resp.status_code == 200
@@ -255,7 +275,8 @@ def test_download_fig9_shared_password_accounts(app, client):
 
 def test_download_fig8_same_user_pass(app, client):
     """fig8 download serves a .txt attachment (empty result is still valid)."""
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     customer_id, hashfile_id = _seed()
     resp = client.get(f"/analytics/download/fig8?customer_id={customer_id}&hashfile_id={hashfile_id}")
     assert resp.status_code == 200
@@ -291,7 +312,8 @@ def _seed_single_hex_password():
 def test_analytics_hex_length_uses_decoded_length(app, client):
     """The length-distribution chart must bucket the decoded password length
     (8 for 'pässwörd'), not the 26-char $HEX[...] wrapper."""
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     customer_id, hashfile_id = _seed_single_hex_password()
     html = client.get(
         f"/analytics?customer_id={customer_id}&hashfile_id={hashfile_id}"
@@ -304,7 +326,8 @@ def test_analytics_hex_length_uses_decoded_length(app, client):
 def test_analytics_hex_not_overscored_as_long_strong(app, client):
     """An 8-char password must not be rated as if it were 26 chars: the
     raw $HEX[...] string should never leak into the rendered page."""
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     customer_id, hashfile_id = _seed_single_hex_password()
     html = client.get(
         f"/analytics?customer_id={customer_id}&hashfile_id={hashfile_id}"
@@ -438,7 +461,8 @@ def test_shared_and_userpass_cards_cap_rendered_rows(app, client):
     """Only SHARED_PREVIEW_LIMIT rows reach the HTML, however many groups exist."""
     from hashview.analytics.routes import PREVIEW_LIMIT
 
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     customer_id, _hf = _seed_many()
     resp = client.get(f"/analytics?customer_id={customer_id}")
     assert resp.status_code == 200
@@ -453,7 +477,8 @@ def test_shared_and_userpass_cards_cap_rendered_rows(app, client):
 def test_capped_cards_report_the_full_totals(app, client):
     """The capped cards still tell the operator the true totals, so the numbers
     stay trustworthy and match what the download endpoints return."""
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     customer_id, _hf = _seed_many()
     html = client.get(f"/analytics?customer_id={customer_id}").get_data(as_text=True)
     assert "300 groups" in html          # all shared groups counted, not just rendered
@@ -463,7 +488,8 @@ def test_capped_cards_report_the_full_totals(app, client):
 def test_analytics_response_stays_small_on_bulk_data(app, client):
     """Regression guard on the hang itself: the rendered page must stay far
     below the multi-megabyte payload that locked up the browser."""
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     customer_id, _hf = _seed_many(n_shared=1500, n_userpass=1500)
     resp = client.get(f"/analytics?customer_id={customer_id}")
     assert resp.status_code == 200
@@ -477,12 +503,15 @@ def test_shared_groups_need_two_distinct_named_accounts(app, client):
     This is the miscount that made every plaintext in a real dataset look
     'shared' -- the group size counted join rows, not distinct usernames.
     """
-    user = _admin(); _login(client, user)
+    user = _admin()
+    _login(client, user)
     cust = Customers(name="Dup Corp")
-    db.session.add(cust); db.session.commit()
+    db.session.add(cust)
+    db.session.commit()
     hf1 = Hashfiles(name="f1", customer_id=cust.id, owner_id=1, runtime=1)
     hf2 = Hashfiles(name="f2", customer_id=cust.id, owner_id=1, runtime=1)
-    db.session.add_all([hf1, hf2]); db.session.commit()
+    db.session.add_all([hf1, hf2])
+    db.session.commit()
 
     # same account, same hash, present in both hashfiles -> not shared
     dup = _hash("dup", "DupPass1", True)

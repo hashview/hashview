@@ -22,7 +22,6 @@ import pytest
 from hashview import create_app
 from hashview.models import Customers, Users, db
 
-
 _BASE_OVERRIDES = {
     "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
     "SQLALCHEMY_TRACK_MODIFICATIONS": False,

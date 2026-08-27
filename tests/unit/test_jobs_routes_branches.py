@@ -23,15 +23,14 @@ Covers the uncovered line ranges:
 
 import io
 import json as _json
-import os
 
 import pytest
 
 from hashview.models import (
     Customers,
-    Hashfiles,
     Hashes,
     HashfileHashes,
+    Hashfiles,
     HashNotifications,
     JobNotifications,
     Jobs,
@@ -43,7 +42,6 @@ from hashview.models import (
     Wordlists,
     db,
 )
-
 
 # ---------------------------------------------------------------------------
 # Shared helpers (mirrors test_jobs_routes_guards.py style, no imports from it)
@@ -1011,7 +1009,7 @@ def test_jobs_list_job_without_hashfile(app, client):
 def test_jobs_list_page_2_renders(app, client):
     """Requesting page 2 of the jobs list should render without error."""
     user = _nonadmin()
-    customer = _make_customer()
+    _make_customer()
     _login(client, user)
 
     resp = client.get("/jobs?page=2")

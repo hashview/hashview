@@ -595,6 +595,7 @@ def _regen_download_from_stored(monkeypatch):
     regeneration reproduce the stored bytes so the assertion still verifies that
     gzip compression preserves the exact bytes/encoding."""
     import shutil
+
     import hashview.api.routes as routes_mod
 
     def _fake(wl_id, dest_path=None):

@@ -17,7 +17,6 @@ from hashview.setup import (
 )
 from hashview.users.routes import bcrypt
 
-
 # --- predicate / adder pairs -----------------------------------------------
 
 def test_default_tasks_added_once(app):

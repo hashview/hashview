@@ -26,24 +26,24 @@ import logging
 import os
 import secrets
 import sys
+import zlib
 from pathlib import Path
 
 import pytest
 
-from hashview.models import db, Users, Wordlists, Jobs, Tasks, Rules, Hashes, HashfileHashes
+from hashview.models import Hashes, HashfileHashes, Jobs, Rules, Tasks, Users, Wordlists, db
+from hashview.setup import compress_existing_wordlists_if_needed
 from hashview.utils.utils import (
-    ingest_static_wordlist_file,
+    build_hashcat_command,
     compress_to_gz,
-    is_gzip,
-    gz_linecount,
-    get_linecount,
+    ensure_gz,
     get_filehash,
     get_filesize,
-    ensure_gz,
-    build_hashcat_command,
+    get_linecount,
+    gz_linecount,
+    ingest_static_wordlist_file,
+    is_gzip,
 )
-from hashview.setup import compress_existing_wordlists_if_needed
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PKG_ROOT = REPO_ROOT / "hashview"
@@ -166,7 +166,7 @@ def test_ingest_rejects_fake_gzip(app, tmp_path):
     user = _make_user()
     bad = tmp_path / "bad.gz"
     bad.write_bytes(b"\x1f\x8b\x08\x00garbagegarbage")
-    with pytest.raises(Exception):
+    with pytest.raises((OSError, EOFError, zlib.error)):
         ingest_static_wordlist_file(str(bad), user.id, "BadGz")
 
 
@@ -429,6 +429,7 @@ def test_download_dynamic_compressed_on_the_fly(app, client, monkeypatch):
     # than compressing the stored .txt; make regeneration reproduce the stored
     # bytes so we still verify on-the-fly gzip and the untouched DB checksum.
     import shutil
+
     import hashview.api.routes as routes_mod
     def _regen(wl_id, dest_path=None):
         shutil.copyfile(Wordlists.query.get(wl_id).path, dest_path)

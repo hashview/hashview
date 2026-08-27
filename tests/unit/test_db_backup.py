@@ -13,13 +13,17 @@ import subprocess
 import time
 
 import pytest
-
-from hashview.models import db, Users
-from hashview.utils.backup import (
-    create_encrypted_db_backup, purge_stale_backups, _write_defaults_file, BackupError,
-    _sha256, _require_tools,
-)
 from sqlalchemy.engine.url import make_url
+
+from hashview.models import Users, db
+from hashview.utils.backup import (
+    BackupError,
+    _require_tools,
+    _sha256,
+    _write_defaults_file,
+    create_encrypted_db_backup,
+    purge_stale_backups,
+)
 
 _requires_mysqldump = pytest.mark.skipif(
     shutil.which("mysqldump") is None,
@@ -200,7 +204,8 @@ def test_require_tools_passes_when_present(monkeypatch):
 def test_backup_route_non_mysql_returns_error(app, client):
     """The test app uses sqlite -> the real route should report an error JSON
     (exercises form validation + the BackupError path, no mock)."""
-    user = _user(admin=True); _login(client, user)
+    user = _user(admin=True)
+    _login(client, user)
     resp = client.post("/settings/backup", headers={"X-Requested-With": "fetch"})
     assert resp.status_code == 500
     body = resp.get_json()
@@ -208,7 +213,8 @@ def test_backup_route_non_mysql_returns_error(app, client):
 
 
 def test_backup_route_success(app, client, monkeypatch):
-    user = _user(admin=True); _login(client, user)
+    user = _user(admin=True)
+    _login(client, user)
 
     def fake(uri, tmp_dir, dump_cmd=None):
         p = os.path.join(tmp_dir, "a1b2c3d4e5f60718.sql.gz.enc")
@@ -235,7 +241,8 @@ def test_backup_route_success(app, client, monkeypatch):
 
 
 def test_backup_download_rejects_bad_token(app, client):
-    user = _user(admin=True); _login(client, user)
+    user = _user(admin=True)
+    _login(client, user)
     assert client.get("/settings/backup/download/not-a-token").status_code == 404
     assert client.get("/settings/backup/download/..%2f..%2fetc%2fpasswd").status_code == 404
     # well-formed token but no such file
@@ -243,13 +250,15 @@ def test_backup_download_rejects_bad_token(app, client):
 
 
 def test_backup_admin_only(app, client):
-    operator = _user(admin=False); _login(client, operator)
+    operator = _user(admin=False)
+    _login(client, operator)
     assert client.post("/settings/backup", headers={"X-Requested-With": "fetch"}).status_code == 403
     assert client.get("/settings/backup/download/0123456789abcdef.sql.gz.enc").status_code == 403
 
 
 def test_settings_page_renders_backup_ui(app, client):
-    user = _user(admin=True); _login(client, user)
+    user = _user(admin=True)
+    _login(client, user)
     db.session.add(__import__("hashview").models.Settings(
         retention_period=30, max_runtime_jobs=0, max_runtime_tasks=0))
     db.session.commit()

@@ -16,7 +16,7 @@ jobs:
       - name: Install ruff
         run: pip install ruff==0.9.7
       - name: ruff check
-        run: ruff check hashview/ hashview.py
+        run: ruff check .
 
   # Bandit SAST against the committed baseline — only NEW findings (not already
   # in .bandit-baseline.json) fail the build. Scans the server + agent.

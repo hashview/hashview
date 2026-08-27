@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-import sys
+import importlib.metadata
 import os
 import re
 import secrets
 import subprocess
-import importlib.metadata
+import sys
 from getpass import getpass
 
 # Step 1
 # Check version of python
-if sys.version_info < (3, 11):
+if sys.version_info < (3, 11):  # noqa: UP036 - runtime guard for older interpreters
     print('You must be running python 3.11 or newer')
     sys.exit()
 
@@ -34,7 +34,7 @@ def install_and_import(package):
         subprocess.check_call([sys.executable, '-m', 'pip', 'install', package])
 
 required_modules = []
-with open('requirements.txt', 'r') as requirements:
+with open('requirements.txt') as requirements:
     for entry in requirements:
         entry = entry.strip()
         if not entry or entry.startswith('#'):

@@ -1,1 +1,1 @@
-from agent.config import Config
+from agent.config import Config as Config

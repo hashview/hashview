@@ -53,6 +53,7 @@ Notable changes will be documented here
 - Job-creation performance e2e suite (`tests/e2e/test_job_creation_perf.py`) with a tunable volume seeder (`tests/seed_perf_db.py`), covering latency budgets for each wizard step plus strict-xfail scaling guards for the four endpoints in issue #422 whose cost grows with table size rather than page size
 
 ### Changed
+- Lint (ruff) now covers the whole repo — tests, agent, migrations, and setup scripts — instead of only `hashview/`; all pre-existing violations were fixed (#437)
 - The Rules listing is paginated (20 per page) with sortable Name / Rules / Owner / Last Updated columns and a server-side name filter, matching the Tasks listing
 - Reintroduced distributed chunking: eligible mask/wordlist tasks are split into per-agent chunks sized from each agent's benchmark, and a chunked task now appears as a single attack in the job editor
 - Wordlists are stored gzip-compressed at rest; agents sync and verify the compressed files

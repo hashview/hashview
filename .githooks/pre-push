@@ -211,7 +211,7 @@ else
 fi
 
 echo "pre-push: running ruff..."
-if ! "$PY" -m ruff check hashview/ hashview.py; then
+if ! "$PY" -m ruff check .; then
   echo "pre-push: ruff FAILED — push aborted (bypass: git push --no-verify)." >&2
   exit 1
 fi

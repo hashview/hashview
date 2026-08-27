@@ -14,6 +14,11 @@
 .chunk-toggle.disabled { color: var(--text-mute); opacity: .35; cursor: default; }
 .rj-tasks tr.chunk-sub td, .rj-tasks tr.chunk-row td { background: rgba(0, 0, 0, 0.25); }
 .rj-tasks tr.chunk-row td:nth-child(2) { padding-left: 20px; }
+/* Live recovery feed: show up to 100 rows but keep the viewport at ~10 rows and
+   scroll the rest; the column header stays pinned while scrolling. The height cap
+   lives on #dash-recovery (outside the polled fragment) so it survives each swap. */
+#dash-recovery { max-height: 440px; overflow-y: auto; }
+#dash-recovery thead th { position: sticky; top: 0; background: var(--surface); z-index: 2; }
 </style>
 
 <div class="page-head">

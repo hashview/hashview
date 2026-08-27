@@ -412,7 +412,7 @@ def test_download_static_served_verbatim(app, client, tmp_path):
     assert gzip.decompress(body) == content
 
 
-def test_download_dynamic_compressed_on_the_fly(app, client):
+def test_download_dynamic_compressed_on_the_fly(app, client, monkeypatch):
     user = _make_user(api_key="dlkey2")
     _auth(client, "dlkey2")
     content = b"dyn1\ndyn2\n"
@@ -425,12 +425,23 @@ def test_download_dynamic_compressed_on_the_fly(app, client):
     db.session.commit()
     txt_checksum = wl.checksum
 
+    # The dynamic download now regenerates into a per-request temp file rather
+    # than compressing the stored .txt; make regeneration reproduce the stored
+    # bytes so we still verify on-the-fly gzip and the untouched DB checksum.
+    import shutil
+    import hashview.api.routes as routes_mod
+    def _regen(wl_id, dest_path=None):
+        shutil.copyfile(Wordlists.query.get(wl_id).path, dest_path)
+        return dest_path
+    monkeypatch.setattr(routes_mod, "update_dynamic_wordlist", _regen)
+
     resp = client.get(f"/v1/wordlists/{wl.id}")
     assert resp.status_code == 200
     body = resp.data
     assert body[:2] == b"\x1f\x8b"
     assert gzip.decompress(body) == content
-    # DB checksum unchanged and is the plaintext hash (NOT the gz hash)
+    # DB checksum unchanged and is the plaintext hash (NOT the gz hash): the
+    # download path passes dest_path, so update_dynamic_wordlist skips metadata.
     assert Wordlists.query.get(wl.id).checksum == txt_checksum
     assert txt_checksum == get_filehash(str(txt))
 
@@ -795,20 +806,23 @@ def test_agent_sync_static_checksum_mismatch_dropped(tmp_path, monkeypatch):
     assert "1" not in manifest.data
 
 
-def test_agent_sync_dynamic_skips_verify_and_suffixes(tmp_path, monkeypatch):
+def test_agent_sync_skips_dynamic_entries(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    # dynamic .gz bytes don't match the (plaintext) checksum, but must still store
+    # Dynamic wordlists are fetched on demand per task by
+    # maybe_update_dynamic_wordlist, NOT by sync_wordlists. sync must skip them:
+    # no download, no stored file, no manifest entry.
     gzb = _gz_bytes(b"dyn\n")
     entries = [{"id": 2, "checksum": "plaintexthash", "type": "dynamic",
                 "path": "/x/dynamic-foo.txt"}]
     manifest = _FakeManifest()
-    ns = _load_agent_sync(manifest, _FakeApi(entries, {2: gzb}))
+    api_obj = _FakeApi(entries, {2: gzb})
+    ns = _load_agent_sync(manifest, api_obj)
 
     ns["sync_wordlists"]()
 
-    stored = tmp_path / "control" / "wordlists" / "dynamic-foo.txt.gz"
-    assert stored.exists() and stored.read_bytes() == gzb
-    assert manifest.data["2"] == {"checksum": "plaintexthash", "filename": "dynamic-foo.txt.gz"}
+    assert api_obj.download_calls == []
+    assert not (tmp_path / "control" / "wordlists" / "dynamic-foo.txt.gz").exists()
+    assert "2" not in manifest.data
 
 
 def test_agent_sync_transition_guard_resets_txt_manifest(tmp_path, monkeypatch):

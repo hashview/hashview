@@ -81,6 +81,67 @@ def test_jobs_list_shows_job(app, client):
     assert b"VisibleJob" in resp.data
 
 
+def test_jobs_list_batched_cracked_progress(app, client):
+    """The /jobs list computes cracked/total/pct per hashfile in one grouped query.
+    Pin the rendered numbers: 3 cracked of 7 (total=7 in the recovered cell) and
+    42.9%. Two jobs share the hashfile (grouped-dict lookup must serve both) and a
+    third job has no hashfile (must default to 0/0 without error)."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+
+    hf = Hashfiles(name="hf-batch", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+    for i in range(7):
+        h = Hashes(sub_ciphertext=("z" + str(i)).ljust(32, "0")[:32],
+                   ciphertext=("y" + str(i)).ljust(32, "0")[:32],
+                   hash_type=1000, cracked=(i < 3), plaintext="pw" if i < 3 else None)
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    _job(admin, cust, name="SharedA", hashfile_id=hf.id)
+    _job(admin, cust, name="SharedB", hashfile_id=hf.id)
+    _job(admin, cust, name="NoHashfile")  # hashfile_id=None -> 0/0 default
+
+    resp = client.get("/jobs")
+    assert resp.status_code == 200
+    assert b"SharedA" in resp.data and b"SharedB" in resp.data and b"NoHashfile" in resp.data
+    # total (batched COUNT) and pct (batched cracked SUM) both render; the recovered
+    # cell shows "3/7" with the whole X/Y wrapped in the analytics link.
+    assert b"/7</span></a>" in resp.data
+    assert b" hashes recovered" in resp.data
+    assert b"42.9" in resp.data
+
+
+def test_jobs_list_recovered_links_to_analytics(app, client):
+    """The recovered "X" in the /jobs list links to the job's hashfile analytics."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    hf = Hashfiles(name="hf-link", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+    h = Hashes(sub_ciphertext="0" * 8, ciphertext="abc", hash_type=1000,
+               cracked=True, plaintext="pw")
+    db.session.add(h)
+    db.session.commit()
+    db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+    _job(admin, cust, name="LinkJob", hashfile_id=hf.id)
+
+    resp = client.get("/jobs")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'class="rec-x-link"' in html
+    assert f'customer_id={cust.id}' in html
+    assert f'hashfile_id={hf.id}' in html
+    # the whole "X/Y" is inside the anchor (the /Y denominator closes the link)
+    assert '/1</span></a>' in html
+
+
 def test_jobs_add_get_renders(app, client):
     admin = make_admin()
     login(client, admin)

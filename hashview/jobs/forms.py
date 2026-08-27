@@ -7,9 +7,8 @@ from wtforms import (
 	StringField,
 	SubmitField,
 	TextAreaField,
-	URLField,
 )
-from wtforms.validators import URL, DataRequired, ValidationError
+from wtforms.validators import DataRequired, ValidationError
 
 from hashview.models import Jobs
 from hashview.utils.hashcat_modes import (
@@ -90,11 +89,3 @@ class JobSummaryForm(FlaskForm):
     """Class representing an Jobs Summary"""
 
     submit = SubmitField('Create & Queue Job')
-
-class JobWebsiteKeywordsForm(FlaskForm):
-    """URL to crawl for the (DYNAMIC) Website Keywords wordlist."""
-
-    # URLField renders type="url" so the wizard's client-side Next gating also
-    # enforces URL shape; the URL() validator stays authoritative server-side.
-    crawl_url = URLField('Website URL', validators=[DataRequired(), URL(message='Enter a valid URL, e.g. https://example.com')])
-    submit = SubmitField('Next')

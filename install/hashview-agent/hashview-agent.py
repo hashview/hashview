@@ -315,11 +315,11 @@ def sync_wordlists():
       - static  wordlists: the downloaded .gz is verified against the server
         checksum (which is the sha256 of the compressed file) and dropped on
         mismatch.
-      - dynamic wordlists: regenerated server-side and compressed per request,
-        so the .gz bytes are non-deterministic and can't be verified against
-        the server's plaintext checksum; we trust the server checksum purely as
-        a version marker (it only changes when the dynamic list is regenerated
-        via /v1/updateWordlist), which keeps this loop-free.
+      - dynamic wordlists: NOT handled here. The server regenerates them from
+        the DB on every download (into a per-request temp file), so they are
+        fetched on demand per task by maybe_update_dynamic_wordlist (after the
+        job is 'Running'). This loop, and the persistent manifest, track only
+        static lists.
     """
     LOG.info('Syncing wordlists with server.')
 
@@ -348,6 +348,13 @@ def sync_wordlists():
         wl_id = str(entry['id'])
         remote_checksum = entry['checksum']
         wl_type = entry.get('type')
+        # Dynamic wordlists are fetched on demand per task by
+        # maybe_update_dynamic_wordlist (the server regenerates them per
+        # request), so this sync loop and the persistent manifest track only
+        # static lists. Their transient files are pruned as orphans below and
+        # re-fetched at task start, which is fine.
+        if wl_type == 'dynamic':
+            continue
         # Untrusted: the server's Wordlists.path only ever becomes a bare filename.
         base_filename = _safe_control_filename(entry['path'])
         if not base_filename:
@@ -424,9 +431,6 @@ def tasks(task_id):
 
 def getWordlists():
     return api.getWordlists()
-
-def updateDynamicWordlists(wordlist_id):
-    return api.updateDynamicWordlists(wordlist_id)
 
 def download_hashfile(job_id, jobtask_id, hashfile_id):
     # Note we are not compressing our hashfile
@@ -664,9 +668,15 @@ STATUS_POLL_INTERVAL = 15      # seconds between hashcat status polls; matches t
 
 
 def maybe_update_dynamic_wordlist(task):
-    """If this task's wordlist is dynamic, ask the server to regenerate it, then
-    re-sync. /vX/wordlists/<id> is reserved for downloads, so we scan the list to
-    find the task's wordlist rather than fetching it directly."""
+    """If this task's wordlist is dynamic, fetch a fresh copy of it by id.
+
+    The server regenerates a dynamic wordlist from the DB on every
+    GET /v1/wordlists/<id> (into its own per-request temp file) and serves that,
+    so there is no separate "update" call: we just download the task's list here.
+    This runs after the JobTask is 'Running' (see run_assigned_task), so the
+    server resolves the correct job for crawl-based lists. sync_wordlists() only
+    handles static lists, so the manifest is scanned purely to learn this
+    wordlist's type/path; the fetch itself is by id."""
     try:
         server_wordlists = getWordlists()
     except (TypeError, ValueError, KeyError) as err:
@@ -674,13 +684,29 @@ def maybe_update_dynamic_wordlist(task):
         return
     for wordlist in server_wordlists:
         if wordlist['id'] == task['wl_id'] and wordlist['type'] == 'dynamic':
-            LOG.info('Task uses a dynamic wordlist; requesting a server-side update.')
-            result = updateDynamicWordlists(wordlist['id'])
-            if not result or result.get('msg') != 'OK':
-                LOG.warning('Dynamic wordlist update failed for wordlist %s.', wordlist['id'])
-            else:
-                LOG.info('Dynamic wordlist update complete.')
-            sync_wordlists()
+            LOG.debug('Task uses a dynamic wordlist; requesting it by id.')
+            base_filename = _safe_control_filename(wordlist['path'])
+            if not base_filename:
+                LOG.warning('Dynamic wordlist %s has an unusable path %r; skipping it.',
+                            wordlist['id'], wordlist.get('path'))
+                return
+            dest_filename = _gz_name(base_filename)
+            compressed = api.get_wordlists_file(wordlist['id'])
+            if not compressed:
+                LOG.warning('No data received for dynamic wordlist %s; keeping any existing copy.',
+                            wordlist['id'])
+                return
+            # Dynamic downloads are regenerated + gzipped on the fly server-side,
+            # so their bytes are non-deterministic and are not checksum-verified
+            # (mirrors the static-only sync path). Write to a temp file, then
+            # atomically move it into place, overwriting any prior copy.
+            os.makedirs('control/wordlists', exist_ok=True)
+            os.makedirs('control/tmp', exist_ok=True)
+            tmp_gz = os.path.join('control/tmp', secrets.token_hex(8) + '.gz')
+            with open(tmp_gz, 'wb') as f:
+                f.write(compressed)
+            os.replace(tmp_gz, os.path.join('control/wordlists', dest_filename))
+            LOG.info('Dynamic wordlist %s downloaded.', wordlist['id'])
             return
 
 

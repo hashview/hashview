@@ -1,7 +1,6 @@
 """Additional branch-coverage tests for hashview/jobs/routes.py.
 
 Covers the uncovered line ranges:
-  76-78    _job_uses_website_keywords helper
   210-213  jobs_add with add_new customer
   219      jobs_add bad priority when weights enabled
   265-266  jobs_assigned_hashfile redirect on running/queued job
@@ -19,7 +18,6 @@ Covers the uncovered line ranges:
   713      jobs_assign_notifications - hash_completion_slack
   735,746  jobs_assign_notification_hashes - GET and multi-method POST
   755-756  jobs_delete - job not found
-  779-791  jobs_website_keywords
   909      jobs_stop - job not found
 """
 
@@ -926,106 +924,54 @@ def test_jobs_delete_not_found_flashes(app, client):
 
 
 # ---------------------------------------------------------------------------
-# jobs_website_keywords — redirect when no website-keyword tasks (lines 779-781)
+# jobs_bulk_delete — owner/admin + not-running/queued gating
 # ---------------------------------------------------------------------------
 
-def test_jobs_website_keywords_redirects_when_no_website_task(app, client):
+def test_jobs_bulk_delete_enforces_owner_and_status(app, client):
+    """Owner (non-admin) bulk-deletes their non-active jobs; running/queued and
+    non-owned jobs are skipped, and the skips don't abort the batch."""
     user = _nonadmin()
+    other = _nonadmin(email="bulk-other@example.com")
     customer = _make_customer()
-    job = _make_job(user.id, customer.id)
     _login(client, user)
 
-    resp = client.get(f"/jobs/{job.id}/website", follow_redirects=False)
-    assert resp.status_code in (301, 302)
-    assert resp.headers["Location"].endswith(f"/jobs/{job.id}/summary")
+    ok1 = _make_job(user.id, customer.id, name="bulk-ok-1", status="Completed")
+    ok2 = _make_job(user.id, customer.id, name="bulk-ok-2", status="Canceled")
+    running = _make_job(user.id, customer.id, name="bulk-run", status="Running")
+    queued = _make_job(user.id, customer.id, name="bulk-que", status="Queued")
+    not_mine = _make_job(other.id, customer.id, name="bulk-not-mine", status="Completed")
+    ids = [ok1.id, ok2.id, running.id, queued.id, not_mine.id]
 
-
-# ---------------------------------------------------------------------------
-# jobs_website_keywords — GET renders when website task present (lines 782-792)
-# ---------------------------------------------------------------------------
-
-def test_jobs_website_keywords_renders_when_website_task_present(app, client):
-    """When a job has a task using (DYNAMIC) Website Keywords, the form renders."""
-    user = _nonadmin()
-    customer = _make_customer()
-    job = _make_job(user.id, customer.id)
-    # Create a "Website Keywords" dynamic wordlist
-    wl = Wordlists(name="(DYNAMIC) Website Keywords", owner_id=user.id,
-                   type="dynamic",
-                   path="control/wordlists/dynamic-website-keywords.txt",
-                   size=0, checksum="0" * 64)
-    db.session.add(wl)
-    db.session.commit()
-    task = _make_task(user.id, wl.id, name="website-task")
-    jt = JobTasks(job_id=job.id, task_id=task.id, status="Not Started")
-    db.session.add(jt)
-    db.session.commit()
-    _login(client, user)
-
-    resp = client.get(f"/jobs/{job.id}/website")
+    resp = client.post("/jobs/bulk_delete",
+                       data={"job_ids": [str(i) for i in ids] + ["999999"]},
+                       follow_redirects=True)
     assert resp.status_code == 200
-    assert b"website" in resp.data.lower() or b"crawl" in resp.data.lower()
+    assert b"2 deleted" in resp.data
+    assert b"running or queued" in resp.data
+    assert b"insufficient rights" in resp.data
+
+    remaining = {j.id for j in Jobs.query.all()}
+    assert ok1.id not in remaining and ok2.id not in remaining      # deleted
+    assert running.id in remaining and queued.id in remaining       # active -> kept
+    assert not_mine.id in remaining                                 # not owner -> kept
 
 
-# ---------------------------------------------------------------------------
-# jobs_website_keywords — GET with hashfile+hash_notifications exercises
-# _job_has_alert_hashes true branch (line 78)
-# ---------------------------------------------------------------------------
-
-def test_jobs_website_keywords_with_alert_hashes_shows_alert_step(app, client):
-    """When a job has hash notifications, _job_has_alert_hashes returns True (line 78)."""
-    user = _nonadmin()
+def test_jobs_bulk_delete_admin_deletes_any_non_active(app, client):
+    """An admin can bulk-delete another user's jobs, but running/queued stay skipped."""
+    admin = _admin()
+    owner = _nonadmin(email="bulk-owner@example.com")
     customer = _make_customer()
-    job = _make_job(user.id, customer.id)
-    # Attach a hashfile and a hash notification
-    hf, h = _attach_hashfile(job, user.id, cracked=False, name="alert-hf.txt")
-    db.session.add(HashNotifications(owner_id=user.id, hash_id=h.id, method="email"))
-    db.session.commit()
-    # Website Keywords wordlist
-    wl = Wordlists(name="(DYNAMIC) Website Keywords", owner_id=user.id,
-                   type="dynamic",
-                   path="control/wordlists/dynamic-website-keywords.txt",
-                   size=0, checksum="0" * 64)
-    db.session.add(wl)
-    db.session.commit()
-    task = _make_task(user.id, wl.id, name="website-task-alert")
-    jt = JobTasks(job_id=job.id, task_id=task.id, status="Not Started")
-    db.session.add(jt)
-    db.session.commit()
-    _login(client, user)
+    _login(client, admin)
 
-    resp = client.get(f"/jobs/{job.id}/website")
-    assert resp.status_code == 200
+    done = _make_job(owner.id, customer.id, name="bulk-admin-done", status="Completed")
+    running = _make_job(owner.id, customer.id, name="bulk-admin-run", status="Running")
 
-
-# ---------------------------------------------------------------------------
-# jobs_website_keywords — POST updates crawl_url (line 785-787)
-# ---------------------------------------------------------------------------
-
-def test_jobs_website_keywords_post_saves_url(app, client):
-    """POSTing the website keywords form should save the crawl URL."""
-    user = _nonadmin()
-    customer = _make_customer()
-    job = _make_job(user.id, customer.id)
-    wl = Wordlists(name="(DYNAMIC) Website Keywords", owner_id=user.id,
-                   type="dynamic",
-                   path="control/wordlists/dynamic-website-keywords.txt",
-                   size=0, checksum="0" * 64)
-    db.session.add(wl)
-    db.session.commit()
-    task = _make_task(user.id, wl.id, name="website-task2")
-    jt = JobTasks(job_id=job.id, task_id=task.id, status="Not Started")
-    db.session.add(jt)
-    db.session.commit()
-    _login(client, user)
-
-    resp = client.post(f"/jobs/{job.id}/website",
-                       data={"crawl_url": "https://example.com"},
-                       follow_redirects=False)
-    assert resp.status_code in (301, 302)
-    assert resp.headers["Location"].endswith(f"/jobs/{job.id}/summary")
-    db.session.expire_all()
-    assert Jobs.query.get(job.id).crawl_url == "https://example.com"
+    client.post("/jobs/bulk_delete",
+                data={"job_ids": [str(done.id), str(running.id)]},
+                follow_redirects=True)
+    remaining = {j.id for j in Jobs.query.all()}
+    assert done.id not in remaining        # admin deleted another user's non-active job
+    assert running.id in remaining         # running -> still skipped
 
 
 # ---------------------------------------------------------------------------

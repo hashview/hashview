@@ -6,7 +6,7 @@ Covers the gaps NOT already exercised by tests/unit/test_api_endpoints.py:
     runtime limits, version check failure)
   - /v1/customers (agent cookie, auth failure)
   - /v1/rules (GET list - authenticated)
-  - /v1/wordlists (GET list, download static/dynamic, updateWordlist)
+  - /v1/wordlists (GET list, download static/dynamic — dynamic regenerates on demand)
   - /v1/jobTasks/<id>
   - /v1/jobs/<id> GET
   - /v1/jobs/add (missing body, no effective tasks, missing hashfile)
@@ -588,10 +588,11 @@ def test_wordlist_download_static_serves_file(
 
 
 @pytest.mark.security
-def test_wordlist_download_dynamic_compresses_and_serves(
+def test_wordlist_download_dynamic_regenerates_and_serves(
     client, app, admin_user, tmp_path, monkeypatch
 ):
-    """GET /v1/wordlists/<id> for a dynamic wordlist compresses on the fly."""
+    """GET /v1/wordlists/<id> for a dynamic wordlist regenerates it on demand
+    into a unique temp file and serves that file gzipped."""
     import gzip
     monkeypatch.setattr(app, "root_path", str(tmp_path))
     wl_dir = os.path.join(str(tmp_path), "control", "wordlists")
@@ -599,17 +600,25 @@ def test_wordlist_download_dynamic_compresses_and_serves(
     os.makedirs(wl_dir, exist_ok=True)
     os.makedirs(tmp_dir, exist_ok=True)
 
-    plain_name = "dynamic-wl.txt"
-    plain_path = os.path.join(wl_dir, plain_name)
     content = b"passw0rd\nletmein\n"
-    with open(plain_path, "wb") as f:
-        f.write(content)
+
+    # The download regenerates via update_dynamic_wordlist into the caller-
+    # supplied per-request temp path; stub it to write known content there.
+    import hashview.api.routes as routes_mod
+
+    def fake_update(wl_id, dest_path=None):
+        assert dest_path is not None and dest_path.endswith(".txt")
+        with open(dest_path, "wb") as f:
+            f.write(content)
+        return dest_path
+
+    monkeypatch.setattr(routes_mod, "update_dynamic_wordlist", fake_update)
 
     wl = Wordlists(
         name="dynamic-wl",
         owner_id=admin_user.id,
         type="dynamic",
-        path=plain_path,
+        path=os.path.join(wl_dir, "dynamic-wl.txt"),
         size=2,
         checksum="c" * 64,
     )
@@ -620,68 +629,6 @@ def test_wordlist_download_dynamic_compresses_and_serves(
     resp = client.get(f"/v1/wordlists/{wl.id}")
     assert resp.status_code == 200
     assert gzip.decompress(resp.data) == content
-
-
-@pytest.mark.security
-def test_update_wordlist_no_cookie_redirects(client):
-    """GET /v1/updateWordlist/<id> without a cookie redirects to not_authorized."""
-    resp = client.get("/v1/updateWordlist/1")
-    assert 300 <= resp.status_code < 400
-    assert "not_authorized" in resp.headers.get("Location", "")
-
-
-@pytest.mark.security
-def test_update_wordlist_user_cookie_returns_ok(
-    client, admin_user, monkeypatch
-):
-    """GET /v1/updateWordlist/<id> with user cookie calls update and returns OK.
-
-    Wordlist id 99999 doesn't exist; update_dynamic_wordlist is a no-op for
-    nonexistent ids, so we just confirm the route returns 200/OK.
-    """
-    import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "update_dynamic_wordlist", lambda wl_id, job_id: None)
-
-    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
-    resp = client.get("/v1/updateWordlist/99999")
-    body = _json(resp)
-    assert body["status"] == 200
-    assert body["msg"] == "OK"
-
-
-@pytest.mark.security
-def test_update_wordlist_agent_with_running_task_resolves_job(
-    client, authorized_agent, admin_user, monkeypatch
-):
-    """GET /v1/updateWordlist/<id> with an agent that has a Running task
-    resolves the job_id from that task."""
-    import hashview.api.routes as routes_mod
-    captured = {}
-
-    def fake_update(wl_id, job_id):
-        captured["job_id"] = job_id
-
-    monkeypatch.setattr(routes_mod, "update_dynamic_wordlist", fake_update)
-
-    cust = Customers(name="UpdWlCo")
-    _db.session.add(cust)
-    _db.session.commit()
-    hf = Hashfiles(name="upd-hf", customer_id=cust.id, owner_id=admin_user.id)
-    _db.session.add(hf)
-    _db.session.commit()
-    job = Jobs(name="upd-job", status="Running", hashfile_id=hf.id,
-               customer_id=cust.id, owner_id=admin_user.id)
-    _db.session.add(job)
-    _db.session.commit()
-    jt = JobTasks(job_id=job.id, task_id=1, status="Running", agent_id=authorized_agent.id)
-    _db.session.add(jt)
-    _db.session.commit()
-
-    client.set_cookie("uuid", authorized_agent.uuid, domain="localhost.test")
-    resp = client.get("/v1/updateWordlist/99999")
-    body = _json(resp)
-    assert body["status"] == 200
-    assert captured.get("job_id") == job.id
 
 
 # ---------------------------------------------------------------------------

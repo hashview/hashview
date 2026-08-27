@@ -242,6 +242,73 @@ def test_dashboard_summary_json(app, client):
     assert "kpi" in data["kpis_html"]
 
 
+def test_recovery_feed_caps_at_100(app):
+    """The live recovery feed returns up to 100 deduped entries (was 10)."""
+    for i in range(120):
+        h = Hashes(sub_ciphertext=f"r{i:07d}", ciphertext=f"c{i}", hash_type=1000,
+                   cracked=True, plaintext=f"pw{i}",
+                   recovered_at=datetime(2024, 1, 1) + timedelta(minutes=i))
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=1, username=f"u{i}"))
+    db.session.commit()
+
+    feed = main_routes._recovery_feed()
+    assert len(feed) == 100
+    # newest-first: the last-seeded recovery (u119) leads the feed
+    assert feed[0]["account"] == "u119"
+
+
+def test_static_assets_versioned_caching(app, client):
+    """Versioned static URLs (?v=) get far-future immutable caching; un-versioned
+    ones keep the default revalidate behavior so an upgrade never serves stale CSS."""
+    r = client.get("/static/css/phosphor.css?v=test")
+    assert r.status_code == 200
+    cc = r.headers.get("Cache-Control") or ""
+    assert "max-age=31536000" in cc and "immutable" in cc
+
+    r2 = client.get("/static/css/phosphor.css")
+    assert "31536000" not in (r2.headers.get("Cache-Control") or "")
+
+
+def test_api_docs_swagger_self_hosted(app, client):
+    """The API docs page serves Swagger UI from static/ (no third-party CDN), so it
+    works on network-isolated rigs."""
+    admin = make_admin()
+    login(client, admin)
+    r = client.get("/api/docs")
+    assert r.status_code == 200
+    assert b"jsdelivr" not in r.data and b"cdn." not in r.data
+    assert b"swagger-ui-bundle.js" in r.data
+    # the vendored assets are actually served
+    assert client.get("/static/js/swagger-ui-bundle.js").status_code == 200
+    assert client.get("/static/css/swagger-ui.css").status_code == 200
+
+
+def test_chart_data_buckets_by_rolling_day(app):
+    """_chart_data buckets cracked hashes into the 7 rolling 24h windows. Pin the
+    counts so the single-query rewrite keeps the exact per-window semantics."""
+    now = datetime.now()
+    # 2 recovered ~12h ago (today bucket, index 6), 1 ~36h ago (yesterday, index 5),
+    # 1 ~8 days ago (outside the 7-day window -> counted in no bucket).
+    seed = [now - timedelta(hours=12), now - timedelta(hours=12),
+            now - timedelta(hours=36), now - timedelta(days=8)]
+    for i, ts in enumerate(seed):
+        db.session.add(Hashes(sub_ciphertext=("q" + str(i)).ljust(8, "0")[:8],
+                              ciphertext="c", hash_type=1000, cracked=True,
+                              plaintext="pw", recovered_at=ts))
+    # An uncracked hash recovered recently must never be counted.
+    db.session.add(Hashes(sub_ciphertext="u0", ciphertext="c", hash_type=1000,
+                          cracked=False, recovered_at=now - timedelta(hours=1)))
+    db.session.commit()
+
+    labels, values = main_routes._chart_data()
+    assert len(labels) == 7 and len(values) == 7
+    assert values[6] == 2      # today (last 24h)
+    assert values[5] == 1      # 24-48h ago
+    assert sum(values) == 3    # the 8-day-old and the uncracked one are excluded
+
+
 def test_dashboard_fleet_fragment(app, client):
     # /dashboard/fleet returns the agent-fleet modal contents (polled while open).
     from hashview.models import Agents

@@ -444,19 +444,6 @@
       "nosec": 0,
       "skipped_tests": 0
     },
-    "hashview/utils/crawler.py": {
-      "CONFIDENCE.HIGH": 3,
-      "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 0,
-      "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 1,
-      "SEVERITY.LOW": 2,
-      "SEVERITY.MEDIUM": 0,
-      "SEVERITY.UNDEFINED": 0,
-      "loc": 122,
-      "nosec": 0,
-      "skipped_tests": 0
-    },
     "hashview/utils/hashcat_modes.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -858,69 +845,6 @@
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html",
       "test_id": "B603",
       "test_name": "subprocess_without_shell_equals_true"
-    },
-    {
-      "code": "78         resp = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT,\n79                             verify=False, allow_redirects=True)\n80         ctype = (resp.headers.get('Content-Type') or '').lower()\n81         if ctype and 'html' not in ctype:\n",
-      "col_offset": 15,
-      "end_col_offset": 63,
-      "filename": "hashview/utils/crawler.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 295,
-        "link": "https://cwe.mitre.org/data/definitions/295.html"
-      },
-      "issue_severity": "HIGH",
-      "issue_text": "Call to requests with verify=False disabling SSL certificate checks, security issue.",
-      "line_number": 79,
-      "line_range": [
-        78,
-        79
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b501_request_with_no_cert_validation.html",
-      "test_id": "B501",
-      "test_name": "request_with_no_cert_validation"
-    },
-    {
-      "code": "89         parser.feed(html)\n90     except Exception:\n91         pass\n92 \n",
-      "col_offset": 4,
-      "end_col_offset": 12,
-      "filename": "hashview/utils/crawler.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 703,
-        "link": "https://cwe.mitre.org/data/definitions/703.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Try, Except, Pass detected.",
-      "line_number": 90,
-      "line_range": [
-        90,
-        91
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
-      "test_id": "B110",
-      "test_name": "try_except_pass"
-    },
-    {
-      "code": "96             absolute = _canon(urljoin(url, href))\n97         except Exception:\n98             continue\n99         parsed = urlparse(absolute)\n",
-      "col_offset": 8,
-      "end_col_offset": 20,
-      "filename": "hashview/utils/crawler.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 703,
-        "link": "https://cwe.mitre.org/data/definitions/703.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Try, Except, Continue detected.",
-      "line_number": 97,
-      "line_range": [
-        97,
-        98
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b112_try_except_continue.html",
-      "test_id": "B112",
-      "test_name": "try_except_continue"
     },
     {
       "code": "69     else:\n70         longest_password_personal = ''\n71 \n",

@@ -8,7 +8,7 @@
         <div class="page-sub">// tasks</div>
     </div>
 </div>
-{{ wizard_stepper('tasks', alert_hashes=(alert_hashes if alert_hashes is defined else false), website=(website if website is defined else false)) }}
+{{ wizard_stepper('tasks', alert_hashes=(alert_hashes if alert_hashes is defined else false)) }}
 
 <div class="grid" style="grid-template-columns: 1fr 1fr; align-items: start;">
 
@@ -221,7 +221,7 @@
     <span class="spacer"></span>
     {# A job needs at least one task to run; gate Next until one is assigned. #}
     {% if (job_tasks is defined) and job_tasks.count() > 0 %}
-        <a class="btn btn-primary" href="/jobs/{{job.id}}/website" role="button">Next {{ icon('arrowRight', size=15) }}</a>
+        <a class="btn btn-primary" href="/jobs/{{job.id}}/summary" role="button">Next {{ icon('arrowRight', size=15) }}</a>
     {% else %}
         <button type="button" class="btn btn-primary" disabled title="Assign at least one task to continue">Next {{ icon('arrowRight', size=15) }}</button>
     {% endif %}

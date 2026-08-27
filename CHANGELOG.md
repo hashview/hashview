@@ -48,7 +48,6 @@ Notable changes will be documented here
 **Jobs & Hashfiles**
 - Bulk-select and bulk-delete on the hashfiles list
 - Per-hashfile `--hex-salt` option for salted hash types
-- New "Website Keywords" dynamic wordlist that crawls a per-job URL to build a targeted wordlist
 
 **Testing**
 - Job-creation performance e2e suite (`tests/e2e/test_job_creation_perf.py`) with a tunable volume seeder (`tests/seed_perf_db.py`), covering latency budgets for each wizard step plus strict-xfail scaling guards for the four endpoints in issue #422 whose cost grows with table size rather than page size
@@ -57,6 +56,7 @@ Notable changes will be documented here
 - The Rules listing is paginated (20 per page) with sortable Name / Rules / Owner / Last Updated columns and a server-side name filter, matching the Tasks listing
 - Reintroduced distributed chunking: eligible mask/wordlist tasks are split into per-agent chunks sized from each agent's benchmark, and a chunked task now appears as a single attack in the job editor
 - Wordlists are stored gzip-compressed at rest; agents sync and verify the compressed files
+- Dynamic wordlists are now delivered on demand: an agent downloads a dynamic wordlist directly via `GET /v1/wordlists/<id>`, which regenerates it from the database into a unique per-request temp file and serves it gzipped. The separate `GET /v1/updateWordlist/<id>` endpoint (and the agent's update-then-resync step) has been removed, and the agent's wordlist sync now tracks static lists only
 - `/v1` list and detail endpoints now return native JSON instead of a JSON-encoded string, so clients no longer double-parse
 - Usernames and recovered plaintext are stored as UTF-8 text (`$HEX[...]` only for non-UTF-8 bytes) instead of latin-1 hex
 - Creating and queuing a job now returns you to the dashboard

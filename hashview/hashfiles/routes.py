@@ -67,16 +67,25 @@ def hashfiles_list():
     total_hashes = 0
     total_recovered = 0
 
-    for hashfile in hashfiles:
-        # one aggregated query per hashfile: total hashes, cracked count, representative mode
-        agg = db.session.query(
+    # One grouped aggregate over every hashfile -- total hashes, cracked count and
+    # representative mode -- instead of one query per hashfile (the old unpaginated
+    # N+1 over the two largest tables). The inner join omits hashfiles that have no
+    # hashes, so the loop below reads the result with a zero default.
+    hashfile_ids = [hf.id for hf in hashfiles]
+    agg_by_hf = {}
+    if hashfile_ids:
+        for hfid, hash_cnt, cracked_cnt, mode in db.session.query(
+            HashfileHashes.hashfile_id,
             func.count(Hashes.id),
             func.coalesce(func.sum(case((Hashes.cracked == True, 1), else_=0)), 0),
-            func.min(Hashes.hash_type)
-        ).join(HashfileHashes, Hashes.id == HashfileHashes.hash_id) \
-         .filter(HashfileHashes.hashfile_id == hashfile.id).first()
-        hash_cnt = agg[0] or 0
-        cracked_cnt = int(agg[1] or 0)
+            func.min(Hashes.hash_type),
+        ).join(Hashes, Hashes.id == HashfileHashes.hash_id) \
+         .filter(HashfileHashes.hashfile_id.in_(hashfile_ids)) \
+         .group_by(HashfileHashes.hashfile_id).all():
+            agg_by_hf[hfid] = (hash_cnt or 0, int(cracked_cnt or 0), mode)
+
+    for hashfile in hashfiles:
+        hash_cnt, cracked_cnt, mode = agg_by_hf.get(hashfile.id, (0, 0, None))
         hashfile_stats[hashfile.id] = {
             'cracked': cracked_cnt,
             'total': hash_cnt,
@@ -85,8 +94,8 @@ def hashfiles_list():
         total_hashes += hash_cnt
         total_recovered += cracked_cnt
 
-        if hash_cnt and agg[2] is not None:
-            _mode = str(agg[2])
+        if hash_cnt and mode is not None:
+            _mode = str(mode)
             hash_type_dict[hashfile.id] = hash_type_names.get(_mode, _mode)
         else:
             hash_type_dict[hashfile.id] = 'UNKNOWN'

@@ -11,12 +11,6 @@ from flask_sqlalchemy import SQLAlchemy
 db = SQLAlchemy()
 
 
-# Default User-Agent the website-keywords crawler identifies itself with. Kept
-# here so the model default, the setup defaults, and the alembic backfill all
-# share one source of truth.
-DEFAULT_CRAWL_USER_AGENT = 'Mozilla/5.0 (compatible; Hashview-Crawler/1.0; +https://github.com/hashview/hashview)'
-
-
 class Users(db.Model, UserMixin):
     """Class object to represent Users"""
 
@@ -141,12 +135,6 @@ class Settings(db.Model):
     # wall-clock (seconds) one chunk should take on the SLOWEST benchmarked agent.
     enabled_chunking = db.Column(db.Boolean, nullable=False, default=False)
     chunk_target_duration = db.Column(db.Integer, nullable=False, default=3600)
-    # Website-keywords crawler settings (used by the (DYNAMIC) Website Keywords wordlist)
-    crawl_min_word_length = db.Column(db.Integer, nullable=False, default=8)
-    crawl_user_agent = db.Column(db.String(255), nullable=False, default=DEFAULT_CRAWL_USER_AGENT)
-    crawl_force_lowercase = db.Column(db.Boolean, nullable=False, default=True)
-    crawl_depth = db.Column(db.Integer, nullable=False, default=2)
-    crawl_threads = db.Column(db.Integer, nullable=False, default=5)
     # Notification channel master switches (admin-controlled, Settings -> Notifications).
     # email/pushover default True to preserve existing behaviour on upgrade; slack is
     # opt-in. A disabled channel is hidden in the job wizard + user profile and never
@@ -195,8 +183,6 @@ class Jobs(db.Model):
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     # limit_recovered: one-and-done crack
     limit_recovered = db.Column(db.Boolean, nullable=False, default=False)
-    # URL to crawl for the (DYNAMIC) Website Keywords wordlist, captured during job creation
-    crawl_url = db.Column(db.String(2048), nullable=True)
 
 class JobTasks(db.Model):
     """Class object to represent JobTasks"""
@@ -356,6 +342,16 @@ class Hashes(db.Model):
     recovered_by = db.Column(db.Integer, nullable=True)
     plaintext = db.Column(db.String(256), index=True)
 
+    # Composite indexes leading with the equality column (cracked) so the hot
+    # dashboard/tasks aggregates over this multi-million-row table are index-driven
+    # instead of full scans + filesorts:
+    #   (cracked, recovered_at) -> recovery feed ORDER BY recovered_at, chart ranges
+    #   (cracked, task_id)      -> per-task recovered counts (GROUP BY task_id)
+    __table_args__ = (
+        db.Index('ix_hashes_cracked_recovered_at', 'cracked', 'recovered_at'),
+        db.Index('ix_hashes_cracked_task_id', 'cracked', 'task_id'),
+    )
+
 class JobNotifications(db.Model):
     """Class object to represent JobNotifications"""
 
@@ -369,5 +365,6 @@ class HashNotifications(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     owner_id = db.Column(db.Integer, nullable=False)
-    hash_id = db.Column(db.Integer, nullable=False)
+    # Indexed: joined to hashfile_hashes.hash_id on the hot /jobs alert-hash check.
+    hash_id = db.Column(db.Integer, nullable=False, index=True)
     method = db.Column(db.String(6), nullable=False)    # email, push

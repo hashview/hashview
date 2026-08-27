@@ -6,14 +6,12 @@
 {% block scanlines %}off{% endblock %}
 
 {% block head %}
-  {# Swagger UI — pinned version + SRI so a CDN compromise can't inject script
-     into a login-protected page. When bumping the pin, regenerate BOTH hashes:
-       curl -s https://cdn.jsdelivr.net/npm/swagger-ui-dist@<ver>/<file> \
-         | openssl dgst -sha384 -binary | openssl base64 -A               #}
-  <link rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui.css"
-        integrity="sha384-wxLW6kwyHktdDGr6Pv1zgm/VGJh99lfUbzSn6HNHBENZlCN7W602k9VkGdxuFvPn"
-        crossorigin="anonymous">
+  {# Swagger UI — self-hosted (swagger-ui-dist 5.17.14) so the docs work on
+     network-isolated cracking rigs and make no third-party request. To bump the
+     version, download swagger-ui.css + swagger-ui-bundle.js from the pinned CDN
+     path and replace the files under static/. Self-hosted + same-origin, so no
+     SRI/crossorigin is needed. #}
+  <link rel="stylesheet" href="{{ asset('css/swagger-ui.css') }}">
   <style>
     /* Let Swagger UI sit comfortably on the dark Phosphor shell. */
     .hv-api-docs { background: #fafafa; border-radius: 8px; padding: 0 16px 24px; }
@@ -63,9 +61,7 @@
 {% endblock %}
 
 {% block scripts %}
-  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"
-          integrity="sha384-wmyclcVGX/WhUkdkATwhaK1X1JtiNrr2EoYJ+diV3vj4v6OC5yCeSu+yW13SYJep"
-          crossorigin="anonymous"></script>
+  <script src="{{ asset('js/swagger-ui-bundle.js') }}"></script>
   <script>
     window.addEventListener('load', function () {
       window.ui = SwaggerUIBundle({

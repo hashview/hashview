@@ -241,10 +241,6 @@ details.job-card[open] > summary .chev { transform: rotate(90deg); }
 .wizard-steps .wstep-cond { display: none; }
 .wizard-steps.show-alert .wstep.wstep-cond { display: flex; }
 .wizard-steps.show-alert .wstep-line.wstep-cond { display: block; }
-/* conditional "Website URL" step: hidden unless the stepper has .show-website */
-.wizard-steps .wstep-web { display: none; }
-.wizard-steps.show-website .wstep.wstep-web { display: flex; }
-.wizard-steps.show-website .wstep-line.wstep-web { display: block; }
 .wstep-mark {
   width: 42px; height: 42px;
   border-radius: 9px;
@@ -416,3 +412,9 @@ html[data-sidebar="collapsed"] .agent-mini { display: none; }
 html[data-sidebar="collapsed"] .user-chip { justify-content: center; padding-left: 0; padding-right: 0; }
 html[data-sidebar="collapsed"] .user-chip > div:not(.avatar),
 html[data-sidebar="collapsed"] .user-chip > a { display: none; }
+
+/* Recovered-count "X" that links to the hashfile analytics page (jobs list +
+   dashboard). Inherits the surrounding number's color; underline on hover to
+   signal it's a link. */
+.rec-x-link { color: inherit; text-decoration: none; cursor: pointer; }
+.rec-x-link:hover { text-decoration: underline; text-underline-offset: 2px; }

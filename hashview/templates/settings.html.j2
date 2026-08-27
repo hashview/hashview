@@ -151,46 +151,6 @@
                             <span class="field-hint">Roughly how long one chunk should take on the slowest agent. Keep it well under the per-task max runtime.</span>
                             {% for e in HashviewForm.chunk_target_duration.errors %}<div class="invalid-feedback" style="display:block;">{{ e }}</div>{% endfor %}
                         </div>
-
-                        {# ---- Web crawler (the (DYNAMIC) Website Keywords wordlist) ---- #}
-                        <div style="height:1px; background:var(--border-soft); margin:22px 0 16px;"></div>
-                        <div class="mono" style="font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-mute); margin-bottom:14px;">Web crawler · (DYNAMIC) Website Keywords</div>
-
-                        <div class="field">
-                            <label class="field-label" for="set-crawl-ua">Crawler user-agent</label>
-                            {{ HashviewForm.crawl_user_agent(class="input", id="set-crawl-ua") }}
-                            <span class="field-hint">HTTP User-Agent the crawler sends when scraping a target site.</span>
-                            {% for e in HashviewForm.crawl_user_agent.errors %}<div class="invalid-feedback" style="display:block;">{{ e }}</div>{% endfor %}
-                        </div>
-
-                        <div class="grid" style="grid-template-columns:1fr 1fr 1fr; gap:16px;">
-                            <div class="field" style="margin-bottom:0;">
-                                <label class="field-label" for="set-crawl-minlen">Min word length <span class="mono" style="color:var(--text-mute); font-weight:400;">· chars</span></label>
-                                {{ HashviewForm.crawl_min_word_length(class="input", type="number", min="1", max="65535", id="set-crawl-minlen") }}
-                                <span class="field-hint">Discard shorter words.</span>
-                                {% for e in HashviewForm.crawl_min_word_length.errors %}<div class="invalid-feedback" style="display:block;">{{ e }}</div>{% endfor %}
-                            </div>
-                            <div class="field" style="margin-bottom:0;">
-                                <label class="field-label" for="set-crawl-depth">Crawl depth <span class="mono" style="color:var(--text-mute); font-weight:400;">· levels</span></label>
-                                {{ HashviewForm.crawl_depth(class="input", type="number", min="1", max="100", id="set-crawl-depth") }}
-                                <span class="field-hint">Link levels to follow.</span>
-                                {% for e in HashviewForm.crawl_depth.errors %}<div class="invalid-feedback" style="display:block;">{{ e }}</div>{% endfor %}
-                            </div>
-                            <div class="field" style="margin-bottom:0;">
-                                <label class="field-label" for="set-crawl-threads">Threads <span class="mono" style="color:var(--text-mute); font-weight:400;">· workers</span></label>
-                                {{ HashviewForm.crawl_threads(class="input", type="number", min="1", max="256", id="set-crawl-threads") }}
-                                <span class="field-hint">Concurrent fetches.</span>
-                                {% for e in HashviewForm.crawl_threads.errors %}<div class="invalid-feedback" style="display:block;">{{ e }}</div>{% endfor %}
-                            </div>
-                        </div>
-
-                        <div style="display:flex; align-items:center; gap:12px; margin-top:20px;">
-                            <div style="flex:1; min-width:0;">
-                                <div style="color:var(--text);">Force lowercase</div>
-                                <div class="field-hint" style="margin-top:2px;">Convert every crawled word to lowercase before saving.</div>
-                            </div>
-                            <label class="switch">{{ HashviewForm.crawl_force_lowercase(role="switch") }}<span class="track"></span></label>
-                        </div>
                     </div>
                 </div>
             </div>

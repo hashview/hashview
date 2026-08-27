@@ -11,14 +11,22 @@
     <meta charset="UTF-8">
     <title>{% block title %}Hashview v{{ get_application_version() }}{% endblock %}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
 
-    <link type="text/css" rel="stylesheet" href="{{ url_for('static', filename='main.css') }}">
+    {# Preload the above-the-fold faces so text swaps in without the 3-hop
+       HTML -> plex.css -> woff2 discovery delay (font-display:swap is set in plex.css).
+       Hrefs are un-versioned to byte-match the relative url()s in plex.css, so the
+       preload is reused rather than downloading each font twice. #}
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="{{ url_for('static', filename='fonts/ibm-plex-sans-400.woff2') }}">
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="{{ url_for('static', filename='fonts/ibm-plex-sans-600.woff2') }}">
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="{{ url_for('static', filename='fonts/ibm-plex-mono-400.woff2') }}">
+
+    <link type="text/css" rel="stylesheet" href="{{ asset('main.css') }}">
 
     {# --- Phosphor Console design system (self-hosted) --- #}
-    <link rel="stylesheet" href="{{ url_for('static', filename='fonts/plex.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/phosphor.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/phosphor-app.css') }}">
+    <link rel="stylesheet" href="{{ asset('fonts/plex.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/phosphor.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/phosphor-app.css') }}">
 
     {% block head %}{% endblock %}
 </head>

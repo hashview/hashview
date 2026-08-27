@@ -469,7 +469,16 @@ html[data-scanlines="off"] .scanlines { display: none; }
 .top-stat b { color: var(--text); }
 .clock { font-variant-numeric: tabular-nums; }
 
-.page { padding: 26px; max-width: 1320px; }
+.page {
+  padding: 26px;
+  /* Cap for very wide monitors so tables don't sprawl. */
+  max-width: min(1800px, 100%);
+  /* Right gutter lines the content's right edge up with the topbar clock's
+     divider: topbar right padding (26px) + the fixed clock cluster (~92px =
+     16px pad-left + 14px icon + 7px gap + ~55px "HH:MM:SS"). Left stays 26px
+     to match the topbar/sidebar edge. Tune this one value if it's a hair off. */
+  margin-right: 92px;
+}
 .page-head {
   display: flex;
   align-items: flex-end;
@@ -630,7 +639,8 @@ html[data-scanlines="off"] .scanlines { display: none; }
   text-transform: uppercase;
   color: var(--text-mute);
   font-weight: 500;
-  padding: 0 14px 9px;
+  padding: 9px 14px;
+  vertical-align: middle;
   border-bottom: 1px solid var(--border);
 }
 .tbl td {

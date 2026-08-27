@@ -25,12 +25,6 @@ class HashviewSettingsForm(FlaskForm):
     enabled_chunking = BooleanField('Split tasks into smaller chunks across agents (sized from agent benchmarks).')
     chunk_target_duration = IntegerField('Target chunk runtime in seconds (on the slowest agent).',
                                          validators=[DataRequired(), NumberRange(min=1, max=2147483647)])
-    # Website-keywords crawler settings
-    crawl_min_word_length = IntegerField('Minimum word length', validators=[DataRequired(), NumberRange(min=1, max=65535)])
-    crawl_user_agent = StringField('Crawler user-agent', validators=[DataRequired()])
-    crawl_force_lowercase = BooleanField('Force crawled words to lowercase.')
-    crawl_depth = IntegerField('Crawl depth', validators=[DataRequired(), NumberRange(min=1, max=100)])
-    crawl_threads = IntegerField('Crawler threads', validators=[DataRequired(), NumberRange(min=1, max=256)])
     # Notification channel master switches
     email_enabled = BooleanField('Enable Email notifications.')
     pushover_enabled = BooleanField('Enable Pushover notifications.')

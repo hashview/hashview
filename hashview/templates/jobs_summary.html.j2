@@ -15,7 +15,7 @@
         <div class="page-sub">// summary</div>
     </div>
 </div>
-{{ wizard_stepper('summary', alert_hashes=(hash_notification is not none), website=(website if website is defined else false)) }}
+{{ wizard_stepper('summary', alert_hashes=(hash_notification is not none)) }}
 
 <form method="POST" action="">
     {{ form.hidden_tag() }}

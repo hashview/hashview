@@ -22,7 +22,6 @@ from hashview.jobs.forms import (
     JobsNewHashFileForm,
     JobsNotificationsForm,
     JobSummaryForm,
-    JobWebsiteKeywordsForm,
 )
 from hashview.models import (
     Customers,
@@ -58,20 +57,6 @@ from hashview.utils.utils import (
 )
 
 jobs = Blueprint('jobs', __name__)
-
-
-def _job_uses_website_keywords(job_id):
-    """True if any task assigned to this job uses the (DYNAMIC) Website Keywords
-    wordlist (as primary or combinator-secondary wordlist)."""
-    return db.session.query(JobTasks.id).join(
-        Tasks, JobTasks.task_id == Tasks.id
-    ).join(
-        Wordlists, (Wordlists.id == Tasks.wl_id) | (Wordlists.id == Tasks.wl_id_2)
-    ).filter(
-        JobTasks.job_id == job_id,
-        Wordlists.type == 'dynamic',
-        Wordlists.name.like('%Website Keywords%'),
-    ).first() is not None
 
 
 def _job_has_alert_hashes(job):
@@ -114,31 +99,35 @@ def jobs_list():
     job_tasks = JobTasks.query.all()
     tasks = Tasks.query.all()
 
-    # Per-job cracked progress: cracked / total hashes in the job's hashfile.
-    # Cached per hashfile_id so jobs sharing a hashfile are only queried once.
-    job_cracked = {}
-    _hf_cracked = {}
-    for job in jobs:
-        hfid = job.hashfile_id
-        if not hfid:
-            job_cracked[job.id] = {'cracked': 0, 'total': 0, 'pct': 0}
-            continue
-        if hfid not in _hf_cracked:
-            agg = db.session.query(
-                func.count(Hashes.id),
-                func.coalesce(func.sum(case((Hashes.cracked == True, 1), else_=0)), 0)
-            ).join(HashfileHashes, Hashes.id == HashfileHashes.hash_id) \
-             .filter(HashfileHashes.hashfile_id == hfid).first()
-            total = agg[0] or 0
-            cracked = int(agg[1] or 0)
-            _hf_cracked[hfid] = {
-                'cracked': cracked,
-                'total': total,
-                'pct': round((cracked / total * 100), 1) if total else 0,
-            }
-        job_cracked[job.id] = _hf_cracked[hfid]
+    # --- per-hashfile facts for the jobs on this page ---
+    # Count / cracked-count / representative hash type, plus which hashfiles carry
+    # per-hash alerts, computed in TWO grouped queries over the page's hashfile ids
+    # instead of three separate queries per hashfile (the old N+1 was this page's
+    # dominant cost -- up to ~3 big-table queries per distinct hashfile).
+    page_hashfile_ids = {job.hashfile_id for job in jobs if job.hashfile_id}
 
-    # --- per-job info-modal data: hash type, runtime, task count, notifications ---
+    _hf_stats = {}
+    if page_hashfile_ids:
+        for hfid, total, cracked, mode in db.session.query(
+            HashfileHashes.hashfile_id,
+            func.count(Hashes.id),
+            func.coalesce(func.sum(case((Hashes.cracked == True, 1), else_=0)), 0),
+            func.min(Hashes.hash_type),
+        ).join(Hashes, Hashes.id == HashfileHashes.hash_id) \
+         .filter(HashfileHashes.hashfile_id.in_(page_hashfile_ids)) \
+         .group_by(HashfileHashes.hashfile_id).all():
+            _hf_stats[hfid] = {'total': total or 0, 'cracked': int(cracked or 0), 'mode': mode}
+
+    _hf_with_alerts = set()
+    if page_hashfile_ids:
+        _hf_with_alerts = {
+            r[0] for r in db.session.query(HashfileHashes.hashfile_id)
+            .join(HashNotifications, HashNotifications.hash_id == HashfileHashes.hash_id)
+            .filter(HashfileHashes.hashfile_id.in_(page_hashfile_ids))
+            .group_by(HashfileHashes.hashfile_id).all()
+        }
+
+    # Friendly hash-type names (mode int -> label) from the upload form choices.
     hash_type_names = {}
     try:
         _f = JobsNewHashFileForm()
@@ -165,12 +154,22 @@ def jobs_list():
     for n in JobNotifications.query.all():
         jn_by_job.setdefault(n.job_id, set()).add(n.method)
 
+    # Assemble per-job display data from the batched facts above -- no per-job queries.
+    job_cracked = {}
     job_hash_type = {}
     job_runtime = {}
     job_notifs = {}
-    _hf_type = {}
-    _hf_perhash = {}
     for job in jobs:
+        hfid = job.hashfile_id
+        stats = _hf_stats.get(hfid) if hfid else None
+        total = stats['total'] if stats else 0
+        cracked = stats['cracked'] if stats else 0
+        job_cracked[job.id] = {
+            'cracked': cracked,
+            'total': total,
+            'pct': round((cracked / total * 100), 1) if total else 0,
+        }
+
         # runtime: started -> ended (or now if running); total run time even if canceled;
         # '-' when the job never started (e.g. still queued)
         if job.started_at:
@@ -180,17 +179,14 @@ def jobs_list():
             job_runtime[job.id] = '%dh %dm' % (int(secs // 3600), int((secs % 3600) // 60))
         else:
             job_runtime[job.id] = '-'
-        if job.hashfile_id:
-            if job.hashfile_id not in _hf_type:
-                mode = db.session.query(func.min(Hashes.hash_type)).join(HashfileHashes, Hashes.id == HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id == job.hashfile_id).scalar()
-                _hf_type[job.hashfile_id] = hash_type_names.get(str(mode), str(mode)) if mode is not None else None
-            job_hash_type[job.id] = _hf_type[job.hashfile_id]
-            if job.hashfile_id not in _hf_perhash:
-                _hf_perhash[job.hashfile_id] = db.session.query(HashNotifications).join(HashfileHashes, HashNotifications.hash_id == HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id == job.hashfile_id).first() is not None
-            per_hash = _hf_perhash[job.hashfile_id]
+
+        if stats and stats['mode'] is not None:
+            mode = stats['mode']
+            job_hash_type[job.id] = hash_type_names.get(str(mode), str(mode))
         else:
             job_hash_type[job.id] = None
-            per_hash = False
+
+        per_hash = bool(hfid and hfid in _hf_with_alerts)
         methods = jn_by_job.get(job.id, set())
         job_notifs[job.id] = {'email': 'email' in methods, 'pushover': 'push' in methods, 'per_hash': per_hash}
 
@@ -539,15 +535,13 @@ def jobs_list_tasks(job_id):
         task_meta[t.id] = {'name': t.name, 'type': label, 'wordlist': wl_names.get(t.wl_id)}
 
     # Does this job have per-hash alerts? Drives the conditional "Alert Hashes" wizard step.
-    alert_hashes = False
-    if job.hashfile_id:
-        alert_hashes = db.session.query(HashNotifications).join(HashfileHashes, HashNotifications.hash_id == HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id == job.hashfile_id).first() is not None
+    alert_hashes = _job_has_alert_hashes(job)
 
     # One card per logical assignment: chunk rows of a split task collapse to a
     # single entry (the editor shows the attack once, not once per chunk).
     assigned = _assigned_tasks(job_id)
 
-    return render_template('jobs_assigned_tasks.html.j2', title='Jobs Assigned Tasks', job=job, tasks=tasks, job_tasks=job_tasks, assigned=assigned, assignable_tasks=assignable_tasks, task_meta=task_meta, task_groups=task_groups, wordlists=wordlists, alert_hashes=alert_hashes, website=_job_uses_website_keywords(job_id))
+    return render_template('jobs_assigned_tasks.html.j2', title='Jobs Assigned Tasks', job=job, tasks=tasks, job_tasks=job_tasks, assigned=assigned, assignable_tasks=assignable_tasks, task_meta=task_meta, task_groups=task_groups, wordlists=wordlists, alert_hashes=alert_hashes)
 
 @jobs.route("/jobs/<int:job_id>/assign_task/<int:task_id>", methods=['POST'])
 @login_required
@@ -815,6 +809,17 @@ def jobs_assign_notification_hashes(job_id, method):
     }
     return render_template('jobs_assigned_notifications_hashes.html.j2', title='Assigned Hash Notifications', job=job, hashes=hashes, notified_ids=notified_ids)
 
+def _delete_job(job):
+    """Delete one job and its dependent rows (job tasks + notifications) in a
+    single transaction. Returns try_commit()'s result. Shared by the single
+    (jobs_delete) and bulk (jobs_bulk_delete) delete paths so both cascade the
+    same way."""
+    JobTasks.query.filter_by(job_id=job.id).delete()
+    JobNotifications.query.filter_by(job_id=job.id).delete()
+    db.session.delete(job)
+    return try_commit(f'delete job {job.id}')
+
+
 @jobs.route("/jobs/delete/<int:job_id>", methods=['GET', 'POST'])
 @login_required
 def jobs_delete(job_id):
@@ -826,11 +831,7 @@ def jobs_delete(job_id):
         return redirect(url_for('jobs.jobs_list'))
     if current_user.admin or job.owner_id == current_user.id:
         job_target = f'job:{job.id} {job.name!r}'   # capture before delete (instance expires post-commit)
-        JobTasks.query.filter_by(job_id=job_id).delete()
-        JobNotifications.query.filter_by(job_id=job_id).delete()
-
-        db.session.delete(job)
-        if not try_commit(f'delete job {job_id}'):
+        if not _delete_job(job):
             flash('Job could not be deleted — it may have already been removed.', 'danger')
             return redirect(url_for('jobs.jobs_list'))
         log_event('job.delete', target=job_target)
@@ -840,26 +841,66 @@ def jobs_delete(job_id):
     flash('You do not have rights to delete this job!', 'danger')
     return redirect(url_for('jobs.jobs_list'))
 
-@jobs.route("/jobs/<int:job_id>/website", methods=['GET', 'POST'])
+
+@jobs.route("/jobs/bulk_delete", methods=['POST'])
 @login_required
-def jobs_website_keywords(job_id):
-    """Conditional wizard step: capture the URL to crawl for the
-    (DYNAMIC) Website Keywords wordlist. Skipped (redirect to summary) when the
-    job has no task using that wordlist."""
-    job = Jobs.query.get(job_id)
-    if not _job_uses_website_keywords(job_id):
-        return redirect("/jobs/" + str(job_id) + "/summary")
+def jobs_bulk_delete():
+    """Delete several jobs at once (from the jobs list's bulk-select bar).
 
-    form = JobWebsiteKeywordsForm()
-    if form.validate_on_submit():
-        job.crawl_url = form.crawl_url.data
-        db.session.commit()
-        return redirect("/jobs/" + str(job_id) + "/summary")
-    elif request.method == 'GET':
-        form.crawl_url.data = job.crawl_url
+    Mirrors the selectability rule enforced in the UI: a job is deletable only by
+    its owner or an admin, and only when it is not Running or Queued. Each id is
+    guarded independently -- one skipped/failed job never aborts the batch -- and a
+    per-outcome summary is flashed."""
+    deleted = skipped_active = skipped_rights = skipped_missing = failed = 0
+    seen = set()
+    for raw in request.form.getlist('job_ids'):
+        try:
+            job_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if job_id in seen:
+            continue
+        seen.add(job_id)
 
-    return render_template('jobs_website_keywords.html.j2', title='Job Website Keywords',
-                           job=job, form=form, alert_hashes=_job_has_alert_hashes(job))
+        job = Jobs.query.get(job_id)
+        if job is None:
+            skipped_missing += 1
+            continue
+        if not (current_user.admin or job.owner_id == current_user.id):
+            skipped_rights += 1
+            continue
+        if job.status in ('Running', 'Queued'):
+            skipped_active += 1
+            continue
+
+        job_target = f'job:{job.id} {job.name!r}'
+        if _delete_job(job):
+            log_event('job.delete', target=job_target)
+            deleted += 1
+        else:
+            failed += 1
+
+    parts = []
+    if deleted:
+        parts.append(f'{deleted} deleted')
+    if skipped_active:
+        parts.append(f'{skipped_active} skipped — running or queued')
+    if skipped_rights:
+        parts.append(f'{skipped_rights} skipped — insufficient rights')
+    if skipped_missing:
+        parts.append(f'{skipped_missing} skipped — not found')
+    if failed:
+        parts.append(f'{failed} failed')
+
+    if not parts:
+        flash('No jobs selected for deletion.', 'warning')
+    elif deleted and not (skipped_active or skipped_rights or skipped_missing or failed):
+        flash(', '.join(parts) + '.', 'success')
+    elif deleted:
+        flash(', '.join(parts) + '.', 'warning')
+    else:
+        flash(', '.join(parts) + '.', 'danger')
+    return redirect(url_for('jobs.jobs_list'))
 
 @jobs.route("/jobs/<int:job_id>/summary", methods=['GET', 'POST'])
 @login_required
@@ -924,7 +965,7 @@ def jobs_summary(job_id):
     # each attack once (matches the assign-tasks step), not once per chunk.
     assigned = _assigned_tasks(job_id)
 
-    return render_template('jobs_summary.html.j2', title='Job Summary', job=job, form=form, job_notification=job_notification, cracked_rate=cracked_rate, cracked_cnt=cracked_cnt, hash_total=hash_total, hashfile_hash_type=hashfile_hash_type, job_tasks=job_tasks, assigned=assigned, hash_notification_cnt=hash_notification_cnt, customer=customer, hashfile=hashfile, tasks=tasks, hash_notification=hash_notification, settings=settings, website=_job_uses_website_keywords(job_id))
+    return render_template('jobs_summary.html.j2', title='Job Summary', job=job, form=form, job_notification=job_notification, cracked_rate=cracked_rate, cracked_cnt=cracked_cnt, hash_total=hash_total, hashfile_hash_type=hashfile_hash_type, job_tasks=job_tasks, assigned=assigned, hash_notification_cnt=hash_notification_cnt, customer=customer, hashfile=hashfile, tasks=tasks, hash_notification=hash_notification, settings=settings)
 
 @jobs.route("/jobs/start/<int:job_id>", methods=['POST'])
 @login_required

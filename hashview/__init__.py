@@ -313,6 +313,22 @@ def create_app(testing=False, config_overrides=None):
     from flask_wtf.csrf import generate_csrf
     app.jinja_env.globals['csrf_token'] = generate_csrf
 
+    # Version-tagged static URLs: asset('css/x.css') -> /static/css/x.css?v=<ver>.
+    # The version query lets the browser far-future-cache the file yet re-fetch it
+    # after an upgrade (the URL changes when __version__ changes).
+    app.jinja_env.globals['asset'] = lambda filename: url_for('static', filename=filename, v=__version__)
+
+    _static_prefix = (app.static_url_path or '/static') + '/'
+
+    @app.after_request
+    def _static_cache_headers(response):
+        # Long-cache ONLY explicitly versioned static assets (URLs carrying ?v=).
+        # Un-versioned /static URLs keep Flask's default revalidate behavior, so
+        # partial adoption of asset() can never serve a stale file after an upgrade.
+        if request.path.startswith(_static_prefix) and request.args.get('v'):
+            response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+        return response
+
     @app.context_processor
     def inject_nav_counts():
         """Sidebar nav badge counts + agent fleet summary. Only queried for

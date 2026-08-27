@@ -33,12 +33,18 @@
         </form>
     </div>
     {% if jobs %}
+    <div class="job-bulkbar" id="job-bulkbar">
+        <span class="job-sel-count"><span id="job-sel-count">0</span> selected</span>
+        <span style="flex:1;"></span>
+        <button type="button" class="btn" onclick="hvJobClearSel()">Clear</button>
+        <button type="button" class="btn btn-danger" onclick="hvJobOpenBulkDel()">{{ icon('trash', size=15) }} Delete selected</button>
+    </div>
     <table class="tbl">
         <thead>
             <tr>
-                <th>Job</th><th>Customer</th><th>Hashfile</th>
+                <th style="width:34px; text-align:center;"><input type="checkbox" class="hv-check" id="job-select-all" onclick="hvJobToggleAll(this)" title="Select all deletable jobs"></th><th>Job</th><th>Customer</th><th>Hashfile</th>
                 <th class="center">Status</th><th class="center">Cracked</th><th class="center">Priority</th>
-                <th>Owner</th><th>Created</th><th class="center">Control</th>
+                <th>Owner</th><th>Created</th><th class="center" style="width:180px;">Control</th>
             </tr>
         </thead>
         <tbody id="job-tbody">
@@ -48,6 +54,14 @@
             {% for h in hashfiles %}{% if h.id == job.hashfile_id %}{% set ns.hf = h.name %}{% endif %}{% endfor %}
             {% for u in users %}{% if u.id == job.owner_id %}{% set ns.owner = u.first_name ~ ' ' ~ u.last_name %}{% endif %}{% endfor %}
             <tr data-name="{{ job.name|lower }} {{ ns.cust|lower }}">
+                <td class="center">
+                    {% set can_del = (current_user.admin or job.owner_id == current_user.id) and job.status not in ['Running', 'Queued'] %}
+                    {% if can_del %}
+                    <input type="checkbox" class="hv-check job-check" value="{{ job.id }}" data-name="{{ job.name }}" data-customer="{{ ns.cust }}" onchange="hvJobSelChanged()">
+                    {% elif job.status in ['Running', 'Queued'] %}
+                    <span class="job-lock" title="{{ job.status }} — stop the job before deleting">{{ icon('lock', size=15) }}</span>
+                    {% endif %}
+                </td>
                 <td style="font-weight:500;"><div title="{{ job.name }}" style="max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ job.name }}</div></td>
                 <td style="color:var(--text-dim);"><div title="{{ ns.cust }}" style="max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ ns.cust }}</div></td>
                 <td class="mono" style="color:var(--text-dim);"><div title="{{ ns.hf }}" style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ ns.hf }}</div></td>
@@ -56,7 +70,7 @@
                     {% set cr = job_cracked.get(job.id) if job_cracked is defined else none %}
                     {% if cr and cr.total %}
                     <div class="mono num" style="font-size:12.5px;white-space:nowrap;">
-                        <span style="color:{{ 'var(--primary)' if cr.cracked else 'var(--text-dim)' }};{% if cr.cracked %}text-shadow:var(--glow-text);{% endif %}">{{ "{:,}".format(cr.cracked) }}</span><span style="color:var(--text-mute);">/{{ "{:,}".format(cr.total) }}</span>
+                        <a class="rec-x-link" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="View hashfile analytics"><span style="color:{{ 'var(--primary)' if cr.cracked else 'var(--text-dim)' }};{% if cr.cracked %}text-shadow:var(--glow-text);{% endif %}">{{ "{:,}".format(cr.cracked) }}</span><span style="color:var(--text-mute);">/{{ "{:,}".format(cr.total) }}</span></a>
                     </div>
                     <div style="height:3px;width:84px;margin:6px auto 0;border-radius:2px;background:var(--surface-3);overflow:hidden;">
                         <div style="height:100%;width:{{ cr.pct }}%;background:linear-gradient(90deg,var(--primary-deep),var(--primary));box-shadow:var(--glow-sm);"></div>
@@ -69,37 +83,33 @@
                 <td class="mono" style="color:var(--text-dim);"><div title="{{ ns.owner }}" style="max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ ns.owner }}</div></td>
                 <td class="mono" style="color:var(--text-mute);font-size:11.5px;">{{ job.created_at.strftime('%b %d %H:%M') if job.created_at else '—' }}</td>
                 <td class="center">
-                    <button type="button" class="icon-btn" id="jobmenubtn-{{ job.id }}" popovertarget="jobmenu-{{ job.id }}" title="Actions" aria-label="Actions">{{ icon('dots', size=16) }}</button>
-                    <div class="job-menu" popover="auto" id="jobmenu-{{ job.id }}" data-anchor="jobmenubtn-{{ job.id }}">
+                    <div style="display:flex; gap:4px; justify-content:flex-end;">
                         {% if job.status == 'Ready' %}
                             <form method="POST" action="{{ url_for('jobs.jobs_start', job_id=job.id) }}" style="display:contents">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit" class="mi go">{{ icon('play', size=15) }} Start</button>
+                                <button type="submit" class="icon-btn act-go" title="Start">{{ icon('play', size=15) }}</button>
                             </form>
                         {% elif job.status == 'Queued' or job.status == 'Running' %}
                             <form method="POST" action="{{ url_for('jobs.jobs_stop', job_id=job.id) }}" style="display:contents">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit" class="mi stop">{{ icon('stop', size=15) }} Stop</button>
+                                <button type="submit" class="icon-btn act-stop" title="Stop">{{ icon('stop', size=15) }}</button>
                             </form>
-                        {% elif job.status == 'Completed' %}
-                            <span class="mi disabled" style="color:var(--green);">{{ icon('check', size=15) }} Completed</span>
                         {% elif job.status == 'Canceled' %}
                             <form method="POST" action="{{ url_for('jobs.jobs_start', job_id=job.id) }}" style="display:contents">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit" class="mi">{{ icon('refresh', size=15) }} Restart</button>
+                                <button type="submit" class="icon-btn act-go" title="Restart">{{ icon('refresh', size=15) }}</button>
                             </form>
                         {% endif %}
                         {% if job.status != 'Incomplete' %}
-                            <a class="mi" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}">{{ icon('chart', size=15) }} Analytics</a>
-                            <button type="button" class="mi" onclick="this.closest('[popover]').hidePopover(); document.getElementById('info-{{ job.id }}').showModal();">{{ icon('info', size=15) }} Info</button>
+                            <a class="icon-btn" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="Analytics">{{ icon('chart', size=15) }}</a>
+                            <button type="button" class="icon-btn" title="Info" onclick="document.getElementById('info-{{ job.id }}').showModal()">{{ icon('info', size=15) }}</button>
                         {% endif %}
                         {% if job.status == 'Running' or job.status == 'Queued' %}
-                            <span class="mi disabled" title="Locked while active">{{ icon('edit', size=15) }} Edit</span>
+                            <span class="icon-btn" style="opacity:.4; cursor:not-allowed;" title="Locked while active">{{ icon('edit', size=15) }}</span>
                         {% else %}
-                            <a class="mi" href="{{ url_for('jobs.jobs_assigned_hashfile', job_id=job.id) }}">{{ icon('edit', size=15) }} Edit</a>
+                            <a class="icon-btn" href="{{ url_for('jobs.jobs_assigned_hashfile', job_id=job.id) }}" title="Edit">{{ icon('edit', size=15) }}</a>
                         {% endif %}
-                        <div class="sep"></div>
-                        <button type="button" class="mi danger" onclick="this.closest('[popover]').hidePopover(); document.getElementById('del-{{ job.id }}').showModal();">{{ icon('trash', size=15) }} Delete</button>
+                        <button type="button" class="icon-btn act-del" title="Delete" onclick="document.getElementById('del-{{ job.id }}').showModal()">{{ icon('trash', size=15) }}</button>
                     </div>
                 </td>
             </tr>
@@ -145,64 +155,6 @@
 </div>
 {% endif %}
 
-<style>
-.job-menu {
-    position: fixed; inset: auto; margin: 0;
-    min-width: 170px; padding: 5px;
-    background: var(--surface-2);
-    border: 1px solid var(--border-soft);
-    border-radius: 9px;
-    box-shadow: 0 10px 28px rgba(0,0,0,.5);
-}
-.job-menu .mi {
-    display: flex; align-items: center; gap: 9px;
-    width: 100%; box-sizing: border-box;
-    padding: 7px 10px; margin: 0;
-    font-family: var(--mono); font-size: 12px; letter-spacing: .3px;
-    color: var(--text-dim);
-    background: none; border: 0; border-radius: 6px;
-    text-align: left; text-decoration: none; cursor: pointer;
-    white-space: nowrap;
-}
-.job-menu .mi:hover { background: var(--surface-3); color: var(--text); }
-.job-menu .mi .ico { width: 15px; height: 15px; flex: none; }
-.job-menu .mi.go:hover { color: var(--green); }
-.job-menu .mi.stop:hover { color: var(--amber); }
-.job-menu .mi.danger { color: var(--red); }
-.job-menu .mi.danger:hover { background: var(--surface-3); color: var(--red); }
-.job-menu .mi.disabled { opacity: .4; cursor: default; }
-.job-menu .mi.disabled:hover { background: none; color: inherit; }
-.job-menu .sep { height: 1px; background: var(--border-soft); margin: 4px 2px; }
-</style>
-<script>
-// Position each job actions popover next to its trigger button (top layer escapes
-// the card's overflow:hidden). Drops below the button, flips above near the viewport
-// bottom, and right-aligns to the button edge.
-(function(){
-    function place(menu){
-        var btn = document.getElementById(menu.getAttribute('data-anchor'));
-        if(!btn) return;
-        var r = btn.getBoundingClientRect();
-        var mw = menu.offsetWidth, mh = menu.offsetHeight;
-        var left = r.right - mw;
-        var maxLeft = window.innerWidth - mw - 8;
-        if(left > maxLeft) left = maxLeft;
-        if(left < 8) left = 8;
-        var top = r.bottom + 4;
-        if(top + mh > window.innerHeight - 8) top = r.top - mh - 4;
-        if(top < 8) top = 8;
-        menu.style.left = left + 'px';
-        menu.style.top = top + 'px';
-    }
-    document.addEventListener('toggle', function(e){
-        var t = e.target;
-        if(t && t.classList && t.classList.contains('job-menu') && e.newState === 'open'){
-            place(t);
-        }
-    }, true);
-})();
-</script>
-
 {# ---- per-job modals (native <dialog>, no framework) ---- #}
 {% for job in jobs %}
 <dialog class="hv-dialog" id="info-{{ job.id }}" style="max-width:680px; width:94vw;">
@@ -218,7 +170,7 @@
     <div class="hv-dialog-body" style="max-height:72vh; overflow-y:auto;">
         <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
             {{ status_badge(job.status) }}
-            <span class="mono" style="font-size:12.5px;">{% if cr %}<span style="color:var(--text);">{{ "{:,}".format(cr.cracked) }}</span><span style="color:var(--text-mute);"> / {{ "{:,}".format(cr.total) }} hashes recovered</span>{% endif %}</span>
+            <span class="mono" style="font-size:12.5px;">{% if cr %}{% if job.hashfile_id %}<a class="rec-x-link" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="View hashfile analytics"><span style="color:var(--text);">{{ "{:,}".format(cr.cracked) }}</span><span style="color:var(--text-mute);"> / {{ "{:,}".format(cr.total) }}</span></a>{% else %}<span style="color:var(--text);">{{ "{:,}".format(cr.cracked) }}</span><span style="color:var(--text-mute);"> / {{ "{:,}".format(cr.total) }}</span>{% endif %}<span style="color:var(--text-mute);"> hashes recovered</span>{% endif %}</span>
             <span style="margin-left:auto; display:inline-block; text-align:center; line-height:1;">
                 <span class="mono" style="font-size:24px; color:var(--primary); text-shadow:var(--glow-text);">{{ cr.pct if cr else 0 }}<span style="font-size:12px;">%</span></span>
                 <span class="mono" style="display:block; font-size:9px; letter-spacing:1px; color:var(--text-mute); margin-top:2px;">CRACKED</span>
@@ -271,5 +223,94 @@
     </div>
 </dialog>
 {% endfor %}
+
+{# ---- bulk-delete confirmation (one modal for the whole selected set) ---- #}
+<dialog class="hv-dialog" id="job-bulk-del-modal" style="max-width:620px; width:94vw;">
+    <div class="hv-dialog-head">
+        <span style="color:var(--red); display:inline-flex;">{{ icon('trash', size=16) }}</span>
+        <div style="line-height:1.2;">
+            <h3 style="margin:0;" id="job-bulk-title">Delete jobs?</h3>
+            <div class="mono" style="font-size:10px; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-mute); margin-top:3px;">this permanently removes the jobs and their task queue</div>
+        </div>
+        <button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close" style="margin-left:auto;">{{ icon('x', size=15) }}</button>
+    </div>
+    <div class="hv-dialog-body" style="max-height:52vh; overflow-y:auto;">
+        <div class="mono" style="font-size:11px; color:var(--text-mute); margin-bottom:10px;">The following will be permanently deleted:</div>
+        <div id="job-bulk-list"></div>
+    </div>
+    <div class="hv-dialog-foot">
+        <button class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+        <form id="job-bulk-form" action="{{ url_for('jobs.jobs_bulk_delete') }}" method="POST" style="display:inline;">
+            <span id="job-bulk-hidden"></span>
+            <button type="submit" class="btn btn-danger">{{ icon('trash', size=15) }} Delete <span id="job-bulk-btn-count">0</span></button>
+        </form>
+    </div>
+</dialog>
+
+<script>
+// ---- bulk selection + bulk delete (jobs list) ----
+var JOB_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-mute); flex:none;"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>';
+function hvJobSelected(){
+    return Array.prototype.slice.call(document.querySelectorAll('.job-check:checked'));
+}
+function hvJobSelChanged(){
+    var n = hvJobSelected().length;
+    var all = document.querySelectorAll('.job-check').length;
+    var cEl = document.getElementById('job-sel-count'); if (cEl) cEl.textContent = n;
+    var bar = document.getElementById('job-bulkbar'); if (bar) bar.classList.toggle('on', n > 0);
+    var sa = document.getElementById('job-select-all');
+    if (sa) { sa.checked = n > 0 && n === all; sa.indeterminate = n > 0 && n < all; }
+}
+function hvJobToggleAll(cb){
+    document.querySelectorAll('.job-check').forEach(function(c){ c.checked = cb.checked; });
+    hvJobSelChanged();
+}
+function hvJobClearSel(){
+    document.querySelectorAll('.job-check').forEach(function(c){ c.checked = false; });
+    hvJobSelChanged();
+}
+function hvJobOpenBulkDel(){
+    var sel = hvJobSelected();
+    if (!sel.length) return;
+    var list = document.getElementById('job-bulk-list');
+    var hidden = document.getElementById('job-bulk-hidden');
+    list.innerHTML = ''; hidden.innerHTML = '';
+    sel.forEach(function(c){
+        var row = document.createElement('div');
+        row.className = 'job-bulk-row';
+        var ico = document.createElement('span');
+        ico.style.cssText = 'display:inline-flex; flex:none;';
+        ico.innerHTML = JOB_ICON;                       // static markup, safe
+        var name = document.createElement('span');
+        name.className = 'mono'; name.style.color = 'var(--text)';
+        name.textContent = c.getAttribute('data-name') || '';   // textContent — XSS-safe
+        var meta = document.createElement('span');
+        meta.style.color = 'var(--text-mute)';
+        var cust = c.getAttribute('data-customer') || '';
+        meta.textContent = cust ? ' · ' + cust : '';
+        row.appendChild(ico); row.appendChild(name); row.appendChild(meta);
+        list.appendChild(row);
+        var inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = 'job_ids'; inp.value = c.value;
+        hidden.appendChild(inp);
+    });
+    var n = sel.length;
+    document.getElementById('job-bulk-title').textContent =
+        'Delete ' + n + ' job' + (n === 1 ? '' : 's') + '?';
+    document.getElementById('job-bulk-btn-count').textContent = n;
+    var m = document.getElementById('job-bulk-del-modal');
+    try { m.showModal(); } catch (e) { m.setAttribute('open', ''); }
+}
+</script>
+
+<style>
+.job-bulkbar { display:none; align-items:center; gap:12px; margin:0 16px 14px; padding:11px 16px;
+    border:1px solid var(--primary-dim); border-radius:10px; background:rgba(var(--primary-rgb),0.07); box-shadow:var(--glow-sm); }
+.job-bulkbar.on { display:flex; }
+.job-sel-count { color:var(--primary); text-shadow:var(--glow-text); font-family:var(--mono); font-size:13px; letter-spacing:.3px; }
+.job-lock { color:var(--text-mute); display:inline-flex; }
+.job-bulk-row { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border-soft); }
+.job-bulk-row:last-child { border-bottom:none; }
+</style>
 
 {% endblock %}

@@ -142,3 +142,32 @@ def test_hashfiles_list_runs_runtime_helper(app, client):
     db.session.commit()
     resp = client.get("/hashfiles")
     assert resp.status_code == 200
+
+
+def test_hashfiles_list_batched_stats(app, client):
+    """/hashfiles computes per-hashfile cracked/total in ONE grouped query.
+    Pin the numbers (1 of 4 -> '/ 4 recovered', 25%) and that an empty hashfile
+    still renders (UNKNOWN, 0 total) without error."""
+    from hashview.models import Hashes, HashfileHashes
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+
+    hf = Hashfiles(name="hf-stats", customer_id=cust.id, owner_id=admin.id)
+    empty = Hashfiles(name="hf-empty", customer_id=cust.id, owner_id=admin.id)
+    db.session.add_all([hf, empty])
+    db.session.commit()
+    for i in range(4):
+        h = Hashes(sub_ciphertext=("s" + str(i)).ljust(8, "0")[:8], ciphertext="c",
+                   hash_type=1000, cracked=(i == 0), plaintext="pw" if i == 0 else None)
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    resp = client.get("/hashfiles")
+    assert resp.status_code == 200
+    assert b"/ 4 recovered" in resp.data   # total from the batched COUNT
+    assert b"(25%)" in resp.data           # pct from the batched cracked SUM
+    assert b"hf-empty" in resp.data        # empty hashfile still rendered
+    assert b"UNKNOWN" in resp.data         # ... with the no-hashes type fallback

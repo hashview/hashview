@@ -43,6 +43,11 @@ password="hashed-pw"
 api_key="user-api-key-admin"
 src_ip="127\.0\.0\.1"
 
+# Test-only dummy credential literals in tests/unit/test_api_task_groups.py
+# (owner/other-user fixtures for #401's /v1 task-group endpoint tests).
+api_key="user-api-key-owner"
+api_key="user-api-key-other"
+
 # test fixture api_key literal in the download tests (not a real secret)
 api_key="dl-key"
 

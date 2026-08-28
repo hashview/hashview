@@ -393,6 +393,64 @@ set -a; source .env.test; set +a
 docker compose down -v
 ```
 
+## hashcat version interoperability
+
+Hashview parses hashcat's `--status-json`, benchmark and outfile output, and
+depends on the flags `build_hashcat_command` emits. None of that is a stable
+API, and `hashcatParser` swallows unparseable status lines, so drift would
+otherwise surface as a blank dashboard rather than an error.
+
+Three tiers guard it:
+
+| Tier | What runs | When |
+|---|---|---|
+| Offline contract tests | `tests/agent_unit/test_hashcat_contract.py` runs the real parsers over committed captures in `tests/fixtures/hashcat/<version>/` | every PR, in `unit-tests.yml` |
+| Pinned matrix | `.github/workflows/hashcat-matrix.yml` downloads each pinned release, captures fresh output, re-runs the contract, and checks `--skip`/`--limit` slicing | weekly, on dispatch, and on PRs touching the agent or the chunking/command builder |
+| Floating release check | Same, for any release newer than the matrix; opens an issue instead of failing | weekly and on dispatch |
+
+`7.0.0` is in the matrix deliberately. It emits structurally invalid
+`--status-json`: each device object closes with a stray `}` instead of a `,`
+before the `"power"` key, so every status line fails `json.loads` (upstream
+issue #4393, fixed in 7.1.0). Because `hashcatParser` swallows unparseable
+lines, an agent running 7.0.0 reports no status at all and the dashboard simply
+goes blank. Its status assertions are strict `xfail` and its matrix leg is
+`continue-on-error`, so it demonstrates the tests catch a real break without
+holding CI red.
+
+**If you run hashcat 7.0.0 in production, upgrade to 7.1.0 or later.**
+
+### Running the live tests locally
+
+Needs a CPU OpenCL runtime (`pocl-opencl-icd`, plus `ocl-icd-libopencl1` for the ICD loader) and `p7zip-full`:
+
+```bash
+dir="$(tests/hashcat_matrix/fetch.sh 7.1.2 <sha256> /tmp/hc)"
+HASHCAT_BIN="$dir/hashcat.bin" python -m pytest tests/hashcat_matrix -q
+```
+
+Without `HASHCAT_BIN` these tests skip.
+
+### Refreshing hashcat fixtures
+
+Only do this deliberately. A fixture diff means either hashcat changed or the
+capture environment did; decide which before overwriting the evidence.
+
+The `rm -rf` is required, not tidiness: `capture.sh` only `mkdir -p`s its output
+directory, and both hashcat's `--outfile` and the script's `2>>` stderr capture
+append. Refreshing in place would leave duplicated outfile lines and accumulated
+stderr, inflating `summary.json` and failing the workflow's drift diff in a way
+that looks like upstream drift but is not. The workflow does the same `rm -rf`.
+
+```bash
+dir="$(tests/hashcat_matrix/fetch.sh <version> <sha256> /tmp/hc)"
+rm -rf tests/fixtures/hashcat/<version>
+tests/hashcat_matrix/capture.sh "$dir/hashcat.bin" tests/fixtures/hashcat/<version>
+python tests/hashcat_matrix/summarize.py tests/fixtures/hashcat/<version>
+```
+
+To add a version, commit its fixture directory and add a `version`/`sha256`/
+`blocking` entry to the `pinned` matrix in the workflow.
+
 ## Notes
 
 - If Playwright browsers are missing in CI, install them once:

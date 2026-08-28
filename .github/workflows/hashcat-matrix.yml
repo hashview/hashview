@@ -1,0 +1,267 @@
+name: hashcat Matrix
+
+# Interoperability guard: Hashview parses hashcat's --status-json, benchmark
+# and outfile output and depends on the flags build_hashcat_command emits.
+# None of that is a stable API, and hashcatParser swallows unparseable status
+# lines, so upstream drift would otherwise surface as a blank dashboard.
+#
+# Tier 2 (pinned) runs the real binary for each pinned release. Tier 3
+# (floating) does the same for any release newer than the matrix and opens an
+# issue rather than failing.
+
+on:
+  schedule:
+    # Mondays 07:00 UTC.
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "install/hashview-agent/**"
+      - "hashview/utils/utils.py"
+      - "hashview/utils/chunking.py"
+      - "tests/hashcat_matrix/**"
+      - "tests/fixtures/hashcat/**"
+      - ".github/workflows/hashcat-matrix.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  pinned:
+    name: "hashcat ${{ matrix.version }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # 7.0.0 emits structurally invalid --status-json (stray '}' before "power"
+    # in each device object; upstream issue #4393, fixed in 7.1.0). It stays in
+    # the matrix as a canary proving the contract tests detect a real break,
+    # but must not hold CI red.
+    continue-on-error: ${{ matrix.blocking == false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "6.2.6"
+            sha256: "96697e9ef6a795d45863c91d61be85a9f138596e3151e7c2cd63ccf48aaa8783"
+            blocking: true
+          - version: "7.0.0"
+            sha256: "19e126642e1db7902125072dce539c53485c721735325a747bd03e8af3135d78"
+            blocking: false
+          - version: "7.1.0"
+            sha256: "37be13b2dfdd1da7a3f68847ff817a22c144fc8d76170f51aae412e8b3ee24fd"
+            blocking: true
+          - version: "7.1.1"
+            sha256: "e09f88233ae8a88e0e60d68c20e4f5094d9122af533a7d186a45d8d55d08f3a0"
+            blocking: true
+          - version: "7.1.2"
+            sha256: "80db0316387794ce9d14ed376da75b8a7742972485b45db790f5f8260307ff98"
+            blocking: true
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      # The runner has no GPU and no vendor OpenCL. pocl supplies a CPU device,
+      # which is enough for a five-word NTLM crack and an NTLM benchmark.
+      - name: Install pocl and p7zip
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq p7zip-full pocl-opencl-icd ocl-icd-libopencl1
+
+      - name: Fetch hashcat ${{ matrix.version }}
+        id: fetch
+        run: |
+          dir="$(tests/hashcat_matrix/fetch.sh \
+            '${{ matrix.version }}' '${{ matrix.sha256 }}' "${RUNNER_TEMP}/hc")"
+          echo "dir=${dir}" >> "$GITHUB_OUTPUT"
+
+      - name: Capture machine-readable output
+        run: |
+          tests/hashcat_matrix/capture.sh \
+            '${{ steps.fetch.outputs.dir }}/hashcat.bin' \
+            "${RUNNER_TEMP}/capture"
+          python tests/hashcat_matrix/summarize.py "${RUNNER_TEMP}/capture"
+
+      # Run the SAME assertions Tier 1 runs offline, but against output captured
+      # from the real binary moments ago.
+      - name: Assert the interop contract against the live capture
+        run: |
+          rm -rf "tests/fixtures/hashcat/${{ matrix.version }}"
+          mkdir -p "tests/fixtures/hashcat/${{ matrix.version }}"
+          cp "${RUNNER_TEMP}"/capture/* "tests/fixtures/hashcat/${{ matrix.version }}/"
+          python -m pytest tests/agent_unit/test_hashcat_contract.py -q -rxX \
+            -k '${{ matrix.version }}'
+
+      # A skipped test exits 0, so assert these actually ran. The repo-root
+      # conftest declares an autouse Playwright/live_server fixture that once
+      # force-skipped this whole module even with HASHCAT_BIN set, which would
+      # make this gate a no-op that always reports success.
+      - name: Assert --skip/--limit slice semantics
+        # shell: bash is load-bearing. The default shell for `run:` is
+        # `bash -e {0}` WITHOUT pipefail, so `pytest | tee` would take tee's
+        # exit status and a failing pytest would go green. `shell: bash` runs
+        # `bash --noprofile --norc -eo pipefail {0}`.
+        shell: bash
+        env:
+          HASHCAT_BIN: ${{ steps.fetch.outputs.dir }}/hashcat.bin
+        run: |
+          python -m pytest tests/hashcat_matrix -q -rs | tee "${RUNNER_TEMP}/slice.log"
+          if grep -q "skipped" "${RUNNER_TEMP}/slice.log"; then
+            echo "::error::live --skip/--limit tests were skipped; the gate proved nothing"
+            exit 1
+          fi
+
+      # Structural drift against the committed fixture. Raw captures embed
+      # timestamps and measured speeds, so compare the volatile-free summary.
+      - name: Diff the live capture against the committed fixture
+        run: |
+          git diff --no-index --exit-code \
+            <(git show "HEAD:tests/fixtures/hashcat/${{ matrix.version }}/summary.json") \
+            "${RUNNER_TEMP}/capture/summary.json"
+
+      - name: Upload capture on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: hashcat-capture-${{ matrix.version }}
+          path: ${{ runner.temp }}/capture
+          retention-days: 14
+
+  floating:
+    name: "hashcat (newest release)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Schedule and manual runs only: a new upstream release must not fail a PR
+    # that did not cause it.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Install pocl and p7zip
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq p7zip-full pocl-opencl-icd ocl-icd-libopencl1
+
+      # Newest release tag with no fixture directory of its own.
+      - name: Find an unpinned release
+        id: newest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          latest="$(gh api repos/hashcat/hashcat/releases/latest --jq '.tag_name' | sed 's/^v//')"
+          echo "version=${latest}" >> "$GITHUB_OUTPUT"
+          if [ -d "tests/fixtures/hashcat/${latest}" ]; then
+            echo "Newest release ${latest} is already pinned; nothing to do."
+            echo "unpinned=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "unpinned=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # No pinned checksum exists for an unseen release, so record what was
+      # actually downloaded and put it in the issue body for a human to pin.
+      - name: Fetch and capture
+        id: capture
+        if: steps.newest.outputs.unpinned == 'true'
+        continue-on-error: true
+        # VERSION comes from hashcat's release tag -- third-party data. Passing
+        # it through env: keeps it out of the script text; interpolating
+        # ${{ }} directly into run: would let a crafted tag name execute here.
+        env:
+          VERSION: ${{ steps.newest.outputs.version }}
+        run: |
+          version="${VERSION}"
+          url="https://github.com/hashcat/hashcat/releases/download/v${version}/hashcat-${version}.7z"
+          mkdir -p "${RUNNER_TEMP}/hc"
+          curl -fsSL --retry 3 -o "${RUNNER_TEMP}/hc/hashcat.7z" "$url"
+          sha="$(sha256sum "${RUNNER_TEMP}/hc/hashcat.7z" | cut -d' ' -f1)"
+          echo "sha256=${sha}" >> "$GITHUB_OUTPUT"
+          7z x -y -o"${RUNNER_TEMP}/hc" "${RUNNER_TEMP}/hc/hashcat.7z" >/dev/null
+          bin="${RUNNER_TEMP}/hc/hashcat-${version}/hashcat.bin"
+          echo "bin=${bin}" >> "$GITHUB_OUTPUT"
+          tests/hashcat_matrix/capture.sh "$bin" "${RUNNER_TEMP}/capture"
+          python tests/hashcat_matrix/summarize.py "${RUNNER_TEMP}/capture"
+          mkdir -p "tests/fixtures/hashcat/${version}"
+          cp "${RUNNER_TEMP}"/capture/* "tests/fixtures/hashcat/${version}/"
+          python -m pytest tests/agent_unit/test_hashcat_contract.py -q -rxX -k "${version}"
+          HASHCAT_BIN="$bin" python -m pytest tests/hashcat_matrix -q
+
+      - name: Upload capture
+        if: steps.newest.outputs.unpinned == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: hashcat-capture-${{ steps.newest.outputs.version }}
+          path: ${{ runner.temp }}/capture
+          retention-days: 30
+          if-no-files-found: warn
+
+      # Idempotent: search for an open issue with the same title before creating.
+      - name: Open an issue for the unpinned release
+        if: steps.newest.outputs.unpinned == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.newest.outputs.version }}
+          SHA256: ${{ steps.capture.outputs.sha256 }}
+          RESULT: ${{ steps.capture.outcome }}
+        run: |
+          # The download may have failed before a checksum was computed; say so
+          # rather than rendering an empty sha for someone to paste into a pin.
+          sha_text="${SHA256:-(download failed - recompute before pinning)}"
+          title="hashcat ${VERSION} is not in the interop matrix"
+          existing="$(gh issue list --state open --search "\"${title}\" in:title" \
+            --json number --jq '.[0].number // empty')"
+          if [ -n "${existing}" ]; then
+            echo "Issue #${existing} already open; not filing a duplicate."
+            exit 0
+          fi
+          {
+            echo "hashcat **${VERSION}** has been released and is not pinned in"
+            echo "\`.github/workflows/hashcat-matrix.yml\`."
+            echo
+            echo "Contract test result against the new release: **${RESULT}**."
+            echo
+            if [ "${RESULT}" != "success" ]; then
+              echo "The interop contract did NOT hold. Download the"
+              echo "\`hashcat-capture-${VERSION}\` artifact from this run to see the"
+              echo "actual output before changing any parser."
+              echo
+            fi
+            echo "To pin it, add to the \`pinned\` matrix:"
+            echo
+            echo '```yaml'
+            echo "          - version: \"${VERSION}\""
+            echo "            sha256: \"${sha_text}\""
+            echo "            blocking: true"
+            echo '```'
+            echo
+            echo "and commit a fixture directory for it (see TESTING.md,"
+            echo "\"Refreshing hashcat fixtures\")."
+            echo
+            echo "Filed automatically by the hashcat Matrix workflow."
+          } > /tmp/issue-body.md
+          gh issue create --title "${title}" --body-file /tmp/issue-body.md

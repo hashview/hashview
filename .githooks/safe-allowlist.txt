@@ -90,3 +90,25 @@ control/wordlists/deadbeef
 # This file's own usage example (a comment demonstrating an anchored pattern),
 # surfaced whenever the allowlist itself is edited.
 ignore trustedsec mentions in the example
+
+# --- Hashcat version-interop CI matrix false positives ---
+# The scanner reads whole changed files, so adding the matrix workflow and its
+# fixtures surfaces public hashcat.net/GitHub links and release-archive
+# checksums. None are secrets.
+
+# Public hashcat release archive download URL (hashcat/hashcat GitHub releases).
+github\.com/hashcat/hashcat
+# Public hashcat.net wiki/FAQ/Discord links referenced in docs and the plan.
+hashcat\.net
+# SHA-256 checksums of public hashcat release archives, pinned for the
+# version-interop matrix fixtures (tests/hashcat_matrix, capture scripts).
+sha256:\s*"[0-9a-f]{64}"
+
+# Test-only dummy credential literals used by the agent/API test suites
+# (not real secrets).
+api_key="test-api-key"
+api_key="scope-audit-key"
+
+# LM hash response constant used by machine-account/hash-parser tests
+# (a fixed test fixture value, not a real credential).
+1122334455667788AABBCCDDEEFF1122334455667788AABBCCDD

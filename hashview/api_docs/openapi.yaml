@@ -999,7 +999,8 @@ paths:
         absent) sets membership to exactly the given, validated, deduped,
         order-preserving list. `mode: append` adds the given ids (deduped
         against the existing membership too) to the end of the existing
-        list, preserving order.
+        list, preserving order; if the existing membership cannot be parsed
+        from storage, it is treated as empty.
       operationId: setTaskGroupTasks
       x-audience: user
       security:
@@ -1821,7 +1822,8 @@ components:
           description: >-
             "replace" (default) sets membership to exactly this list;
             "append" adds these ids (deduped against existing membership)
-            to the end of the existing list.
+            to the end of the existing list; if existing membership cannot
+            be parsed, it is treated as empty.
 
     JobTaskStatusUpdate:
       type: object

@@ -324,7 +324,7 @@ class TaskGroups(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    tasks = db.Column(db.String(256), nullable=False)
+    tasks = db.Column(db.Text, nullable=False)
 
 class Hashes(db.Model):
     """Class object to represent Hashes"""

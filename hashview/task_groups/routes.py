@@ -70,14 +70,14 @@ def task_groups_add():
                     tid = int(piece)
                     if tid in valid_ids and tid not in ordered:
                         ordered.append(tid)
-            task_group = TaskGroups(name=task_group_form.name.data, owner_id=current_user.id, tasks=str(ordered))
+            task_group = TaskGroups(name=task_group_form.name.data, owner_id=current_user.id, tasks=json.dumps(ordered))
             db.session.add(task_group)
             db.session.commit()
             log_event('task_group.create', target=f'task_group:{task_group.id} {task_group.name!r}')
             flash(f'Task group {task_group_form.name.data} created!', 'success')
             return redirect(url_for('task_groups.task_groups_list'))
         # Legacy flow: create an empty group then go to the assign-tasks page.
-        task_group = TaskGroups(name=task_group_form.name.data, owner_id=current_user.id, tasks=str([]))
+        task_group = TaskGroups(name=task_group_form.name.data, owner_id=current_user.id, tasks=json.dumps([]))
         db.session.add(task_group)
         db.session.commit()
         log_event('task_group.create', target=f'task_group:{task_group.id} {task_group.name!r}')
@@ -118,7 +118,7 @@ def task_groups_edit():
                 if tid in valid_ids and tid not in ordered:
                     ordered.append(tid)
         task_group.name = task_group_form.name.data
-        task_group.tasks = str(ordered)
+        task_group.tasks = json.dumps(ordered)
         db.session.commit()
         log_event('task_group.edit', target=f'task_group:{task_group.id} {task_group.name!r}')
         flash(f'Task group {task_group_form.name.data} updated!', 'success')
@@ -154,7 +154,7 @@ def task_groups_assigned_tasks_add_task(task_group_id, task_id):
     task_group = TaskGroups.query.get(task_group_id)
     task_group_tasks = json.loads(task_group.tasks)
     task_group_tasks.append(task_id)
-    task_group.tasks = str(task_group_tasks)
+    task_group.tasks = json.dumps(task_group_tasks)
     db.session.commit()
     return redirect("/task_groups/assigned_tasks/"+str(task_group.id))
 
@@ -172,7 +172,7 @@ def task_groups_assigned_tasks_remove_task(task_group_id, task_id):
         flash('That task is no longer in this group — it may have already been removed.', 'warning')
         return redirect("/task_groups/assigned_tasks/"+str(task_group.id))
     task_group_tasks.remove(task_id)
-    task_group.tasks = str(task_group_tasks)
+    task_group.tasks = json.dumps(task_group_tasks)
     if not try_commit(f'remove task {task_id} from task_group {task_group_id}'):
         flash('Could not remove the task — please try again.', 'danger')
     return redirect("/task_groups/assigned_tasks/"+str(task_group.id))
@@ -202,7 +202,7 @@ def task_groups_assigned_tasks_promote_task(task_group_id, task_id):
             else:
                 new_task_group_tasks.append(task_group_tasks[index])
             index+=1
-    task_group.tasks = str(new_task_group_tasks)
+    task_group.tasks = json.dumps(new_task_group_tasks)
     db.session.commit()
     return redirect("/task_groups/assigned_tasks/"+str(task_group.id))
 
@@ -231,7 +231,7 @@ def task_groups_assigned_tasks_demote_task(task_group_id, task_id):
             else:
                 new_task_group_tasks.append(task_group_tasks[index])
             index+=1
-    task_group.tasks = str(new_task_group_tasks)
+    task_group.tasks = json.dumps(new_task_group_tasks)
     db.session.commit()
     return redirect("/task_groups/assigned_tasks/"+str(task_group.id))
 

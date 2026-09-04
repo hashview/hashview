@@ -3,6 +3,7 @@ from flask_wtf import FlaskForm
 from wtforms import (
 	BooleanField,
 	FileField,
+	IntegerField,
 	SelectField,
 	StringField,
 	SubmitField,
@@ -12,6 +13,7 @@ from wtforms.validators import DataRequired, ValidationError
 
 from hashview.models import Jobs
 from hashview.utils.hashcat_modes import (
+	CUSTOM_HASH_TYPE,
 	HASH_TYPE_CHOICES,
 	KERBEROS_HASH_TYPE_CHOICES,
 	NETNTLM_HASH_TYPE_CHOICES,
@@ -52,7 +54,35 @@ class JobsNewHashFileForm(FlaskForm):
 													('user_hash', '$user:$hash'),
 													('hash_only', '$hash')], validators=[DataRequired()])
 													
-    hash_type = SelectField('Hash Type', choices=HASH_TYPE_CHOICES)
+    hash_type = SelectField('Hash Type', choices=HASH_TYPE_CHOICES + [(CUSTOM_HASH_TYPE, 'Custom (enter mode number)')])
+
+    # custom_hash_type is present (though hidden) on every hash-file upload
+    # submission, not just custom-mode ones, so it is legitimately blank most
+    # of the time. IntegerField's own process_formdata() raises "Not a valid
+    # integer value" on int(''), and that process error lands in field.errors
+    # unconditionally -- before any validators run -- which would fail
+    # validate() on every ordinary (non-custom) submission. Coerce a blank
+    # submitted value to None here instead of erroring, and do the
+    # conditionally-required + range check by hand in validate_custom_hash_type
+    # below (a field-level Optional()/NumberRange() pairing doesn't work here:
+    # Optional() raises StopValidation on blank input, which aborts the
+    # validator chain before the inline validate_custom_hash_type method --
+    # appended to that same chain by WTForms -- ever runs).
+    class _BlankableIntegerField(IntegerField):
+        def process_formdata(self, valuelist):
+            if valuelist and (valuelist[0] is None or not str(valuelist[0]).strip()):
+                self.data = None
+                return
+            super().process_formdata(valuelist)
+
+    custom_hash_type = _BlankableIntegerField('Custom Hash Mode')
+
+    def validate_custom_hash_type(self, field):
+        # Named validate_custom_hash_type per this file's inline-validator convention
+        # (see comment at line 36) so WTForms runs it automatically.
+        if self.hash_type.data == CUSTOM_HASH_TYPE:
+            if field.data is None or not (0 <= field.data <= 99999):
+                raise ValidationError('Enter a hashcat mode number for the custom hash type.')
 
     shadow_hash_type = SelectField('Hash Type', choices=SHADOW_HASH_TYPE_CHOICES)
 

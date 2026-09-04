@@ -40,6 +40,7 @@ from hashview.models import (
     db,
 )
 from hashview.utils.audit import log_event
+from hashview.utils.hashcat_modes import CUSTOM_HASH_TYPE
 from hashview.utils.utils import (
     apply_name_filter,
     build_job_task_commands,
@@ -57,6 +58,17 @@ from hashview.utils.utils import (
 )
 
 jobs = Blueprint('jobs', __name__)
+
+
+def _resolved_hash_type(form):
+    """Resolve the form's hash_type field to the mode string to store/validate.
+
+    Translates the 'custom' sentinel to the operator-typed mode number so the
+    literal string 'custom' can never reach a validator or the DB.
+    """
+    if form.hash_type.data == CUSTOM_HASH_TYPE:
+        return str(form.custom_hash_type.data)
+    return form.hash_type.data
 
 
 def _job_has_alert_hashes(job):
@@ -134,7 +146,7 @@ def jobs_list():
         for _sel in (_f.hash_type, _f.pwdump_hash_type, _f.netntlm_hash_type,
                      _f.kerberos_hash_type, _f.shadow_hash_type):
             for _v, _lab in _sel.choices:
-                if _v is not None and str(_v) not in hash_type_names:
+                if _v is not None and str(_v).isdigit() and str(_v) not in hash_type_names:
                     _nm = _lab.split(') ', 1)[1] if ') ' in _lab else _lab
                     hash_type_names[str(_v)] = _nm.split(' / ')[0].split(',')[0].strip()
     except Exception:  # pragma: no cover - defensive
@@ -280,7 +292,7 @@ def jobs_assigned_hashfile(job_id):
                  jobs_new_hashfile_form.netntlm_hash_type, jobs_new_hashfile_form.kerberos_hash_type,
                  jobs_new_hashfile_form.shadow_hash_type):
         for _val, _label in _sel.choices:
-            if _val and str(_val) not in hash_type_names:
+            if _val and str(_val).isdigit() and str(_val) not in hash_type_names:
                 _name = _label.split(') ', 1)[1] if ') ' in _label else _label
                 hash_type_names[str(_val)] = _name.split(' / ')[0].split(',')[0].strip()
 
@@ -357,10 +369,10 @@ def jobs_assigned_hashfile(job_id):
                     hash_type = jobs_new_hashfile_form.shadow_hash_type.data
                 elif jobs_new_hashfile_form.file_type.data == 'user_hash':
                     has_problem = validate_user_hash_hashfile(hashfile_path)
-                    hash_type = jobs_new_hashfile_form.hash_type.data
+                    hash_type = _resolved_hash_type(jobs_new_hashfile_form)
                 elif jobs_new_hashfile_form.file_type.data == 'hash_only':
-                    has_problem = validate_hash_only_hashfile(hashfile_path, jobs_new_hashfile_form.hash_type.data)
-                    hash_type = jobs_new_hashfile_form.hash_type.data
+                    hash_type = _resolved_hash_type(jobs_new_hashfile_form)
+                    has_problem = validate_hash_only_hashfile(hashfile_path, hash_type)
                 else:
                     has_problem = 'Invalid File Format'
 
@@ -448,8 +460,8 @@ def jobs_assigned_hashfile(job_id):
             # them instead of receiving the full HTML page.
             msgs = []
             for _field in (jobs_new_hashfile_form.name, jobs_new_hashfile_form.file_type,
-                           jobs_new_hashfile_form.hash_type, jobs_new_hashfile_form.hashfile,
-                           jobs_new_hashfile_form.hashfilehashes):
+                           jobs_new_hashfile_form.hash_type, jobs_new_hashfile_form.custom_hash_type,
+                           jobs_new_hashfile_form.hashfile, jobs_new_hashfile_form.hashfilehashes):
                 msgs.extend(str(m) for m in _field.errors)
             return jsonify({'status': 'error',
                             'msg': '; '.join(msgs) or 'Invalid upload request.'}), 400
@@ -936,7 +948,7 @@ def jobs_summary(job_id):
         for _sel in (_f.hash_type, _f.pwdump_hash_type, _f.netntlm_hash_type,
                      _f.kerberos_hash_type, _f.shadow_hash_type):
             for _v, _lab in _sel.choices:
-                if _v is not None and str(_v) not in _names:
+                if _v is not None and str(_v).isdigit() and str(_v) not in _names:
                     _nm = _lab.split(') ', 1)[1] if ') ' in _lab else _lab
                     _names[str(_v)] = _nm.split(' / ')[0].split(',')[0].strip()
         hashfile_hash_type = _names.get(str(hash_mode), 'mode ' + str(hash_mode))

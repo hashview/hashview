@@ -54,6 +54,14 @@
         }
     }
 
+    function hvCustomHashType(sel){
+        var d = document.getElementById('custom_hash_type_div');
+        var on = (sel && sel.value === 'custom');
+        d.style.display = on ? 'block' : 'none';
+        var inp = d.querySelector('input'); if (inp) inp.required = on;
+        hvHfGate();
+    }
+
     // show the hash-type select that matches the chosen file format
     function showHashTypeSelected(sel){
         var map = {pwdump:'pwdump_hash_type_div', NetNTLM:'netntlm_hash_type_div', kerberos:'kerberos_hash_type_div',
@@ -73,6 +81,9 @@
         // --hex-salt applies only to the colon-delimited hash_only / user_hash formats
         var hs = document.getElementById('hex_salt_div');
         if (hs) hs.style.display = (sel.value === 'hash_only' || sel.value === 'user_hash') ? 'flex' : 'none';
+        // custom mode entry is only meaningful for hash_only / user_hash; hide it
+        // (and clear its required flag) when switching to any other format
+        if (sel.value !== 'hash_only' && sel.value !== 'user_hash') hvCustomHashType(null);
         hvHfGate();
     }
 
@@ -170,8 +181,14 @@
                         <div id="netntlm_hash_type_div" style="display:none;">{{ jobsNewHashFileForm.netntlm_hash_type(class="select", onchange="hvHashTypeExample(this)") }}</div>
                         <div id="kerberos_hash_type_div" style="display:none;">{{ jobsNewHashFileForm.kerberos_hash_type(class="select", onchange="hvHashTypeExample(this)") }}</div>
                         <div id="shadow_hash_type_div" style="display:none;">{{ jobsNewHashFileForm.shadow_hash_type(class="select", onchange="hvHashTypeExample(this)") }}</div>
-                        <div id="hash_type_div" style="display:none;">{{ jobsNewHashFileForm.hash_type(class="select", onchange="hvHashTypeExample(this)") }}</div>
+                        <div id="hash_type_div" style="display:none;">{{ jobsNewHashFileForm.hash_type(class="select", onchange="hvHashTypeExample(this); hvCustomHashType(this)") }}</div>
                     </div>
+                </div>
+
+                <div id="custom_hash_type_div" style="display:none;">
+                    <label class="field-label" for="custom_hash_type">Custom hashcat mode <span class="req">*</span></label>
+                    {{ jobsNewHashFileForm.custom_hash_type(class=("input is-invalid" if jobsNewHashFileForm.custom_hash_type.errors else "input"), placeholder="e.g. 31337") }}
+                    {% if jobsNewHashFileForm.custom_hash_type.errors %}<div class="invalid-feedback">{% for e in jobsNewHashFileForm.custom_hash_type.errors %}<span>{{ e }}</span>{% endfor %}</div>{% endif %}
                 </div>
 
                 {# --hex-salt: only the colon-delimited hash_only / user_hash formats carry a

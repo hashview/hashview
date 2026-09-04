@@ -178,6 +178,51 @@ def test_tasks_list_padlocks_in_group_task(app, client):
     assert b"In a task group" in resp.data
 
 
+def test_tasks_list_info_modal_names_task_group(app, client):
+    """The info modal's task-groups panel names the group(s) a task belongs to,
+    and shows a 'not in any' fallback for a free task."""
+    owner = _nonadmin()
+    _login(client, owner)
+    free = _make_task(owner.id, name="tinfo-free")
+    in_group = _make_task(owner.id, name="tinfo-ingroup")
+    db.session.add(TaskGroups(name="tg-info", owner_id=owner.id, tasks=str([in_group.id])))
+    db.session.commit()
+
+    resp = client.get("/tasks")
+    assert resp.status_code == 200
+    assert b"tg-info" in resp.data
+    assert b"In 1 task group" in resp.data
+    assert b"Not in any task groups" in resp.data
+
+
+def test_tasks_list_no_active_delete_button_when_blocked(app, client):
+    """A task assigned to a job or in a task group renders a dimmed, disabled
+    delete affordance -- not the active act-del button -- so the row can't
+    trigger a delete the backend would reject anyway."""
+    owner = _nonadmin()
+    _login(client, owner)
+    free = _make_task(owner.id, name="tdel-free")
+    in_job = _make_task(owner.id, name="tdel-injob")
+    db.session.add(JobTasks(job_id=1, task_id=in_job.id, status="Not Started"))
+    in_group = _make_task(owner.id, name="tdel-ingroup")
+    db.session.add(TaskGroups(name="tg-del", owner_id=owner.id, tasks=str([in_group.id])))
+    db.session.commit()
+
+    resp = client.get("/tasks")
+    assert resp.status_code == 200
+    body = resp.data.decode()
+
+    def active_del_button_present(task_id):
+        marker = f'class="icon-btn act-del" title="Delete" onclick="document.getElementById(\'del-{task_id}\')'
+        return marker in body
+
+    assert active_del_button_present(free.id)
+    assert not active_del_button_present(in_job.id)
+    assert not active_del_button_present(in_group.id)
+    assert b"Locked \xe2\x80\x94 task is assigned to a job" in resp.data
+    assert b"Locked \xe2\x80\x94 task is in a task group" in resp.data
+
+
 def test_tasks_list_substring_id_not_falsely_padlocked(app, client):
     """A group containing task 10 must not padlock task 1 -- the membership check
     parses the JSON list rather than substring-matching the stored string."""

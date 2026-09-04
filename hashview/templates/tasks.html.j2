@@ -207,7 +207,13 @@
                         {% else %}
                         <button type="button" class="icon-btn" title="Edit" onclick='hvEditTask({id:{{ task.id }}, name:{{ task.name|tojson }}, mode:{{ task.hc_attackmode|tojson }}, wl_id:{{ task.wl_id|tojson }}, wl_id_2:{{ task.wl_id_2|tojson }}, rule_id:{{ task.rule_id|tojson }}, mask:{{ task.hc_mask|tojson }}, j_rule:{{ task.j_rule|tojson }}, k_rule:{{ task.k_rule|tojson }}, loopback:{{ task.loopback|tojson }}})'>{{ icon('edit', size=15) }}</button>
                         {% endif %}
+                        {% if in_job %}
+                        <span class="icon-btn" style="opacity:.4; cursor:not-allowed;" title="Locked — task is assigned to a job — remove it from the job before deleting">{{ icon('trash', size=15) }}</span>
+                        {% elif in_group %}
+                        <span class="icon-btn" style="opacity:.4; cursor:not-allowed;" title="Locked — task is in a task group — remove it from the group before deleting">{{ icon('trash', size=15) }}</span>
+                        {% else %}
                         <button type="button" class="icon-btn act-del" title="Delete" onclick="document.getElementById('del-{{ task.id }}').showModal()">{{ icon('trash', size=15) }}</button>
+                        {% endif %}
                     </div>
                 </td>
             </tr>
@@ -423,6 +429,22 @@
             {% endfor %}
             {% else %}
             <div class="mono" style="color:var(--text-mute);">Not used in any jobs yet.</div>
+            {% endif %}
+        </div>
+
+        {# task-group membership: which group(s), if any, this task belongs to #}
+        {% set groups = (task_groups_by_task.get(task.id, []) if task_groups_by_task is defined else []) %}
+        <div style="margin-top:24px;">
+            <div class="mono" style="display:flex; align-items:center; gap:8px; font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-mute); margin-bottom:11px;">{{ icon('lock', size=14) }} In {{ groups|length | commafy }} task group{{ '' if groups|length == 1 else 's' }}</div>
+            {% if groups %}
+            {% for tg in groups %}
+            <div class="card" style="margin-bottom:8px; padding:12px 14px; display:flex; align-items:center; gap:10px;">
+                <span class="mono" style="color:var(--text-mute);">#{{ tg.id }}</span>
+                <span style="font-weight:600; color:var(--text);">{{ tg.name }}</span>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="mono" style="color:var(--text-mute);">Not in any task groups.</div>
             {% endif %}
         </div>
     </div>

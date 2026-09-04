@@ -11,6 +11,18 @@ def test_job_creation_customer_add_new_option_is_first(page, live_server, login)
     right after the '--SELECT--' placeholder, so it's reachable without
     scrolling past an alphabetized customer list."""
     login()
+
+    # Seed a real customer through the actual UI flow so the dropdown has at
+    # least one entry to be out-of-order relative to — an empty customer list
+    # would make the ordering assertions vacuously true.
+    page.goto(f"{live_server}/customers", wait_until="domcontentloaded")
+    page.evaluate("document.getElementById('add-customer-modal').showModal()")
+    customer_name = f"E2E Order Check {os.urandom(4).hex()}"
+    page.locator("#add-customer-modal input[name='name']").fill(customer_name)
+    page.locator("#add-customer-modal button[type=submit]").click()
+    page.wait_for_load_state("domcontentloaded")
+    expect(page.get_by_text(f"Customer {customer_name} added!")).to_be_visible()
+
     page.get_by_role("link", name="Jobs").click()
     page.get_by_role("link", name="New Job", exact=True).click()
     expect(page.get_by_role("heading", name="Create Job")).to_be_visible()

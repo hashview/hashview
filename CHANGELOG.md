@@ -52,6 +52,7 @@ Notable changes will be documented here
 **Jobs & Hashfiles**
 - Bulk-select and bulk-delete on the hashfiles list
 - Per-hashfile `--hex-salt` option for salted hash types
+- Custom hashcat hash-mode entry for the `$hash` and `$user:$hash` hashfile formats (#447), for operators running a hashcat build with modes not in Hashview's bundled list. No import-time shape validation is performed on a custom mode. An agent whose hashcat can't benchmark a mode reports it as unsupported instead of hanging: the mode is never re-requested from that agent and it is never dispatched tasks of that type
 
 **Testing**
 - Job-creation performance e2e suite (`tests/e2e/test_job_creation_perf.py`) with a tunable volume seeder (`tests/seed_perf_db.py`), covering latency budgets for each wizard step plus strict-xfail scaling guards for the four endpoints in issue #422 whose cost grows with table size rather than page size

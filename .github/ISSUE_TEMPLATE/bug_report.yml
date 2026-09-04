@@ -1,0 +1,92 @@
+name: Bug report
+description: Report a problem with Hashview server or agent
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please **do not** paste real
+        hashes, plaintext passwords, potfiles, or anything identifying a
+        client/engagement here — use synthetic examples instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: Hashview version
+      description: Server release/commit, and agent VERSION.TXT if relevant
+      placeholder: e.g. v0.8.3, or commit SHA
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment
+      options:
+        - Docker Compose (dev setup)
+        - Bare metal / manual install
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Server
+        - Agent
+        - Both / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      placeholder: e.g. 3.11.8
+
+  - type: input
+    id: db-version
+    attributes:
+      label: Database version
+      placeholder: e.g. MySQL 8.0, MariaDB 11
+
+  - type: input
+    id: hashcat-version
+    attributes:
+      label: Hashcat version (agent-side, if relevant)
+      placeholder: e.g. 6.2.6
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use synthetic hashes/wordlists, not real engagement data
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Server/agent logs or a traceback. Redact anything sensitive.
+      render: shell

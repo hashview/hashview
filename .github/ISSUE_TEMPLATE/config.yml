@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Existing issues
+    url: https://github.com/hashview/hashview/issues
+    about: Check whether your issue or idea has already been reported before filing a new one.

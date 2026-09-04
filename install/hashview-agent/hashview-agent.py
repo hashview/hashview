@@ -535,13 +535,16 @@ def run_benchmark(hash_modes):
             continue
         results[str(mode)] = speed
         LOG.info('Hash mode %s benchmark: %s H/s', mode, speed)
-    if failed:
-        api.sendError(
-            'hashcat on this agent could not benchmark hash mode(s): '
-            + ', '.join(str(m) for m in failed)
-            + '. These modes will be marked unsupported for this agent.')
     if results:
         report_benchmark(results)
+    if failed:
+        try:
+            api.sendError(
+                'hashcat on this agent could not benchmark hash mode(s): '
+                + ', '.join(str(m) for m in failed)
+                + '. These modes will be marked unsupported for this agent.')
+        except Exception:
+            LOG.exception('Failed to report unsupported hash modes to the server.')
 
 
 def report_benchmark(results):

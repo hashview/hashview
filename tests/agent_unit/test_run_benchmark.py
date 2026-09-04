@@ -211,6 +211,36 @@ def test_run_benchmark_no_failures_does_not_send_error(monkeypatch):
         agent.bench.parse_benchmark_speed = original_parse
 
 
+def test_run_benchmark_report_survives_send_error_exception(monkeypatch):
+    """report_benchmark must run (and run first) even if api.sendError raises.
+
+    sendError posts to /v1/error, which triggers a synchronous notify_admins()
+    server-side. If that call hangs or raises, the speed=0 rows that end the
+    fleet-starvation loop must still get reported -- and the exception must
+    not propagate out of run_benchmark.
+    """
+    failed_mode = 1000
+
+    mock_run = mock.MagicMock()
+    mock_run.side_effect = RuntimeError("hashcat not found")
+    monkeypatch.setattr(agent_main.subprocess, "run", mock_run)
+
+    mock_send_error = mock.MagicMock(side_effect=RuntimeError("notify_admins blew up"))
+    monkeypatch.setattr(agent_main.api, "sendError", mock_send_error)
+    mock_report = mock.MagicMock()
+    monkeypatch.setattr(agent_main, "report_benchmark", mock_report)
+
+    # Must not raise despite sendError blowing up.
+    agent_main.run_benchmark([failed_mode])
+
+    # report_benchmark must have been called with the full results dict,
+    # and sendError must still have been attempted.
+    assert mock_report.call_count == 1
+    results = mock_report.call_args[0][0]
+    assert results == {'1000': 0}
+    assert mock_send_error.call_count == 1
+
+
 def test_run_benchmark_empty_modes_list(monkeypatch):
     """When hash_modes is empty or None, do nothing."""
     mock_send_error = mock.MagicMock()

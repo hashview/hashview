@@ -58,7 +58,9 @@
         var d = document.getElementById('custom_hash_type_div');
         var on = (sel && sel.value === 'custom');
         d.style.display = on ? 'block' : 'none';
-        var inp = d.querySelector('input'); if (inp) inp.required = on;
+        var inp = d.querySelector('input');
+        if (inp) inp.required = on;
+        if (inp && !on) inp.value = '';
         hvHfGate();
     }
 
@@ -82,8 +84,14 @@
         var hs = document.getElementById('hex_salt_div');
         if (hs) hs.style.display = (sel.value === 'hash_only' || sel.value === 'user_hash') ? 'flex' : 'none';
         // custom mode entry is only meaningful for hash_only / user_hash; hide it
-        // (and clear its required flag) when switching to any other format
-        if (sel.value !== 'hash_only' && sel.value !== 'user_hash') hvCustomHashType(null);
+        // (and clear its required flag) when switching to any other format, and
+        // re-evaluate it (in case the hash_type select still holds 'custom' from
+        // an earlier selection) when switching back to hash_only / user_hash.
+        if (sel.value !== 'hash_only' && sel.value !== 'user_hash') {
+            hvCustomHashType(null);
+        } else {
+            hvCustomHashType(vsel);
+        }
         hvHfGate();
     }
 

@@ -602,6 +602,7 @@ def v1_api_get_agent_benchmarks():
 
     rows = (db.session.query(AgentBenchmarks.hash_type,
                              db.func.min(AgentBenchmarks.speed))
+            .filter(AgentBenchmarks.speed > 0)
             .group_by(AgentBenchmarks.hash_type).all())
     # An empty fleet is not an error: 200 with an empty map, like the other
     # collection endpoints.

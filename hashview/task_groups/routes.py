@@ -7,9 +7,38 @@ from flask_login import current_user, login_required
 from hashview.models import Hashes, TaskGroups, Tasks, Users, db
 from hashview.task_groups.forms import TaskGroupsForm
 from hashview.utils.audit import log_event
-from hashview.utils.utils import try_commit
+from hashview.utils.utils import MAX_TASKS_PER_GROUP, try_commit
 
 task_groups = Blueprint('task_groups', __name__)
+
+# Flask's session is a signed *cookie*, so anything round-tripped through
+# session['task_groups_form_err'] has to stay well inside the ~4 KB browser
+# cookie limit — a browser silently drops an over-sized cookie, which would
+# take the login with it. A cap-sized selection is ~60 KB of CSV, so past this
+# budget the error is flashed rather than reopening the modal.
+_MAX_ROUNDTRIP_TASK_IDS = 2000
+
+# tasks.id is a signed INT, so no id past this can exist — and handing the DB
+# driver a wider integer raises instead of simply matching no rows.
+_MAX_TASK_ID = 2_147_483_647
+
+
+def _form_error(modal, values, errors, task_ids):
+    """Surface a task-group form error, preferring the modal it came from.
+
+    The submitted selection is round-tripped so the modal reopens with the
+    user's work intact. When that selection is too large for the session
+    cookie the error is flashed on the listing instead — deliberately NOT
+    reopened with a silently emptied selection, because the template cannot
+    tell "too big to preserve" from "nothing selected", and a blind resubmit
+    would then store the empty list over the group's whole membership.
+    """
+    if len(task_ids) > _MAX_ROUNDTRIP_TASK_IDS:
+        for err in errors:
+            flash(err, 'danger')
+        return
+    values['task_ids'] = task_ids
+    session['task_groups_form_err'] = {'modal': modal, 'values': values, 'errors': errors}
 
 @task_groups.route("/task_groups", methods=['GET', 'POST'])
 @login_required
@@ -48,6 +77,7 @@ def task_groups_list():
                            users=users, tasks=tasks, group_tasks=group_tasks,
                            group_hits=group_hits, group_owner=group_owner,
                            task_group_form=TaskGroupsForm(),
+                           max_tasks_per_group=MAX_TASKS_PER_GROUP,
                            form_err=session.pop('task_groups_form_err', None))
 
 @task_groups.route("/task_groups/add", methods=['GET', 'POST'])
@@ -70,6 +100,18 @@ def task_groups_add():
                     tid = int(piece)
                     if tid in valid_ids and tid not in ordered:
                         ordered.append(tid)
+            # Cap the membership that would actually be stored — unknown and
+            # duplicate ids are silently dropped above, so `ordered` (not the
+            # raw submitted count) is what has to fit MAX_TASKS_PER_GROUP.
+            if len(ordered) > MAX_TASKS_PER_GROUP:
+                _form_error(
+                    'new-group-modal',
+                    {'name': task_group_form.name.data or ''},
+                    [f'A task group can hold at most {MAX_TASKS_PER_GROUP:,} tasks '
+                     f'({len(ordered):,} selected).'],
+                    request.form.get('task_ids', ''),
+                )
+                return redirect(url_for('task_groups.task_groups_list'))
             task_group = TaskGroups(name=task_group_form.name.data, owner_id=current_user.id, tasks=json.dumps(ordered))
             db.session.add(task_group)
             db.session.commit()
@@ -87,11 +129,12 @@ def task_groups_add():
     # inside and the typed name preserved; from the legacy standalone page →
     # re-render that page.
     if request.form.get('from_modal'):
-        session['task_groups_form_err'] = {
-            'modal': 'new-group-modal',
-            'values': {'name': task_group_form.name.data or ''},
-            'errors': [e for errs in task_group_form.errors.values() for e in errs],
-        }
+        _form_error(
+            'new-group-modal',
+            {'name': task_group_form.name.data or ''},
+            [e for errs in task_group_form.errors.values() for e in errs],
+            request.form.get('task_ids', ''),
+        )
         return redirect(url_for('task_groups.task_groups_list'))
     return render_template('task_groups_add.html.j2', title='Tasks Add', tasks=tasks, task_group_form=task_group_form)
 
@@ -117,6 +160,17 @@ def task_groups_edit():
                 tid = int(piece)
                 if tid in valid_ids and tid not in ordered:
                     ordered.append(tid)
+        # Checked before either attribute is assigned, so a rejected edit
+        # leaves no dirty state on the identity-mapped row.
+        if len(ordered) > MAX_TASKS_PER_GROUP:
+            _form_error(
+                'edit-group-modal',
+                {'name': task_group_form.name.data or '', 'group_id': task_group.id},
+                [f'A task group can hold at most {MAX_TASKS_PER_GROUP:,} tasks '
+                 f'({len(ordered):,} selected).'],
+                request.form.get('task_ids', ''),
+            )
+            return redirect(url_for('task_groups.task_groups_list'))
         task_group.name = task_group_form.name.data
         task_group.tasks = json.dumps(ordered)
         db.session.commit()
@@ -125,15 +179,12 @@ def task_groups_edit():
         return redirect(url_for('task_groups.task_groups_list'))
     # Validation failed — reopen the Edit-group modal for this group with the
     # specific error inside it (was: a generic flash over the listing).
-    session['task_groups_form_err'] = {
-        'modal': 'edit-group-modal',
-        'values': {
-            'name': task_group_form.name.data or '',
-            'group_id': task_group.id,
-            'task_ids': request.form.get('task_ids', ''),
-        },
-        'errors': [e for errs in task_group_form.errors.values() for e in errs] or ['Could not update task group.'],
-    }
+    _form_error(
+        'edit-group-modal',
+        {'name': task_group_form.name.data or '', 'group_id': task_group.id},
+        [e for errs in task_group_form.errors.values() for e in errs] or ['Could not update task group.'],
+        request.form.get('task_ids', ''),
+    )
     return redirect(url_for('task_groups.task_groups_list'))
 
 @task_groups.route("/task_groups/assigned_tasks/<int:task_group_id>", methods=['GET', 'POST'])
@@ -144,7 +195,8 @@ def task_groups_assigned_tasks(task_group_id):
     task_group = TaskGroups.query.get(task_group_id)
     tasks = Tasks.query
     task_group_tasks = json.loads(task_group.tasks)
-    return render_template('task_groups_assigntask.html.j2', title='Task Group: Assign Tasks', task_group=task_group, tasks=tasks, task_group_tasks=task_group_tasks)
+    return render_template('task_groups_assigntask.html.j2', title='Task Group: Assign Tasks', task_group=task_group, tasks=tasks, task_group_tasks=task_group_tasks,
+                           max_tasks_per_group=MAX_TASKS_PER_GROUP)
 
 @task_groups.route("/task_groups/assigned_tasks/<int:task_group_id>/add_task/<int:task_id>", methods=['GET'])
 @login_required
@@ -153,6 +205,20 @@ def task_groups_assigned_tasks_add_task(task_group_id, task_id):
 
     task_group = TaskGroups.query.get(task_group_id)
     task_group_tasks = json.loads(task_group.tasks)
+    # Validate before appending. The id comes straight off the URL and Flask's
+    # <int:> converter has no upper bound, so an unchecked append can store an
+    # arbitrarily wide integer — which passes the entry cap while pushing the
+    # serialized column past its byte limit in a handful of clicks.
+    if task_id > _MAX_TASK_ID or Tasks.query.get(task_id) is None:
+        flash('That task no longer exists — it may have been deleted.', 'warning')
+        return redirect("/task_groups/assigned_tasks/"+str(task_group.id))
+    # >= on the pre-append length: appending would make it len + 1, so a group
+    # sitting at the cap can take no more. This is the only incremental growth
+    # path; note it still does not dedupe.
+    if len(task_group_tasks) >= MAX_TASKS_PER_GROUP:
+        flash(f'This task group already holds the maximum of {MAX_TASKS_PER_GROUP:,} tasks.',
+              'warning')
+        return redirect("/task_groups/assigned_tasks/"+str(task_group.id))
     task_group_tasks.append(task_id)
     task_group.tasks = json.dumps(task_group_tasks)
     db.session.commit()

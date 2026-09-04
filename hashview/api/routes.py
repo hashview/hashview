@@ -37,6 +37,7 @@ from hashview.models import (
 )
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
+    MAX_TASKS_PER_GROUP,
     build_job_task_commands,
     compress_to_gz,
     decompress_gz,
@@ -1258,7 +1259,15 @@ def _validate_ordered_task_ids(task_ids):
     """Validate a list of task ids against the Tasks table, dedupe preserving
     first-occurrence order (mirrors task_groups_add/task_groups_edit in the
     web UI blueprint). Returns (ordered_list, error_msg_or_None) — on the
-    first invalid id, ordered_list is None and error_msg is set."""
+    first invalid id, ordered_list is None and error_msg is set.
+
+    The submitted list is length-capped at MAX_TASKS_PER_GROUP before anything
+    else runs, so an oversized payload is rejected at the door rather than
+    after a full Tasks load — and the caller gets the real diagnosis (too many
+    tasks) instead of whichever stale id happened to appear first."""
+    if len(task_ids) > MAX_TASKS_PER_GROUP:
+        return None, (f'A task group can hold at most {MAX_TASKS_PER_GROUP} tasks '
+                      f'({len(task_ids)} submitted)')
     valid_ids = {t.id for t in Tasks.query.all()}
     ordered = []
     for raw_id in task_ids:
@@ -1432,6 +1441,20 @@ def v1_api_set_task_group_tasks(task_group_id):
         new_list = existing + [tid for tid in ordered if tid not in existing]
     else:
         new_list = ordered
+
+    # The cap is on the RESULTING membership, which is the only check that also
+    # covers mode='append': `existing` is read straight back out of the column
+    # and never revalidated, so repeated small appends would otherwise walk a
+    # group past the limit. Counting new_list (not len(existing) + len(ordered))
+    # matters — the merge above dedupes, so appending an id the group already
+    # holds must not be rejected.
+    if len(new_list) > MAX_TASKS_PER_GROUP:
+        return jsonify({
+            'status': 400,
+            'type': 'Error',
+            'msg': f'A task group can hold at most {MAX_TASKS_PER_GROUP} tasks '
+                   f'({len(new_list)} after this change)'
+        })
 
     try:
         task_group.tasks = json.dumps(new_list)

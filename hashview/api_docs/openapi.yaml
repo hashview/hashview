@@ -955,6 +955,9 @@ paths:
         Creates the group and its ordered task membership in one call.
         `tasks` ids are validated against the Tasks table and deduped
         preserving first-occurrence order. Group names must be unique.
+        A task group holds at most 10000 tasks; the submitted `tasks`
+        array is length-checked first, so an over-long array is rejected
+        with body status 400 before any id is validated.
       operationId: addTaskGroup
       x-audience: user
       security:
@@ -987,6 +990,7 @@ paths:
                 duplicateName: {value: {status: 400, type: Error, msg: A task group with that name already exists}}
                 badTasksType: {value: {status: 400, type: Error, msg: tasks must be a list of task ids}}
                 badTaskId: {value: {status: 400, type: Error, msg: "Invalid task id: 999"}}
+                tooManyTasks: {value: {status: 400, type: Error, msg: A task group can hold at most 10000 tasks (10001 submitted)}}
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
 
@@ -1000,7 +1004,12 @@ paths:
         order-preserving list. `mode: append` adds the given ids (deduped
         against the existing membership too) to the end of the existing
         list, preserving order; if the existing membership cannot be parsed
-        from storage, it is treated as empty.
+        from storage, it is treated as empty. A task group holds at most
+        10000 tasks. The submitted `tasks` array is length-checked first (as
+        on the add endpoint, before any id is validated), and the cap is then
+        applied to the *resulting* membership — so `mode: append` is rejected
+        when the existing membership plus the new ids would exceed it, even
+        though the submitted array is short.
       operationId: setTaskGroupTasks
       x-audience: user
       security:
@@ -1038,6 +1047,8 @@ paths:
                 badTasksType: {value: {status: 400, type: Error, msg: tasks must be a list of task ids}}
                 badMode: {value: {status: 400, type: Error, msg: "mode must be 'replace' or 'append'"}}
                 badTaskId: {value: {status: 400, type: Error, msg: "Invalid task id: 999"}}
+                tooManySubmitted: {value: {status: 400, type: Error, msg: A task group can hold at most 10000 tasks (10001 submitted)}}
+                tooManyTasks: {value: {status: 400, type: Error, msg: A task group can hold at most 10000 tasks (10001 after this change)}}
                 forbidden: {value: {status: 403, type: Error, msg: You do not have rights to modify this task group}}
         '404':
           description: Real HTTP 404 — unknown task_group_id.

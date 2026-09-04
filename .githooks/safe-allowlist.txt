@@ -96,6 +96,10 @@ control/wordlists/deadbeef
 # surfaced whenever the allowlist itself is edited.
 ignore trustedsec mentions in the example
 
+# --- CONTRIBUTING.md false positives ---
+# Public documentation link to the Conventional Commits spec.
+conventionalcommits\.org
+
 # --- tests/unit/test_issue_xfail_import_hash_type_int.py false positives ---
 # A throwaway MySQL 4.1 (hashcat -m 300) SHA1 test digest; its 40 hex chars
 # trip the AWS-secret-key heuristic. Not a credential.

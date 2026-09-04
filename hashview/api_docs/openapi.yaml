@@ -76,6 +76,8 @@ tags:
     description: Per-job task queue entries dispatched to agents.
   - name: Tasks
     description: Reusable attack definitions (wordlist/rule/mask combinations).
+  - name: Task Groups
+    description: Named, ordered collections of tasks (built in the web UI or via the API).
   - name: Hashfiles
     description: Uploaded hash files and their contents.
   - name: Hashes
@@ -922,6 +924,169 @@ paths:
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
 
+  # ------------------------------------------------------------ Task Groups
+  /v1/task_groups:
+    get:
+      tags: [Task Groups]
+      summary: List task groups
+      operationId: listTaskGroups
+      x-audience: user
+      security:
+        - userApiKey: []
+      responses:
+        '200':
+          description: >-
+            Envelope with `task_groups` as a native JSON array; each row's
+            `tasks` is parsed into an array of task ids (not the raw stored
+            JSON string). A malformed stored value is coerced to `[]` rather
+            than failing the whole response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskGroupsListResponse'
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
+
+  /v1/task_groups/add:
+    post:
+      tags: [Task Groups]
+      summary: Create a task group
+      description: >-
+        Creates the group and its ordered task membership in one call.
+        `tasks` ids are validated against the Tasks table and deduped
+        preserving first-occurrence order. Group names must be unique.
+      operationId: addTaskGroup
+      x-audience: user
+      security:
+        - userApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskGroupCreate'
+            examples:
+              withTasks: {value: {name: nightly-run, tasks: [1, 2, 3]}}
+              empty: {value: {name: empty-group}}
+      responses:
+        '200':
+          description: >-
+            HTTP 200 always; body status 200 with `task_group_id` on
+            success, 400 for each validation failure, 403 if the key
+            resolves to no user, 500 on a database error.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/TaskGroupAddedResponse'
+                  - $ref: '#/components/schemas/ApiError'
+              examples:
+                added: {value: {status: 200, type: message, msg: Task group added, task_group_id: 7}}
+                missingBody: {value: {status: 400, type: Error, msg: Missing task group data in request body}}
+                missingName: {value: {status: 400, type: Error, msg: Task group name is required}}
+                duplicateName: {value: {status: 400, type: Error, msg: A task group with that name already exists}}
+                badTasksType: {value: {status: 400, type: Error, msg: tasks must be a list of task ids}}
+                badTaskId: {value: {status: 400, type: Error, msg: "Invalid task id: 999"}}
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
+
+  /v1/task_groups/{task_group_id}/tasks:
+    post:
+      tags: [Task Groups]
+      summary: Set or append a task group's task membership
+      description: >-
+        Owner or admin only. `mode: replace` (default when omitted or
+        absent) sets membership to exactly the given, validated, deduped,
+        order-preserving list. `mode: append` adds the given ids (deduped
+        against the existing membership too) to the end of the existing
+        list, preserving order; if the existing membership cannot be parsed
+        from storage, it is treated as empty.
+      operationId: setTaskGroupTasks
+      x-audience: user
+      security:
+        - userApiKey: []
+      parameters:
+        - name: task_group_id
+          in: path
+          required: true
+          schema: {type: integer}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskGroupTasksUpdate'
+            examples:
+              replace: {value: {tasks: [1, 2, 3]}}
+              append: {value: {tasks: [4], mode: append}}
+      responses:
+        '200':
+          description: >-
+            HTTP 200 always; body status 200 with the resulting `tasks`
+            list on success, 400 for each validation failure, 403 when not
+            owner/admin or when the key resolves to no user, 500 on a
+            database error.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/TaskGroupUpdatedResponse'
+                  - $ref: '#/components/schemas/ApiError'
+              examples:
+                updated: {value: {status: 200, type: message, msg: Task group updated, task_group_id: 7, tasks: [1, 2, 3]}}
+                missingBody: {value: {status: 400, type: Error, msg: Missing task group data in request body}}
+                badTasksType: {value: {status: 400, type: Error, msg: tasks must be a list of task ids}}
+                badMode: {value: {status: 400, type: Error, msg: "mode must be 'replace' or 'append'"}}
+                badTaskId: {value: {status: 400, type: Error, msg: "Invalid task id: 999"}}
+                forbidden: {value: {status: 403, type: Error, msg: You do not have rights to modify this task group}}
+        '404':
+          description: Real HTTP 404 — unknown task_group_id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example: {status: 404, type: Error, msg: Task group not found}
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
+
+  /v1/task_groups/{task_group_id}:
+    delete:
+      tags: [Task Groups]
+      summary: Delete a task group
+      description: Owner or admin only. Deletes the group row (member tasks are untouched).
+      operationId: deleteTaskGroup
+      x-audience: user
+      security:
+        - userApiKey: []
+      parameters:
+        - name: task_group_id
+          in: path
+          required: true
+          schema: {type: integer}
+      responses:
+        '200':
+          description: >-
+            HTTP 200; body status 200 on success, 403 when not owner or
+            admin, 500 on a database error.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/TaskGroupDeletedResponse'
+                  - $ref: '#/components/schemas/ApiError'
+              examples:
+                deleted: {value: {status: 200, type: message, msg: Task group deleted, task_group_id: 7}}
+                forbidden: {value: {status: 403, type: Error, msg: You do not have rights to delete this task group}}
+        '404':
+          description: Real HTTP 404 — unknown task_group_id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example: {status: 404, type: Error, msg: Task group not found}
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
+
   # ------------------------------------------------------------- Hashfiles
   /v1/hashfiles/upload/{customer_id}/{file_format}/{hash_type}/{hashfile_name}:
     post:
@@ -1504,6 +1669,18 @@ components:
         hc_mask: {type: string, nullable: true, description: Mask for modes 3/6/7.}
         loopback: {type: boolean, description: "Enable hashcat --loopback (straight mode + rule only)."}
 
+    TaskGroup:
+      type: object
+      description: A task group row (returned as a native JSON object).
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        owner_id: {type: integer}
+        tasks:
+          type: array
+          description: Ordered list of member task ids (parsed from the stored JSON string).
+          items: {type: integer}
+
     Settings:
       type: object
       description: >-
@@ -1611,6 +1788,42 @@ components:
           description: >-
             Optional rule id (must exist when given). Omit, or send
             null/"None"/"", for a plain dictionary attack.
+
+    TaskGroupCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: Must be unique across task groups.
+        tasks:
+          type: array
+          description: >-
+            Optional ordered list of task ids. Each id must exist in the
+            Tasks table; duplicates are deduped preserving first-occurrence
+            order.
+          items: {type: integer}
+
+    TaskGroupTasksUpdate:
+      type: object
+      required: [tasks]
+      properties:
+        tasks:
+          type: array
+          description: >-
+            Ordered list of task ids. Each id must exist in the Tasks
+            table; duplicates are deduped preserving first-occurrence
+            order.
+          items: {type: integer}
+        mode:
+          type: string
+          enum: [replace, append]
+          default: replace
+          description: >-
+            "replace" (default) sets membership to exactly this list;
+            "append" adds these ids (deduped against existing membership)
+            to the end of the existing list; if existing membership cannot
+            be parsed, it is treated as empty.
 
     JobTaskStatusUpdate:
       type: object
@@ -1927,6 +2140,46 @@ components:
           required: [task_id]
           properties:
             task_id: {type: integer}
+
+    TaskGroupsListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMessage'
+        - type: object
+          required: [task_groups]
+          properties:
+            task_groups:
+              type: array
+              description: Array of TaskGroup rows (native JSON; tasks pre-parsed to an array of ints).
+              items: {$ref: '#/components/schemas/TaskGroup'}
+              example: [{"id": 7, "name": "nightly-run", "owner_id": 1, "tasks": [1, 2, 3]}]
+
+    TaskGroupAddedResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMessage'
+        - type: object
+          required: [task_group_id]
+          properties:
+            task_group_id: {type: integer}
+
+    TaskGroupUpdatedResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMessage'
+        - type: object
+          required: [task_group_id, tasks]
+          properties:
+            task_group_id: {type: integer}
+            tasks:
+              type: array
+              description: The resulting ordered list of member task ids after the update.
+              items: {type: integer}
+
+    TaskGroupDeletedResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMessage'
+        - type: object
+          required: [task_group_id]
+          properties:
+            task_group_id: {type: integer}
 
     HashfileUploadedResponse:
       allOf:

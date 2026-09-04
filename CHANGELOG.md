@@ -37,6 +37,10 @@ Notable changes will be documented here
 **API Expansion**
 - `GET /v1/customers/<customer_id>/hashfiles` -- list every hashfile belonging to a customer in one call, replacing the downstream client-side loop over common hash types (which silently missed uncommon types). Counts cover the whole file (`total_hashes`/`cracked_hashes`) and `hash_type` is the file's representative mode; an unknown customer returns an empty list. (#346)
 - `POST /v1/hashes/import/<hash_type>` now imports cracked hashes for any hash type the server can recompute locally, not just NTLM: MD5 (0), SHA1 (100), MySQL4.1/5 (300), MD4 (900), NTLM (1000), SHA2-256 (1400), and MSSQL 2012/2014 (1731). Each submitted `HASH:plaintext` pair is still verified server-side; unverifiable plaintext is never trusted. Imports are atomic: a single failing line rolls back the entire request.
+- `GET /v1/task_groups` -- list task groups, with `tasks` returned as a parsed array of ids (#401)
+- `POST /v1/task_groups/add` -- create a task group and its ordered task membership in one call (#401)
+- `POST /v1/task_groups/<task_group_id>/tasks` -- replace or append a task group's task membership (#401)
+- `DELETE /v1/task_groups/<task_group_id>` -- delete a task group, owner/admin only (#401)
 
 **Encrypted Database Backup**
 - Download an encrypted `mysqldump` of the database from Settings -> Data Management, protected by a one-time password

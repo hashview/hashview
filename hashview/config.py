@@ -13,6 +13,15 @@ class Config:
     # Server Config
     SERVER_NAME = file_config['SERVER']['SERVER_NAME']
 
+    # Byte cap on non-file form fields (e.g. the pasted-hashes textarea).
+    # ConfigParser values are always strings, hence the int() coercion. Uses
+    # the same .get(key, default) idiom as SECRET_KEY above (not the bare
+    # indexing used for SERVER_NAME) so an older config.conf that predates
+    # this key doesn't KeyError on upgrade. Default matches Flask 3.1's own
+    # built-in MAX_FORM_MEMORY_SIZE default (500000), so omitting the key
+    # changes nothing.
+    MAX_FORM_MEMORY_SIZE = int(file_config['SERVER'].get('MAX_FORM_MEMORY_SIZE', 500000))
+
     # MYSQL Config. charset=utf8mb4 so the connection can carry 4-byte UTF-8
     # (emojis etc.) end-to-end — required now that usernames/plaintext are stored
     # as text rather than hex.

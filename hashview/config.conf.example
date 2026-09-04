@@ -1,6 +1,13 @@
 [SERVER]
 SERVER_NAME = FQDN:PORT
 SECRET_KEY = change-me-to-a-random-string
+# Byte cap on non-file form fields (e.g. the pasted-hashes textarea on the
+# job/hashfile upload pages). File uploads are NOT subject to this limit.
+# Defaults to 500000 (Flask 3.1's own built-in default) when unset, so
+# leaving this commented out changes nothing. config.conf is baked into the
+# Docker image at build time, not bind-mounted, so this must be set before
+# `docker compose build` to take effect.
+# MAX_FORM_MEMORY_SIZE = 500000
 
 [database]
 host = localhost

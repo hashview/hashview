@@ -21,11 +21,12 @@ gates.
 
 | Suite | Path | How it runs | Imports `hashview.*`? |
 | --- | --- | --- | --- |
-| Unit | `tests/unit/` (~78 files) | `pytest tests/unit` | Yes |
+| Unit | `tests/unit/` (~98 files) | `pytest tests/unit` | Yes |
 | Security | `tests/security/` | `pytest tests/security` (tests marked `security`) | Yes |
 | Agent unit | `tests/agent_unit/` | `pytest tests/agent_unit` | No (imports `agent.*`) |
 | Integration (MySQL) | `tests/integration/` | `pytest tests/integration -m mysql` | Yes |
 | Analytics docker bug hunt | `tests/integration/test_analytics_docker_bugs.py` | `pytest` with `HASHVIEW_DOCKER_BASE_URL` set, against a running compose stack | No (plain HTTP + SQL) |
+| Migration e2e (main→dev) | `tests/integration/test_migration_e2e.py`, `tests/migration/` | `tests/run_migration_e2e.sh` | No (raw SQLAlchemy against two live MySQL DBs) |
 | E2E (Playwright) | `tests/e2e/` | `pytest -m e2e` against a live host | No |
 | E2E crack harness | `tests/crack/`, `tests/e2e/crack/` | `tests/run_e2e_crack_compose.sh` | Mixed |
 
@@ -35,16 +36,22 @@ Markers are declared in `pytest.ini`:
 - `agent_sim` — agent simulator tests
 - `security` — security-focused tests
 - `e2e_crack` — dockerized multi-agent real-crack e2e test (opt-in)
+- `perf` — job-creation performance tests (opt-in; needs a live host seeded by
+  `tests/seed_perf_db.py`)
 - `mysql` — integration tests that run against a real MySQL/MariaDB backend
   (needs `HASHVIEW_TEST_DATABASE_URI`)
+- `migration` — end-to-end main→dev database migration test (needs docker +
+  built images)
 - `docker_analytics` — `/analytics` bug hunt against a running docker stack
   (needs `HASHVIEW_DOCKER_BASE_URL`)
 
 > **Note on invocation.** Suites are selected by *path*, not by a single marker.
 > CI runs `python -m pytest tests/unit tests/security tests/agent_unit ...`
-> directly. There is no umbrella `-m security` run that pulls in the unit suite —
-> unit tests are not marked `security`. The `security` marker only matches the
-> tests under `tests/security/`.
+> directly. But `-m security` is **not** equivalent to `pytest tests/security`:
+> a large share of `tests/unit/` (34 files) also carries `pytest.mark.security`
+> alongside the 6 files under `tests/security/`, so the marker selects a
+> cross-cutting slice of security-relevant tests while the path selects the
+> dedicated suite. Use the path when you mean "the security suite."
 
 ## Environment files
 
@@ -357,7 +364,7 @@ The unit job measures more than a single line number:
 
 ## CI workflows
 
-Six workflows run on push / PR (plus one scheduled). Each gates a distinct
+Seven workflows run on push / PR (plus one scheduled). Each gates a distinct
 slice:
 
 | Workflow | Trigger | What it gates |
@@ -366,6 +373,7 @@ slice:
 | `e2e.yml` | push, PR | The Playwright e2e suite via `run_e2e_compose.sh`, under `HASHVIEW_E2E_STRICT=1` + a deterministic `HASHVIEW_E2E_*` env block. |
 | `e2e-crack.yml` | push, PR | The multi-agent real-crack harness via `run_e2e_crack_compose.sh`, using a pinned + checksummed SecLists rockyou. |
 | `db-parity.yml` | push, PR | MySQL/MariaDB parity (see below). |
+| `migration-e2e.yml` | push, PR | The main→dev migration + backfill harness (see below). 35-minute timeout; checks out with `fetch-depth: 0` so `origin/main` is available to build the "old" image. |
 | `lint.yml` | push, PR | Ruff lint, Bandit SAST vs the committed baseline (server + agent), `pip-audit` of production deps, and OpenAPI spec validation. |
 | `pylint.yml` | push | Pylint across Python 3.11/3.12/3.13. |
 | `mutation.yml` | weekly cron + manual dispatch | Non-blocking `mutmut` campaign; uploads a survivor report artifact (never fails the build). |
@@ -386,6 +394,32 @@ Both are driven by `HASHVIEW_TEST_DATABASE_URI`
 (`mysql+mysqlconnector://...?charset=utf8mb4`). The same variable, when set,
 also overrides the unit-test database URI (`tests/unit/conftest.py`), and the
 integration tests skip cleanly when it is unset (local dev).
+
+### Main→dev migration e2e (`migration-e2e.yml`)
+
+`tests/run_migration_e2e.sh` exercises the real main→dev upgrade path rather
+than just an empty-schema migration:
+
+1. Builds `hashview:main` from `origin/main` (override with
+   `HASHVIEW_MAIN_REF`) and `hashview:dev` from the current working tree.
+2. Boots `app-main` against a MySQL container to create + seed a DB with
+   legacy-format rows, then boots `app-dev` against that **same** DB so it
+   applies the dev Alembic chain and runs the startup hex→text backfill.
+3. A `db-fresh` service builds the dev schema from empty as a parity oracle.
+4. `tests/integration/test_migration_e2e.py` (marked `mysql` + `migration`)
+   asserts Alembic head, data, and schema match between
+   `HASHVIEW_MIGRATED_DB_URI` (the migrated-in-place DB) and
+   `HASHVIEW_FRESH_DB_URI` (the oracle); it skips cleanly when those env vars
+   are unset, i.e. when not run via the script.
+
+Env knobs: `PYTHON` (python with project deps; the script builds a temp venv
+if unset), `HASHVIEW_MAIN_REF`, `HASHVIEW_MIGRATION_KEEP=1` (keep
+containers/volumes/worktree for debugging), `DOCKER_PLATFORM`.
+
+**Gotcha:** the dev Alembic head is hardcoded in *two* places — `DEV_HEAD` in
+`tests/run_migration_e2e.sh` and in `tests/integration/test_migration_e2e.py`
+(currently `d3a4a6a7b352`). Adding a migration requires bumping both, or this
+suite fails even though `alembic upgrade head` succeeds.
 
 ## Mutation testing (`mutation.yml`)
 

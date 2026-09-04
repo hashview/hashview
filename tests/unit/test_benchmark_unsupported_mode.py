@@ -117,7 +117,7 @@ def test_nonzero_first_benchmark_still_triggers_rechunk(app, client, monkeypatch
     monkeypatch.setattr(
         "hashview.api.routes.rechunk_queued_tasks_for_hashtype",
         lambda hash_type: called.append(hash_type))
-    agent = _agent(uuid="nonzero-bench")
+    _agent(uuid="nonzero-bench")
     _set_agent_cookies(client, "nonzero-bench")
 
     resp = client.post("/v1/agents/benchmark",
@@ -133,7 +133,7 @@ def test_heartbeat_does_not_reask_benchmark_for_zero_speed_mode(app, client):
     # is not sent back to BENCHMARK for it.
     db.session.add(Settings(retention_period=30, max_runtime_tasks=0, max_runtime_jobs=0))
     db.session.commit()
-    job = _job_with_hash_type(4444, name="zb")
+    _job_with_hash_type(4444, name="zb")
     agent = _agent(uuid="zb-agent", status="Idle")
     db.session.add(AgentBenchmarks(agent_id=agent.id, hash_type=4444, speed=0))
     db.session.commit()

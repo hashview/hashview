@@ -4,17 +4,10 @@ Extends test_customers_routes_guards.py to cover the remaining missing lines:
 - customers_edit: customer not found (lines 108-109)
 - customers_delete: customer not found (lines 165-166)
 - customers_delete: uncracked-hash inner loop with try_commit failure (lines 192-194)
-
-Bug captured with xfail:
-- hashview/customers/routes.py:185-186: `customer_cnt` is a SQLAlchemy Query
-  object compared to an integer with `< 2`, which raises TypeError in Python 3.
-  This makes the delete route crash (500) whenever the customer has an uncracked
-  hash in their hashfiles. Fix: call `.count()` on the query first.
+- customers_delete: uncracked-hash inner loop regression (issue #208), see below
 """
 
 from unittest.mock import patch
-
-import pytest
 
 from hashview.models import (
     Customers,
@@ -124,27 +117,17 @@ def test_customers_delete_try_commit_failure_302(app, client):
     assert resp.status_code in (301, 302)
 
 
-# --------------------- Bug: uncracked-hash inner loop crashes with TypeError
+# --------------------- Regression: uncracked-hash inner loop (issue #208)
 
-@pytest.mark.xfail(
-    strict=False,  # non-strict: the bug is order-dependent and flakes XPASS in CI; fix tracked by #208/#258/#259
-    reason=(
-        "Bug at hashview/customers/routes.py:185-186: "
-        "`customer_cnt` is assigned a SQLAlchemy Query object via "
-        "`HashfileHashes.query.filter_by(hash_id=hash.id).distinct('customer_id')` "
-        "but is then compared to an integer with `if customer_cnt < 2`. "
-        "In Python 3, this raises TypeError: '<' not supported between instances "
-        "of 'Query' and 'int', causing a 500 error whenever a customer with an "
-        "uncracked hash is deleted. "
-        "Fix: call `.count()` — "
-        "`HashfileHashes.query.filter_by(hash_id=hash.id).distinct('customer_id').count()`"
-    ),
-)
 def test_customers_delete_with_uncracked_hash_succeeds(app, client):
     """Deleting a customer whose hashfile has an uncracked hash should work.
 
-    It currently raises TypeError at line 186 (Query < int comparison) and
-    returns a 500, so this test is marked xfail (non-strict) to document the bug.
+    Regression test for #208/#258/#259: the inner loop in customers_delete
+    used to look the hash up by the association row's own id instead of its
+    hash_id FK, and separately compared a SQLAlchemy Query object to an int
+    (missing .count()), raising TypeError -> HTTP 500. Both were fixed in
+    884bb62 (hash_id lookup + .count()); this test now pins the fixed
+    behavior as a real assertion instead of an xfail.
     """
     admin = _admin()
     _login(client, admin)
@@ -155,15 +138,15 @@ def test_customers_delete_with_uncracked_hash_succeeds(app, client):
     db.session.add(hashfile)
     db.session.commit()
 
-    # Uncracked hash — triggers the inner loop at line 182
+    # Uncracked hash — triggers the inner loop that prunes orphaned hashes
     h = Hashes(sub_ciphertext="u" * 32, ciphertext="v" * 32,
                hash_type=1000, cracked=False)
     db.session.add(h)
     db.session.commit()
 
-    # Use matching ids to ensure the buggy filter_by(id=hashfile_hash.id) hits h.
-    # In a fresh in-memory DB the first rows get id=1 in both tables, so
-    # hashfile_hash.id == h.id == 1.
+    # Matching ids aren't load-bearing anymore (the loop now resolves the
+    # hash via hash_id, not the association's own id), but kept so a fresh
+    # in-memory DB deterministically has hashfile_hash.id == h.id == 1.
     hfh = HashfileHashes(hash_id=h.id, hashfile_id=hashfile.id)
     db.session.add(hfh)
     db.session.commit()
@@ -175,9 +158,7 @@ def test_customers_delete_with_uncracked_hash_succeeds(app, client):
     customer_id = customer.id
     resp = client.post(f"/customers/delete/{customer_id}",
                        follow_redirects=False)
-    # With the bug this is a 500; after the fix it should be a redirect.
     assert resp.status_code in (301, 302), (
-        f"Expected redirect, got {resp.status_code} — "
-        "likely the TypeError at routes.py:186 fired"
+        f"Expected redirect, got {resp.status_code}"
     )
     assert Customers.query.get(customer_id) is None

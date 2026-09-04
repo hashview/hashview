@@ -6,6 +6,26 @@ from playwright.sync_api import expect
 
 
 @pytest.mark.e2e
+def test_job_creation_customer_add_new_option_is_first(page, live_server, login):
+    """#133: '+ Add new customer...' must render before every seeded customer,
+    right after the '--SELECT--' placeholder, so it's reachable without
+    scrolling past an alphabetized customer list."""
+    login()
+    page.get_by_role("link", name="Jobs").click()
+    page.get_by_role("link", name="New Job", exact=True).click()
+    expect(page.get_by_role("heading", name="Create Job")).to_be_visible()
+
+    values = page.locator("#customer_id option").evaluate_all(
+        "opts => opts.map(o => o.value)"
+    )
+    assert values[0] == "", f"expected '--SELECT--' placeholder first, got {values}"
+    assert values[1] == "add_new", (
+        f"expected 'add_new' immediately after the placeholder, got {values}"
+    )
+    assert "add_new" not in values[2:], "add_new option must not be duplicated"
+
+
+@pytest.mark.e2e
 def test_job_creation_flow(page, live_server, login):
     login()
     customer_id = os.getenv("HASHVIEW_E2E_CUSTOMER_ID")

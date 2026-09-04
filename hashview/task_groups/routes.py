@@ -7,9 +7,22 @@ from flask_login import current_user, login_required
 from hashview.models import Hashes, TaskGroups, Tasks, Users, db
 from hashview.task_groups.forms import TaskGroupsForm
 from hashview.utils.audit import log_event
-from hashview.utils.utils import try_commit
+from hashview.utils.utils import MAX_TASKS_PER_GROUP, try_commit
 
 task_groups = Blueprint('task_groups', __name__)
+
+# Flask's session is a signed *cookie*, so anything round-tripped through
+# session['task_groups_form_err'] has to stay well inside the ~4 KB browser
+# cookie limit. A cap-sized selection is ~60 KB of CSV, and a browser silently
+# drops an over-sized cookie — which would take the login with it. Selections
+# past this budget are dropped from the round-trip instead; the error still
+# renders, the modal just reopens with an empty list.
+_MAX_ROUNDTRIP_TASK_IDS = 2000
+
+
+def _session_safe_task_ids(raw):
+    """The submitted task_ids CSV, or '' when it is too big to carry in the session."""
+    return raw if len(raw) <= _MAX_ROUNDTRIP_TASK_IDS else ''
 
 @task_groups.route("/task_groups", methods=['GET', 'POST'])
 @login_required
@@ -48,6 +61,7 @@ def task_groups_list():
                            users=users, tasks=tasks, group_tasks=group_tasks,
                            group_hits=group_hits, group_owner=group_owner,
                            task_group_form=TaskGroupsForm(),
+                           max_tasks_per_group=MAX_TASKS_PER_GROUP,
                            form_err=session.pop('task_groups_form_err', None))
 
 @task_groups.route("/task_groups/add", methods=['GET', 'POST'])
@@ -70,6 +84,20 @@ def task_groups_add():
                     tid = int(piece)
                     if tid in valid_ids and tid not in ordered:
                         ordered.append(tid)
+            # Cap the membership that would actually be stored — unknown and
+            # duplicate ids are silently dropped above, so `ordered` (not the
+            # raw submitted count) is what has to fit MAX_TASKS_PER_GROUP.
+            if len(ordered) > MAX_TASKS_PER_GROUP:
+                session['task_groups_form_err'] = {
+                    'modal': 'new-group-modal',
+                    'values': {
+                        'name': task_group_form.name.data or '',
+                        'task_ids': _session_safe_task_ids(request.form.get('task_ids', '')),
+                    },
+                    'errors': [f'A task group can hold at most {MAX_TASKS_PER_GROUP:,} tasks '
+                               f'({len(ordered):,} selected).'],
+                }
+                return redirect(url_for('task_groups.task_groups_list'))
             task_group = TaskGroups(name=task_group_form.name.data, owner_id=current_user.id, tasks=json.dumps(ordered))
             db.session.add(task_group)
             db.session.commit()
@@ -89,7 +117,10 @@ def task_groups_add():
     if request.form.get('from_modal'):
         session['task_groups_form_err'] = {
             'modal': 'new-group-modal',
-            'values': {'name': task_group_form.name.data or ''},
+            'values': {
+                'name': task_group_form.name.data or '',
+                'task_ids': _session_safe_task_ids(request.form.get('task_ids', '')),
+            },
             'errors': [e for errs in task_group_form.errors.values() for e in errs],
         }
         return redirect(url_for('task_groups.task_groups_list'))
@@ -117,6 +148,20 @@ def task_groups_edit():
                 tid = int(piece)
                 if tid in valid_ids and tid not in ordered:
                     ordered.append(tid)
+        # Checked before either attribute is assigned, so a rejected edit
+        # leaves no dirty state on the identity-mapped row.
+        if len(ordered) > MAX_TASKS_PER_GROUP:
+            session['task_groups_form_err'] = {
+                'modal': 'edit-group-modal',
+                'values': {
+                    'name': task_group_form.name.data or '',
+                    'group_id': task_group.id,
+                    'task_ids': _session_safe_task_ids(request.form.get('task_ids', '')),
+                },
+                'errors': [f'A task group can hold at most {MAX_TASKS_PER_GROUP:,} tasks '
+                           f'({len(ordered):,} selected).'],
+            }
+            return redirect(url_for('task_groups.task_groups_list'))
         task_group.name = task_group_form.name.data
         task_group.tasks = json.dumps(ordered)
         db.session.commit()
@@ -130,7 +175,7 @@ def task_groups_edit():
         'values': {
             'name': task_group_form.name.data or '',
             'group_id': task_group.id,
-            'task_ids': request.form.get('task_ids', ''),
+            'task_ids': _session_safe_task_ids(request.form.get('task_ids', '')),
         },
         'errors': [e for errs in task_group_form.errors.values() for e in errs] or ['Could not update task group.'],
     }
@@ -144,7 +189,8 @@ def task_groups_assigned_tasks(task_group_id):
     task_group = TaskGroups.query.get(task_group_id)
     tasks = Tasks.query
     task_group_tasks = json.loads(task_group.tasks)
-    return render_template('task_groups_assigntask.html.j2', title='Task Group: Assign Tasks', task_group=task_group, tasks=tasks, task_group_tasks=task_group_tasks)
+    return render_template('task_groups_assigntask.html.j2', title='Task Group: Assign Tasks', task_group=task_group, tasks=tasks, task_group_tasks=task_group_tasks,
+                           max_tasks_per_group=MAX_TASKS_PER_GROUP)
 
 @task_groups.route("/task_groups/assigned_tasks/<int:task_group_id>/add_task/<int:task_id>", methods=['GET'])
 @login_required
@@ -153,6 +199,13 @@ def task_groups_assigned_tasks_add_task(task_group_id, task_id):
 
     task_group = TaskGroups.query.get(task_group_id)
     task_group_tasks = json.loads(task_group.tasks)
+    # >= on the pre-append length: appending would make it len + 1, so a group
+    # sitting at the cap can take no more. This route is the only incremental
+    # growth path, and it neither dedupes nor validates the id it appends.
+    if len(task_group_tasks) >= MAX_TASKS_PER_GROUP:
+        flash(f'This task group already holds the maximum of {MAX_TASKS_PER_GROUP:,} tasks.',
+              'warning')
+        return redirect("/task_groups/assigned_tasks/"+str(task_group.id))
     task_group_tasks.append(task_id)
     task_group.tasks = json.dumps(task_group_tasks)
     db.session.commit()

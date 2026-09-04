@@ -63,6 +63,7 @@ Notable changes will be documented here
 - Reintroduced distributed chunking: eligible mask/wordlist tasks are split into per-agent chunks sized from each agent's benchmark, and a chunked task now appears as a single attack in the job editor
 - Wordlists are stored gzip-compressed at rest; agents sync and verify the compressed files
 - Dynamic wordlists are now delivered on demand: an agent downloads a dynamic wordlist directly via `GET /v1/wordlists/<id>`, which regenerates it from the database into a unique per-request temp file and serves it gzipped. The separate `GET /v1/updateWordlist/<id>` endpoint (and the agent's update-then-resync step) has been removed, and the agent's wordlist sync now tracks static lists only
+- Task groups now hold at most 10,000 tasks -- both the web UI and the `/v1` API reject an over-cap assignment with a clear error instead of letting the write fail at the database. The group modals stop you at the limit as you build the list, and `POST /v1/task_groups/<task_group_id>/tasks` applies the cap to the resulting membership, so `mode: append` is rejected when the existing tasks plus the new ones would exceed it (#401)
 - `/v1` list and detail endpoints now return native JSON instead of a JSON-encoded string, so clients no longer double-parse
 - Usernames and recovered plaintext are stored as UTF-8 text (`$HEX[...]` only for non-UTF-8 bytes) instead of latin-1 hex
 - Creating and queuing a job now returns you to the dashboard

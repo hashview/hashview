@@ -49,6 +49,9 @@
                     <div class="mono" style="margin-top:10px; font-size:11px;">← add tasks from the left</div>
                 </div>
                 <div id="{{ p }}-selected" style="display:none; flex-direction:column; gap:8px; max-height:380px; overflow-y:auto;"></div>
+                <div class="mono" id="{{ p }}-cap-warn" style="display:none; margin-top:10px; color:var(--red); font-size:11px;">
+                    Limit reached — a task group can hold at most {{ max_tasks_per_group | commafy }} tasks.
+                </div>
             </div>
         </div>
     </div>
@@ -179,6 +182,9 @@
         down: {{ icon('arrowDown', size=13)|string|tojson }},
         rm:   {{ icon('x', size=13)|string|tojson }}
     };
+    // Mirrors MAX_TASKS_PER_GROUP. This only stops the user early and explains
+    // why; the server re-checks every submit (see task_groups/routes.py).
+    var CAP = {{ max_tasks_per_group | int }};
     var registry = {};
     function esc(s) { var d = document.createElement('div'); d.textContent = (s == null ? '' : s); return d.innerHTML; }
     function make(p) {
@@ -210,14 +216,22 @@
             document.getElementById(p + '-task-ids').value = selected.join(',');
             document.getElementById(p + '-count').textContent = selected.length;
             document.getElementById(p + '-count2').textContent = selected.length;
+            var atCap = selected.length >= CAP;
+            var warn = document.getElementById(p + '-cap-warn');
+            if (warn) warn.style.display = atCap ? '' : 'none';
             document.querySelectorAll('#' + p + '-available .gm-avail-row').forEach(function (r) {
                 var added = selected.indexOf(r.getAttribute('data-tid')) !== -1;
                 r.classList.toggle('added', added);
-                var b = r.querySelector('button'); if (b) b.disabled = added;
+                var b = r.querySelector('button'); if (b) b.disabled = added || atCap;
             });
         }
         return {
-            add: function (id) { id = String(id); if (selected.indexOf(id) === -1) { selected.push(id); render(); } },
+            add: function (id) {
+                id = String(id);
+                if (selected.indexOf(id) !== -1) return;
+                if (selected.length >= CAP) { render(); return; }   // render() shows the notice
+                selected.push(id); render();
+            },
             remove: function (id) { id = String(id); var i = selected.indexOf(id); if (i !== -1) { selected.splice(i, 1); render(); } },
             move: function (id, dir) { id = String(id); var i = selected.indexOf(id); if (i === -1) return; var j = i + dir; if (j < 0 || j >= selected.length) return; var t = selected[i]; selected[i] = selected[j]; selected[j] = t; render(); },
             filter: function (q) {
@@ -241,6 +255,7 @@
     window.hvGmRemove = function (p, id) { if (registry[p]) registry[p].remove(id); };
     window.hvGmMove   = function (p, id, d) { if (registry[p]) registry[p].move(id, d); };
     window.hvGmFilter = function (p, q) { if (registry[p]) registry[p].filter(q); };
+    window.hvGmReset  = function (p, ids) { if (registry[p]) registry[p].reset(ids); };
     window.hvEditGroup = function (id, name, ids) {
         var gid = document.getElementById('eg-group-id'); if (gid) gid.value = id;
         var nm = document.getElementById('eg-name'); if (nm) nm.value = name;
@@ -272,6 +287,10 @@
     var vals = fe.values || {};
     if (fe.modal === 'new-group-modal') {
         var n = document.getElementById('ng-name'); if (n) n.value = vals.name || '';
+        // Reseed in one render() rather than looping hvGmAdd — at cap-sized
+        // selections a per-id loop would rebuild the list ~10,000 times.
+        var ngIds = (vals.task_ids || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+        if (window.hvGmReset) hvGmReset('ng', ngIds);
         var dlg = document.getElementById('new-group-modal');
         if (dlg) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
     } else if (fe.modal === 'edit-group-modal' && window.hvEditGroup) {

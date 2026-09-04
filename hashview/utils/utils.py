@@ -36,6 +36,14 @@ from hashview.models import (
 from hashview.utils.chunking import is_chunkable, plan_chunks
 from hashview.utils.hashcat_modes import HASH_ONLY_AUTO_RULES
 
+# Hard cap on how many task assignments one task group may hold (one assignment
+# = one id in the ordered JSON list stored in task_groups.tasks). The column is
+# TEXT (65,535 bytes) and MySQL runs with STRICT_TRANS_TABLES, so an over-length
+# write is a hard errno-1406 error rather than a truncation — this cap keeps the
+# serialized list clear of that wall (10,000 five-digit ids = 59,999 bytes) and
+# is the product limit: most deployments never reach four-digit task ids.
+MAX_TASKS_PER_GROUP = 10000
+
 
 def remove_file(path):
     try:

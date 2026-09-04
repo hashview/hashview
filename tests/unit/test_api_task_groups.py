@@ -17,6 +17,7 @@ import pytest
 from hashview.api import routes as api_routes
 from hashview.models import Agents, TaskGroups, Tasks, Users
 from hashview.models import db as _db
+from hashview.utils.utils import MAX_TASKS_PER_GROUP
 
 # ---------------------------------------------------------------------------
 # Local fixtures
@@ -649,3 +650,150 @@ def test_add_and_list_large_task_list_is_not_truncated(client, admin_user):
     list_body = _json_body(list_resp)
     row = next(g for g in list_body["task_groups"] if g["id"] == tg_id)
     assert row["tasks"] == task_ids
+
+
+# ---------------------------------------------------------------------------
+# MAX_TASKS_PER_GROUP cap (both write endpoints)
+# ---------------------------------------------------------------------------
+
+
+def _bulk_tasks(owner, n):
+    """Create n Tasks rows cheaply and return their ids in insertion order.
+
+    bulk_insert_mappings skips the ORM, so `loopback` (nullable=False with a
+    Python-side default) has to be passed explicitly, and the PKs are not
+    written back — hence the id read-back. Committing n rows one at a time
+    instead costs ~50x more for the cap-sized cases.
+    """
+    _db.session.bulk_insert_mappings(
+        Tasks,
+        [{"name": f"bulk{i}", "hc_attackmode": 0, "owner_id": owner.id, "loopback": False}
+         for i in range(n)],
+    )
+    _db.session.commit()
+    return [row[0] for row in _db.session.query(Tasks.id).order_by(Tasks.id).all()]
+
+
+def test_max_tasks_per_group_is_10000():
+    """Pin the product limit so it cannot drift silently."""
+    assert MAX_TASKS_PER_GROUP == 10000
+
+
+@pytest.mark.security
+def test_add_over_limit_rejected_before_task_id_validation(client, admin_user):
+    # No Tasks rows exist at all: the cap has to fire on the raw submitted
+    # length, before the ids are checked against the table. If the order ever
+    # flips, the caller gets "Invalid task id" and never learns the real
+    # problem — and this test would need 10,001 real rows to say anything.
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.post(
+        "/v1/task_groups/add",
+        data=json.dumps({"name": "Over", "tasks": list(range(1, MAX_TASKS_PER_GROUP + 2))}),
+        content_type="application/json",
+    )
+    body = _json_body(resp)
+    assert body["status"] == 400
+    assert body["msg"] == (
+        f"A task group can hold at most {MAX_TASKS_PER_GROUP} tasks "
+        f"({MAX_TASKS_PER_GROUP + 1} submitted)"
+    )
+    assert "Invalid task id" not in body["msg"]
+    assert TaskGroups.query.filter_by(name="Over").first() is None
+
+
+@pytest.mark.security
+def test_add_at_limit_is_accepted(client, admin_user):
+    ids = _bulk_tasks(admin_user, MAX_TASKS_PER_GROUP)
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.post(
+        "/v1/task_groups/add",
+        data=json.dumps({"name": "AtLimit", "tasks": ids}),
+        content_type="application/json",
+    )
+    body = _json_body(resp)
+    assert body["status"] == 200
+    stored = json.loads(TaskGroups.query.get(body["task_group_id"]).tasks)
+    assert len(stored) == MAX_TASKS_PER_GROUP
+
+
+@pytest.mark.security
+def test_set_tasks_replace_over_limit_leaves_row_unchanged(client, owner_user):
+    t1 = _task(owner_user, "a")
+    tg = _group(owner_user, [t1.id], name="G")
+
+    client.set_cookie("uuid", owner_user.api_key, domain="localhost.test")
+    resp = client.post(
+        f"/v1/task_groups/{tg.id}/tasks",
+        data=json.dumps({
+            "tasks": list(range(1, MAX_TASKS_PER_GROUP + 2)),
+            "mode": "replace",
+        }),
+        content_type="application/json",
+    )
+    body = _json_body(resp)
+    assert body["status"] == 400
+    assert f"at most {MAX_TASKS_PER_GROUP} tasks" in body["msg"]
+    assert json.loads(TaskGroups.query.get(tg.id).tasks) == [t1.id]
+
+
+@pytest.mark.security
+def test_set_tasks_append_crossing_cap_returns_400(client, owner_user):
+    # The combined-list case: only 2 ids are submitted, so an input-length
+    # check alone would let this through. append never revalidates the stored
+    # membership, so the cap has to be on the resulting list.
+    t1 = _task(owner_user, "a")
+    t2 = _task(owner_user, "b")
+    existing = list(range(500000, 500000 + MAX_TASKS_PER_GROUP - 1))   # 9,999 entries
+    tg = _group(owner_user, existing, name="G")
+
+    client.set_cookie("uuid", owner_user.api_key, domain="localhost.test")
+    resp = client.post(
+        f"/v1/task_groups/{tg.id}/tasks",
+        data=json.dumps({"tasks": [t1.id, t2.id], "mode": "append"}),
+        content_type="application/json",
+    )
+    body = _json_body(resp)
+    assert body["status"] == 400
+    assert body["msg"] == (
+        f"A task group can hold at most {MAX_TASKS_PER_GROUP} tasks "
+        f"({MAX_TASKS_PER_GROUP + 1} after this change)"
+    )
+    assert json.loads(TaskGroups.query.get(tg.id).tasks) == existing
+
+
+@pytest.mark.security
+def test_set_tasks_append_up_to_limit_is_accepted(client, owner_user):
+    t1 = _task(owner_user, "a")
+    existing = list(range(500000, 500000 + MAX_TASKS_PER_GROUP - 1))   # 9,999 entries
+    tg = _group(owner_user, existing, name="G")
+
+    client.set_cookie("uuid", owner_user.api_key, domain="localhost.test")
+    resp = client.post(
+        f"/v1/task_groups/{tg.id}/tasks",
+        data=json.dumps({"tasks": [t1.id], "mode": "append"}),
+        content_type="application/json",
+    )
+    body = _json_body(resp)
+    assert body["status"] == 200
+    assert len(json.loads(TaskGroups.query.get(tg.id).tasks)) == MAX_TASKS_PER_GROUP
+
+
+@pytest.mark.security
+def test_set_tasks_append_duplicate_at_cap_is_accepted(client, owner_user):
+    # A full group re-appending an id it already holds must NOT be rejected:
+    # the merge dedupes, so the resulting length is unchanged. Guards against
+    # a naive len(existing) + len(ordered) check.
+    t1 = _task(owner_user, "a")
+    existing = [t1.id] + list(range(500000, 500000 + MAX_TASKS_PER_GROUP - 1))
+    assert len(existing) == MAX_TASKS_PER_GROUP
+    tg = _group(owner_user, existing, name="G")
+
+    client.set_cookie("uuid", owner_user.api_key, domain="localhost.test")
+    resp = client.post(
+        f"/v1/task_groups/{tg.id}/tasks",
+        data=json.dumps({"tasks": [t1.id], "mode": "append"}),
+        content_type="application/json",
+    )
+    body = _json_body(resp)
+    assert body["status"] == 200
+    assert json.loads(TaskGroups.query.get(tg.id).tasks) == existing

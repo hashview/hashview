@@ -324,6 +324,9 @@ class TaskGroups(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    # Ordered JSON list of task ids. TEXT (65,535 bytes) rather than VARCHAR so
+    # a large membership can't silently overflow; membership itself is capped by
+    # utils.MAX_TASKS_PER_GROUP, which is what keeps writes clear of that wall.
     tasks = db.Column(db.Text, nullable=False)
 
 class Hashes(db.Model):

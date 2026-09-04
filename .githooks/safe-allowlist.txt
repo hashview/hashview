@@ -90,3 +90,12 @@ control/wordlists/deadbeef
 # This file's own usage example (a comment demonstrating an anchored pattern),
 # surfaced whenever the allowlist itself is edited.
 ignore trustedsec mentions in the example
+
+# --- tests/unit/test_issue_xfail_import_hash_type_int.py false positives ---
+# A throwaway MySQL 4.1 (hashcat -m 300) SHA1 test digest; its 40 hex chars
+# trip the AWS-secret-key heuristic. Not a credential.
+FCF7C1B8749CF99D88E5F34271D636178FB5D130
+# Dummy api_key literals in the API-route test fixtures. Deliberately stops at
+# the shared prefix so the pattern also matches this very line, which the
+# generic secret-assign rule flags whenever it is added or moved.
+api_key="user-api-key-

@@ -193,6 +193,8 @@ def test_tasks_list_info_modal_names_task_group(app, client):
     assert b"tg-info" in resp.data
     assert b"In 1 task group" in resp.data
     assert b"Not in any task groups" in resp.data
+    # control: the free task is still selectable (not padlocked by this group)
+    assert f'task-check" value="{free.id}"'.encode() in resp.data
 
 
 def test_tasks_list_no_active_delete_button_when_blocked(app, client):

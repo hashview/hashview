@@ -289,12 +289,16 @@
         var n = document.getElementById('ng-name'); if (n) n.value = vals.name || '';
         // Reseed in one render() rather than looping hvGmAdd — at cap-sized
         // selections a per-id loop would rebuild the list ~10,000 times.
-        var ngIds = (vals.task_ids || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+        // Digit-filter, mirroring the server's piece.isdigit(): render() puts
+        // these ids into onclick attributes, and esc() does not escape quotes.
+        var ngIds = (vals.task_ids || '').split(',').map(function (s) { return s.trim(); })
+            .filter(function (s) { return /^[0-9]+$/.test(s); });
         if (window.hvGmReset) hvGmReset('ng', ngIds);
         var dlg = document.getElementById('new-group-modal');
         if (dlg) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
     } else if (fe.modal === 'edit-group-modal' && window.hvEditGroup) {
-        var ids = (vals.task_ids || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+        var ids = (vals.task_ids || '').split(',').map(function (s) { return s.trim(); })
+            .filter(function (s) { return /^[0-9]+$/.test(s); });
         hvEditGroup(vals.group_id, vals.name || '', ids);
     }
 })();

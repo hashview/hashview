@@ -37,11 +37,18 @@ from hashview.utils.chunking import is_chunkable, plan_chunks
 from hashview.utils.hashcat_modes import HASH_ONLY_AUTO_RULES
 
 # Hard cap on how many task assignments one task group may hold (one assignment
-# = one id in the ordered JSON list stored in task_groups.tasks). The column is
-# TEXT (65,535 bytes) and MySQL runs with STRICT_TRANS_TABLES, so an over-length
-# write is a hard errno-1406 error rather than a truncation — this cap keeps the
-# serialized list clear of that wall (10,000 five-digit ids = 59,999 bytes) and
-# is the product limit: most deployments never reach four-digit task ids.
+# = one id in the ordered JSON list stored in task_groups.tasks). This is the
+# PRODUCT limit, sized for the regime deployments actually run in: most never
+# pass four-digit task ids, and 10,000 four-digit ids serialize to 60,000 bytes
+# — inside the TEXT column's 65,535.
+#
+# It is deliberately NOT a byte guarantee. json.dumps separates items with
+# ', ', so each id costs its digit count + 2: 10,000 five-digit ids are 70,000
+# bytes, and past an average of ~4.55 digits the column is the tighter limit
+# (5-digit ids: 9,362 entries; 6-digit: 8,191). MySQL runs with
+# STRICT_TRANS_TABLES, so exceeding it is an errno-1406 error, not a
+# truncation. Widening the column to MEDIUMTEXT would leave this cap as the
+# only limit at any id width.
 MAX_TASKS_PER_GROUP = 10000
 
 

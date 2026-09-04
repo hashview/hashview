@@ -665,13 +665,15 @@ def _bulk_tasks(owner, n):
     written back — hence the id read-back. Committing n rows one at a time
     instead costs ~50x more for the cap-sized cases.
     """
+    before = {row[0] for row in _db.session.query(Tasks.id).all()}
     _db.session.bulk_insert_mappings(
         Tasks,
         [{"name": f"bulk{i}", "hc_attackmode": 0, "owner_id": owner.id, "loopback": False}
          for i in range(n)],
     )
     _db.session.commit()
-    return [row[0] for row in _db.session.query(Tasks.id).order_by(Tasks.id).all()]
+    return [row[0] for row in _db.session.query(Tasks.id).order_by(Tasks.id).all()
+            if row[0] not in before]
 
 
 def test_max_tasks_per_group_is_10000():

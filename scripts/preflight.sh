@@ -4,11 +4,15 @@
 #
 # Mirrors the GitHub Actions workflows so failures are caught on your machine
 # instead of after a push:
-#   .github/workflows/lint.yml    -> ruff, bandit (vs baseline), pip-audit, openapi
-#   .github/workflows/pylint.yml  -> pylint (rules + fail-under from .pylintrc)
-#   .github/workflows/e2e.yml     -> docker-compose Playwright harness  (opt-in: --e2e)
-# Plus the unit-test suite (tests/unit/), which has no CI job but is meant to be
-# run locally (see CLAUDE.md / tests/unit/conftest.py — in-memory SQLite, no DB).
+#   .github/workflows/lint.yml        -> ruff, bandit (vs baseline), pip-audit, openapi
+#   .github/workflows/pylint.yml      -> pylint (rules + fail-under from .pylintrc)
+#   .github/workflows/unit-tests.yml  -> tests/unit/ (in-memory SQLite, no DB)
+#   .github/workflows/e2e.yml         -> docker-compose Playwright harness  (opt-in: --e2e)
+#
+# Note: this script's ruff gate is scoped to hashview/ hashview.py, narrower
+# than lint.yml's repo-wide `ruff check .` — if you've touched tests/, install/,
+# or migrations/, also run `ruff check .` directly or let CI catch it.
+# See CONTRIBUTING.md for the full contributor workflow.
 #
 # Tool versions are pinned in requirements-dev.txt; install once with:
 #   pip install -r requirements.txt -r requirements-dev.txt
@@ -114,7 +118,7 @@ fi
 run_gate "pylint" "" \
   "$PY" -m pylint --jobs=1 --rcfile=.pylintrc --output-format=colorized --reports=n --score=y hashview/ hashview.py
 
-# 6. Unit tests — in-memory SQLite, no DB/docker. No CI job; run locally.
+# 6. Unit tests — in-memory SQLite, no DB/docker. Matches unit-tests.yml.
 if [ "$RUN_UNIT" -eq 1 ]; then
   run_gate "unit tests" "" \
     "$PY" -m pytest tests/unit -q

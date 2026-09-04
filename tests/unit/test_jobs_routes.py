@@ -6,7 +6,7 @@ and DB side effects against the in-memory app.
 """
 
 
-from hashview.jobs.forms import JobsForm
+from hashview.jobs.forms import JobsForm, JobsNewHashFileForm
 from hashview.models import (
     Hashes,
     HashfileHashes,
@@ -491,3 +491,9 @@ def test_validate_job_allows_unique_name(app):
 
     # No exception -> passes
     assert form.validate_name(_Field()) is None
+
+
+def test_jobs_new_hashfile_form_pwdump_hash_type_default(app):
+    """Test that an unbound JobsNewHashFileForm has pwdump_hash_type defaulting to '1000'."""
+    form = JobsNewHashFileForm()
+    assert form.pwdump_hash_type.data == '1000'

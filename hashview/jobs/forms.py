@@ -57,7 +57,7 @@ class JobsNewHashFileForm(FlaskForm):
     shadow_hash_type = SelectField('Hash Type', choices=SHADOW_HASH_TYPE_CHOICES)
 
     pwdump_hash_type = SelectField('Hash Type', choices=[  ('', '------SELECT------'),
-													('1000', '(1000) NTLM')])
+													('1000', '(1000) NTLM')], default='1000')
 
     netntlm_hash_type = SelectField('Hash Type', choices=NETNTLM_HASH_TYPE_CHOICES)
 

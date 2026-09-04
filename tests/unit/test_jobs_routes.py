@@ -147,6 +147,25 @@ def test_jobs_add_get_renders(app, client):
     assert resp.status_code == 200
 
 
+def test_jobs_add_customer_dropdown_lists_add_new_first(app, client):
+    """#133: '+ Add new customer...' must precede every customer option so it's
+    reachable without scrolling past an alphabetized customer list."""
+    admin = make_admin()
+    login(client, admin)
+    make_customer(name="Acme Corp")
+    make_customer(name="Zeta Inc")
+
+    resp = client.get("/jobs/add")
+    assert resp.status_code == 200
+    body = resp.data
+
+    add_new = body.index(b"value='add_new'")
+    assert add_new < body.index(b"Acme Corp")
+    assert add_new < body.index(b"Zeta Inc")
+    # --SELECT-- stays first so it remains the default-selected placeholder
+    assert body.index(b"--SELECT--") < add_new
+
+
 def test_jobs_add_post_creates_job(app, client):
     admin = make_admin()
     login(client, admin)

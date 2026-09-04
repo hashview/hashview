@@ -179,7 +179,7 @@ def test_ingest_utf8_multibyte_roundtrips(app, tmp_path):
     content = "café\nnaïve\n🔑emoji\nüber\n".encode()
     wl, src = _ingest(content, tmp_path, "utf8")
     assert _stored_bytes(wl) == content                 # verbatim
-    assert wl.size == content.count(b"\n") + 1 == 5
+    assert wl.size == content.count(b"\n") == 4
     assert wl.size == get_linecount(str(src))
     assert wl.checksum == get_filehash(wl.path)
 
@@ -192,7 +192,7 @@ def test_ingest_utf8_bom_is_preserved_not_stripped(app, tmp_path):
     stored = _stored_bytes(wl)
     assert stored == content
     assert stored.startswith(UTF8_BOM)
-    assert wl.size == 3                                  # 2 newlines + 1
+    assert wl.size == 2                                  # 2 newlines (terminated)
 
 
 def test_ingest_latin1_high_bytes_preserved(app, tmp_path):
@@ -202,7 +202,7 @@ def test_ingest_latin1_high_bytes_preserved(app, tmp_path):
     assert b"\xe9" in content                            # é in latin-1
     wl, _ = _ingest(content, tmp_path, "latin1")
     assert _stored_bytes(wl) == content
-    assert wl.size == 3
+    assert wl.size == 2
 
 
 def test_ingest_crlf_counted_by_newline_byte(app, tmp_path):
@@ -211,13 +211,13 @@ def test_ingest_crlf_counted_by_newline_byte(app, tmp_path):
     content = b"alpha\r\nbravo\r\ncharlie\r\n"
     wl, src = _ingest(content, tmp_path, "crlf")
     assert _stored_bytes(wl) == content                  # \r kept
-    assert wl.size == content.count(b"\n") + 1 == 4
+    assert wl.size == content.count(b"\n") == 3
     assert wl.size == get_linecount(str(src))
 
 
 def test_ingest_no_trailing_newline_line_count(app, tmp_path):
-    # get_linecount semantics are (count of '\n') + 1, so a file with no
-    # trailing newline still counts its last line.
+    # get_linecount counts '\n' bytes, +1 for a dangling unterminated last
+    # line, so a file with no trailing newline still counts its last line.
     content = b"one\ntwo\nthree"
     wl, _ = _ingest(content, tmp_path, "notrail")
     assert wl.size == 3
@@ -232,7 +232,10 @@ def test_ingest_utf16le_accepted_and_roundtrips(app, tmp_path):
     wl, src = _ingest(content, tmp_path, "utf16")
     assert _stored_bytes(wl) == content
     assert wl.size == get_linecount(str(src))
-    assert wl.size == 4                                  # 3 LF bytes + 1
+    # UTF-16LE encodes '\n' (U+000A) as the two bytes 0x0A 0x00, so the file's
+    # FINAL byte is 0x00, not 0x0A -- byte-oriented counting sees this as
+    # unterminated (dangling last "line"), hence 3 LF bytes + 1.
+    assert wl.size == 4
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +250,7 @@ def test_ingest_hashcat_hex_format_roundtrips_verbatim(app, tmp_path):
     assert stored == HEX_LINES                           # literal, not decoded
     assert b"$HEX[68656c6c6f]" in stored
     assert b"$HEX[]" in stored
-    assert wl.size == HEX_LINES.count(b"\n") + 1 == 7
+    assert wl.size == HEX_LINES.count(b"\n") == 6
     assert wl.size == get_linecount(str(src))
 
 
@@ -261,7 +264,7 @@ def test_ingest_hex_line_with_encoded_newline_is_not_expanded(app, tmp_path):
     stored = _stored_bytes(wl)
     assert stored == content
     assert stored.count(b"\n") == 1                       # hex added no newline
-    assert wl.size == content.count(b"\n") + 1 == 2       # get_linecount semantics
+    assert wl.size == content.count(b"\n") == 1       # get_linecount semantics
 
 
 def test_ingest_hex_format_gzip_upload_roundtrips(app, tmp_path):
@@ -272,7 +275,7 @@ def test_ingest_hex_format_gzip_upload_roundtrips(app, tmp_path):
         f.write(HEX_LINES)
     wl = ingest_static_wordlist_file(str(gz), _make_user().id, "HexGz")
     assert _stored_bytes(wl) == HEX_LINES
-    assert wl.size == HEX_LINES.count(b"\n") + 1
+    assert wl.size == HEX_LINES.count(b"\n")
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +330,7 @@ def test_ui_upload_hashcat_hex_roundtrips(app, client):
     assert wl is not None and is_gzip(wl.path)
     with gzip.open(wl.path, "rb") as f:
         assert f.read() == HEX_LINES
-    assert wl.size == HEX_LINES.count(b"\n") + 1
+    assert wl.size == HEX_LINES.count(b"\n")
 
 
 def test_ui_upload_utf8_bom_roundtrips(app, client):
@@ -366,6 +369,8 @@ def test_api_upload_utf16_accepted_and_roundtrips(app, client):
     assert is_gzip(wl.path)
     with gzip.open(wl.path, "rb") as f:
         assert f.read() == content
+    # UTF-16LE's final byte is 0x00 (the low byte of the trailing '\n'), not
+    # 0x0A, so this is byte-unterminated: 3 LF bytes + 1.
     assert wl.size == content.count(b"\n") + 1 == 4
 
 
@@ -379,7 +384,7 @@ def test_api_upload_hashcat_hex_roundtrips(app, client):
     wl = Wordlists.query.get(body["wordlist_id"])
     with gzip.open(wl.path, "rb") as f:
         assert f.read() == HEX_LINES                      # literal, not decoded
-    assert wl.size == HEX_LINES.count(b"\n") + 1
+    assert wl.size == HEX_LINES.count(b"\n")
 
 
 def test_api_upload_utf8_bom_preserved(app, client):
@@ -400,18 +405,19 @@ def test_api_upload_utf8_bom_preserved(app, client):
 # ---------------------------------------------------------------------------
 
 def test_ingest_empty_file(app, tmp_path):
-    # An empty wordlist stores empty bytes; get_linecount's (count + 1) reports 1.
+    # An empty wordlist stores empty bytes and has zero lines.
     wl, _ = _ingest(b"", tmp_path, "empty")
     assert _stored_bytes(wl) == b""
-    assert wl.size == 1
+    assert wl.size == 0
 
 
 def test_ingest_only_newlines(app, tmp_path):
-    # Blank lines are real lines under the '\n'-count semantics.
+    # Blank lines are real lines under the '\n'-count semantics; the file is
+    # terminated, so the count is exactly the number of newlines (no +1).
     content = b"\n\n\n"
     wl, _ = _ingest(content, tmp_path, "blanks")
     assert _stored_bytes(wl) == content
-    assert wl.size == 4                                    # 3 newlines + 1
+    assert wl.size == 3                                    # 3 newlines, terminated
 
 
 def test_ingest_bom_only_file(app, tmp_path):
@@ -428,7 +434,7 @@ def test_ingest_binary_with_nul_accepted_by_ingest(app, tmp_path):
     assert not looks_like_text_or_gz(str(_write(tmp_path, content)))  # drop-folder would refuse
     wl, _ = _ingest(content, tmp_path, "binary")
     assert _stored_bytes(wl) == content
-    assert wl.size == content.count(b"\n") + 1
+    assert wl.size == content.count(b"\n")
 
 
 def test_ingest_mixed_lf_and_crlf(app, tmp_path):
@@ -436,7 +442,7 @@ def test_ingest_mixed_lf_and_crlf(app, tmp_path):
     content = b"unix\nwindows\r\nunix2\n"
     wl, _ = _ingest(content, tmp_path, "mixed")
     assert _stored_bytes(wl) == content
-    assert wl.size == content.count(b"\n") + 1 == 4
+    assert wl.size == content.count(b"\n") == 3
 
 
 # ---------------------------------------------------------------------------
@@ -552,7 +558,7 @@ def test_api_upload_utf8_multibyte_roundtrips(app, client):
     body = resp.get_json()
     assert body["status"] == 200
     wl = Wordlists.query.get(body["wordlist_id"])
-    assert wl.size == content.count(b"\n") + 1
+    assert wl.size == content.count(b"\n")
     with gzip.open(wl.path, "rb") as f:
         assert f.read() == content
 

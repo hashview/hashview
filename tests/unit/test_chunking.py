@@ -90,6 +90,32 @@ def test_plan_wordlist_with_rules_splits_and_tiles():
     _assert_tiles_wordlist(specs, size)
 
 
+def test_plan_wordlist_exact_multiple_has_no_trailing_one_word_chunk(tmp_path):
+    """#435 regression: get_linecount used to over-report a newline-terminated
+    wordlist's line count by one. Feeding that inflated size into plan_chunks
+    produced a spurious trailing 1-word chunk even when the TRUE line count
+    was an exact multiple of words_per_chunk. Build a real terminated
+    wordlist, get its (now-correct) line count via get_linecount, and confirm
+    plan_chunks tiles it into clean equal-sized chunks with no leftover."""
+    from hashview.utils.utils import get_linecount
+
+    lines_per_chunk = 100
+    num_lines = lines_per_chunk * 10   # exact multiple -> 10 whole chunks
+    wl_path = tmp_path / "exact.txt"
+    wl_path.write_bytes(b"".join(b"word%d\n" % i for i in range(num_lines)))
+
+    wordlist_size = get_linecount(str(wl_path))
+    assert wordlist_size == num_lines   # the #435 fix: no off-by-one
+
+    # rule_count=1 -> per_word=1; slowest_speed*target_seconds == 100 ->
+    # words_per_chunk == 100, dividing num_lines evenly.
+    specs = plan_chunks(0, wordlist_size=wordlist_size, rule_count=1,
+                        slowest_speed=100, target_seconds=1, max_chunks=50)
+    assert len(specs) == 10
+    _assert_tiles_wordlist(specs, num_lines)
+    assert specs[-1]['limit'] == lines_per_chunk   # no dangling 1-word tail chunk
+
+
 def test_plan_wordlist_chunk_count_scales_with_speed():
     size = 1_000_000
     slow = plan_chunks(0, wordlist_size=size, rule_count=10,

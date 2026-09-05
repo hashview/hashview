@@ -995,10 +995,12 @@ def slowest_benchmark(hash_type):
 
     Chunk sizes are computed from the SLOWEST agent so the weakest hardware still
     finishes a chunk in roughly the target duration. Returns None when no agent
-    has benchmarked this hash type yet (caller then runs the task whole).
+    has benchmarked this hash type yet, or when every agent that tried reported
+    it unsupported (speed 0) -- caller then runs the task whole.
     """
     return db.session.query(db.func.min(AgentBenchmarks.speed)) \
-        .filter(AgentBenchmarks.hash_type == hash_type).scalar()
+        .filter(AgentBenchmarks.hash_type == hash_type, AgentBenchmarks.speed > 0) \
+        .scalar()
 
 
 _SPEED_UNIT_MULT = {'': 1, 'K': 1e3, 'M': 1e6, 'G': 1e9, 'T': 1e12, 'P': 1e15, 'E': 1e18}

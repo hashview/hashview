@@ -11,7 +11,7 @@ import os
 
 import pytest
 
-from hashview.models import HashfileHashes, Hashfiles, Jobs, db
+from hashview.models import Hashes, HashfileHashes, Hashfiles, Jobs, db
 from tests.unit.helpers import login, make_admin, make_customer
 
 # A valid hash_only line for hash_type '1000' (NTLM): 32 hex characters.
@@ -30,14 +30,18 @@ EMPTY_SUBTYPES = {
 }
 
 
-def _paste_data(name, hashes=VALID_NTLM, hash_type="1000"):
-    return {
+def _paste_data(name, hashes=VALID_NTLM, hash_type="1000", file_type="hash_only",
+                 custom_hash_type=None):
+    data = {
         "name": name,
-        "file_type": "hash_only",
+        "file_type": file_type,
         "hash_type": hash_type,
         "hashfilehashes": hashes,
         **EMPTY_SUBTYPES,
     }
+    if custom_hash_type is not None:
+        data["custom_hash_type"] = str(custom_hash_type)
+    return data
 
 
 def _job(owner, customer, status="Ready", name="j1"):
@@ -225,3 +229,84 @@ def test_page_renders_the_import_progress_modal(app, client):
     assert b'id="hf-import-modal"' in body
     assert b'id="hf-step-upload"' in body
     assert b'id="hf-step-import"' in body
+
+
+def test_custom_hash_type_hash_only_imports_with_typed_mode(app, client, tmp_snapshot):
+    """A hash_only upload with hash_type='custom' + custom_hash_type=31337
+    imports successfully and stores the typed mode number, never the literal
+    string 'custom' (#447)."""
+    tmp_dir, before = tmp_snapshot
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+
+    resp = client.post(
+        f"/jobs/{job.id}/assigned_hashfile/",
+        data=_paste_data("CustomModeHF", hashes="deadbeef", hash_type="custom",
+                          custom_hash_type=31337),
+        headers=AJAX,
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["status"] == "ok"
+
+    hf = Hashfiles.query.filter_by(name="CustomModeHF").first()
+    assert hf is not None
+    hfh = HashfileHashes.query.filter_by(hashfile_id=hf.id).first()
+    assert hfh is not None
+    stored_hash = Hashes.query.get(hfh.hash_id)
+    assert stored_hash is not None
+    assert stored_hash.hash_type == 31337
+    assert stored_hash.hash_type != "custom"
+
+
+def test_custom_hash_type_user_hash_imports_with_typed_mode(app, client, tmp_snapshot):
+    tmp_dir, before = tmp_snapshot
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+
+    resp = client.post(
+        f"/jobs/{job.id}/assigned_hashfile/",
+        data=_paste_data("CustomModeUserHashHF", hashes="someuser:deadbeef",
+                          hash_type="custom", file_type="user_hash",
+                          custom_hash_type=31337),
+        headers=AJAX,
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["status"] == "ok"
+
+    hf = Hashfiles.query.filter_by(name="CustomModeUserHashHF").first()
+    assert hf is not None
+    hfh = HashfileHashes.query.filter_by(hashfile_id=hf.id).first()
+    assert hfh is not None
+    stored_hash = Hashes.query.get(hfh.hash_id)
+    assert stored_hash is not None
+    assert stored_hash.hash_type == 31337
+
+
+def test_custom_hash_type_missing_number_fails_validation(app, client, tmp_snapshot):
+    """hash_type='custom' without a custom_hash_type fails clean-message
+    validation, and (for the AJAX path) that message reaches the JSON error
+    response the import modal reads."""
+    tmp_dir, before = tmp_snapshot
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+
+    resp = client.post(
+        f"/jobs/{job.id}/assigned_hashfile/",
+        data=_paste_data("NoCustomModeHF", hashes="deadbeef", hash_type="custom"),
+        headers=AJAX,
+    )
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert body["status"] == "error"
+    assert "Enter a hashcat mode number" in body["msg"]
+
+    assert Hashfiles.query.filter_by(name="NoCustomModeHF").first() is None
+    assert _new_files(tmp_dir, before) == set()

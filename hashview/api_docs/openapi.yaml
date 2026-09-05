@@ -1131,7 +1131,12 @@ paths:
           in: path
           required: true
           schema: {type: integer}
-          description: Hashcat hash mode (e.g. 1000 for NTLM).
+          description: >-
+            Hashcat hash mode (e.g. 1000 for NTLM). When file_format is 4
+            (user:hash) or 5 (hash_only), this is not restricted to Hashview's
+            bundled/documented mode list — any hashcat mode number hashcat
+            itself supports may be used, including modes Hashview doesn't
+            otherwise curate a friendly name or structural validator for.
         - name: hashfile_name
           in: path
           required: true

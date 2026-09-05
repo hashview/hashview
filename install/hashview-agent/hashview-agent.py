@@ -499,6 +499,10 @@ def run_benchmark(hash_modes):
 
     Triggered by a heartbeat reply of msg='BENCHMARK'. The server uses these
     per-(agent, hash type) speeds to size task chunks for the slowest agent.
+    A mode this hashcat build can't benchmark is reported as speed 0 (rather
+    than omitted) so the server can record "attempted, unsupported" and stop
+    re-asking for it every heartbeat; see hashview/api/routes.py's
+    heartbeat and slowest_benchmark for the other half of this contract.
     """
     from agent.bench import parse_benchmark_speed, parse_hc_extra_args
     from agent.config import Config
@@ -506,6 +510,7 @@ def run_benchmark(hash_modes):
     # measured rate reflects the same devices that will run the crack.
     hc_args = parse_hc_extra_args(getattr(Config, 'HC_EXTRA_ARGS', ''))
     results = {}
+    failed = []
     for mode in hash_modes or []:
         LOG.info('Benchmarking hash mode %s...', mode)
         try:
@@ -516,18 +521,30 @@ def run_benchmark(hash_modes):
                 capture_output=True,
                 timeout=BENCHMARK_TIMEOUT)
         except Exception:
-            LOG.exception('Benchmark failed for hash mode %s; skipping.', mode)
+            LOG.exception('Benchmark failed for hash mode %s; reporting unsupported.', mode)
+            results[str(mode)] = 0
+            failed.append(mode)
             continue
         output = ((proc.stdout or b'').decode('utf-8', 'replace')
                   + (proc.stderr or b'').decode('utf-8', 'replace'))
         speed = parse_benchmark_speed(output)
         if speed is None:
-            LOG.warning('Could not parse a benchmark speed for hash mode %s.', mode)
+            LOG.warning('Could not parse a benchmark speed for hash mode %s; reporting unsupported.', mode)
+            results[str(mode)] = 0
+            failed.append(mode)
             continue
         results[str(mode)] = speed
         LOG.info('Hash mode %s benchmark: %s H/s', mode, speed)
     if results:
         report_benchmark(results)
+    if failed:
+        try:
+            api.sendError(
+                'hashcat on this agent could not benchmark hash mode(s): '
+                + ', '.join(str(m) for m in failed)
+                + '. These modes will be marked unsupported for this agent.')
+        except Exception:
+            LOG.exception('Failed to report unsupported hash modes to the server.')
 
 
 def report_benchmark(results):

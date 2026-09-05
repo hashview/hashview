@@ -38,6 +38,7 @@ from hashview.models import (
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
     MAX_TASKS_PER_GROUP,
+    _job_hash_type,
     build_job_task_commands,
     compress_to_gz,
     decompress_gz,
@@ -448,7 +449,13 @@ def v1_api_set_agent_heartbeat():
                                   func.min(JobTasks.id).label('first_id'))
                               .group_by(JobTasks.job_id, JobTasks.task_id)
                               .subquery())
-                job_task_entry = (db.session.query(JobTasks)
+                # Don't dispatch this agent a task whose hash type it has already
+                # reported unsupported (speed 0) -- it would just re-report 0 and
+                # waste the chunk slot. Walk the ordered candidates and skip those.
+                unsupported = {b.hash_type for b in
+                               AgentBenchmarks.query.filter_by(agent_id=agent.id, speed=0).all()}
+                job_task_entry = None
+                for candidate in (db.session.query(JobTasks)
                                   .join(task_first,
                                         (JobTasks.job_id == task_first.c.job_id)
                                         & (JobTasks.task_id == task_first.c.task_id))
@@ -456,8 +463,12 @@ def v1_api_set_agent_heartbeat():
                                   .order_by(JobTasks.priority.desc(),
                                             task_first.c.first_id.asc(),
                                             JobTasks.chunk_no.asc(),
-                                            JobTasks.id.asc())
-                                  .first())
+                                            JobTasks.id.asc())):
+                    cand_job = Jobs.query.get(candidate.job_id)
+                    if unsupported and cand_job is not None and _job_hash_type(cand_job) in unsupported:
+                        continue
+                    job_task_entry = candidate
+                    break
                 if job_task_entry:
                     # Don't start a fresh chunk of a task that's already over its
                     # runtime cap. This closes the gap where, at the cap moment, no
@@ -528,12 +539,13 @@ def v1_api_post_agent_benchmark():
     for mode in results:
         try:
             m = int(mode)
+            s = int(float(results[mode]))
         except (TypeError, ValueError):
             current_app.logger.debug(
-                'Agent %s benchmark pre-scan: non-integer mode %r; skipping.',
-                agent.id, mode)
+                'Agent %s benchmark pre-scan: unparseable entry %r=%r; skipping.',
+                agent.id, mode, results[mode])
             continue
-        if not slowest_benchmark(m):
+        if s > 0 and not slowest_benchmark(m):
             pending.add(m)
 
     for mode, speed in results.items():
@@ -590,6 +602,7 @@ def v1_api_get_agent_benchmarks():
 
     rows = (db.session.query(AgentBenchmarks.hash_type,
                              db.func.min(AgentBenchmarks.speed))
+            .filter(AgentBenchmarks.speed > 0)
             .group_by(AgentBenchmarks.hash_type).all())
     # An empty fleet is not an error: 200 with an empty map, like the other
     # collection endpoints.

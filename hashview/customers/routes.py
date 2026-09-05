@@ -26,7 +26,7 @@ def _hash_type_names():
         for sel in (f.hash_type, f.pwdump_hash_type, f.netntlm_hash_type,
                     f.kerberos_hash_type, f.shadow_hash_type):
             for v, lab in sel.choices:
-                if v is not None and str(v) and str(v) not in names:
+                if v is not None and str(v) and str(v).isdigit() and str(v) not in names:
                     nm = lab.split(') ', 1)[1] if ') ' in lab else lab
                     names[str(v)] = nm.split(' / ')[0].split(',')[0].strip()
     except Exception:  # pragma: no cover - defensive

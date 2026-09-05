@@ -56,7 +56,7 @@ def hashfiles_list():
         for _sel in (_form.hash_type, _form.pwdump_hash_type, _form.netntlm_hash_type,
                      _form.kerberos_hash_type, _form.shadow_hash_type):
             for _val, _label in _sel.choices:
-                if _val is not None and str(_val) not in hash_type_names:
+                if _val is not None and str(_val).isdigit() and str(_val) not in hash_type_names:
                     _name = _label.split(') ', 1)[1] if ') ' in _label else _label
                     hash_type_names[str(_val)] = _name.split(' / ')[0].split(',')[0].strip()
     except Exception:  # pragma: no cover - defensive: never break the list page

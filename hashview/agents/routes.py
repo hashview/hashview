@@ -55,7 +55,7 @@ def _agent_benchmarks(agents_):
         by_agent[row.agent_id].append({
             'hash_type': row.hash_type,
             'name': _MODE_NAMES.get(row.hash_type, ''),
-            'speed': fmt_hps(row.speed, places=2),
+            'speed': 'Unsupported' if row.speed == 0 else fmt_hps(row.speed, places=2),
             'updated_at': row.updated_at,
         })
     return by_agent

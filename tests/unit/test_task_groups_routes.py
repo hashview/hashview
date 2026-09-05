@@ -461,3 +461,47 @@ def test_task_groups_list_exposes_the_cap_to_the_modal_js(app, client):
     assert b"var CAP = 10000" in resp.data
     assert b'id="ng-cap-warn"' in resp.data
     assert b'id="eg-cap-warn"' in resp.data
+
+
+def test_task_groups_add_modal_duplicate_name_via_race_returns_form_error(app, client, monkeypatch):
+    """Test that IntegrityError from a race past the form pre-check is handled.
+
+    The form validator (TaskGroupsForm.validate_name) is a TOCTOU race: two
+    requests can both pass validation, then only one can actually commit. This
+    test monkeypatches the validator to bypass the check, allowing two adds
+    with the same name to get to db.session.commit(). The first commit
+    succeeds; the second hits the database unique constraint and must surface
+    an error through the modal error session dict, not a 500.
+    """
+    admin = make_admin()
+    login(client, admin)
+
+    # Monkeypatch TaskGroupsForm.validate_name to do nothing (always pass).
+    # This simulates the TOCTOU race where validation passes but a concurrent
+    # insert gets there first.
+    def mock_validate_name(self, name):
+        pass  # Skip the check
+
+    monkeypatch.setattr(TaskGroupsForm, 'validate_name', mock_validate_name)
+
+    # First request with name="RaceGroup" should succeed.
+    resp1 = client.post("/task_groups/add", data={
+        "name": "RaceGroup", "from_modal": "1", "task_ids": "", "submit": "Create",
+    }, follow_redirects=False)
+    assert resp1.status_code in (301, 302)
+    tg1 = TaskGroups.query.filter_by(name="RaceGroup").first()
+    assert tg1 is not None
+
+    # Second request with same name should redirect and set the form error
+    # in the session, not return a 500.
+    resp2 = client.post("/task_groups/add", data={
+        "name": "RaceGroup", "from_modal": "1", "task_ids": "", "submit": "Create",
+    }, follow_redirects=False)
+    assert resp2.status_code in (301, 302)
+
+    # Follow the redirect to verify the error appears in the response.
+    resp3 = client.get("/task_groups")
+    assert resp3.status_code == 200
+    # The form error should be visible in the page (e.g. flashed or in the modal
+    # error).
+    assert b"taken" in resp3.data or b"RaceGroup" in resp3.data

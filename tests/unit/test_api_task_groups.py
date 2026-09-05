@@ -238,6 +238,55 @@ def test_add_duplicate_name_returns_400(client, admin_user):
 
 
 @pytest.mark.security
+def test_add_duplicate_name_via_race_returns_400(client, admin_user, monkeypatch):
+    """Test that IntegrityError from a race past the pre-check is handled.
+
+    The application-level pre-check (TaskGroups.query.filter_by(name).first())
+    is a TOCTOU race: two requests can both pass the check, then only one can
+    actually commit. This test monkeypatches the pre-check to return None,
+    allowing two adds with the same name to get to db.session.commit(). The
+    first commit succeeds; the second hits the database unique constraint and
+    must return a 400, not a 500.
+    """
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+
+    # Monkeypatch TaskGroups.query.filter_by(name=...).first() to return None,
+    # bypassing the pre-check. This simulates the TOCTOU race.
+    original_filter_by = TaskGroups.query.filter_by
+
+    def mock_filter_by(**kwargs):
+        query_obj = original_filter_by(**kwargs)
+
+        def mock_first():
+            return None  # Always bypass the pre-check
+
+        query_obj.first = mock_first
+        return query_obj
+
+    monkeypatch.setattr(TaskGroups.query, 'filter_by', mock_filter_by)
+
+    # First request with name="RaceName" should succeed (no duplicate yet).
+    resp1 = client.post(
+        "/v1/task_groups/add",
+        data=json.dumps({"name": "RaceName"}),
+        content_type="application/json",
+    )
+    body1 = _json_body(resp1)
+    assert body1["status"] == 200
+
+    # Second request with same name should fail with IntegrityError -> 400,
+    # not 500.
+    resp2 = client.post(
+        "/v1/task_groups/add",
+        data=json.dumps({"name": "RaceName"}),
+        content_type="application/json",
+    )
+    body2 = _json_body(resp2)
+    assert body2["status"] == 400
+    assert body2["msg"] == "A task group with that name already exists"
+
+
+@pytest.mark.security
 def test_add_tasks_not_a_list_returns_400(client, admin_user):
     client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
     resp = client.post(

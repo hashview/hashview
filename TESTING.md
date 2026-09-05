@@ -124,9 +124,12 @@ plain `pytest tests/` (and CI) never writes to a live database.
 ```bash
 docker compose up -d --build
 HASHVIEW_DOCKER_BASE_URL=http://127.0.0.1:5000 \
-HASHVIEW_DOCKER_DB_PORT=3306 \
+HASHVIEW_DOCKER_DB_PORT=3308 \
   python -m pytest tests/integration/test_analytics_docker_bugs.py -v
 ```
+
+The `db` service publishes on `127.0.0.1:3308` (loopback-only, see
+`docker-compose.yml`), so this only works from the same host running the stack.
 
 `HASHVIEW_DOCKER_DB_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_NAME` override the
 seeding connection (defaults: `127.0.0.1:3307`, `hashview`/`hashview`/`hashview`

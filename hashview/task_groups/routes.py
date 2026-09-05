@@ -3,6 +3,7 @@ import json
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required
+from sqlalchemy.exc import IntegrityError
 
 from hashview.models import Hashes, TaskGroups, Tasks, Users, db
 from hashview.task_groups.forms import TaskGroupsForm
@@ -114,14 +115,28 @@ def task_groups_add():
                 return redirect(url_for('task_groups.task_groups_list'))
             task_group = TaskGroups(name=task_group_form.name.data, owner_id=current_user.id, tasks=json.dumps(ordered))
             db.session.add(task_group)
-            db.session.commit()
+            try:
+                db.session.commit()
+            except IntegrityError:
+                db.session.rollback()
+                _form_error(
+                    'new-group-modal',
+                    {'name': task_group_form.name.data or ''},
+                    ['That task group name is taken. Please choose a different one.'],
+                    request.form.get('task_ids', ''),
+                )
+                return redirect(url_for('task_groups.task_groups_list'))
             log_event('task_group.create', target=f'task_group:{task_group.id} {task_group.name!r}')
             flash(f'Task group {task_group_form.name.data} created!', 'success')
             return redirect(url_for('task_groups.task_groups_list'))
         # Legacy flow: create an empty group then go to the assign-tasks page.
         task_group = TaskGroups(name=task_group_form.name.data, owner_id=current_user.id, tasks=json.dumps([]))
         db.session.add(task_group)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            return render_template('task_groups_add.html.j2', title='Tasks Add', tasks=tasks, task_group_form=task_group_form, error_message='That task group name is taken. Please choose a different one.')
         log_event('task_group.create', target=f'task_group:{task_group.id} {task_group.name!r}')
         flash(f'Task {task_group_form.name.data} created!', 'success')
         return redirect("assigned_tasks/"+str(task_group.id))
@@ -173,7 +188,17 @@ def task_groups_edit():
             return redirect(url_for('task_groups.task_groups_list'))
         task_group.name = task_group_form.name.data
         task_group.tasks = json.dumps(ordered)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            _form_error(
+                'edit-group-modal',
+                {'name': task_group_form.name.data or '', 'group_id': task_group.id},
+                ['That task group name is taken. Please choose a different one.'],
+                request.form.get('task_ids', ''),
+            )
+            return redirect(url_for('task_groups.task_groups_list'))
         log_event('task_group.edit', target=f'task_group:{task_group.id} {task_group.name!r}')
         flash(f'Task group {task_group_form.name.data} updated!', 'success')
         return redirect(url_for('task_groups.task_groups_list'))

@@ -322,7 +322,7 @@ class TaskGroups(db.Model):
     """Class object to represent TaskGroups"""
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(50), nullable=False)
+    name = db.Column(db.String(50), nullable=False, unique=True)
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     # Ordered JSON list of task ids. TEXT (65,535 bytes) rather than VARCHAR so
     # a large membership can't silently overflow. The number of entries is

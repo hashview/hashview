@@ -108,3 +108,7 @@ FCF7C1B8749CF99D88E5F34271D636178FB5D130
 # the shared prefix so the pattern also matches this very line, which the
 # generic secret-assign rule flags whenever it is added or moved.
 api_key="user-api-key-
+
+# 0.0.0.0 is the wildcard bind address, not a real host IP. Flagged whenever a
+# compose file or doc explains why a port no longer binds it (#394).
+0\.0\.0\.0

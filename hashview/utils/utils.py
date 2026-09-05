@@ -127,12 +127,26 @@ def _count_generator(reader):
         b = reader(1024 * 1024)
 
 def get_linecount(filepath):
-    """Function to return line count of file"""
+    """Function to return line count of file.
+
+    Counts '\\n' bytes and adds one only when the file is non-empty AND its
+    final byte is not '\\n' (an unterminated last line still counts as a
+    line). A file that ends with '\\n' has no such dangling line, so no +1.
+    An empty file has zero lines. The last byte is tracked across the
+    streamed 1 MiB chunks, not read separately, so multi-GB files still
+    never load fully into memory.
+    """
 
     with open(filepath, 'rb') as fp:
         c_generator = _count_generator(fp.raw.read)
-        count = sum(buffer.count(b'\n') for buffer in c_generator)
-        return count + 1
+        count = 0
+        last_byte = b''
+        for buffer in c_generator:
+            count += buffer.count(b'\n')
+            last_byte = buffer[-1:]
+        if last_byte and last_byte != b'\n':
+            count += 1
+        return count
 
 def get_filehash(filepath):
     """Function to sha256 hash of file"""
@@ -202,13 +216,20 @@ def gz_linecount(filepath):
     """Return the line count of a gzipped text file.
 
     Streams the decompressed content (the "zcat | wc -l" equivalent) and uses
-    the SAME semantics as get_linecount (count of '\\n' + 1) so a wordlist's
-    reported line count is identical whether it arrived as plain text or gzip.
-    Raises on a malformed gzip stream (validation).
+    the SAME semantics as get_linecount (count of '\\n', +1 only when the
+    decompressed content is non-empty and its final byte is not '\\n') so a
+    wordlist's reported line count is identical whether it arrived as plain
+    text or gzip. Raises on a malformed gzip stream (validation).
     """
+    count = 0
+    last_byte = b''
     with gzip.open(filepath, 'rb') as f:
-        count = sum(buffer.count(b'\n') for buffer in iter(lambda: f.read(_CHUNK), b''))
-    return count + 1
+        for buffer in iter(lambda: f.read(_CHUNK), b''):
+            count += buffer.count(b'\n')
+            last_byte = buffer[-1:]
+    if last_byte and last_byte != b'\n':
+        count += 1
+    return count
 
 
 def ingest_static_wordlist_file(src_path, owner_id, name):

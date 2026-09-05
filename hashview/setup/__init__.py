@@ -12,8 +12,14 @@ from hashview.utils.utils import (
     get_filehash,
     get_filesize,
     get_linecount,
+    gz_linecount,
     is_gzip,
 )
+
+# Bumped when the recomputation logic for backfilled `.size` values changes, so
+# a fixed-but-still-wrong backfill can be re-run once against installs that
+# already have the (stale) marker from an earlier version of this pass.
+LINECOUNT_BACKFILL_MARKER = '.linecount_backfill_v1_done'
 
 DEFAULT_PASSWORD = 'hashview'
 
@@ -123,10 +129,26 @@ def compress_existing_wordlists_if_needed(db :SQLAlchemy):
     each row is handled in its own try/except with a per-row commit, a truly
     missing file is logged and skipped (never deletes the DB row), and any
     failure is contained so it can never abort startup.
+
+    Also does a ONE-TIME backfill (#435) of `.size` for rows whose stored
+    line count was computed with the old off-by-one get_linecount/gz_linecount
+    (which always added 1, even for newline-terminated files). This can't be a
+    migration -- reaching the wordlist/rule files on disk needs an app context
+    and real paths, which Alembic doesn't have -- so it rides this same
+    startup pass instead:
+      - static + already gzip: recompute `.size` from the existing .gz via
+        gz_linecount (previously this branch only backfilled byte_size).
+      - Rules: recompute `.size` from the rule file via get_linecount.
+    Recomputing from the actual file (rather than blindly subtracting 1) is
+    correct for both terminated and unterminated files. Guarded by a marker
+    file in the wordlists dir so a 14M-line rockyou.txt.gz is only ever
+    re-counted once, not on every boot.
     """
     from flask import current_app
     logger = current_app.logger
     wordlists_dir = os.path.join(current_app.root_path, 'control/wordlists')
+    linecount_backfill_marker = os.path.join(wordlists_dir, LINECOUNT_BACKFILL_MARKER)
+    needs_linecount_backfill = not os.path.exists(linecount_backfill_marker)
 
     def _resolve(path):
         """Locate a wordlist file, tolerating a relative/legacy stored path.
@@ -167,9 +189,16 @@ def compress_existing_wordlists_if_needed(db :SQLAlchemy):
             # static
             if is_gzip(resolved):
                 # Already compressed (new uploads, or a prior run). No-op aside
-                # from backfilling byte_size if it was never recorded.
+                # from backfilling byte_size if it was never recorded, and the
+                # one-time #435 line-count recompute below.
+                changed = False
                 if wordlist.byte_size is None:
                     wordlist.byte_size = get_filesize(resolved)
+                    changed = True
+                if needs_linecount_backfill:
+                    wordlist.size = gz_linecount(resolved)
+                    changed = True
+                if changed:
                     db.session.commit()
                 continue
 
@@ -194,6 +223,30 @@ def compress_existing_wordlists_if_needed(db :SQLAlchemy):
         except Exception:
             db.session.rollback()
             logger.exception('Failed to process wordlist %s; leaving it untouched.', getattr(wordlist, 'id', '?'))
+
+    if needs_linecount_backfill:
+        for rule in db.session.query(Rules).all():
+            try:
+                if not rule.path or not os.path.exists(rule.path):
+                    logger.warning('Rule %s file not found (path=%s); leaving the DB row '
+                                   'untouched.', rule.id, rule.path)
+                    continue
+                rule.size = get_linecount(rule.path)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                logger.exception('Failed to recompute line count for rule %s; leaving it untouched.',
+                                 getattr(rule, 'id', '?'))
+
+        # Mark the one-time #435 line-count backfill done so a 14M-line
+        # rockyou.txt.gz (or a large rule file) isn't re-counted on every boot.
+        try:
+            os.makedirs(wordlists_dir, exist_ok=True)
+            with open(linecount_backfill_marker, 'w') as fh:
+                fh.write('done')
+        except OSError:
+            logger.exception('Failed to write line-count backfill marker %s; the backfill '
+                             'may re-run on next startup.', linecount_backfill_marker)
 
 
 def _decode_hex_column(db, model, col_name, logger):

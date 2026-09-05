@@ -122,7 +122,7 @@ def test_import_plaintext_creates_row_and_removes_original(app, drop, audit):
     assert wl is not None
     assert wl.type == "static" and wl.owner_id == user.id
     assert wl.path.endswith(".gz") and is_gzip(wl.path)
-    assert wl.size == content.count(b"\n") + 1      # get_linecount semantics
+    assert wl.size == content.count(b"\n")          # get_linecount semantics
     with gzip.open(wl.path, "rb") as fh:
         assert fh.read() == content
     # the original drop file is gone (consumed on success)
@@ -149,7 +149,7 @@ def test_import_gz_recompresses(app, drop):
     assert summary["imported"] == ["big.gz"]
     wl = Wordlists.query.filter_by(name="big").first()   # trailing .gz dropped
     assert wl is not None and is_gzip(wl.path)
-    assert wl.size == content.count(b"\n") + 1
+    assert wl.size == content.count(b"\n")
     with gzip.open(wl.path, "rb") as fh:
         assert fh.read() == content
     assert not src.exists()

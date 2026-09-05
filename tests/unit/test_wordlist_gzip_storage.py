@@ -126,6 +126,29 @@ def test_helpers_roundtrip(app, tmp_path):
     assert ensure_gz("d.txt") == "d.txt.gz"
 
 
+@pytest.mark.parametrize("data", [
+    pytest.param(b"a\nb\nc\n", id="terminated"),
+    pytest.param(b"a\nb\nc", id="unterminated"),
+    pytest.param(b"", id="empty"),
+    pytest.param(b"\n\n\n", id="newlines-only"),
+])
+def test_get_linecount_and_gz_linecount_match_splitlines_oracle(app, tmp_path, data):
+    """#435: get_linecount/gz_linecount must count real lines, not '\\n' + 1
+    unconditionally. len(data.splitlines()) is the oracle: it counts a
+    trailing-newline-terminated file's lines correctly AND still counts a
+    final unterminated line, exactly matching the intended semantics."""
+    expected = len(data.splitlines())
+
+    plain = tmp_path / "wl.txt"       # tmp_path is unique per parametrized call
+    plain.write_bytes(data)
+    assert get_linecount(str(plain)) == expected
+
+    gz = tmp_path / "wl.gz"
+    with gzip.open(str(gz), "wb") as f:
+        f.write(data)
+    assert gz_linecount(str(gz)) == expected
+
+
 def test_ingest_plaintext(app, tmp_path):
     user = _make_user()
     content = b"password\n123456\nletmein\n"
@@ -154,7 +177,7 @@ def test_ingest_gzip_recompresses_to_max(app, tmp_path):
     wl = ingest_static_wordlist_file(str(weak), user.id, "GzList")
 
     assert is_gzip(wl.path)
-    assert wl.size == content.count(b"\n") + 1
+    assert wl.size == content.count(b"\n")
     assert wl.checksum == get_filehash(wl.path)
     with gzip.open(wl.path, "rb") as f:
         assert f.read() == content
@@ -189,7 +212,7 @@ def test_ui_upload_plaintext(app, client):
     assert wl is not None
     assert wl.path.endswith(".gz") and is_gzip(wl.path)
     assert wl.checksum == get_filehash(wl.path)
-    assert wl.size == content.count(b"\n") + 1
+    assert wl.size == content.count(b"\n")
     assert wl.byte_size == os.path.getsize(wl.path)
 
 
@@ -356,7 +379,7 @@ def test_api_upload_plaintext(app, client):
     assert body["status"] == 200
     wl = Wordlists.query.get(body["wordlist_id"])
     assert wl.name == "ApiText" and is_gzip(wl.path)
-    assert wl.size == content.count(b"\n") + 1
+    assert wl.size == content.count(b"\n")
     with gzip.open(wl.path, "rb") as f:
         assert f.read() == content
 
@@ -509,11 +532,21 @@ def test_launch_migration(app, tmp_path):
     miss_wl = Wordlists(name="Missing", owner_id=user.id, type="static",
                         path=str(tmp_path / "nope.txt"), checksum="0" * 64, size=0)
 
-    db.session.add_all([static_wl, gz_wl, dyn_wl, miss_wl])
+    # 5) Rules row (#435): stored size simulates a pre-fix (count + 1) value,
+    # which the backfill must recompute from the actual rule file.
+    r_content = b"r1\nr2\nr3\n"
+    r_path = tmp_path / "old.rule"
+    r_path.write_bytes(r_content)
+    rule = Rules(name="OldRule", owner_id=user.id, path=str(r_path),
+                checksum=get_filehash(str(r_path)), size=r_content.count(b"\n") + 1)
+
+    db.session.add_all([static_wl, gz_wl, dyn_wl, miss_wl, rule])
     db.session.commit()
     ids = (static_wl.id, gz_wl.id, dyn_wl.id, miss_wl.id)
+    rule_id = rule.id
     gz_checksum_before = gz_wl.checksum
     dyn_checksum_before = dyn_wl.checksum
+    rule_checksum_before = rule.checksum
 
     # Called directly (no nested app_context): the test already runs inside the
     # app fixture's context, and per-row commits expire our tracked objects so
@@ -534,10 +567,13 @@ def test_launch_migration(app, tmp_path):
     with gzip.open(static_wl.path, "rb") as f:
         assert f.read() == s_content
 
-    # already gzip -> untouched except byte_size backfill
+    # already gzip -> path/checksum untouched, byte_size backfilled, and
+    # (#435) .size recomputed from the actual .gz content -- this row's
+    # size=3 simulated a pre-fix (count + 1) value; the correct count is 2.
     assert gz_wl.path == str(g_path)
     assert gz_wl.checksum == gz_checksum_before
     assert gz_wl.byte_size == os.path.getsize(g_path)
+    assert gz_wl.size == g_content.count(b"\n") == 2
 
     # dynamic -> never compressed, byte_size backfilled, checksum unchanged
     assert dyn_wl.path == str(d_path)
@@ -549,13 +585,32 @@ def test_launch_migration(app, tmp_path):
     assert miss_wl.byte_size is None
     assert miss_wl.path.endswith("nope.txt")
 
+    # Rules row (#435) -> size recomputed from the actual rule file, checksum
+    # and path untouched.
+    rule = Rules.query.get(rule_id)
+    assert rule.path == str(r_path)
+    assert rule.checksum == rule_checksum_before
+    assert rule.size == r_content.count(b"\n") == 3
+
     # idempotent: second run is a no-op
     path_after = static_wl.path
     checksum_after = static_wl.checksum
+    # (#435) the one-time line-count backfill is marker-guarded: deliberately
+    # corrupt gz_wl.size and rule.size and confirm the second run does NOT
+    # touch either again (a 14M-line rockyou.txt.gz must not be re-counted
+    # every boot).
+    gz_wl = Wordlists.query.get(ids[1])
+    gz_wl.size = 999
+    rule.size = 998
+    db.session.commit()
     compress_existing_wordlists_if_needed(db)
     static_wl = Wordlists.query.get(ids[0])
+    gz_wl = Wordlists.query.get(ids[1])
+    rule = Rules.query.get(rule_id)
     assert static_wl.path == path_after
     assert static_wl.checksum == checksum_after
+    assert gz_wl.size == 999                          # untouched: marker already set
+    assert rule.size == 998                           # untouched: marker already set
 
 
 def test_migration_normalizes_relative_wordlist_path(app, client, tmp_path):

@@ -124,6 +124,14 @@ def tasks_list():
     # them); the list view padlocks these so the checkbox isn't offered.
     tasks_in_task_groups = _task_group_task_ids(task_groups)
 
+    # Task groups each task belongs to, for the info modal's "In N task groups"
+    # panel. Uses the same exact-JSON-parse logic as _task_group_task_ids (not a
+    # substring match on the raw TEXT column).
+    task_groups_by_task = {}
+    for tg in task_groups:
+        for tid in _task_group_task_ids([tg]):
+            task_groups_by_task.setdefault(tid, []).append(tg)
+
     # DISTINCT jobs each task is used in, for the info modal's "Used in N jobs"
     # panel. Collapse chunk rows so a job the task was split across is listed once
     # (not once per chunk); a task used more than once in the same job also lists
@@ -141,7 +149,7 @@ def tasks_list():
         seen.add(job.id)
         jobs_by_task.setdefault(jt.task_id, []).append(job)
 
-    return render_template('tasks.html.j2', title='tasks', tasks=tasks, users=users, jobs=jobs, job_tasks=job_tasks, jobs_by_task=jobs_by_task, wordlists=wordlists, task_groups=task_groups, task_recovery_performance=task_recovery_performance, pagination=pagination, sort_by=sort_by, sort_order=sort_order, name_filter=name_filter, rules=Rules.query.all(), wl_filesize=wl_filesize, tasks_in_jobs=tasks_in_jobs, tasks_in_task_groups=tasks_in_task_groups, tasksForm=TasksForm(), form_err=session.pop('tasks_form_err', None))
+    return render_template('tasks.html.j2', title='tasks', tasks=tasks, users=users, jobs=jobs, job_tasks=job_tasks, jobs_by_task=jobs_by_task, task_groups_by_task=task_groups_by_task, wordlists=wordlists, task_groups=task_groups, task_recovery_performance=task_recovery_performance, pagination=pagination, sort_by=sort_by, sort_order=sort_order, name_filter=name_filter, rules=Rules.query.all(), wl_filesize=wl_filesize, tasks_in_jobs=tasks_in_jobs, tasks_in_task_groups=tasks_in_task_groups, tasksForm=TasksForm(), form_err=session.pop('tasks_form_err', None))
 
 @tasks.route("/tasks/add", methods=['GET', 'POST'])
 @login_required

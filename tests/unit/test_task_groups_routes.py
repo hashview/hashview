@@ -461,3 +461,115 @@ def test_task_groups_list_exposes_the_cap_to_the_modal_js(app, client):
     assert b"var CAP = 10000" in resp.data
     assert b'id="ng-cap-warn"' in resp.data
     assert b'id="eg-cap-warn"' in resp.data
+
+
+def test_task_groups_add_modal_duplicate_name_via_race_returns_form_error(app, client, monkeypatch):
+    """Test that IntegrityError from a race past the form pre-check is handled.
+
+    The form validator (TaskGroupsForm.validate_name) is a TOCTOU race: two
+    requests can both pass validation, then only one can actually commit. This
+    test monkeypatches the validator to bypass the check, allowing two adds
+    with the same name to get to db.session.commit(). The first commit
+    succeeds; the second hits the database unique constraint and must surface
+    an error through the modal error session dict, not a 500.
+    """
+    admin = make_admin()
+    login(client, admin)
+
+    # Monkeypatch TaskGroupsForm.validate_name to do nothing (always pass).
+    # This simulates the TOCTOU race where validation passes but a concurrent
+    # insert gets there first.
+    def mock_validate_name(self, name):
+        pass  # Skip the check
+
+    monkeypatch.setattr(TaskGroupsForm, 'validate_name', mock_validate_name)
+
+    # First request with name="RaceGroup" should succeed.
+    resp1 = client.post("/task_groups/add", data={
+        "name": "RaceGroup", "from_modal": "1", "task_ids": "", "submit": "Create",
+    }, follow_redirects=False)
+    assert resp1.status_code in (301, 302)
+    tg1 = TaskGroups.query.filter_by(name="RaceGroup").first()
+    assert tg1 is not None
+
+    # Second request with same name should redirect and set the form error
+    # in the session, not return a 500.
+    resp2 = client.post("/task_groups/add", data={
+        "name": "RaceGroup", "from_modal": "1", "task_ids": "", "submit": "Create",
+    }, follow_redirects=False)
+    assert resp2.status_code in (301, 302)
+
+    # The IntegrityError handler must have set the modal error session dict
+    # directly -- not just left something plausible-looking on the listing
+    # page, which would also be true after the first (successful) POST.
+    with client.session_transaction() as sess:
+        err = sess.get('task_groups_form_err')
+    assert err is not None
+    assert err['modal'] == 'new-group-modal'
+    assert any('taken' in e for e in err['errors'])
+
+    # And it actually renders on the listing page.
+    resp3 = client.get("/task_groups")
+    assert resp3.status_code == 200
+    assert b"taken" in resp3.data
+
+
+def test_task_groups_add_legacy_flow_duplicate_name_via_race_shows_inline_error(app, client, monkeypatch):
+    """Same TOCTOU race as the modal path, but through the legacy standalone
+    /task_groups/add page (no task_ids field). That branch re-renders
+    task_groups_add.html.j2 directly rather than going through the session
+    error mechanism, so the IntegrityError message must land on
+    task_group_form.name.errors -- the only thing phos_field() (macros.html.j2)
+    actually renders -- or it is silently dropped and the user sees no error at
+    all on a lost race.
+    """
+    admin = make_admin()
+    login(client, admin)
+
+    def mock_validate_name(self, name):
+        pass  # Skip the check, simulating a race past validation.
+
+    monkeypatch.setattr(TaskGroupsForm, 'validate_name', mock_validate_name)
+
+    resp1 = client.post("/task_groups/add", data={
+        "name": "LegacyRaceGroup", "submit": "Create",
+    }, follow_redirects=False)
+    assert resp1.status_code in (301, 302, 303)
+    assert TaskGroups.query.filter_by(name="LegacyRaceGroup").first() is not None
+
+    resp2 = client.post("/task_groups/add", data={
+        "name": "LegacyRaceGroup", "submit": "Create",
+    })
+    assert resp2.status_code == 200
+    assert b"taken" in resp2.data
+
+
+def test_task_groups_edit_duplicate_name_via_race_returns_form_error(app, client, monkeypatch):
+    """Same TOCTOU race, but through task_groups_edit: renaming a group to a
+    name another group already holds. The pre-check (_editing_id exemption in
+    TaskGroupsForm.validate_name) is bypassed here the same way the create
+    tests bypass it, so the request reaches db.session.commit() and must hit
+    the IntegrityError branch at task_groups/routes.py, not a 500.
+    """
+    admin = make_admin()
+    login(client, admin)
+    _group(admin, [], name="TakenName")
+    mine = _group(admin, [], name="MyGroup")
+
+    def mock_validate_name(self, name):
+        pass  # Skip the check, simulating a race past validation.
+
+    monkeypatch.setattr(TaskGroupsForm, 'validate_name', mock_validate_name)
+
+    resp = client.post("/task_groups/edit", data={
+        "group_id": mine.id, "name": "TakenName", "task_ids": "", "submit": "Update",
+    }, follow_redirects=False)
+    assert resp.status_code in (301, 302, 303)
+
+    # The rename must not have taken effect.
+    db.session.refresh(mine)
+    assert mine.name == "MyGroup"
+
+    resp2 = client.get("/task_groups")
+    assert resp2.status_code == 200
+    assert b"taken" in resp2.data

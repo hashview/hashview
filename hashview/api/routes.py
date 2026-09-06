@@ -13,6 +13,7 @@ from flask import (
 )
 from packaging import version
 from sqlalchemy import case, exists, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.declarative import DeclarativeMeta
 
 import hashview
@@ -1370,7 +1371,15 @@ def v1_api_add_task_group():
         task_group = TaskGroups(name=name, owner_id=user.id, tasks=json.dumps(ordered))
         db.session.add(task_group)
         db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({
+            'status': 400,
+            'type': 'Error',
+            'msg': 'A task group with that name already exists'
+        })
     except Exception:
+        db.session.rollback()
         current_app.logger.exception('API /v1/task_groups: failed to add task group')
         return jsonify({
             'status': 500,

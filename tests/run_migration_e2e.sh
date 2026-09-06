@@ -20,7 +20,7 @@ export DOCKER_PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
 COMPOSE="${COMPOSE_BIN:-docker compose} -f docker-compose.migration.yml"
 KEEP="${HASHVIEW_MIGRATION_KEEP:-0}"
 MAIN_REF="${HASHVIEW_MAIN_REF:-origin/main}"
-DEV_HEAD="d3a4a6a7b352"
+DEV_HEAD="b5c8d9e1f2a4"
 
 TMP_ROOT="$(mktemp -d)"
 MAIN_WT="$TMP_ROOT/hv-main"

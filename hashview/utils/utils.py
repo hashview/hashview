@@ -1910,6 +1910,16 @@ def getTimeFormat(total_runtime): # Runtime in seconds
     elif total_runtime < 60:
         return "less then 1 minute"
 
+def escape_like_term(term):
+    """Escape '\\', '%' and '_' in `term` for use in a LIKE/ILIKE pattern.
+
+    Order matters: backslash must be escaped first, or escaping '%'/'_'
+    afterward would double-escape the backslash just inserted for them.
+    Pair with `.ilike('%' + escape_like_term(term) + '%', escape='\\')`.
+    """
+    return term.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+
+
 def apply_name_filter(query, column, search_term):
     """Narrow `query` to rows whose `column` contains `search_term`.
 
@@ -1923,5 +1933,4 @@ def apply_name_filter(query, column, search_term):
     term = (search_term or '').strip()
     if not term:
         return query
-    escaped = term.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-    return query.filter(column.ilike('%' + escaped + '%', escape='\\'))
+    return query.filter(column.ilike('%' + escape_like_term(term) + '%', escape='\\'))

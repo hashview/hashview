@@ -71,10 +71,19 @@
         </tbody>
     </table>
     </div>
-    {% elif pagination.total > 0 %}
+    {% elif search_filter %}
+    {# pagination.total is the FILTERED count, so a non-matching filter always
+       has total == 0 here -- branch on search_filter directly, not total. #}
     <div class="card-body" style="text-align:center; padding:48px 24px;">
         <div class="mono" style="color:var(--text-dim);">No cracked hashes match &ldquo;{{ search_filter }}&rdquo;.</div>
         <a class="btn" href="{{ url_for('jobs.jobs_assigned_hashfile_cracked', job_id=job.id, hashfile_id=hashfile.id) }}" style="margin-top:12px;">Clear filter</a>
+    </div>
+    {% elif pagination.pages and pagination.page > pagination.pages %}
+    {# Only reachable via a manually-edited out-of-range ?page= -- normal
+       pagination links never point past the last page. #}
+    <div class="card-body" style="text-align:center; padding:48px 24px;">
+        <div class="mono" style="color:var(--text-dim);">That page doesn&rsquo;t exist.</div>
+        <a class="btn" href="{{ url_for('jobs.jobs_assigned_hashfile_cracked', job_id=job.id, hashfile_id=hashfile.id) }}" style="margin-top:12px;">Back to page 1</a>
     </div>
     {% else %}
     <div class="card-body" style="text-align:center; padding:48px 24px;">

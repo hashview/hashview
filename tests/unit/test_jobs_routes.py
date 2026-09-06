@@ -668,6 +668,99 @@ def test_cracked_hashes_server_side_filter_narrows_results(app, client):
     assert "cherry" not in body
 
 
+def test_cracked_hashes_filter_with_no_matches_shows_correct_empty_state(app, client):
+    """A filter matching nothing must say so -- not fall through to the
+    generic 'no previously cracked hashes found' message. pagination.total is
+    the FILTERED count (0 here), so the empty-state branch must key off
+    search_filter being set, not off pagination.total > 0."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    hf = Hashfiles(name="hf-nomatch", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+    h = Hashes(sub_ciphertext="0" * 32, ciphertext="hash_0", hash_type=1000,
+                cracked=True, plaintext="apple")
+    db.session.add(h)
+    db.session.commit()
+    db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    job = _job(admin, cust, hashfile_id=hf.id)
+
+    resp = client.get(f"/jobs/{job.id}/assigned_hashfile/{hf.id}?q=zzz-no-such-term")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "No cracked hashes match" in body
+    assert "No previously cracked hashes found." not in body
+
+
+def test_cracked_hashes_flash_shows_hashfile_total_not_filtered_count(app, client):
+    """The flash message reports the hashfile's whole cracked count, not the
+    filtered result count -- matches the pre-pagination behavior of always
+    reporting how many hashes this hashfile has cracked in total."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    hf = Hashfiles(name="hf-flash-filter", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+    for i, pwd in enumerate(["apple", "banana", "cherry"]):
+        h = Hashes(sub_ciphertext=f"{i:032d}", ciphertext=f"hash_{i}",
+                    hash_type=1000, cracked=True, plaintext=pwd)
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    job = _job(admin, cust, hashfile_id=hf.id)
+
+    # Filtering to just "apple" (1 of 3) must still flash the hashfile's
+    # total of 3, not 1.
+    resp = client.get(f"/jobs/{job.id}/assigned_hashfile/{hf.id}?q=apple",
+                       follow_redirects=True)
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "3 instacracked Hashes!" in body
+
+
+def test_cracked_hashes_pages_partition_the_result_set(app, client):
+    """Every row across all pages must be distinct and their union must equal
+    the full result set -- proves pagination has a deterministic order
+    (order_by), not just that page 2 happens to differ from page 1 by
+    insertion-order accident."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    hf = Hashfiles(name="hf-partition", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+    all_passwords = set()
+    for i in range(35):
+        pwd = f"partition_pw_{i:03d}"
+        all_passwords.add(pwd)
+        h = Hashes(sub_ciphertext=f"{i:032d}", ciphertext=f"hash_{i}",
+                    hash_type=1000, cracked=True, plaintext=pwd)
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    job = _job(admin, cust, hashfile_id=hf.id)
+
+    seen = set()
+    for page in (1, 2):
+        resp = client.get(f"/jobs/{job.id}/assigned_hashfile/{hf.id}?page={page}")
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        page_matches = {pwd for pwd in all_passwords if pwd in body}
+        assert not (page_matches & seen), (
+            f"page {page} repeated rows from an earlier page: {page_matches & seen}"
+        )
+        seen |= page_matches
+    assert seen == all_passwords, f"missing rows across all pages: {all_passwords - seen}"
+
+
 def test_cracked_hashes_server_side_filter_by_username(app, client):
     """Server-side search filter must also narrow by username."""
     admin = make_admin()

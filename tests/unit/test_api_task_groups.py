@@ -250,20 +250,20 @@ def test_add_duplicate_name_via_race_returns_400(client, admin_user, monkeypatch
     """
     client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
 
-    # Monkeypatch TaskGroups.query.filter_by(name=...).first() to return None,
-    # bypassing the pre-check. This simulates the TOCTOU race.
-    original_filter_by = TaskGroups.query.filter_by
+    # TaskGroups.query is a descriptor (flask_sqlalchemy._QueryProperty) that
+    # builds a NEW Query object on every access, so patching an attribute on
+    # one accessed instance (as a prior version of this test did) never
+    # touches the Query the route actually calls -- the pre-check would just
+    # silently run unpatched and this test would pass for the wrong reason.
+    # Replacing the class attribute itself intercepts every access.
+    class _BypassPreCheckQuery:
+        def filter_by(self, **kwargs):
+            class _NoMatch:
+                def first(self_inner):
+                    return None  # Always bypass the pre-check
+            return _NoMatch()
 
-    def mock_filter_by(**kwargs):
-        query_obj = original_filter_by(**kwargs)
-
-        def mock_first():
-            return None  # Always bypass the pre-check
-
-        query_obj.first = mock_first
-        return query_obj
-
-    monkeypatch.setattr(TaskGroups.query, 'filter_by', mock_filter_by)
+    monkeypatch.setattr(TaskGroups, 'query', _BypassPreCheckQuery())
 
     # First request with name="RaceName" should succeed (no duplicate yet).
     resp1 = client.post(

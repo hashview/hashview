@@ -61,7 +61,13 @@ def upgrade():
             break
 
     if not constraint_exists:
-        op.create_unique_constraint('uq_task_groups_name', 'task_groups', ['name'])
+        # batch_alter_table: SQLite has no ALTER TABLE ADD CONSTRAINT, so
+        # op.create_unique_constraint() raises NotImplementedError there
+        # outside batch mode. Batch mode is a plain passthrough on MySQL and a
+        # copy-and-move table rebuild on SQLite -- see dba208b9344c and
+        # c8b3f0a14d27 for the same pattern in this tree.
+        with op.batch_alter_table('task_groups') as batch_op:
+            batch_op.create_unique_constraint('uq_task_groups_name', ['name'])
 
 
 def downgrade():
@@ -79,4 +85,5 @@ def downgrade():
             break
 
     if constraint_exists:
-        op.drop_constraint(constraint_name, 'task_groups', type_='unique')
+        with op.batch_alter_table('task_groups') as batch_op:
+            batch_op.drop_constraint(constraint_name, type_='unique')

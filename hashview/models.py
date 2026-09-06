@@ -322,7 +322,7 @@ class TaskGroups(db.Model):
     """Class object to represent TaskGroups"""
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(50), nullable=False, unique=True)
+    name = db.Column(db.String(50), nullable=False)
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     # Ordered JSON list of task ids. TEXT (65,535 bytes) rather than VARCHAR so
     # a large membership can't silently overflow. The number of entries is
@@ -330,6 +330,12 @@ class TaskGroups(db.Model):
     # so see the constant's comment for where the column is still the tighter
     # limit.
     tasks = db.Column(db.Text, nullable=False)
+    # Named (not bare unique=True) so a model-built schema and the
+    # b5c8d9e1f2a4 migration agree on the constraint name — see that
+    # migration and the uix_agent_hashtype precedent above.
+    __table_args__ = (
+        db.UniqueConstraint('name', name='uq_task_groups_name'),
+    )
 
 class Hashes(db.Model):
     """Class object to represent Hashes"""

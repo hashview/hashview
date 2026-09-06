@@ -136,7 +136,13 @@ def task_groups_add():
             db.session.commit()
         except IntegrityError:
             db.session.rollback()
-            return render_template('task_groups_add.html.j2', title='Tasks Add', tasks=tasks, task_group_form=task_group_form, error_message='That task group name is taken. Please choose a different one.')
+            # phos_field() (macros.html.j2) renders field.errors, not a
+            # standalone message. WTForms populates it as a tuple (immutable),
+            # so append via reassignment rather than a mutating .append().
+            task_group_form.name.errors = tuple(task_group_form.name.errors) + (
+                'That task group name is taken. Please choose a different one.',
+            )
+            return render_template('task_groups_add.html.j2', title='Tasks Add', tasks=tasks, task_group_form=task_group_form)
         log_event('task_group.create', target=f'task_group:{task_group.id} {task_group.name!r}')
         flash(f'Task {task_group_form.name.data} created!', 'success')
         return redirect("assigned_tasks/"+str(task_group.id))

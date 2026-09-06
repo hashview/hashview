@@ -22,7 +22,12 @@ services:
       MYSQL_PASSWORD: hashview
       MYSQL_RANDOM_ROOT_PASSWORD: yes
     ports:
-      - '3306:3306'
+      # Loopback-only: nothing outside this host needs to reach the dev DB, and
+      # binding 0.0.0.0 put the hardcoded hashview/hashview credentials on the
+      # network of whoever runs the stack (#394). Moved off 3306 so this stack
+      # and the migration e2e stack (docker-compose.migration.yml, also 3306)
+      # can run at the same time without a port collision.
+      - '127.0.0.1:3308:3306'
     volumes:
       - db:/var/lib/mysql
     healthcheck:

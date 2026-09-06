@@ -182,6 +182,25 @@ def test_analytics_download_recovered_scoped(app, client):
     assert "Password1" in body                       # cracked export contains plaintext
 
 
+def test_analytics_download_unknown_type_redirects_without_serving_a_file(app, client):
+    """Issue #389: an unknown ?type must bail out before any query runs, not
+    fall through and serve an empty attachment. The docker-integration suite
+    (tests/integration/test_analytics_docker_bugs.py) carries the same
+    assertion as a strict xfail against issue #421's fix, but that suite is
+    opt-in and skips without a live docker stack -- this is the only coverage
+    that runs in a plain `pytest tests/`.
+    """
+    user = _admin()
+    _login(client, user)
+    customer_id, hashfile_id = _seed()
+    resp = client.get(
+        f"/analytics/download?type=bogus&customer_id={customer_id}&hashfile_id={hashfile_id}",
+        follow_redirects=False,
+    )
+    assert resp.status_code in (301, 302, 303)
+    assert resp.headers["Location"].endswith("/analytics")
+
+
 def test_analytics_summary_above_donuts(app, client):
     """The scope summary card (with its download buttons) sits above the donuts."""
     user = _admin()

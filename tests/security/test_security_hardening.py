@@ -212,27 +212,44 @@ def _seed_job_with_task(attackmode, *, hc_mask=None, j_rule=None, k_rule=None,
 
 
 @pytest.mark.security
-def test_agents_download_no_shell_execution(nocsrf_app):
+def test_agents_download_no_shell_execution(nocsrf_app, monkeypatch):
     """The agents download route must not shell out or execute any shell commands.
 
-    The tarfile is built using Python's tarfile module, never via os.system or
-    subprocess with shell=True. This test verifies there is no shell command
-    execution in the agents routes module.
+    The tarfile is built using Python's tarfile module, never via os.system,
+    os.popen, or subprocess (which all funnel through subprocess.Popen).
+    Tripwiring the actual sinks catches any regression regardless of alias
+    (e.g. `import os as _o; _o.system(...)`) or mechanism (e.g.
+    `subprocess.run(..., shell=True)`) -- a source-string check for the
+    literal text "os.system" would miss both.
     """
+    import os
+    import subprocess
+
     app = nocsrf_app
     user = _seed_user(admin=True)
     client = app.test_client()
     _login(client, user)
 
-    import hashview.agents.routes as agents_routes
-    source = inspect.getsource(agents_routes.agents_download)
-    assert "os.system" not in source, "agents_download must not use os.system"
+    def _fail_popen(*args, **kwargs):
+        pytest.fail(f"shell-out via subprocess.Popen: args={args!r} kwargs={kwargs!r}")
 
-    # Make the request and verify it succeeds
+    def _fail_system(cmd):
+        pytest.fail(f"shell-out via os.system: {cmd!r}")
+
+    def _fail_popen_builtin(*args, **kwargs):
+        pytest.fail(f"shell-out via os.popen: args={args!r} kwargs={kwargs!r}")
+
+    monkeypatch.setattr(subprocess, "Popen", _fail_popen)
+    monkeypatch.setattr(os, "system", _fail_system)
+    monkeypatch.setattr(os, "popen", _fail_popen_builtin)
+
     resp = client.get("/agents/download")
     assert resp.status_code == 200
-    # Verify it's a gzip stream
     assert resp.data[:2] == b"\x1f\x8b", "Response must be a gzip stream"
+
+    import hashview.agents.routes as agents_routes
+    source = inspect.getsource(agents_routes)
+    assert "shell=True" not in source, "agents/routes.py must not shell out"
 
 
 # --------------------------------------------------------------------------- #

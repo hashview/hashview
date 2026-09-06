@@ -1,5 +1,5 @@
 """Flask routes to handle Agents"""
-import os
+import io
 import tarfile
 
 from flask import (
@@ -8,6 +8,7 @@ from flask import (
     flash,
     redirect,
     render_template,
+    send_file,
     url_for,
 )
 from flask_login import current_user, login_required
@@ -24,7 +25,7 @@ from hashview.utils.hashcat_modes import (
     NETNTLM_HASH_TYPE_CHOICES,
     SHADOW_HASH_TYPE_CHOICES,
 )
-from hashview.utils.utils import agent_telemetry, fmt_hps, send_generated_file, try_commit
+from hashview.utils.utils import agent_telemetry, fmt_hps, try_commit
 
 agents = Blueprint('agents', __name__)
 
@@ -239,10 +240,20 @@ def agents_download():
     """Function to download agent"""
     version = hashview.__version__
     filename = 'hashview-agent.' + version + '.tgz'
-    tmp_path = os.path.join('hashview', 'control', 'tmp', filename)
 
-    # Build the tarball using tarfile instead of shell command
-    with tarfile.open(tmp_path, 'w:gz') as tf:
+    # Built entirely in memory -- never touches control/tmp, so there is
+    # nothing to leak (#421) and no partial/torn archive left on disk if
+    # install/hashview-agent is missing (tarfile would otherwise create the
+    # output file before the missing-source error, and two concurrent
+    # downloads would share one deterministic on-disk path).
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode='w:gz') as tf:
         tf.add('install/hashview-agent', arcname='hashview-agent')
+    buf.seek(0)
 
-    return send_generated_file('control/tmp', filename, as_attachment=True)
+    return send_file(
+        buf,
+        mimetype='application/gzip',
+        as_attachment=True,
+        download_name=filename,
+    )

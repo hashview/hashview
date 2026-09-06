@@ -377,8 +377,9 @@ def test_fig8_download_matches_the_username_equals_password_card(client, stack_u
 
 def test_unknown_download_type_does_not_serve_a_file(client, stack_url, seeded):
     """?type=bogus is not 'found' or 'left'; the route must bail out rather than
-    fall through and serve an empty attachment. Fixed in #421 by validating ?type
-    early and returning a redirect before any database queries."""
+    fall through and serve an empty attachment. Fixed in #389, as a side effect
+    of #421's streaming rewrite: validating ?type early and returning a
+    redirect before any database queries."""
     response = client.get(
         f"{stack_url}/analytics/download",
         params={"type": "bogus", "customer_id": seeded["customer_a"]},

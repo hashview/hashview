@@ -84,18 +84,42 @@ def _seed_analytics(owner_id=None):
 
 
 def test_agent_download_leaves_no_temp_files(app, client):
-    """Agent download builds the tarball and streams it without leaving
-    temp files in control/tmp."""
+    """Agent download builds the tarball in memory and streams it without
+    ever touching control/tmp.
+
+    The filename is deterministic (hashview-agent.<version>.tgz), so a plain
+    before/after set comparison is vacuously true if a prior run already left
+    that exact file behind -- which is exactly how the original disk-based
+    implementation's leak (write path and send_generated_file's delete path
+    disagreed on 'hashview/control/tmp/...' vs 'control/tmp/...", so the
+    unlink silently no-op'd on FileNotFoundError) went undetected. Assert the
+    specific filename is absent both before and after, not just that the two
+    snapshots match.
+    """
+    import hashview
+
     user = _admin()
     _login(client, user)
 
+    expected_name = f"hashview-agent.{hashview.__version__}.tgz"
+    tmp_dir = os.path.join(app.root_path, "control", "tmp")
+    stale = os.path.join(tmp_dir, expected_name)
+    if os.path.exists(stale):
+        os.remove(stale)  # clean up a leak from a previous (buggy) run
+
     before = _tmp_dir_entries(app)
+    assert expected_name not in before
+
     resp = client.get("/agents/download")
+
     after = _tmp_dir_entries(app)
 
     assert resp.status_code == 200
     assert resp.data[:2] == b"\x1f\x8b"  # gzip magic bytes
-    # No new files should be left behind
+    assert expected_name not in after, (
+        f"{expected_name} was left in control/tmp -- the agent download "
+        "wrote it to disk instead of building it in memory"
+    )
     assert before == after, f"Agent download left new files: {after - before}"
 
 
@@ -215,7 +239,8 @@ def test_analytics_download_fig9_leaves_no_temp_files(app, client):
     after = _tmp_dir_entries(app)
 
     assert resp.status_code == 200
-    # Should contain both usernames that share the same password
-    assert b"user1" in resp.data or b"user2" in resp.data
+    # Both usernames share the one password, so both must be present.
+    assert b"user1" in resp.data
+    assert b"user2" in resp.data
     # No new files should be left behind
     assert before == after, f"Analytics fig9 download left new files: {after - before}"

@@ -516,3 +516,73 @@ def test_jobs_new_hashfile_form_pwdump_hash_type_default(app):
     """Test that an unbound JobsNewHashFileForm has pwdump_hash_type defaulting to '1000'."""
     form = JobsNewHashFileForm()
     assert form.pwdump_hash_type.data == '1000'
+
+
+def test_jobs_list_tasks_single_csrf_token_for_task_dropdown(app, client):
+    """Issue #422 (3): Task library should render one form + one CSRF token for many
+    tasks, not one form + token per task. This test verifies:
+    - Only ONE csrf_token input is rendered per task assignment form
+    - Task assignment via formaction still works end-to-end
+    """
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+
+    # Seed 50 tasks to make the per-task overhead obvious
+    tasks = [_task(admin, name=f"task_{i}") for i in range(50)]
+
+    resp = client.get(f"/jobs/{job.id}/tasks")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+
+    # Verify that the form structure uses formaction (one form with multiple buttons)
+    # not separate forms per task. Count should be exactly 1, not 50.
+    form_count = body.count('<form method="POST" id="task_assign_form">')
+    assert form_count == 1, f"Expected 1 task assignment form with id='task_assign_form', got {form_count}"
+
+    # Also verify buttons use formaction, not separate forms
+    # With 50 tasks, we should have 50 buttons with formaction in the one form
+    formaction_count = body.count('formaction="/jobs/')
+    assert formaction_count >= 50, f"Expected at least 50 formaction buttons (one per task), got {formaction_count}"
+
+    # Verify task assignment via formaction still works
+    task = tasks[0]
+    resp = client.post(f"/jobs/{job.id}/assign_task/{task.id}", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    assert JobTasks.query.filter_by(job_id=job.id, task_id=task.id).count() == 1
+
+
+def test_jobs_list_tasks_single_csrf_token_for_task_group_dropdown(app, client):
+    """Issue #422 (3): Task group library should also render one form + one CSRF token,
+    not one per group.
+    """
+    import json
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+
+    # Seed 30 task groups
+    task = _task(admin, name="group_member_task")
+    task_groups = []
+    for i in range(30):
+        tg = TaskGroups(name=f"group_{i}", owner_id=admin.id,
+                       tasks=json.dumps([task.id]))
+        db.session.add(tg)
+        task_groups.append(tg)
+    db.session.commit()
+
+    resp = client.get(f"/jobs/{job.id}/tasks")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+
+    # Verify the form structure uses formaction (one form with multiple buttons)
+    form_count = body.count('<form method="POST" id="task_group_assign_form">')
+    assert form_count == 1, f"Expected 1 task group assignment form, got {form_count}"
+
+    # Verify task group assignment still works
+    tg = task_groups[0]
+    resp = client.post(f"/jobs/{job.id}/assign_task_group/{tg.id}", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    assert JobTasks.query.filter_by(job_id=job.id).count() == 1

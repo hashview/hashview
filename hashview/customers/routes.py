@@ -10,12 +10,11 @@ from hashview.models import (
     Hashes,
     HashfileHashes,
     Hashfiles,
-    HashNotifications,
     Jobs,
     db,
 )
 from hashview.utils.audit import log_event
-from hashview.utils.utils import try_commit
+from hashview.utils.utils import purge_orphaned_hashes, try_commit
 
 
 def _hash_type_names():
@@ -209,20 +208,29 @@ def customers_delete(customer_id):
         flash('Unable to delete. Customer has active job', 'danger')
         return redirect(url_for('customers.customers_list'))
 
-    # remove associated hash files & hashes & Hash Notifications
-    hashfiles = Hashfiles.query.filter_by(customer_id=customer_id)
-    for hashfile in hashfiles:
-        hashfile_hashes = HashfileHashes.query.filter_by(hashfile_id = hashfile.id).all()
-        for hashfile_hash in hashfile_hashes:
-            hashes = Hashes.query.filter_by(id=hashfile_hash.hash_id, cracked=0).all()
-            for hash in hashes:
-                # Check to see if our hashfile is the ONLY hashfile for this customer that has this hash
-                customer_cnt = HashfileHashes.query.filter_by(hash_id=hash.id).distinct('customer_id').count()
-                if customer_cnt < 2:
-                    db.session.delete(hash)
-                    HashNotifications.query.filter_by(hash_id=hashfile_hash.hash_id).delete()
-            db.session.delete(hashfile_hash)
-        db.session.delete(hashfile)
+    # Remove the customer's hashfiles, their hash links, and anything left
+    # orphaned by them -- in four statements, not one query per hash.
+    #
+    # This was a triple-nested loop (hashfiles -> links -> a per-hash lookup ->
+    # a per-hash reference count), so deleting a customer with 700k hashes
+    # issued ~700k queries and would hang or half-complete.
+    #
+    # The reference count it used, `.distinct('customer_id')`, was also unsound:
+    # that is DISTINCT ON, which SQLAlchemy silently ignores outside PostgreSQL
+    # and warns will raise in a future release, and hashfile_hashes has no
+    # customer_id column anyway. It therefore counted junction rows. That
+    # happened to reach the right answer only because the loop deleted each link
+    # as it went, so the count fell to 1 by the last hashfile holding the hash --
+    # correct by accident, and only while the surrounding loop kept its exact
+    # shape. NOT EXISTS states the intended rule outright.
+    hashfile_ids = [row[0] for row in
+                    db.session.query(Hashfiles.id).filter_by(customer_id=customer_id).all()]
+    if hashfile_ids:
+        HashfileHashes.query.filter(HashfileHashes.hashfile_id.in_(hashfile_ids)) \
+            .delete(synchronize_session=False)
+        Hashfiles.query.filter(Hashfiles.id.in_(hashfile_ids)) \
+            .delete(synchronize_session=False)
+    purge_orphaned_hashes()
     db.session.delete(customer)
     if not try_commit(f'delete customer {customer_id}'):
         flash('Customer could not be deleted — it may have already been removed.', 'danger')

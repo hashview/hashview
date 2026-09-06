@@ -25,6 +25,7 @@ their own per-issue modules so each tracks a GitHub issue:
 This module deliberately contains only PASSING security tests.
 """
 
+import inspect
 
 import pytest
 
@@ -211,47 +212,44 @@ def _seed_job_with_task(attackmode, *, hc_mask=None, j_rule=None, k_rule=None,
 
 
 @pytest.mark.security
-def test_agents_download_os_system_uses_trusted_version_only(nocsrf_app, monkeypatch):
-    """The only live os.system() sink (agents/routes.py:243) builds its command
-    from hashview.__version__, which is a package constant — NOT user input.
+def test_agents_download_no_shell_execution(nocsrf_app, monkeypatch):
+    """The agents download route must not shell out or execute any shell commands.
 
-    Pin that no request data reaches it: we tripwire os.system to capture the
-    string and assert it is exactly the version-templated tar command with no
-    user-controlled component. (We do not actually run tar.)
+    The tarfile is built using Python's tarfile module, never via os.system,
+    os.popen, or subprocess (which all funnel through subprocess.Popen).
+    Tripwiring the actual sinks catches any regression regardless of alias
+    (e.g. `import os as _o; _o.system(...)`) or mechanism (e.g.
+    `subprocess.run(..., shell=True)`) -- a source-string check for the
+    literal text "os.system" would miss both.
     """
+    import os
+    import subprocess
+
     app = nocsrf_app
     user = _seed_user(admin=True)
     client = app.test_client()
     _login(client, user)
 
-    from flask import Response
+    def _fail_popen(*args, **kwargs):
+        pytest.fail(f"shell-out via subprocess.Popen: args={args!r} kwargs={kwargs!r}")
 
-    import hashview.agents.routes as agents_routes
+    def _fail_system(cmd):
+        pytest.fail(f"shell-out via os.system: {cmd!r}")
 
-    captured = {}
+    def _fail_popen_builtin(*args, **kwargs):
+        pytest.fail(f"shell-out via os.popen: args={args!r} kwargs={kwargs!r}")
 
-    def fake_system(cmd):
-        captured["cmd"] = cmd
-        return 0
-
-    monkeypatch.setattr(agents_routes.os, "system", fake_system)
-    # Don't actually serve a file off disk; the os.system cmd is what we inspect.
-    monkeypatch.setattr(
-        agents_routes,
-        "send_from_directory",
-        lambda *a, **k: Response("ok", status=200),
-    )
+    monkeypatch.setattr(subprocess, "Popen", _fail_popen)
+    monkeypatch.setattr(os, "system", _fail_system)
+    monkeypatch.setattr(os, "popen", _fail_popen_builtin)
 
     resp = client.get("/agents/download")
     assert resp.status_code == 200
-    cmd = captured["cmd"]
-    # version is e.g. '0.8.3' — no shell metacharacters, fixed template.
-    import hashview
+    assert resp.data[:2] == b"\x1f\x8b", "Response must be a gzip stream"
 
-    assert hashview.__version__ in cmd
-    assert cmd.startswith("tar -czf hashview/control/tmp/hashview-agent.")
-    for meta in (";", "|", "&", "$(", "`", "\n"):
-        assert meta not in cmd, f"unexpected shell metachar {meta!r} in os.system cmd: {cmd!r}"
+    import hashview.agents.routes as agents_routes
+    source = inspect.getsource(agents_routes)
+    assert "shell=True" not in source, "agents/routes.py must not shell out"
 
 
 # --------------------------------------------------------------------------- #

@@ -45,20 +45,22 @@
             </tr>
         </thead>
         <tbody>
+            {# entry is (username, ciphertext, plaintext) -- only the columns
+               this table renders, selected via with_entities in the route. #}
             {% for entry in cracked_hashfiles_hashes %}
-            {% set nm = (entry[1].username | jinja_hex_decode) if entry[1].username else '' %}
-            {% set pt = (entry[0].plaintext | jinja_hex_decode) if entry[0].plaintext else '' %}
+            {% set nm = (entry[0] | jinja_hex_decode) if entry[0] else '' %}
+            {% set pt = (entry[2] | jinja_hex_decode) if entry[2] else '' %}
             <tr class="ic-row">
                 <td>
-                    {% if entry[1].username %}
+                    {% if entry[0] %}
                         {{ nm }}
                     {% else %}
                         <span style="color:var(--text-mute);">None</span>
                     {% endif %}
                 </td>
-                <td class="mono" style="color:var(--text-dim);">{{ entry[0].ciphertext }}</td>
+                <td class="mono" style="color:var(--text-dim);">{{ entry[1] }}</td>
                 <td>
-                    {% if entry[0].plaintext %}
+                    {% if entry[2] %}
                         <span class="mono" style="color:var(--primary); text-shadow:var(--glow-text);">{{ pt }}</span>
                     {% else %}
                         <span style="color:var(--text-mute);">None</span>

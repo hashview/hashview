@@ -503,8 +503,14 @@ def jobs_assigned_hashfile_cracked(job_id, hashfile_id):
             )
         )
 
-    # Paginate the filtered results
-    pagination = base_query.paginate(page=page, per_page=per_page, error_out=False)
+    # Select only the columns the template renders (username, ciphertext,
+    # plaintext) instead of full (Hashes, HashfileHashes) ORM objects --
+    # ciphertext/plaintext can each be large, and this is now paginated so
+    # per_page rows are fetched on every request. Matches the with_entities
+    # convention already used for this exact join shape at jobs/routes.py:829.
+    pagination = base_query.with_entities(
+        HashfileHashes.username, Hashes.ciphertext, Hashes.plaintext
+    ).paginate(page=page, per_page=per_page, error_out=False)
     cracked_hashfiles_hashes = pagination.items
 
     # Flash the total count (not page count)

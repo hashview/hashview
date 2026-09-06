@@ -473,31 +473,49 @@ def test_jobs_summary_scales_with_assigned_tasks_not_library(app, client, tmp_pa
     db.session.add(Settings(enabled_job_weights=False))
     db.session.commit()
 
-    # Render the summary page.
-    resp = client.get(f"/jobs/{job.id}/summary")
+    # The old nested-loop template only ever *rendered* task.name for rows
+    # where task.id == a.task_id, so absence of "ignored-N" text and a
+    # response-size threshold cannot distinguish the fix from the O(assigned
+    # x library) bug at this fixture's scale (2 assigned x 52 library tasks is
+    # only ~4KB of loop whitespace either way). What actually distinguishes
+    # them is the query issued: the fixed route filters Tasks by the assigned
+    # ids; the old route loaded every row via Tasks.query.all(). Inspect the
+    # SQL the same way test_rules_pagination.py does for the equivalent bug.
+    from sqlalchemy import event
+
+    statements = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(" ".join(statement.split()).lower())
+
+    engine = db.engine
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        resp = client.get(f"/jobs/{job.id}/summary")
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
     assert resp.status_code == 200
 
-    # Verify both assigned task names appear in the rendered output.
+    # Verify both assigned task names appear in the rendered output, in order.
     assert b"assigned-1" in resp.data
     assert b"assigned-2" in resp.data
+    assert b"01</span>assigned-1" in resp.data
+    assert b"02</span>assigned-2" in resp.data
 
-    # Verify the first assigned task appears with order=01, second with order=02.
-    assert b"01assigned-1" in resp.data or b"01</span>assigned-1" in resp.data
-    assert b"02assigned-2" in resp.data or b"02</span>assigned-2" in resp.data
-
-    # Verify that ignored tasks do NOT appear.
+    # Verify that ignored (unassigned) library tasks do NOT appear.
     for i in range(50):
         assert f"ignored-{i}".encode() not in resp.data
 
-    # Verify the response size is reasonable. With the old O(assigned × library)
-    # nested loop, 2 assigned tasks and 52 library tasks would produce ~12 KB
-    # of whitespace (loop indentation). With the fix (dict lookup), response
-    # should be much smaller.
-    response_kb = len(resp.data) / 1024
-    assert response_kb < 100, (
-        f"Response is {response_kb:.0f}KB; if this scales with task library "
-        "size, the O(assigned × library) loop is still present."
-    )
+    # The decisive check: no query against `tasks` may be an unfiltered
+    # full-table scan (Tasks.query.all() has no WHERE clause at all).
+    row_loads = [s for s in statements
+                 if s.startswith("select") and " from tasks" in s
+                 and "count(" not in s]
+    assert any("id in" in s for s in row_loads), \
+        f"no id-scoped task lookup found; saw: {row_loads}"
+    unfiltered = [s for s in row_loads if " where " not in s]
+    assert not unfiltered, f"unrestricted scan of tasks: {unfiltered}"
 
 
 def test_jobs_start_queues_job(app, client, tmp_path):

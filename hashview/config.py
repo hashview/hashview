@@ -2,6 +2,8 @@
 import secrets
 from configparser import ConfigParser
 
+from hashview.form_limits import resolve_max_form_memory_size
+
 file_config = ConfigParser()
 
 class Config:
@@ -12,6 +14,17 @@ class Config:
 
     # Server Config
     SERVER_NAME = file_config['SERVER']['SERVER_NAME']
+
+    # Byte cap on non-file form fields (e.g. the pasted-hashes textarea).
+    # Read via the same .get(key, default) idiom as SECRET_KEY above (not the
+    # bare indexing used for SERVER_NAME) so an older config.conf that predates
+    # this key doesn't KeyError on upgrade. Omitting the key leaves Flask's own
+    # default (500000) in place, so nothing changes. Values below 64 KiB are
+    # clamped up -- see hashview/form_limits.py for why a smaller cap would
+    # break every file upload.
+    MAX_FORM_MEMORY_SIZE = resolve_max_form_memory_size(
+        file_config['SERVER'].get('MAX_FORM_MEMORY_SIZE')
+    )
 
     # MYSQL Config. charset=utf8mb4 so the connection can carry 4-byte UTF-8
     # (emojis etc.) end-to-end — required now that usernames/plaintext are stored

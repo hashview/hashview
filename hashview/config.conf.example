@@ -1,6 +1,22 @@
 [SERVER]
 SERVER_NAME = FQDN:PORT
 SECRET_KEY = change-me-to-a-random-string
+# Byte cap on pasted (non-file) form fields, e.g. the pasted-hashes textarea
+# on the job/hashfile upload pages. Raise this if operators need to paste more
+# than ~500KB of hashes at once; there is no upper ceiling.
+#
+# The size of an *uploaded file* is not counted against this cap, so raising it
+# is not needed for large hash files. But do NOT set it below 65536: Werkzeug
+# also applies this limit to each 64KiB chunk it reads while parsing a
+# multipart body, which rejects every file upload regardless of file size.
+# Values under 65536 are therefore clamped up to it -- see
+# hashview/form_limits.py.
+#
+# Defaults to 500000 (Flask's own built-in default) when unset, so leaving this
+# commented out changes nothing. config.conf is baked into the Docker image at
+# build time, not bind-mounted, so this must be set before
+# `docker compose build` to take effect.
+# MAX_FORM_MEMORY_SIZE = 500000
 
 [database]
 host = localhost

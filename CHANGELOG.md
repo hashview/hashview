@@ -54,6 +54,10 @@ Notable changes will be documented here
 - Per-hashfile `--hex-salt` option for salted hash types
 - Custom hashcat hash-mode entry for the `$hash` and `$user:$hash` hashfile formats (#447), for operators running a hashcat build with modes not in Hashview's bundled list. No import-time shape validation is performed on a custom mode. An agent whose hashcat can't benchmark a mode reports it as unsupported instead of hanging: the mode is never re-requested from that agent and it is never dispatched tasks of that type
 
+**Configuration**
+- Optional `MAX_FORM_MEMORY_SIZE` key under `[SERVER]` in `config.conf`, capping the size of pasted (non-file) form data such as the pasted-hashes textarea. Defaults to Flask's own 500000 bytes when unset, so existing deployments are unaffected; raise it to allow larger pastes. Uploaded files are not counted against it, and values below 65536 are clamped up to that floor because a smaller cap would reject multipart file uploads outright (#314)
+- Oversized submissions now return a clear "try uploading the hashes as a file instead" message — JSON for AJAX requests, a flash and redirect for normal form posts — rather than a bare Werkzeug 413 page or a misleading "You must assign a name to the hashfile" error (#314)
+
 **Testing**
 - Job-creation performance e2e suite (`tests/e2e/test_job_creation_perf.py`) with a tunable volume seeder (`tests/seed_perf_db.py`), covering latency budgets for each wizard step plus strict-xfail scaling guards for the four endpoints in issue #422 whose cost grows with table size rather than page size
 - API hashfile-listing performance suite (`tests/e2e/test_api_hashfile_listing_perf.py`), sharing that seeder. Asserts loop cost as a ratio to a same-route zero-hashfile floor rather than an absolute budget, so the threshold survives a change of hardware; carries regression guards for issue #228 (fixed in this release; the guard remains so a per-hashfile loop cannot return) and on `GET /v1/customers/<id>/hashfiles`, which runs one combined aggregate per hashfile and measures under the ceiling today

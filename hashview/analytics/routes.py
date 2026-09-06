@@ -1,6 +1,5 @@
 """Flask routes to handle Analytics"""
 import io
-import os
 import re
 import zipfile
 from collections import Counter, defaultdict
@@ -8,12 +7,13 @@ from datetime import timedelta
 
 from flask import (
     Blueprint,
+    Response,
     abort,
     redirect,
     render_template,
     request,
     send_file,
-    send_from_directory,
+    stream_with_context,
 )
 from flask_login import login_required
 from sqlalchemy import func, select
@@ -534,36 +534,18 @@ def _download_scope_ids():
     return _opt_int('customer_id'), _opt_int('hashfile_id')
 
 
-def _tmp_download_path(filename):
-    """Resolve a download temp file inside control/tmp, refusing path traversal.
-
-    Defense-in-depth on top of the int-coerced ids: run the name through
-    secure_filename and confirm the resolved path stays within control/tmp.
-    Returns (safe_name, abs_path) -- write to abs_path, serve safe_name from
-    'control/tmp'.
-    """
-    safe_name = secure_filename(filename)
-    tmp_dir = os.path.realpath(os.path.join('hashview', 'control', 'tmp'))
-    abs_path = os.path.realpath(os.path.join(tmp_dir, safe_name))
-    if os.path.commonpath((tmp_dir, abs_path)) != tmp_dir:
-        abort(400)
-    return safe_name, abs_path
-
-
 # serve a list of cracks
 @analytics.route('/analytics/download', methods=['GET'])
 @login_required
 def analytics_download_hashes():
     """Function to download hashes"""
 
-    filename = ''
+    # Validate type parameter early and return if invalid (fixes #389)
+    download_type = request.args.get('type')
+    if download_type not in ('found', 'left'):
+        return redirect('/analytics')
 
-    if request.args.get('type') == 'found':
-        filename += 'found'
-    elif request.args.get('type') == 'left':
-        filename += 'left'
-    else:
-        redirect('/analytics')
+    filename = download_type
 
     # customer_id / hashfile_id are coerced to int so a crafted value can't
     # escape control/tmp via the output filename (#216).
@@ -591,25 +573,25 @@ def analytics_download_hashes():
         cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').all()
         uncracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='0').all()
 
-    safe_name, outfile_path = _tmp_download_path(filename)
-    outfile = open(outfile_path, 'w')
+    def generate():
+        if download_type == 'found':
+            for entry in cracked_hashes:
+                if entry[1].username:
+                    yield str(entry[1].username) + ":" + str(entry[0].ciphertext) + ':' + str(entry[0].plaintext) + "\n"
+                else:
+                    yield str(entry[0].ciphertext) + ':' + str(entry[0].plaintext) + "\n"
+        elif download_type == 'left':
+            for entry in uncracked_hashes:
+                if entry[1].username:
+                    yield str(entry[1].username) + ":" + str(entry[0].ciphertext) + "\n"
+                else:
+                    yield str(entry[0].ciphertext) + "\n"
 
-    if request.args.get('type') == 'found':
-        for entry in cracked_hashes:
-            if entry[1].username:
-                outfile.write(str(entry[1].username) + ":" + str(entry[0].ciphertext) + ':' + str(entry[0].plaintext) + "\n")
-            else:
-                outfile.write(str(entry[0].ciphertext) + ':' + str(entry[0].plaintext) + "\n")
-
-    if request.args.get('type') == 'left':
-        for entry in uncracked_hashes:
-            if entry[1].username:
-                outfile.write(str(entry[1].username) + ":" + str(entry[0].ciphertext) + "\n")
-            else:
-                outfile.write(str(entry[0].ciphertext) + "\n")
-
-    outfile.close()
-    return send_from_directory('control/tmp', safe_name, as_attachment=True)
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/plain',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+    )
 
 # Download the list of accounts that share the same password or password hash (fig9)
 @analytics.route('/analytics/download/fig9', methods=['GET'])
@@ -635,8 +617,6 @@ def analytics_download_fig9():
     filename += '.txt'
 
     # Gather the usernames from fig9_table logic (same as in the template)
-    fig9_usernames = []
-
     if customer_id:
         # we have a customer
         if hashfile_id:
@@ -697,19 +677,16 @@ def analytics_download_fig9():
             .all()
         )
 
-    # Write usernames to the file
-    safe_name, outfile_path = _tmp_download_path(filename)
-    with open(outfile_path, 'w') as outfile:
+    def generate():
         for entry in fig9_usernames:
             if entry:
-                # Decode possible hex‑encoded usernames
-                try:
-                    decoded = entry
-                except Exception:
-                    decoded = entry
-                outfile.write(f"{decoded}\n")
+                yield f"{entry}\n"
 
-    return send_from_directory('control/tmp', safe_name, as_attachment=True)
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/plain',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+    )
 
 @analytics.route('/analytics/download/fig8', methods=['GET'])
 @login_required
@@ -732,8 +709,6 @@ def analytics_download_fig8():
     filename += '.txt'
 
     # Gather the usernames where password == username using the same logic as fig8_table
-    fig8_usernames = []
-
     if customer_id:
         if hashfile_id:
             # Specific hashfile
@@ -760,30 +735,29 @@ def analytics_download_fig8():
             .with_entities(Hashes.plaintext, HashfileHashes.username) \
             .all()
 
-    for entry in fig8_cracked_hashes:
-        if entry[1] and entry[0]:
-            # Decode username (handle possible domain delimiters)
-            raw_username = entry[1]
-            if '\\' in raw_username:
-                username = raw_username.split('\\')[1]
-            elif '*' in raw_username:
-                username = raw_username.split('*')[1]
-            else:
-                username = raw_username
+    def generate():
+        for entry in fig8_cracked_hashes:
+            if entry[1] and entry[0]:
+                # Decode username (handle possible domain delimiters)
+                raw_username = entry[1]
+                if '\\' in raw_username:
+                    username = raw_username.split('\\')[1]
+                elif '*' in raw_username:
+                    username = raw_username.split('*')[1]
+                else:
+                    username = raw_username
 
-            # Decode password
-            password = entry[0]
+                # Decode password
+                password = entry[0]
 
-            if username == password:
-                fig8_usernames.append(username)
+                if username == password:
+                    yield f"{username}\n"
 
-    # Write usernames to the file
-    safe_name, outfile_path = _tmp_download_path(filename)
-    with open(outfile_path, 'w') as outfile:
-        for uname in fig8_usernames:
-            outfile.write(f"{uname}\n")
-
-    return send_from_directory('control/tmp', safe_name, as_attachment=True)
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/plain',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+    )
 
 
 # --- Shared-password downloads (per-group txt and an all-groups zip) ---------

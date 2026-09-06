@@ -585,3 +585,370 @@ def test_jobs_new_hashfile_form_pwdump_hash_type_default(app):
     """Test that an unbound JobsNewHashFileForm has pwdump_hash_type defaulting to '1000'."""
     form = JobsNewHashFileForm()
     assert form.pwdump_hash_type.data == '1000'
+
+
+# --- cracked hashes pagination (#422) ---
+
+def test_cracked_hashes_view_paginates_at_twenty_per_page(app, client):
+    """The cracked-hashes view must paginate, rendering only 20 rows per page."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+
+    # Create a hashfile with 35 cracked hashes
+    hf = Hashfiles(name="hf-paged", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+    for i in range(35):
+        h = Hashes(
+            sub_ciphertext=f"{i:032d}",
+            ciphertext=f"hash_{i}",
+            hash_type=1000,
+            cracked=True,
+            plaintext=f"password_{i}",
+        )
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    job = _job(admin, cust, hashfile_id=hf.id)
+
+    # Page 1 should show exactly 20 rows
+    resp = client.get(f"/jobs/{job.id}/assigned_hashfile/{hf.id}")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    # Count the number of ic-row rows in the table body
+    row_count = body.count('<tr class="ic-row">')
+    assert row_count == 20, f"Expected 20 rows on page 1, got {row_count}"
+
+
+def test_cracked_hashes_second_page_shows_remainder(app, client):
+    """Second page of cracked hashes must show the remaining rows without overlap."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+
+    # Create a hashfile with 35 cracked hashes with distinct plaintexts
+    hf = Hashfiles(name="hf-page2", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+    for i in range(35):
+        h = Hashes(
+            sub_ciphertext=f"{i:032d}",
+            ciphertext=f"hash_{i:03d}",
+            hash_type=1000,
+            cracked=True,
+            plaintext=f"password_{i:03d}",
+        )
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    job = _job(admin, cust, hashfile_id=hf.id)
+
+    # Get page 1 passwords
+    page1_passwords = set()
+    for i in range(20):
+        page1_passwords.add(f"password_{i:03d}")
+
+    # Get page 2
+    page2 = client.get(f"/jobs/{job.id}/assigned_hashfile/{hf.id}?page=2").get_data(as_text=True)
+    page2_passwords = set()
+    for i in range(20, 35):
+        page2_passwords.add(f"password_{i:03d}")
+
+    # Verify page 2 has different rows
+    for pwd in page2_passwords:
+        assert pwd in page2, f"Password {pwd} should be on page 2"
+    for pwd in page1_passwords:
+        assert pwd not in page2, f"Password {pwd} should not appear on page 2"
+
+
+def test_cracked_hashes_flash_message_shows_total_count(app, client):
+    """Flash message must show total count, not page count."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+
+    # Create a hashfile with 25 cracked hashes
+    hf = Hashfiles(name="hf-flash", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+    for i in range(25):
+        h = Hashes(
+            sub_ciphertext=f"{i:032d}",
+            ciphertext=f"hash_{i}",
+            hash_type=1000,
+            cracked=True,
+            plaintext=f"password_{i}",
+        )
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    job = _job(admin, cust, hashfile_id=hf.id)
+
+    # Check page 2 (only 5 rows)
+    resp = client.get(f"/jobs/{job.id}/assigned_hashfile/{hf.id}?page=2")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    # Flash message should show "25 instacracked Hashes!" not "5 instacracked Hashes!"
+    assert "25 instacracked Hashes!" in body
+
+
+def test_cracked_hashes_server_side_filter_narrows_results(app, client):
+    """Server-side search filter must narrow results by plaintext."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+
+    # Create a hashfile with mixed cracked hashes
+    hf = Hashfiles(name="hf-search", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+
+    passwords = ["apple", "application", "banana", "apricot", "cherry"]
+    for i, pwd in enumerate(passwords):
+        h = Hashes(
+            sub_ciphertext=f"{i:032d}",
+            ciphertext=f"hash_{i}",
+            hash_type=1000,
+            cracked=True,
+            plaintext=pwd,
+        )
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    job = _job(admin, cust, hashfile_id=hf.id)
+
+    # Search for "app" should find "apple", "application"
+    resp = client.get(f"/jobs/{job.id}/assigned_hashfile/{hf.id}?q=app")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "apple" in body
+    assert "application" in body
+    assert "banana" not in body
+    assert "apricot" not in body
+    assert "cherry" not in body
+
+
+def test_cracked_hashes_filter_with_no_matches_shows_correct_empty_state(app, client):
+    """A filter matching nothing must say so -- not fall through to the
+    generic 'no previously cracked hashes found' message. pagination.total is
+    the FILTERED count (0 here), so the empty-state branch must key off
+    search_filter being set, not off pagination.total > 0."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    hf = Hashfiles(name="hf-nomatch", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+    h = Hashes(sub_ciphertext="0" * 32, ciphertext="hash_0", hash_type=1000,
+                cracked=True, plaintext="apple")
+    db.session.add(h)
+    db.session.commit()
+    db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    job = _job(admin, cust, hashfile_id=hf.id)
+
+    resp = client.get(f"/jobs/{job.id}/assigned_hashfile/{hf.id}?q=zzz-no-such-term")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "No cracked hashes match" in body
+    assert "No previously cracked hashes found." not in body
+
+
+def test_cracked_hashes_flash_shows_hashfile_total_not_filtered_count(app, client):
+    """The flash message reports the hashfile's whole cracked count, not the
+    filtered result count -- matches the pre-pagination behavior of always
+    reporting how many hashes this hashfile has cracked in total."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    hf = Hashfiles(name="hf-flash-filter", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+    for i, pwd in enumerate(["apple", "banana", "cherry"]):
+        h = Hashes(sub_ciphertext=f"{i:032d}", ciphertext=f"hash_{i}",
+                    hash_type=1000, cracked=True, plaintext=pwd)
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    job = _job(admin, cust, hashfile_id=hf.id)
+
+    # Filtering to just "apple" (1 of 3) must still flash the hashfile's
+    # total of 3, not 1.
+    resp = client.get(f"/jobs/{job.id}/assigned_hashfile/{hf.id}?q=apple",
+                       follow_redirects=True)
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "3 instacracked Hashes!" in body
+
+
+def test_cracked_hashes_pages_partition_the_result_set(app, client):
+    """Every row across all pages must be distinct and their union must equal
+    the full result set -- proves pagination has a deterministic order
+    (order_by), not just that page 2 happens to differ from page 1 by
+    insertion-order accident."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    hf = Hashfiles(name="hf-partition", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+    all_passwords = set()
+    for i in range(35):
+        pwd = f"partition_pw_{i:03d}"
+        all_passwords.add(pwd)
+        h = Hashes(sub_ciphertext=f"{i:032d}", ciphertext=f"hash_{i}",
+                    hash_type=1000, cracked=True, plaintext=pwd)
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    job = _job(admin, cust, hashfile_id=hf.id)
+
+    seen = set()
+    for page in (1, 2):
+        resp = client.get(f"/jobs/{job.id}/assigned_hashfile/{hf.id}?page={page}")
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        page_matches = {pwd for pwd in all_passwords if pwd in body}
+        assert not (page_matches & seen), (
+            f"page {page} repeated rows from an earlier page: {page_matches & seen}"
+        )
+        seen |= page_matches
+    assert seen == all_passwords, f"missing rows across all pages: {all_passwords - seen}"
+
+
+def test_cracked_hashes_server_side_filter_by_username(app, client):
+    """Server-side search filter must also narrow by username."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+
+    # Create a hashfile with hashes that have usernames
+    hf = Hashfiles(name="hf-user-search", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+
+    users = ["alice", "bob", "charlie"]
+    for i, username in enumerate(users):
+        h = Hashes(
+            sub_ciphertext=f"{i:032d}",
+            ciphertext=f"hash_{i}",
+            hash_type=1000,
+            cracked=True,
+            plaintext=f"pwd_{i}",
+        )
+        db.session.add(h)
+        db.session.commit()
+        hfh = HashfileHashes(hash_id=h.id, hashfile_id=hf.id, username=username)
+        db.session.add(hfh)
+    db.session.commit()
+
+    job = _job(admin, cust, hashfile_id=hf.id)
+
+    # Search for "ali" should find "alice"
+    resp = client.get(f"/jobs/{job.id}/assigned_hashfile/{hf.id}?q=ali")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "alice" in body
+    assert "bob" not in body
+    assert "charlie" not in body
+
+
+def test_cracked_hashes_server_side_filter_by_ciphertext(app, client):
+    """Server-side search filter must also narrow by ciphertext."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+
+    # Create a hashfile with distinct ciphertexts
+    hf = Hashfiles(name="hf-cipher-search", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+
+    ciphers = ["abc123", "def456", "ghi789"]
+    for i, cipher in enumerate(ciphers):
+        h = Hashes(
+            sub_ciphertext=f"{i:032d}",
+            ciphertext=cipher,
+            hash_type=1000,
+            cracked=True,
+            plaintext=f"pwd_{i}",
+        )
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    job = _job(admin, cust, hashfile_id=hf.id)
+
+    # Search for "123" should find "abc123"
+    resp = client.get(f"/jobs/{job.id}/assigned_hashfile/{hf.id}?q=123")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "abc123" in body
+    assert "def456" not in body
+    assert "ghi789" not in body
+
+
+def test_cracked_hashes_query_shape_has_limit(app, client):
+    """Query shape test: pagination must issue a LIMIT clause."""
+    from sqlalchemy import event
+
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+
+    # Create a hashfile with 25 cracked hashes
+    hf = Hashfiles(name="hf-limit", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+    for i in range(25):
+        h = Hashes(
+            sub_ciphertext=f"{i:032d}",
+            ciphertext=f"hash_{i}",
+            hash_type=1000,
+            cracked=True,
+            plaintext=f"password_{i}",
+        )
+        db.session.add(h)
+        db.session.commit()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
+    db.session.commit()
+
+    job = _job(admin, cust, hashfile_id=hf.id)
+
+    statements = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(" ".join(statement.split()).lower())
+
+    engine = db.engine
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        client.get(f"/jobs/{job.id}/assigned_hashfile/{hf.id}")
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    # Look for SELECT statements that query from hashes and hashfilehashes
+    main_queries = [
+        s
+        for s in statements
+        if s.startswith("select") and " from hashes" in s and "count(" not in s
+    ]
+
+    # At least one query should have LIMIT (the paginated query)
+    limit_queries = [s for s in main_queries if " limit " in s]
+    assert limit_queries, f"No LIMIT clause found; queries: {main_queries}"

@@ -23,11 +23,18 @@
             <span class="page-sub" style="margin-top:0; display:inline-flex; align-items:center; gap:6px;" title="The following hashes are already cracked in Hashview's Local database!">{{ icon('info', size=15) }} Already cracked in Hashview's local database</span>
         </div>
     </div>
-    {% if cracked_hashfiles_hashes|length > 0 %}
+    {% if pagination.total > 0 or search_filter %}
     <div style="display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--border-soft);">
-        <input type="text" id="ic-filter" class="input" style="flex:1;" placeholder="Filter by name, hash, or plaintext…" autocomplete="off" oninput="hvIcFilter(this.value)">
-        <span class="mono" id="ic-count" style="font-size:11px; color:var(--text-mute); white-space:nowrap;"></span>
+        <form method="GET" action="{{ url_for('jobs.jobs_assigned_hashfile_cracked', job_id=job.id, hashfile_id=hashfile.id) }}" style="display:flex; align-items:center; gap:8px; flex:1;">
+            <input type="text" id="ic-filter" name="q" value="{{ search_filter }}" class="input" style="flex:1;" placeholder="Filter by name, hash, or plaintext…" autocomplete="off">
+            {% if search_filter %}
+            <a class="icon-btn" href="{{ url_for('jobs.jobs_assigned_hashfile_cracked', job_id=job.id, hashfile_id=hashfile.id) }}" title="Clear filter">{{ icon('x', size=15) }}</a>
+            {% endif %}
+        </form>
+        <span class="mono" id="ic-count" style="font-size:11px; color:var(--text-mute); white-space:nowrap;">{{ cracked_hashfiles_hashes|length }} / {{ pagination.total }}</span>
     </div>
+    {% endif %}
+    {% if cracked_hashfiles_hashes|length > 0 %}
     <div id="ic-scroll">
     <table class="tbl" id="ic-table">
         <thead>
@@ -38,20 +45,22 @@
             </tr>
         </thead>
         <tbody>
+            {# entry is (username, ciphertext, plaintext) -- only the columns
+               this table renders, selected via with_entities in the route. #}
             {% for entry in cracked_hashfiles_hashes %}
-            {% set nm = (entry[1].username | jinja_hex_decode) if entry[1].username else '' %}
-            {% set pt = (entry[0].plaintext | jinja_hex_decode) if entry[0].plaintext else '' %}
-            <tr class="ic-row" data-search="{{ (nm ~ ' ' ~ entry[0].ciphertext ~ ' ' ~ pt) | lower }}">
+            {% set nm = (entry[0] | jinja_hex_decode) if entry[0] else '' %}
+            {% set pt = (entry[2] | jinja_hex_decode) if entry[2] else '' %}
+            <tr class="ic-row">
                 <td>
-                    {% if entry[1].username %}
+                    {% if entry[0] %}
                         {{ nm }}
                     {% else %}
                         <span style="color:var(--text-mute);">None</span>
                     {% endif %}
                 </td>
-                <td class="mono" style="color:var(--text-dim);">{{ entry[0].ciphertext }}</td>
+                <td class="mono" style="color:var(--text-dim);">{{ entry[1] }}</td>
                 <td>
-                    {% if entry[0].plaintext %}
+                    {% if entry[2] %}
                         <span class="mono" style="color:var(--primary); text-shadow:var(--glow-text);">{{ pt }}</span>
                     {% else %}
                         <span style="color:var(--text-mute);">None</span>
@@ -59,9 +68,22 @@
                 </td>
             </tr>
             {% endfor %}
-            <tr id="ic-no-match" style="display:none;"><td colspan="3" style="text-align:center; padding:28px 16px; color:var(--text-mute);" class="mono">No results match that filter.</td></tr>
         </tbody>
     </table>
+    </div>
+    {% elif search_filter %}
+    {# pagination.total is the FILTERED count, so a non-matching filter always
+       has total == 0 here -- branch on search_filter directly, not total. #}
+    <div class="card-body" style="text-align:center; padding:48px 24px;">
+        <div class="mono" style="color:var(--text-dim);">No cracked hashes match &ldquo;{{ search_filter }}&rdquo;.</div>
+        <a class="btn" href="{{ url_for('jobs.jobs_assigned_hashfile_cracked', job_id=job.id, hashfile_id=hashfile.id) }}" style="margin-top:12px;">Clear filter</a>
+    </div>
+    {% elif pagination.pages and pagination.page > pagination.pages %}
+    {# Only reachable via a manually-edited out-of-range ?page= -- normal
+       pagination links never point past the last page. #}
+    <div class="card-body" style="text-align:center; padding:48px 24px;">
+        <div class="mono" style="color:var(--text-dim);">That page doesn&rsquo;t exist.</div>
+        <a class="btn" href="{{ url_for('jobs.jobs_assigned_hashfile_cracked', job_id=job.id, hashfile_id=hashfile.id) }}" style="margin-top:12px;">Back to page 1</a>
     </div>
     {% else %}
     <div class="card-body" style="text-align:center; padding:48px 24px;">
@@ -69,6 +91,33 @@
     </div>
     {% endif %}
 </div>
+
+{% if pagination.pages and pagination.pages > 1 %}
+<div class="pager">
+    {% if pagination.has_prev %}
+        <a class="pager-btn" href="{{ url_for('jobs.jobs_assigned_hashfile_cracked', job_id=job.id, hashfile_id=hashfile.id, page=pagination.prev_num, q=search_filter) }}">&lsaquo; Prev</a>
+    {% else %}
+        <span class="pager-btn disabled">&lsaquo; Prev</span>
+    {% endif %}
+    {% for p in pagination.iter_pages(left_edge=2, right_edge=2, left_current=2, right_current=2) %}
+        {% if p %}
+            {% if p == pagination.page %}
+                <span class="pager-btn active">{{ p }}</span>
+            {% else %}
+                <a class="pager-btn" href="{{ url_for('jobs.jobs_assigned_hashfile_cracked', job_id=job.id, hashfile_id=hashfile.id, page=p, q=search_filter) }}">{{ p }}</a>
+            {% endif %}
+        {% else %}
+            <span class="pager-btn disabled">&hellip;</span>
+        {% endif %}
+    {% endfor %}
+    {% if pagination.has_next %}
+        <a class="pager-btn" href="{{ url_for('jobs.jobs_assigned_hashfile_cracked', job_id=job.id, hashfile_id=hashfile.id, page=pagination.next_num, q=search_filter) }}">Next &rsaquo;</a>
+    {% else %}
+        <span class="pager-btn disabled">Next &rsaquo;</span>
+    {% endif %}
+</div>
+{% endif %}
+
 <div class="wizard-nav">
     <a class="btn" href="{{ url_for('jobs.jobs_assigned_hashfile', job_id=job.id) }}">{{ icon('arrowLeft', size=15) }} Back</a>
     <span class="spacer"></span>
@@ -77,20 +126,6 @@
 
 {% if cracked_hashfiles_hashes|length > 0 %}
 <script>
-function hvIcFilter(q) {
-    q = (q || '').trim().toLowerCase();
-    var rows = document.querySelectorAll('#ic-table tbody tr.ic-row');
-    var shown = 0;
-    rows.forEach(function (r) {
-        var hit = !q || (r.getAttribute('data-search') || '').indexOf(q) !== -1;
-        r.style.display = hit ? '' : 'none';
-        if (hit) shown++;
-    });
-    var none = document.getElementById('ic-no-match');
-    if (none) none.style.display = shown === 0 ? '' : 'none';
-    var count = document.getElementById('ic-count');
-    if (count) count.textContent = shown + ' / ' + rows.length + ' shown';
-}
 // Size the results box to exactly fill the space between its top and the wizard
 // nav, so the Back/Next buttons are visible on load without scrolling the page.
 function hvIcResize() {
@@ -105,7 +140,7 @@ function hvIcResize() {
     box.style.maxHeight = Math.max(avail, 160) + 'px';         // floor for tiny viewports
 }
 window.addEventListener('resize', hvIcResize);
-document.addEventListener('DOMContentLoaded', function () { hvIcFilter(''); hvIcResize(); });
+document.addEventListener('DOMContentLoaded', function () { hvIcResize(); });
 </script>
 {% endif %}
 

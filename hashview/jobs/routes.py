@@ -15,7 +15,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 from flask_wtf import FlaskForm
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 
 from hashview.jobs.forms import (
     JobsForm,
@@ -45,6 +45,7 @@ from hashview.utils.utils import (
     apply_name_filter,
     build_job_task_commands,
     dynamic_wordlist_ids,
+    escape_like_term,
     import_hashfilehashes,
     save_file,
     try_commit,
@@ -483,18 +484,71 @@ def jobs_assigned_hashfile(job_id):
 @jobs.route("/jobs/<int:job_id>/assigned_hashfile/<int:hashfile_id>", methods=['GET'])
 @login_required
 def jobs_assigned_hashfile_cracked(job_id, hashfile_id):
-    """Function to show instacrack results"""
+    """Function to show instacrack results with pagination and server-side filtering"""
 
     job = Jobs.query.get(job_id)
     hashfile = Hashfiles.query.get(hashfile_id)
-    # Can be optimized to only return the hash and plaintext
-    cracked_hashfiles_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).all()
-    cracked_hashfiles_hashes_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id == HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).count()
-    if cracked_hashfiles_hashes_cnt > 0:
-        flash(f"{cracked_hashfiles_hashes_cnt:,} instacracked Hashes!", 'success')
-    # Oppertunity for either a stored procedure or for some fancy queries.
 
-    return render_template('jobs_assigned_hashfiles_cracked.html.j2', title='Jobs Assigned Hashfiles Cracked', hashfile=hashfile, job=job, cracked_hashfiles_hashes=cracked_hashfiles_hashes)
+    # Pagination and filtering
+    page = request.args.get('page', 1, type=int) or 1
+    per_page = 20
+    search_filter = request.args.get('q', '', type=str).strip()
+
+    # Build base query: join Hashes and HashfileHashes, filter by cracked status and hashfile
+    base_query = db.session.query(Hashes, HashfileHashes).join(
+        HashfileHashes, Hashes.id == HashfileHashes.hash_id
+    ).filter(Hashes.cracked == '1').filter(
+        HashfileHashes.hashfile_id == hashfile.id
+    )
+
+    # Apply server-side search filter on plaintext, ciphertext, or username
+    # Escape the search term once, then reuse for all columns
+    if search_filter:
+        # Grand total across the whole hashfile, independent of the filter --
+        # the flash message reports "this hashfile has N instacracks" (as it
+        # did before pagination/filtering existed), not "N results for your
+        # search". pagination.total below is the FILTERED count and is wrong
+        # for this message once a filter is active.
+        hashfile_total_cracked = base_query.count()
+
+        escaped = escape_like_term(search_filter)
+        base_query = base_query.filter(
+            or_(
+                Hashes.plaintext.ilike('%' + escaped + '%', escape='\\'),
+                Hashes.ciphertext.ilike('%' + escaped + '%', escape='\\'),
+                HashfileHashes.username.ilike('%' + escaped + '%', escape='\\'),
+            )
+        )
+
+    # Select only the columns the template renders (username, ciphertext,
+    # plaintext) instead of full (Hashes, HashfileHashes) ORM objects --
+    # ciphertext/plaintext can each be large, and this is now paginated so
+    # per_page rows are fetched on every request. Matches the with_entities
+    # convention already used for this exact join shape at jobs/routes.py:829.
+    # order_by required: without it LIMIT/OFFSET across this two-table join has
+    # no guaranteed row order, so pages aren't guaranteed to partition the
+    # result set on MySQL (rows can repeat or be skipped between pages as the
+    # planner's join order shifts) -- matches the pattern at routes.py:103.
+    pagination = base_query.with_entities(
+        HashfileHashes.username, Hashes.ciphertext, Hashes.plaintext
+    ).order_by(Hashes.id).paginate(page=page, per_page=per_page, error_out=False)
+    cracked_hashfiles_hashes = pagination.items
+
+    # Flash the hashfile-wide total (not the page count, and not the filtered
+    # count when a search is active -- see hashfile_total_cracked above).
+    flash_total = hashfile_total_cracked if search_filter else pagination.total
+    if flash_total > 0:
+        flash(f"{flash_total:,} instacracked Hashes!", 'success')
+
+    return render_template(
+        'jobs_assigned_hashfiles_cracked.html.j2',
+        title='Jobs Assigned Hashfiles Cracked',
+        hashfile=hashfile,
+        job=job,
+        cracked_hashfiles_hashes=cracked_hashfiles_hashes,
+        pagination=pagination,
+        search_filter=search_filter
+    )
 
 def _assigned_tasks(job_id):
     """A job's task assignments in queue order, with a split task's chunk rows

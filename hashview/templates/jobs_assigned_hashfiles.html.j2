@@ -30,7 +30,7 @@
         '1700': '82a9dda829eb7f8ffe9fbe49e45d47d2dad9664fbb7adf72492e3c81ebd3e29134d9bc12212bf83c6840f10e8246b9db54a4859b7ccd0123d86e5872c1e5082f'
     };
     var HV_PASTE_DEFAULT = 'Paste one hash per line…';
-    var HV_HAS_EXISTING = {{ 'true' if hashfiles.count() else 'false' }};
+    var HV_HAS_EXISTING = {{ 'true' if hashfiles|length else 'false' }};
     var HV_DEFAULT_TAB = "{{ default_tab }}";
 
     // Disable Next until the active tab's required fields are valid. The button
@@ -245,7 +245,7 @@
         {# Use existing #}
         <div id="pane-existing" style="display:{{ 'block' if default_tab == 'existing' else 'none' }};">
             <form action='' id='hf_form_existing' method='post' name='hf_form'>
-                {% if hashfiles.count() %}
+                {% if hashfiles|length %}
                 {% set ns = namespace(has_match=false) %}
                 {% for hashfile in hashfiles %}{% if hashfile.id == job.hashfile_id %}{% set ns.has_match = true %}{% endif %}{% endfor %}
                 <table class="tbl">
@@ -284,7 +284,7 @@
 <div class="wizard-nav">
     <a class="btn" href="{{ url_for('jobs.jobs_list') }}">{{ icon('arrowLeft', size=15) }} Back</a>
     <span class="spacer"></span>
-    <button type="submit" id="hf_next" form="{{ 'hf_form_existing' if default_tab == 'existing' else 'hf_form' }}" class="btn btn-primary"{% if default_tab == 'existing' and not hashfiles.count() %} style="display:none;"{% endif %}>Next {{ icon('arrowRight', size=15) }}</button>
+    <button type="submit" id="hf_next" form="{{ 'hf_form_existing' if default_tab == 'existing' else 'hf_form' }}" class="btn btn-primary"{% if default_tab == 'existing' and not hashfiles|length %} style="display:none;"{% endif %}>Next {{ icon('arrowRight', size=15) }}</button>
 </div>
 
 {# ---- hashfile import progress modal (opened when the Upload/Paste form submits) ----

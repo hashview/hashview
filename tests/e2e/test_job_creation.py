@@ -96,22 +96,20 @@ def test_job_creation_flow(page, live_server, login):
     assert match, f"Unexpected tasks URL: {page.url}"
     job_id = match.group(1)
 
-    # The task library renders one POST form per available task inside the
-    # "Add Task" <details> drawer (the drawer toggle is a <summary>, not a
-    # button). Each form carries a CSRF token, so we submit the real form
-    # through the UI rather than GET the POST-only route. Match the exact form
-    # action via the concrete job_id/task_id so we never ambiguously match a
-    # different task (e.g. /assign_task/1 vs /assign_task/11).
+    # The task library renders one shared POST form per drawer (task_assign_form),
+    # with each task as a button carrying its own formaction (issue #422). Match
+    # the button by its exact formaction via the concrete job_id/task_id so we
+    # never ambiguously match a different task (e.g. /assign_task/1 vs /assign_task/11).
     assign_action = f"/jobs/{job_id}/assign_task/{task_id}"
-    assign_form = page.locator(f"form[action='{assign_action}']")
-    expect(assign_form).to_be_attached()
+    assign_button = page.locator(f"button[formaction='{assign_action}']")
+    expect(assign_button).to_be_attached()
 
-    # The form lives inside a closed <details>, so it's hidden until expanded.
-    # Open exactly the drawer that contains this task's form, then submit it.
-    page.locator(f"details:has(form[action='{assign_action}'])").evaluate(
+    # The button lives inside a closed <details>, so it's hidden until expanded.
+    # Open exactly the drawer that contains this task's button, then submit it.
+    page.locator(f"details:has(button[formaction='{assign_action}'])").evaluate(
         "el => { el.open = true; }"
     )
-    assign_form.locator("button[type=submit]").first.click()
+    assign_button.click()
     page.wait_for_load_state("domcontentloaded")
 
     # After assignment, the task appears in the Task Queue. Since the

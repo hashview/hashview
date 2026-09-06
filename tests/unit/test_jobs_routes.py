@@ -449,6 +449,75 @@ def test_jobs_summary_without_tasks_redirects(app, client):
     assert resp.status_code in (301, 302)
 
 
+def test_jobs_summary_scales_with_assigned_tasks_not_library(app, client, tmp_path):
+    """Issue #422: job summary should only query assigned task names, not the
+    entire tasks table. Response size must scale with assigned task count, not
+    total task library size."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    hf, _ = _hashfile_with_hash(cust, admin)
+    job = _job(admin, cust, hashfile_id=hf.id)
+
+    # Seed 50 extra tasks in the library.
+    wl = _static_wl(admin, tmp_path)
+    for i in range(50):
+        _task(admin, name=f"ignored-{i}", wl_id=wl.id)
+
+    # Assign exactly 2 tasks to the job.
+    assigned_task1 = _task(admin, name="assigned-1", wl_id=wl.id)
+    assigned_task2 = _task(admin, name="assigned-2", wl_id=wl.id)
+    _assign(job, assigned_task1)
+    _assign(job, assigned_task2)
+
+    db.session.add(Settings(enabled_job_weights=False))
+    db.session.commit()
+
+    # The old nested-loop template only ever *rendered* task.name for rows
+    # where task.id == a.task_id, so absence of "ignored-N" text and a
+    # response-size threshold cannot distinguish the fix from the O(assigned
+    # x library) bug at this fixture's scale (2 assigned x 52 library tasks is
+    # only ~4KB of loop whitespace either way). What actually distinguishes
+    # them is the query issued: the fixed route filters Tasks by the assigned
+    # ids; the old route loaded every row via Tasks.query.all(). Inspect the
+    # SQL the same way test_rules_pagination.py does for the equivalent bug.
+    from sqlalchemy import event
+
+    statements = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(" ".join(statement.split()).lower())
+
+    engine = db.engine
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        resp = client.get(f"/jobs/{job.id}/summary")
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert resp.status_code == 200
+
+    # Verify both assigned task names appear in the rendered output, in order.
+    assert b"assigned-1" in resp.data
+    assert b"assigned-2" in resp.data
+    assert b"01</span>assigned-1" in resp.data
+    assert b"02</span>assigned-2" in resp.data
+
+    # Verify that ignored (unassigned) library tasks do NOT appear.
+    for i in range(50):
+        assert f"ignored-{i}".encode() not in resp.data
+
+    # The decisive check: no query against `tasks` may be an unfiltered
+    # full-table scan (Tasks.query.all() has no WHERE clause at all).
+    row_loads = [s for s in statements
+                 if s.startswith("select") and " from tasks" in s
+                 and "count(" not in s]
+    assert any("id in" in s for s in row_loads), \
+        f"no id-scoped task lookup found; saw: {row_loads}"
+    unfiltered = [s for s in row_loads if " where " not in s]
+    assert not unfiltered, f"unrestricted scan of tasks: {unfiltered}"
+
+
 def test_jobs_start_queues_job(app, client, tmp_path):
     admin = make_admin()
     login(client, admin)

@@ -188,8 +188,8 @@ class JobTasks(db.Model):
     """Class object to represent JobTasks"""
 
     id = db.Column(db.Integer, primary_key=True)
-    job_id = db.Column(db.Integer, nullable=False)
-    task_id = db.Column(db.Integer, nullable=False)
+    job_id = db.Column(db.Integer, nullable=False, index=True)
+    task_id = db.Column(db.Integer, nullable=False, index=True)
     priority = db.Column(db.Integer, nullable=False, default=3)
     command = db.Column(db.String(1024))
     # status: Running/Paused/Not Started/Completed/Queued/Canceled/Importing
@@ -349,7 +349,7 @@ class Hashes(db.Model):
     hash_type = db.Column(db.Integer, nullable=False, index=True)
     cracked = db.Column(db.Boolean, nullable=False)
     recovered_at = db.Column(db.DateTime, nullable=True)
-    task_id = db.Column(db.Integer, nullable=True)
+    task_id = db.Column(db.Integer, nullable=True, index=True)
     recovered_by = db.Column(db.Integer, nullable=True)
     plaintext = db.Column(db.String(256), index=True)
 

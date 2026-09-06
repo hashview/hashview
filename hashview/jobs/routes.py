@@ -473,18 +473,53 @@ def jobs_assigned_hashfile(job_id):
 @jobs.route("/jobs/<int:job_id>/assigned_hashfile/<int:hashfile_id>", methods=['GET'])
 @login_required
 def jobs_assigned_hashfile_cracked(job_id, hashfile_id):
-    """Function to show instacrack results"""
+    """Function to show instacrack results with pagination and server-side filtering"""
 
     job = Jobs.query.get(job_id)
     hashfile = Hashfiles.query.get(hashfile_id)
-    # Can be optimized to only return the hash and plaintext
-    cracked_hashfiles_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).all()
-    cracked_hashfiles_hashes_cnt = db.session.query(Hashes).join(HashfileHashes, Hashes.id == HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).count()
-    if cracked_hashfiles_hashes_cnt > 0:
-        flash(f"{cracked_hashfiles_hashes_cnt:,} instacracked Hashes!", 'success')
-    # Oppertunity for either a stored procedure or for some fancy queries.
 
-    return render_template('jobs_assigned_hashfiles_cracked.html.j2', title='Jobs Assigned Hashfiles Cracked', hashfile=hashfile, job=job, cracked_hashfiles_hashes=cracked_hashfiles_hashes)
+    # Pagination and filtering
+    page = request.args.get('page', 1, type=int) or 1
+    per_page = 20
+    search_filter = request.args.get('q', '', type=str).strip()
+
+    # Build base query: join Hashes and HashfileHashes, filter by cracked status and hashfile
+    base_query = db.session.query(Hashes, HashfileHashes).join(
+        HashfileHashes, Hashes.id == HashfileHashes.hash_id
+    ).filter(Hashes.cracked == '1').filter(
+        HashfileHashes.hashfile_id == hashfile.id
+    )
+
+    # Apply server-side search filter on plaintext, ciphertext, or username
+    # Escape the search term once, then reuse for all columns
+    if search_filter:
+        from sqlalchemy import or_
+        escaped = search_filter.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        base_query = base_query.filter(
+            or_(
+                Hashes.plaintext.ilike('%' + escaped + '%', escape='\\'),
+                Hashes.ciphertext.ilike('%' + escaped + '%', escape='\\'),
+                HashfileHashes.username.ilike('%' + escaped + '%', escape='\\'),
+            )
+        )
+
+    # Paginate the filtered results
+    pagination = base_query.paginate(page=page, per_page=per_page, error_out=False)
+    cracked_hashfiles_hashes = pagination.items
+
+    # Flash the total count (not page count)
+    if pagination.total > 0:
+        flash(f"{pagination.total:,} instacracked Hashes!", 'success')
+
+    return render_template(
+        'jobs_assigned_hashfiles_cracked.html.j2',
+        title='Jobs Assigned Hashfiles Cracked',
+        hashfile=hashfile,
+        job=job,
+        cracked_hashfiles_hashes=cracked_hashfiles_hashes,
+        pagination=pagination,
+        search_filter=search_filter
+    )
 
 def _assigned_tasks(job_id):
     """A job's task assignments in queue order, with a split task's chunk rows

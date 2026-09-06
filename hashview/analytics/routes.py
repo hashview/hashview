@@ -17,7 +17,6 @@ from flask import (
 )
 from flask_login import login_required
 from sqlalchemy import func, select
-from werkzeug.utils import secure_filename
 
 from hashview.models import Customers, Hashes, HashfileHashes, Hashfiles, Jobs, Tasks, db
 from hashview.utils.utils import decode_hex_plain

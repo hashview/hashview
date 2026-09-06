@@ -25,6 +25,7 @@ their own per-issue modules so each tracks a GitHub issue:
 This module deliberately contains only PASSING security tests.
 """
 
+import inspect
 
 import pytest
 
@@ -224,10 +225,6 @@ def test_agents_download_no_shell_execution(nocsrf_app):
     _login(client, user)
 
     import hashview.agents.routes as agents_routes
-
-    # Assert that os.system is not called during the request
-    # by checking it doesn't appear in the agents_routes source
-    import inspect
     source = inspect.getsource(agents_routes.agents_download)
     assert "os.system" not in source, "agents_download must not use os.system"
 

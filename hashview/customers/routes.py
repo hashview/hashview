@@ -44,39 +44,64 @@ customers = Blueprint('customers', __name__)
 def customers_list():
     """Function to return list of customers"""
     customers = Customers.query.order_by(Customers.name).all()
-    jobs = Jobs.query.all()
-    hashfiles = Hashfiles.query.all()
 
-    # Per-customer counts + recovered % (cracked/total across the customer's hashfiles).
-    job_count = {}
-    for j in jobs:
-        job_count[j.customer_id] = job_count.get(j.customer_id, 0) + 1
-    hf_by_customer = {}
-    for hf in hashfiles:
-        hf_by_customer.setdefault(hf.customer_id, []).append(hf.id)
+    # Per-customer counts + recovered % (cracked/total across the customer's
+    # hashfiles), as four set-based queries that are flat in customer count.
+    #
+    # This was one COUNT+SUM(CASE) aggregate per customer, joining `hashes` to
+    # `hashfile_hashes`. Its cost scaled with the whole junction table rather
+    # than with the page, because ~94% of each query was a clustered-index
+    # probe into `hashes` to read the single `cracked` boolean.
+    #
+    # The two hash aggregates are deliberately kept SEPARATE rather than folded
+    # into one grouped query: `total` is then index-only over
+    # ix_hashfile_hashes_hashfile_id and never reads `hashes` at all, and
+    # `cracked` drives off ix_hashes_cracked_recovered_at so it scales with the
+    # recovered population instead of total hash volume. A single grouped
+    # COUNT+SUM(CASE) measured *slower* than the per-customer loop it would
+    # replace -- it still joins every junction row to `hashes` and cannot use
+    # the cracked index. Don't "simplify" these back into one query.
+    job_count = dict(
+        db.session.query(Jobs.customer_id, func.count(Jobs.id))
+        .group_by(Jobs.customer_id).all()
+    )
+    hf_count = dict(
+        db.session.query(Hashfiles.customer_id, func.count(Hashfiles.id))
+        .group_by(Hashfiles.customer_id).all()
+    )
+    # Counting junction rows equals the old COUNT over joined `hashes` rows
+    # because every hashfile_hashes row references a live hash: both delete
+    # paths (_cascade_delete_hashfile, customers_delete) remove the junction
+    # row together with, or ahead of, the hash it points at.
+    totals = dict(
+        db.session.query(Hashfiles.customer_id, func.count(HashfileHashes.id))
+        .join(HashfileHashes, HashfileHashes.hashfile_id == Hashfiles.id)
+        .group_by(Hashfiles.customer_id).all()
+    )
+    cracked_counts = dict(
+        db.session.query(Hashfiles.customer_id, func.count(Hashes.id))
+        .join(HashfileHashes, HashfileHashes.hashfile_id == Hashfiles.id)
+        .join(Hashes, Hashes.id == HashfileHashes.hash_id)
+        .filter(Hashes.cracked == True)
+        .group_by(Hashfiles.customer_id).all()
+    )
 
+    # .get(id, 0) throughout: a customer with no hashfiles -- or none cracked --
+    # has no row in the corresponding result and must still render as 0.
     customer_stats = {}
     for customer in customers:
-        hf_ids = hf_by_customer.get(customer.id, [])
-        total = cracked = 0
-        if hf_ids:
-            agg = db.session.query(
-                func.count(Hashes.id),
-                func.coalesce(func.sum(case((Hashes.cracked == True, 1), else_=0)), 0)
-            ).join(HashfileHashes, Hashes.id == HashfileHashes.hash_id) \
-             .filter(HashfileHashes.hashfile_id.in_(hf_ids)).first()
-            total = agg[0] or 0
-            cracked = int(agg[1] or 0)
+        total = int(totals.get(customer.id, 0))
+        cracked = int(cracked_counts.get(customer.id, 0))
         customer_stats[customer.id] = {
             'jobs': job_count.get(customer.id, 0),
-            'hashfiles': len(hf_ids),
+            'hashfiles': hf_count.get(customer.id, 0),
             'total': total,
             'cracked': cracked,
             'pct': round(cracked / total * 100) if total else 0,
         }
 
-    return render_template('customers.html.j2', title='Customers', customers=customers, jobs=jobs,
-                           hashfiles=hashfiles, customer_stats=customer_stats,
+    return render_template('customers.html.j2', title='Customers', customers=customers,
+                           customer_stats=customer_stats,
                            customersForm=CustomersForm(),
                            form_err=session.pop('customers_form_err', None))
 

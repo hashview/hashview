@@ -1,5 +1,6 @@
 """Flask routes to handle Agents"""
 import os
+import tarfile
 
 from flask import (
     Blueprint,
@@ -7,7 +8,6 @@ from flask import (
     flash,
     redirect,
     render_template,
-    send_from_directory,
     url_for,
 )
 from flask_login import current_user, login_required
@@ -24,7 +24,7 @@ from hashview.utils.hashcat_modes import (
     NETNTLM_HASH_TYPE_CHOICES,
     SHADOW_HASH_TYPE_CHOICES,
 )
-from hashview.utils.utils import agent_telemetry, fmt_hps, try_commit
+from hashview.utils.utils import agent_telemetry, fmt_hps, send_generated_file, try_commit
 
 agents = Blueprint('agents', __name__)
 
@@ -239,7 +239,10 @@ def agents_download():
     """Function to download agent"""
     version = hashview.__version__
     filename = 'hashview-agent.' + version + '.tgz'
-    cmd = 'tar -czf hashview/control/tmp/' + filename + ' -C install hashview-agent'
-    os.system(cmd)
+    tmp_path = os.path.join('hashview', 'control', 'tmp', filename)
 
-    return send_from_directory('control/tmp', filename, as_attachment=True)
+    # Build the tarball using tarfile instead of shell command
+    with tarfile.open(tmp_path, 'w:gz') as tf:
+        tf.add('install/hashview-agent', arcname='hashview-agent')
+
+    return send_generated_file('control/tmp', filename, as_attachment=True)

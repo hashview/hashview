@@ -211,47 +211,31 @@ def _seed_job_with_task(attackmode, *, hc_mask=None, j_rule=None, k_rule=None,
 
 
 @pytest.mark.security
-def test_agents_download_os_system_uses_trusted_version_only(nocsrf_app, monkeypatch):
-    """The only live os.system() sink (agents/routes.py:243) builds its command
-    from hashview.__version__, which is a package constant — NOT user input.
+def test_agents_download_no_shell_execution(nocsrf_app):
+    """The agents download route must not shell out or execute any shell commands.
 
-    Pin that no request data reaches it: we tripwire os.system to capture the
-    string and assert it is exactly the version-templated tar command with no
-    user-controlled component. (We do not actually run tar.)
+    The tarfile is built using Python's tarfile module, never via os.system or
+    subprocess with shell=True. This test verifies there is no shell command
+    execution in the agents routes module.
     """
     app = nocsrf_app
     user = _seed_user(admin=True)
     client = app.test_client()
     _login(client, user)
 
-    from flask import Response
-
     import hashview.agents.routes as agents_routes
 
-    captured = {}
+    # Assert that os.system is not called during the request
+    # by checking it doesn't appear in the agents_routes source
+    import inspect
+    source = inspect.getsource(agents_routes.agents_download)
+    assert "os.system" not in source, "agents_download must not use os.system"
 
-    def fake_system(cmd):
-        captured["cmd"] = cmd
-        return 0
-
-    monkeypatch.setattr(agents_routes.os, "system", fake_system)
-    # Don't actually serve a file off disk; the os.system cmd is what we inspect.
-    monkeypatch.setattr(
-        agents_routes,
-        "send_from_directory",
-        lambda *a, **k: Response("ok", status=200),
-    )
-
+    # Make the request and verify it succeeds
     resp = client.get("/agents/download")
     assert resp.status_code == 200
-    cmd = captured["cmd"]
-    # version is e.g. '0.8.3' — no shell metacharacters, fixed template.
-    import hashview
-
-    assert hashview.__version__ in cmd
-    assert cmd.startswith("tar -czf hashview/control/tmp/hashview-agent.")
-    for meta in (";", "|", "&", "$(", "`", "\n"):
-        assert meta not in cmd, f"unexpected shell metachar {meta!r} in os.system cmd: {cmd!r}"
+    # Verify it's a gzip stream
+    assert resp.data[:2] == b"\x1f\x8b", "Response must be a gzip stream"
 
 
 # --------------------------------------------------------------------------- #

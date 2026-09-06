@@ -449,6 +449,57 @@ def test_jobs_summary_without_tasks_redirects(app, client):
     assert resp.status_code in (301, 302)
 
 
+def test_jobs_summary_scales_with_assigned_tasks_not_library(app, client, tmp_path):
+    """Issue #422: job summary should only query assigned task names, not the
+    entire tasks table. Response size must scale with assigned task count, not
+    total task library size."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    hf, _ = _hashfile_with_hash(cust, admin)
+    job = _job(admin, cust, hashfile_id=hf.id)
+
+    # Seed 50 extra tasks in the library.
+    wl = _static_wl(admin, tmp_path)
+    for i in range(50):
+        _task(admin, name=f"ignored-{i}", wl_id=wl.id)
+
+    # Assign exactly 2 tasks to the job.
+    assigned_task1 = _task(admin, name="assigned-1", wl_id=wl.id)
+    assigned_task2 = _task(admin, name="assigned-2", wl_id=wl.id)
+    _assign(job, assigned_task1)
+    _assign(job, assigned_task2)
+
+    db.session.add(Settings(enabled_job_weights=False))
+    db.session.commit()
+
+    # Render the summary page.
+    resp = client.get(f"/jobs/{job.id}/summary")
+    assert resp.status_code == 200
+
+    # Verify both assigned task names appear in the rendered output.
+    assert b"assigned-1" in resp.data
+    assert b"assigned-2" in resp.data
+
+    # Verify the first assigned task appears with order=01, second with order=02.
+    assert b"01assigned-1" in resp.data or b"01</span>assigned-1" in resp.data
+    assert b"02assigned-2" in resp.data or b"02</span>assigned-2" in resp.data
+
+    # Verify that ignored tasks do NOT appear.
+    for i in range(50):
+        assert f"ignored-{i}".encode() not in resp.data
+
+    # Verify the response size is reasonable. With the old O(assigned × library)
+    # nested loop, 2 assigned tasks and 52 library tasks would produce ~12 KB
+    # of whitespace (loop indentation). With the fix (dict lookup), response
+    # should be much smaller.
+    response_kb = len(resp.data) / 1024
+    assert response_kb < 100, (
+        f"Response is {response_kb:.0f}KB; if this scales with task library "
+        "size, the O(assigned × library) loop is still present."
+    )
+
+
 def test_jobs_start_queues_job(app, client, tmp_path):
     admin = make_admin()
     login(client, admin)

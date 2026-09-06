@@ -929,7 +929,6 @@ def jobs_summary(job_id):
     form = JobSummaryForm()
 
     settings = Settings.query.first()
-    tasks = Tasks.query.all()
     hashfile = Hashfiles.query.get(job.hashfile_id)
     customer = Customers.query.get(job.customer_id)
     cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).count()
@@ -954,8 +953,6 @@ def jobs_summary(job_id):
         hashfile_hash_type = _names.get(str(hash_mode), 'mode ' + str(hash_mode))
     hash_notification_cnt = db.session.query(HashNotifications).join(HashfileHashes, HashNotifications.hash_id==HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id == hashfile.id).count()
     hash_notification = db.session.query(HashNotifications).join(HashfileHashes, HashNotifications.hash_id==HashfileHashes.hash_id).filter(HashfileHashes.hashfile_id == hashfile.id).first()
-    job_notification = JobNotifications.query.filter_by(job_id = job.id).first()
-
     job_notification = JobNotifications.query.filter_by(job_id=job_id).first()
 
     if form.validate_on_submit():
@@ -977,7 +974,16 @@ def jobs_summary(job_id):
     # each attack once (matches the assign-tasks step), not once per chunk.
     assigned = _assigned_tasks(job_id)
 
-    return render_template('jobs_summary.html.j2', title='Job Summary', job=job, form=form, job_notification=job_notification, cracked_rate=cracked_rate, cracked_cnt=cracked_cnt, hash_total=hash_total, hashfile_hash_type=hashfile_hash_type, job_tasks=job_tasks, assigned=assigned, hash_notification_cnt=hash_notification_cnt, customer=customer, hashfile=hashfile, tasks=tasks, hash_notification=hash_notification, settings=settings)
+    # Build a dict mapping assigned task id -> task name. Queries only the assigned
+    # tasks rather than the entire tasks table, so response size scales with assigned
+    # count, not total task library size.
+    assigned_task_ids = [a['task_id'] for a in assigned]
+    task_names = {}
+    if assigned_task_ids:
+        for task in Tasks.query.filter(Tasks.id.in_(assigned_task_ids)).all():
+            task_names[task.id] = task.name
+
+    return render_template('jobs_summary.html.j2', title='Job Summary', job=job, form=form, job_notification=job_notification, cracked_rate=cracked_rate, cracked_cnt=cracked_cnt, hash_total=hash_total, hashfile_hash_type=hashfile_hash_type, job_tasks=job_tasks, assigned=assigned, hash_notification_cnt=hash_notification_cnt, customer=customer, hashfile=hashfile, task_names=task_names, hash_notification=hash_notification, settings=settings)
 
 @jobs.route("/jobs/start/<int:job_id>", methods=['POST'])
 @login_required

@@ -273,14 +273,13 @@ def jobs_assigned_hashfile(job_id):
     """Function to manage assigning hashfile to job"""
 
     job = Jobs.query.get(job_id)
-    hashfiles = Hashfiles.query.filter_by(customer_id=job.customer_id)
+    hashfiles = Hashfiles.query.filter_by(customer_id=job.customer_id).all()
     jobs_new_hashfile_form = JobsNewHashFileForm()
     # The import-progress modal posts the upload/paste form via XHR (so it can
     # show live upload + import status) and sets this header; for those requests
     # we answer with JSON instead of flash+redirect. A plain (no-JS) form post
     # still falls through to the original flash/redirect behaviour.
     is_ajax = request.headers.get('X-Requested-With') == 'fetch'
-    hashfile_cracked_rate = {}
     hashfile_info = {}
 
     # Reverse-map hashcat modes -> concise friendly names from the form's own choices.
@@ -300,18 +299,29 @@ def jobs_assigned_hashfile(job_id):
         flash('You can not edit a running or queued job. First stop and remove job from queue before editing.', 'danger')
         return redirect(url_for('jobs.jobs_list'))
 
-    for hashfile in hashfiles:
-        # one aggregated query per hashfile: total hashes, cracked count, representative mode
-        agg = db.session.query(
+    # --- per-hashfile facts for this customer's hashfiles ---
+    # Count / cracked-count / representative hash type computed in ONE grouped
+    # query over the hashfile ids instead of one query per hashfile (the old N+1
+    # pattern).
+    hashfile_ids = {hf.id for hf in hashfiles}
+    _hf_stats = {}
+    if hashfile_ids:
+        for hfid, total, cracked, mode in db.session.query(
+            HashfileHashes.hashfile_id,
             func.count(Hashes.id),
             func.coalesce(func.sum(case((Hashes.cracked == True, 1), else_=0)), 0),
-            func.min(Hashes.hash_type)
-        ).join(HashfileHashes, Hashes.id == HashfileHashes.hash_id) \
-         .filter(HashfileHashes.hashfile_id == hashfile.id).first()
-        total = agg[0] or 0
-        cracked_cnt = int(agg[1] or 0)
-        ht = str(agg[2]) if agg[2] is not None else ''
-        hashfile_cracked_rate[hashfile.id] = "(" + str(cracked_cnt) + "/" + str(total) + ")"
+            func.min(Hashes.hash_type),
+        ).join(Hashes, Hashes.id == HashfileHashes.hash_id) \
+         .filter(HashfileHashes.hashfile_id.in_(hashfile_ids)) \
+         .group_by(HashfileHashes.hashfile_id).all():
+            _hf_stats[hfid] = {'total': total or 0, 'cracked': int(cracked or 0), 'mode': mode}
+
+    # Assemble per-hashfile display data from the batched facts above.
+    for hashfile in hashfiles:
+        stats = _hf_stats.get(hashfile.id)
+        total = stats['total'] if stats else 0
+        cracked_cnt = stats['cracked'] if stats else 0
+        ht = str(stats['mode']) if stats and stats['mode'] is not None else ''
         if total:
             _pct = (cracked_cnt / total) * 100
             pct_str = '<1%' if 0 < _pct < 1 else ('%d%%' % round(_pct))
@@ -468,7 +478,7 @@ def jobs_assigned_hashfile(job_id):
         # Non-AJAX submit: fall through and re-render the page — WTForms shows the
         # field errors inline, so there's nothing to print to the console.
 
-    return render_template('jobs_assigned_hashfiles.html.j2', title='Jobs Assigned Hashfiles', hashfiles=hashfiles, job=job, jobsNewHashFileForm=jobs_new_hashfile_form, hashfile_cracked_rate=hashfile_cracked_rate, hashfile_info=hashfile_info)
+    return render_template('jobs_assigned_hashfiles.html.j2', title='Jobs Assigned Hashfiles', hashfiles=hashfiles, job=job, jobsNewHashFileForm=jobs_new_hashfile_form, hashfile_info=hashfile_info)
 
 @jobs.route("/jobs/<int:job_id>/assigned_hashfile/<int:hashfile_id>", methods=['GET'])
 @login_required

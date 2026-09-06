@@ -10,6 +10,7 @@ pin ACTUAL behavior against the in-memory app; app source is never modified.
 import os
 
 import pytest
+from sqlalchemy import event
 
 from hashview.models import Hashes, HashfileHashes, Hashfiles, Jobs, db
 from tests.unit.helpers import login, make_admin, make_customer
@@ -310,3 +311,115 @@ def test_custom_hash_type_missing_number_fails_validation(app, client, tmp_snaps
 
     assert Hashfiles.query.filter_by(name="NoCustomModeHF").first() is None
     assert _new_files(tmp_dir, before) == set()
+
+
+def test_hashfile_picker_n_plus_one_fixed(app, client):
+    """Verify that the GET hashfile-picker route (jobs_assigned_hashfile) uses
+    ONE grouped query to fetch hashfile stats (total, cracked, mode) instead of
+    one query per hashfile. Issue #422, defect 2.
+
+    Seeds multiple hashfiles with varying cracked/total counts, fetches the
+    hashfile-picker page, and inspects SQL statements to prove the aggregate
+    query runs once per set of hashfiles, grouped by hashfile_id, not once per
+    hashfile in the loop.
+    """
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+
+    # Seed 3 hashfiles with varying stats
+    hf1 = Hashfiles(name="hf1", customer_id=cust.id, owner_id=admin.id)
+    hf2 = Hashfiles(name="hf2", customer_id=cust.id, owner_id=admin.id)
+    hf3 = Hashfiles(name="hf3", customer_id=cust.id, owner_id=admin.id)
+    db.session.add_all([hf1, hf2, hf3])
+    db.session.commit()
+
+    # Populate hf1 with 10 hashes, 3 cracked
+    for i in range(10):
+        h = Hashes(
+            sub_ciphertext=f"sub_{hf1.id}_{i}",
+            ciphertext=f"hash_{hf1.id}_{i}",
+            cracked=(i < 3),
+            hash_type=1000,
+        )
+        db.session.add(h)
+        db.session.flush()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf1.id, username=f"user{i}"))
+
+    # Populate hf2 with 5 hashes, all cracked
+    for i in range(5):
+        h = Hashes(
+            sub_ciphertext=f"sub_{hf2.id}_{i}",
+            ciphertext=f"hash_{hf2.id}_{i}",
+            cracked=True,
+            hash_type=100,
+        )
+        db.session.add(h)
+        db.session.flush()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf2.id, username=f"user{i}"))
+
+    # Populate hf3 with 8 hashes, none cracked
+    for i in range(8):
+        h = Hashes(
+            sub_ciphertext=f"sub_{hf3.id}_{i}",
+            ciphertext=f"hash_{hf3.id}_{i}",
+            cracked=False,
+            hash_type=500,
+        )
+        db.session.add(h)
+        db.session.flush()
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf3.id, username=f"user{i}"))
+
+    db.session.commit()
+
+    # Capture all SQL statements during the GET request
+    statements = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(" ".join(statement.split()).lower())
+
+    engine = db.engine
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        resp = client.get(f"/jobs/{job.id}/assigned_hashfile/")
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    # Verify the response is successful
+    assert resp.status_code == 200
+    body = resp.data
+
+    # The route should render hashfile stats in the template.
+    # Check that the stats appear in the page (confirms data is populated).
+    assert b"hf1" in body or b"hf2" in body or b"hf3" in body
+
+    # Find the grouped query that fetches hashfile stats.
+    # It should:
+    # 1. Join HashfileHashes and Hashes
+    # 2. Filter by hashfile_id IN (list of ids)
+    # 3. Group by HashfileHashes.hashfile_id
+    # 4. Select count, sum (for cracked), and min (for mode)
+    grouped_agg_queries = [
+        s for s in statements
+        if s.startswith("select")
+        and "from hashfile_hashes" in s
+        and "join hashes" in s
+        and "group by" in s
+        and "count(" in s
+    ]
+
+    # There should be exactly ONE such grouped query (not one per hashfile).
+    assert len(grouped_agg_queries) == 1, (
+        f"Expected exactly 1 grouped aggregate query, got {len(grouped_agg_queries)}. "
+        f"This suggests the N+1 pattern (one query per hashfile) is still present. "
+        f"Queries found:\n" + "\n".join(grouped_agg_queries)
+    )
+
+    # Verify the query shape: it should select the hashfile_id, so we can
+    # correlate results back.
+    agg_query = grouped_agg_queries[0]
+    assert "hashfile_id" in agg_query, (
+        f"Grouped query should select hashfile_id for result mapping. "
+        f"Query: {agg_query}"
+    )

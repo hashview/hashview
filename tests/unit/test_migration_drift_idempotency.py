@@ -24,7 +24,7 @@ from sqlalchemy import text
 
 MIGRATIONS_DIR = str(Path(__file__).resolve().parents[2] / "migrations")
 BASE_REV = "8027c2d2b40a"      # what the drifted field DB was stamped at
-DEV_HEAD = "b5c8d9e1f2a4"
+DEV_HEAD = "a8c4d2e1f5b3"
 
 
 def _drifted_app(tmp_path, drop_columns=()):

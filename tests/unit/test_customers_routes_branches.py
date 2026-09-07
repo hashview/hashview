@@ -5,16 +5,13 @@ Extends test_customers_routes_guards.py to cover the remaining missing lines:
 - customers_delete: customer not found (lines 165-166)
 - customers_delete: uncracked-hash inner loop with try_commit failure (lines 192-194)
 
-Bug captured with xfail:
-- hashview/customers/routes.py:185-186: `customer_cnt` is a SQLAlchemy Query
-  object compared to an integer with `< 2`, which raises TypeError in Python 3.
-  This makes the delete route crash (500) whenever the customer has an uncracked
-  hash in their hashfiles. Fix: call `.count()` on the query first.
+The TypeError bug this file used to xfail (routes.py:185-186 comparing a raw
+Query object to an int) is fixed -- `.count()` is called before the
+comparison -- so `test_customers_delete_with_uncracked_hash_succeeds` below is
+a plain regression test now, not an xfail.
 """
 
 from unittest.mock import patch
-
-import pytest
 
 from hashview.models import (
     Customers,
@@ -124,27 +121,14 @@ def test_customers_delete_try_commit_failure_302(app, client):
     assert resp.status_code in (301, 302)
 
 
-# --------------------- Bug: uncracked-hash inner loop crashes with TypeError
+# ------------------- Regression: uncracked-hash inner loop (formerly crashed)
 
-@pytest.mark.xfail(
-    strict=False,  # non-strict: the bug is order-dependent and flakes XPASS in CI; fix tracked by #208/#258/#259
-    reason=(
-        "Bug at hashview/customers/routes.py:185-186: "
-        "`customer_cnt` is assigned a SQLAlchemy Query object via "
-        "`HashfileHashes.query.filter_by(hash_id=hash.id).distinct('customer_id')` "
-        "but is then compared to an integer with `if customer_cnt < 2`. "
-        "In Python 3, this raises TypeError: '<' not supported between instances "
-        "of 'Query' and 'int', causing a 500 error whenever a customer with an "
-        "uncracked hash is deleted. "
-        "Fix: call `.count()` — "
-        "`HashfileHashes.query.filter_by(hash_id=hash.id).distinct('customer_id').count()`"
-    ),
-)
 def test_customers_delete_with_uncracked_hash_succeeds(app, client):
     """Deleting a customer whose hashfile has an uncracked hash should work.
 
-    It currently raises TypeError at line 186 (Query < int comparison) and
-    returns a 500, so this test is marked xfail (non-strict) to document the bug.
+    This used to raise TypeError at routes.py:186 (a raw Query object compared
+    to an int, since `.count()` was missing) and return a 500; `.count()` is
+    now called before the comparison, so this is a plain regression test.
     """
     admin = _admin()
     _login(client, admin)

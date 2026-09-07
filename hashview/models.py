@@ -244,7 +244,7 @@ class Agents(db.Model):
     name = db.Column(db.String(100), nullable=False)         # can probably be reduced
     src_ip = db.Column(db.String(15), nullable=False)
     uuid = db.Column(db.String(60), nullable=False)          # can probably be reduced
-    status = db.Column(db.String(20), nullable=False)        # Pending, Syncing, Working, Idle
+    status = db.Column(db.String(20), nullable=False)        # Pending, Authorized, Working, Idle
     hc_status = db.Column(db.String(6000))
     last_checkin = db.Column(db.DateTime)
     # True once an "agent offline" admin alert has been sent; reset when the agent

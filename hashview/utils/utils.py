@@ -1516,8 +1516,9 @@ def _validate_hashfile(hashfile_path, line_validator):
     """Stream a hashfile and run line_validator(line, line_no) on each non-blank
     line; return the first error string, or False if every line passes.
 
-    Centralises shared robustness: safe decoding (latin-1 never raises on
-    binary/garbage uploads), streaming (no whole-file load into memory),
+    Centralises shared robustness: safe decoding (utf-8-sig with
+    errors='replace' never raises on binary/garbage uploads), streaming (no
+    whole-file load into memory),
     blank/whitespace-only line skipping, the per-line length cap, and an
     empty-file check.
     """

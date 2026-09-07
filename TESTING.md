@@ -21,7 +21,7 @@ gates.
 
 | Suite | Path | How it runs | Imports `hashview.*`? |
 | --- | --- | --- | --- |
-| Unit | `tests/unit/` (~78 files) | `pytest tests/unit` | Yes |
+| Unit | `tests/unit/` (~98 files) | `pytest tests/unit` | Yes |
 | Security | `tests/security/` | `pytest tests/security` (tests marked `security`) | Yes |
 | Agent unit | `tests/agent_unit/` | `pytest tests/agent_unit` | No (imports `agent.*`) |
 | Integration (MySQL) | `tests/integration/` | `pytest tests/integration -m mysql` | Yes |
@@ -37,6 +37,10 @@ Markers are declared in `pytest.ini`:
 - `e2e_crack` — dockerized multi-agent real-crack e2e test (opt-in)
 - `mysql` — integration tests that run against a real MySQL/MariaDB backend
   (needs `HASHVIEW_TEST_DATABASE_URI`)
+- `perf` — job-creation / API performance tests (opt-in; needs a live host
+  seeded by `tests/seed_perf_db.py`; see "Performance suites" below)
+- `migration` — end-to-end main->dev database migration test (needs docker and
+  built images; see "CI workflows" below)
 - `docker_analytics` — `/analytics` bug hunt against a running docker stack
   (needs `HASHVIEW_DOCKER_BASE_URL`)
 
@@ -357,7 +361,7 @@ The unit job measures more than a single line number:
 
 ## CI workflows
 
-Six workflows run on push / PR (plus one scheduled). Each gates a distinct
+Eight workflows run on push / PR (plus one scheduled). Each gates a distinct
 slice:
 
 | Workflow | Trigger | What it gates |
@@ -365,6 +369,7 @@ slice:
 | `unit-tests.yml` | push, PR | Unit + security + agent tests on Python 3.11/3.12/3.13 with the line ratchet, branch coverage, the function gate, and the agent coverage gate. The 3.11 leg uploads `coverage.xml`; pushes to the dev/main branches also publish a coverage badge. |
 | `e2e.yml` | push, PR | The Playwright e2e suite via `run_e2e_compose.sh`, under `HASHVIEW_E2E_STRICT=1` + a deterministic `HASHVIEW_E2E_*` env block. |
 | `e2e-crack.yml` | push, PR | The multi-agent real-crack harness via `run_e2e_crack_compose.sh`, using a pinned + checksummed SecLists rockyou. |
+| `migration-e2e.yml` | push, PR | The end-to-end main->dev database migration test (see below). |
 | `db-parity.yml` | push, PR | MySQL/MariaDB parity (see below). |
 | `lint.yml` | push, PR | Ruff lint, Bandit SAST vs the committed baseline (server + agent), `pip-audit` of production deps, and OpenAPI spec validation. |
 | `pylint.yml` | push | Pylint across Python 3.11/3.12/3.13. |
@@ -386,6 +391,23 @@ Both are driven by `HASHVIEW_TEST_DATABASE_URI`
 (`mysql+mysqlconnector://...?charset=utf8mb4`). The same variable, when set,
 also overrides the unit-test database URI (`tests/unit/conftest.py`), and the
 integration tests skip cleanly when it is unset (local dev).
+
+## Migration E2E (`migration-e2e.yml`)
+
+Builds a `hashview:main` image from `origin/main` and a `hashview:dev` image
+from the checkout, then cycles a MySQL compose stack through
+`tests/run_migration_e2e.sh` to prove the real main->dev Alembic chain applies
+cleanly against a database seeded by the older schema — the class of bug
+neither the SQLite unit suite nor `db-parity.yml`'s from-empty-schema run can
+see.
+
+**Whenever you add an Alembic migration, bump the hardcoded `DEV_HEAD`
+revision id in all three places that pin it, or this workflow and
+`test_migration_drift_idempotency` fail against the stale head:**
+
+- `tests/run_migration_e2e.sh`
+- `tests/integration/test_migration_e2e.py`
+- `tests/unit/test_migration_drift_idempotency.py`
 
 ## Mutation testing (`mutation.yml`)
 

@@ -14,6 +14,7 @@ import requests
 from flask import after_this_request, current_app, send_from_directory, url_for
 from flask_mail import Message
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.sql import exists
 
 from hashview.models import (
     AgentBenchmarks,
@@ -100,6 +101,29 @@ def try_commit(context=''):
         db.session.rollback()
         current_app.logger.exception('DB commit failed: %s', context)
         return False
+
+
+def purge_orphaned_hashes():
+    """Delete uncracked hashes no hashfile links to any more, and notifications
+    whose hash is gone. Two set-based statements; does NOT commit, so the
+    caller owns the transaction.
+
+    Shared by every cascade-delete path (hashfile, bulk hashfile, customer) so
+    they cannot drift apart. Deliberately expressed as "nothing references this
+    any more" rather than as a per-hash reference count: a NOT EXISTS states the
+    invariant directly and cannot orphan a link belonging to someone else,
+    whereas a count has to be read together with whatever else the surrounding
+    loop has already deleted in the same transaction.
+
+    Cracked hashes are kept on purpose — recovered plaintext outlives the
+    hashfile it arrived in.
+    """
+    Hashes.query.filter(Hashes.cracked == 0).filter(
+        ~exists().where(HashfileHashes.hash_id == Hashes.id)
+    ).delete(synchronize_session=False)
+    HashNotifications.query.filter(
+        ~exists().where(Hashes.id == HashNotifications.hash_id)
+    ).delete(synchronize_session=False)
 
 
 def save_file(path, form_file):

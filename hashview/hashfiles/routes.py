@@ -14,14 +14,13 @@ from hashview.models import (
     Hashes,
     HashfileHashes,
     Hashfiles,
-    HashNotifications,
     Jobs,
     JobTasks,
     Users,
     db,
 )
 from hashview.utils.audit import log_event
-from hashview.utils.utils import try_commit
+from hashview.utils.utils import purge_orphaned_hashes, try_commit
 
 hashfiles = Blueprint('hashfiles', __name__)
 
@@ -150,12 +149,7 @@ def _cascade_delete_hashfile(hashfile):
     """
     HashfileHashes.query.filter_by(hashfile_id=hashfile.id).delete(synchronize_session=False)
     db.session.delete(hashfile)
-    Hashes.query.filter(Hashes.cracked == 0).filter(
-        ~exists().where(HashfileHashes.hash_id == Hashes.id)
-    ).delete(synchronize_session=False)
-    HashNotifications.query.filter(
-        ~exists().where(Hashes.id == HashNotifications.hash_id)
-    ).delete(synchronize_session=False)
+    purge_orphaned_hashes()
     return try_commit(f'delete hashfile {hashfile.id}')
 
 

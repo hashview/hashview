@@ -10,12 +10,11 @@ from hashview.models import (
     Hashes,
     HashfileHashes,
     Hashfiles,
-    HashNotifications,
     Jobs,
     db,
 )
 from hashview.utils.audit import log_event
-from hashview.utils.utils import try_commit
+from hashview.utils.utils import purge_orphaned_hashes, try_commit
 
 
 def _hash_type_names():
@@ -44,39 +43,64 @@ customers = Blueprint('customers', __name__)
 def customers_list():
     """Function to return list of customers"""
     customers = Customers.query.order_by(Customers.name).all()
-    jobs = Jobs.query.all()
-    hashfiles = Hashfiles.query.all()
 
-    # Per-customer counts + recovered % (cracked/total across the customer's hashfiles).
-    job_count = {}
-    for j in jobs:
-        job_count[j.customer_id] = job_count.get(j.customer_id, 0) + 1
-    hf_by_customer = {}
-    for hf in hashfiles:
-        hf_by_customer.setdefault(hf.customer_id, []).append(hf.id)
+    # Per-customer counts + recovered % (cracked/total across the customer's
+    # hashfiles), as four set-based queries that are flat in customer count.
+    #
+    # This was one COUNT+SUM(CASE) aggregate per customer, joining `hashes` to
+    # `hashfile_hashes`. Its cost scaled with the whole junction table rather
+    # than with the page, because ~94% of each query was a clustered-index
+    # probe into `hashes` to read the single `cracked` boolean.
+    #
+    # The two hash aggregates are deliberately kept SEPARATE rather than folded
+    # into one grouped query: `total` is then index-only over
+    # ix_hashfile_hashes_hashfile_id and never reads `hashes` at all, and
+    # `cracked` drives off ix_hashes_cracked_recovered_at so it scales with the
+    # recovered population instead of total hash volume. A single grouped
+    # COUNT+SUM(CASE) measured *slower* than the per-customer loop it would
+    # replace -- it still joins every junction row to `hashes` and cannot use
+    # the cracked index. Don't "simplify" these back into one query.
+    job_count = dict(
+        db.session.query(Jobs.customer_id, func.count(Jobs.id))
+        .group_by(Jobs.customer_id).all()
+    )
+    hf_count = dict(
+        db.session.query(Hashfiles.customer_id, func.count(Hashfiles.id))
+        .group_by(Hashfiles.customer_id).all()
+    )
+    # Counting junction rows equals the old COUNT over joined `hashes` rows
+    # because every hashfile_hashes row references a live hash: both delete
+    # paths (_cascade_delete_hashfile, customers_delete) remove the junction
+    # row together with, or ahead of, the hash it points at.
+    totals = dict(
+        db.session.query(Hashfiles.customer_id, func.count(HashfileHashes.id))
+        .join(HashfileHashes, HashfileHashes.hashfile_id == Hashfiles.id)
+        .group_by(Hashfiles.customer_id).all()
+    )
+    cracked_counts = dict(
+        db.session.query(Hashfiles.customer_id, func.count(Hashes.id))
+        .join(HashfileHashes, HashfileHashes.hashfile_id == Hashfiles.id)
+        .join(Hashes, Hashes.id == HashfileHashes.hash_id)
+        .filter(Hashes.cracked == True)
+        .group_by(Hashfiles.customer_id).all()
+    )
 
+    # .get(id, 0) throughout: a customer with no hashfiles -- or none cracked --
+    # has no row in the corresponding result and must still render as 0.
     customer_stats = {}
     for customer in customers:
-        hf_ids = hf_by_customer.get(customer.id, [])
-        total = cracked = 0
-        if hf_ids:
-            agg = db.session.query(
-                func.count(Hashes.id),
-                func.coalesce(func.sum(case((Hashes.cracked == True, 1), else_=0)), 0)
-            ).join(HashfileHashes, Hashes.id == HashfileHashes.hash_id) \
-             .filter(HashfileHashes.hashfile_id.in_(hf_ids)).first()
-            total = agg[0] or 0
-            cracked = int(agg[1] or 0)
+        total = int(totals.get(customer.id, 0))
+        cracked = int(cracked_counts.get(customer.id, 0))
         customer_stats[customer.id] = {
             'jobs': job_count.get(customer.id, 0),
-            'hashfiles': len(hf_ids),
+            'hashfiles': hf_count.get(customer.id, 0),
             'total': total,
             'cracked': cracked,
             'pct': round(cracked / total * 100) if total else 0,
         }
 
-    return render_template('customers.html.j2', title='Customers', customers=customers, jobs=jobs,
-                           hashfiles=hashfiles, customer_stats=customer_stats,
+    return render_template('customers.html.j2', title='Customers', customers=customers,
+                           customer_stats=customer_stats,
                            customersForm=CustomersForm(),
                            form_err=session.pop('customers_form_err', None))
 
@@ -184,20 +208,29 @@ def customers_delete(customer_id):
         flash('Unable to delete. Customer has active job', 'danger')
         return redirect(url_for('customers.customers_list'))
 
-    # remove associated hash files & hashes & Hash Notifications
-    hashfiles = Hashfiles.query.filter_by(customer_id=customer_id)
-    for hashfile in hashfiles:
-        hashfile_hashes = HashfileHashes.query.filter_by(hashfile_id = hashfile.id).all()
-        for hashfile_hash in hashfile_hashes:
-            hashes = Hashes.query.filter_by(id=hashfile_hash.hash_id, cracked=0).all()
-            for hash in hashes:
-                # Check to see if our hashfile is the ONLY hashfile for this customer that has this hash
-                customer_cnt = HashfileHashes.query.filter_by(hash_id=hash.id).distinct('customer_id').count()
-                if customer_cnt < 2:
-                    db.session.delete(hash)
-                    HashNotifications.query.filter_by(hash_id=hashfile_hash.hash_id).delete()
-            db.session.delete(hashfile_hash)
-        db.session.delete(hashfile)
+    # Remove the customer's hashfiles, their hash links, and anything left
+    # orphaned by them -- in four statements, not one query per hash.
+    #
+    # This was a triple-nested loop (hashfiles -> links -> a per-hash lookup ->
+    # a per-hash reference count), so deleting a customer with 700k hashes
+    # issued ~700k queries and would hang or half-complete.
+    #
+    # The reference count it used, `.distinct('customer_id')`, was also unsound:
+    # that is DISTINCT ON, which SQLAlchemy silently ignores outside PostgreSQL
+    # and warns will raise in a future release, and hashfile_hashes has no
+    # customer_id column anyway. It therefore counted junction rows. That
+    # happened to reach the right answer only because the loop deleted each link
+    # as it went, so the count fell to 1 by the last hashfile holding the hash --
+    # correct by accident, and only while the surrounding loop kept its exact
+    # shape. NOT EXISTS states the intended rule outright.
+    hashfile_ids = [row[0] for row in
+                    db.session.query(Hashfiles.id).filter_by(customer_id=customer_id).all()]
+    if hashfile_ids:
+        HashfileHashes.query.filter(HashfileHashes.hashfile_id.in_(hashfile_ids)) \
+            .delete(synchronize_session=False)
+        Hashfiles.query.filter(Hashfiles.id.in_(hashfile_ids)) \
+            .delete(synchronize_session=False)
+    purge_orphaned_hashes()
     db.session.delete(customer)
     if not try_commit(f'delete customer {customer_id}'):
         flash('Customer could not be deleted — it may have already been removed.', 'danger')

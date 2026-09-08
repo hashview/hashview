@@ -767,8 +767,8 @@ def v1_api_add_rule(rule_name):
 
 
 # Replace an existing rule's content in place (same id, same name)
-@api.route('/v1/rules/<int:rule_id>', methods=['PUT'])
-def v1_api_update_rule(rule_id):
+@api.route('/v1/rules/<int:rules_id>', methods=['PUT'])
+def v1_api_update_rule(rules_id):
     # User-upload action (resolves the caller to a Users row by api_key), so
     # it's user-only — the agent only GETs rules, it never PUTs here.
     if not is_authorized(user=True, agent=False, request=request):
@@ -779,7 +779,7 @@ def v1_api_update_rule(rule_id):
     if not user:
         return jsonify({'status': 403, 'type': 'Error', 'msg': 'User not found'})
 
-    rule = Rules.query.get(rule_id)
+    rule = Rules.query.get(rules_id)
     if rule is None:
         return jsonify({'status': 404, 'type': 'Error', 'msg': 'Rule not found'}), 404
 
@@ -833,10 +833,20 @@ def v1_api_update_rule(rule_id):
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-    replace_file_atomic(tmp_final, rule.path)
-    rule.size = get_linecount(rule.path)
-    rule.checksum = get_filehash(rule.path)
-    db.session.commit()
+    try:
+        replace_file_atomic(tmp_final, rule.path)
+        rule.size = get_linecount(rule.path)
+        rule.checksum = get_filehash(rule.path)
+        db.session.commit()
+    except Exception:
+        current_app.logger.exception('API /v1/rules: failed to swap in rule update')
+        if os.path.exists(tmp_final):
+            os.remove(tmp_final)
+        return jsonify({
+            'status': 500,
+            'type': 'Error',
+            'msg': 'Failed to save rule update.'
+        })
 
     log_event('rule.update', actor=(user.email_address, user.id),
               target=f'rule:{rule.id} {rule.name!r}')

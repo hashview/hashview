@@ -1148,6 +1148,35 @@ def test_rules_put_empty_body_returns_400(client, app, admin_user, tmp_path, mon
 
 
 @pytest.mark.security
+def test_rules_put_bad_gzip_leaves_original_intact(
+    client, app, admin_user, tmp_path, monkeypatch
+):
+    """A malformed gzip body is rejected with 400, the existing rule file is
+    left untouched, and no orphan temp file remains in control/tmp."""
+    _rules_dirs(app, tmp_path, monkeypatch)
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    add_resp = client.post("/v1/rules/add/my-rules", data="$1\n$2",
+                           content_type="text/plain")
+    rule_id = _json_body(add_resp)["rule_id"]
+    row_before = Rules.query.get(rule_id)
+    original_content = open(row_before.path, "rb").read()
+    original_checksum = row_before.checksum
+
+    resp = client.put(f"/v1/rules/{rule_id}",
+                      data=b"\x1f\x8bthis is not a real gzip stream",
+                      content_type="application/octet-stream")
+    body = _json_body(resp)
+    assert body["status"] == 400
+
+    row_after = Rules.query.get(rule_id)
+    assert row_after.checksum == original_checksum
+    with open(row_after.path, "rb") as fh:
+        assert fh.read() == original_content
+    tmp_dir = os.path.join(str(tmp_path), "control", "tmp")
+    assert os.listdir(tmp_dir) == []
+
+
+@pytest.mark.security
 def test_rules_put_non_owner_non_admin_returns_403(client, app, tmp_path, monkeypatch):
     _rules_dirs(app, tmp_path, monkeypatch)
     owner = Users(first_name="Own", last_name="Er", email_address="owner@example.test",

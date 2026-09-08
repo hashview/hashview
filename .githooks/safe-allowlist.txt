@@ -104,3 +104,9 @@ FCF7C1B8749CF99D88E5F34271D636178FB5D130
 # the shared prefix so the pattern also matches this very line, which the
 # generic secret-assign rule flags whenever it is added or moved.
 api_key="user-api-key-
+
+# --- tests/unit/test_api_endpoints.py (issue #399 PUT rules/wordlists) ---
+# Dummy api_key literals for the owner/non-owner ownership-check fixtures.
+# Not real secrets.
+api_key="owner-key"
+api_key="other-key"

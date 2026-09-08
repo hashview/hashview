@@ -697,29 +697,67 @@ def hexplain_to_text(hexplain):
     except ValueError:
         return s
 
-# AD password-history rows are '<name>_history<n>' (secretsdump.py -history);
-# some dumpers omit the index. Anchored so a real account merely containing
-# '_history' (e.g. 'bob_historyclub') is kept, case-insensitive so an uppercased
-# dump is still recognised.
-_HISTORY_SUFFIX_RE = re.compile(r'_history\d*$', re.IGNORECASE)
+# secretsdump.py -history's first (most recent) history row duplicates the
+# account's own current-password hash, so it is only worth dropping when the
+# account's current-password row is also present in the same file; older
+# history rows ('_history1', '_history2', ...) are real, distinct passwords
+# and are always kept. Some dumpers omit the index for this first row, hence
+# the optional '0'. Case-insensitive so an uppercased dump is still recognised.
+_HISTORY_ZERO_RE = re.compile(r'_history0?$', re.IGNORECASE)
 
-# Modes where machine-account/history semantics apply, i.e. the AD-fed NTLM
-# family: 1000 NTLM, 2100 DCC2, 3000 LM. Only consulted for the generic
-# 'user:hash'/'hash_only' formats, where a trailing-'$' username in a non-AD
-# dump (an MD5 web-app export, say) is a real account. NetNTLM modes are absent
-# on purpose: their ciphertexts are colon-delimited, so they arrive as
-# file_type 'NetNTLM', which filters unconditionally.
-_NTLM_FAMILY_HASH_TYPES = {'1000', '2100', '3000'}
+# Modes where machine-account semantics apply: 1000 NTLM, 3000 LM. Only
+# consulted for the generic 'user:hash' format, where a trailing-'$' username
+# in a non-AD dump (an MD5 web-app export, say) is a real account. 2100 (DCC2)
+# is deliberately excluded: domain cached credentials cache interactive
+# logons for user accounts, not computer accounts, so a trailing '$' there is
+# never a machine account. NetNTLM modes are absent on purpose: their
+# ciphertexts are colon-delimited, so they arrive as file_type 'NetNTLM',
+# which filters unconditionally.
+_NTLM_FAMILY_HASH_TYPES = {'1000', '3000'}
+
+# Modes where a '_history0' row is a secretsdump.py artifact worth checking
+# for duplication: the NTLM family plus DCC2. A generic 'user:hash' dump (an
+# MD5 web-app export, say) gets no history-zero check, since '_history0'
+# there is just an unrelated real username.
+_AD_HISTORY_HASH_TYPES = _NTLM_FAMILY_HASH_TYPES | {'2100'}
 
 
-def is_machine_or_history_account(username):
-    """True for usernames Hashview must not import from an AD dump: machine
-    accounts (trailing '$', whose 120-char random password will never crack) and
-    NTLM password-history rows. Both inflate the account count and depress the
-    reported crack rate, and nothing filters at report time -- import is the
-    only place to drop them."""
+def is_machine_account(username):
+    """True for usernames ending in '$': AD machine accounts, whose 120-char
+    random password will never crack. Applied to every AD-fed format (pwdump,
+    user_hash NTLM family, DCC2, NetNTLM) since it inflates the account count
+    and depresses the reported crack rate, and nothing filters at report time --
+    import is the only place to drop it."""
     name = (username or '').strip()
-    return name.endswith('$') or bool(_HISTORY_SUFFIX_RE.search(name))
+    return name.endswith('$')
+
+
+def history_zero_base_name(username):
+    """If username is a '_history0' (or bare '_history') row, return its base
+    account name with the suffix stripped; otherwise None. Used to detect a
+    history row that duplicates its account's current-password row, which is
+    only droppable when that current-password row is also in the file."""
+    name = (username or '').strip()
+    match = _HISTORY_ZERO_RE.search(name)
+    if not match:
+        return None
+    return name[:match.start()]
+
+
+def _raw_username_for_history_check(line, file_type, hash_type):
+    """Best-effort raw username extraction used only to build the set of
+    usernames present in a hashfile, so a '_history0' row can be checked
+    against its base account (issue #412). Malformed lines yield None rather
+    than raising, since the main import loop is what surfaces those errors."""
+    try:
+        if file_type == 'hash_only' and str(hash_type) == '2100':
+            fields = line.lower().rstrip().split('#')
+            return fields[1] if len(fields) > 1 else None
+        if file_type in ('user_hash', 'pwdump', 'NetNTLM') and ':' in line:
+            return line.split(':')[0]
+    except IndexError:
+        return None
+    return None
 
 
 def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
@@ -730,6 +768,18 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
     file = open(hashfile_path, encoding='utf-8', errors='surrogateescape')
     lines = file.readlines()
 
+    # Usernames present in the file as their own row (not stripped of any
+    # suffix), so a '_history0' row can be recognised as a duplicate of its
+    # account's current-password row and dropped only then (issue #412).
+    present_usernames = {
+        raw.strip().lower()
+        for raw in (
+            _raw_username_for_history_check(line, file_type, hash_type)
+            for line in lines
+        )
+        if raw
+    }
+
     # for line in file,
     for line in lines:
         # If line is empty:
@@ -737,13 +787,14 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
         if len(line) > 0:
             if file_type == 'hash_only':
                 # DCC2 is the one hash_only mode whose ciphertext carries a
-                # username (extracted below), so it is the one that can carry an
-                # AD machine account. Filter before import_hash_only() or the
-                # ciphertext orphans in `hashes` and still gets cracked.
+                # username, so it is the one that can carry a '_history0' row
+                # duplicating its account's current-password row (#412).
                 if str(hash_type) == '2100':
                     dcc2_fields = line.lower().rstrip().split('#')
-                    if len(dcc2_fields) > 1 and is_machine_or_history_account(dcc2_fields[1]):
-                        continue
+                    if len(dcc2_fields) > 1:
+                        base = history_zero_base_name(dcc2_fields[1])
+                        if base is not None and base.strip().lower() in present_usernames:
+                            continue
                 # forcing lower casing of hash as hashcat will return lower cased version of the has and we want to match what we imported.
                 if hash_type in ('300', '1731', '1000'):
                     hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
@@ -761,12 +812,18 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
             elif file_type == 'user_hash':
                 if ':' in line:
                     # NTDS dumps are routinely cut down to 'user:nthash', so AD
-                    # machine accounts and history rows reach this format too.
-                    # Filter before import_hash_only() or the ciphertext orphans
-                    # in `hashes` and still gets cracked. hash_type arrives as an
-                    # int on the API path (routes.py takes <int:hash_type>).
+                    # machine accounts and duplicate '_history0' rows (#412)
+                    # reach this format too. Filter before import_hash_only()
+                    # or the ciphertext orphans in `hashes` and still gets
+                    # cracked. hash_type arrives as an int on the API path
+                    # (routes.py takes <int:hash_type>).
+                    candidate_username = line.split(':')[0]
                     if (str(hash_type) in _NTLM_FAMILY_HASH_TYPES
-                            and is_machine_or_history_account(line.split(':')[0])):
+                            and is_machine_account(candidate_username)):
+                        continue
+                    base = history_zero_base_name(candidate_username)
+                    if (str(hash_type) in _AD_HISTORY_HASH_TYPES
+                            and base is not None and base.strip().lower() in present_usernames):
                         continue
                     if hash_type == '300' or hash_type == '1731':
                         hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
@@ -793,11 +850,14 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                 username = line.split(':')[0]
             elif file_type == 'pwdump':
                 # do we let user select LM so that we crack those instead of NTLM?
-                if is_machine_or_history_account(line.split(':')[0]):
+                candidate_username = line.split(':')[0]
+                base = history_zero_base_name(candidate_username)
+                if is_machine_account(candidate_username) or (
+                        base is not None and base.strip().lower() in present_usernames):
                     continue
                 else:
                     hash_id = import_hash_only(line=line.split(':')[3].lower(), hash_type='1000')
-                    username = line.split(':')[0]
+                    username = candidate_username
             elif file_type == 'kerberos':
                 hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
                 if hash_type == '18200':
@@ -805,8 +865,12 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                 else:
                     username = line.split('$')[3]
             elif file_type == 'NetNTLM':
-                # 5600, domain is case sensitve. Hashcat returns username in upper case.
-                if is_machine_or_history_account(line.split(':')[0]):
+                # 5600, domain is case sensitve. Hashcat returns username in
+                # upper case.
+                candidate_username = line.split(':')[0]
+                base = history_zero_base_name(candidate_username)
+                if is_machine_account(candidate_username) or (
+                        base is not None and base.strip().lower() in present_usernames):
                     continue
                 else:
                     # uppercase uesrname in line

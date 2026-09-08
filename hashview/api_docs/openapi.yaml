@@ -482,6 +482,61 @@ paths:
               example: {status: 404, type: Error, msg: Rule not found}
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
+    put:
+      tags: [Rules]
+      summary: Replace a rule's content in place
+      description: >-
+        Overwrites the rule's file content without changing its id or name.
+        The request body is the RAW file bytes (NOT multipart/form-data):
+        plain text or a gzip stream (decompressed server-side; rules are
+        stored plaintext at rest). Refused with 409 if a Task using this
+        rule has a currently Running JobTasks entry.
+      operationId: updateRule
+      x-audience: user
+      security:
+        - userApiKey: []
+      parameters:
+        - name: rules_id
+          in: path
+          required: true
+          schema: {type: integer}
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema: {type: string}
+          application/gzip:
+            schema: {type: string, format: binary}
+      responses:
+        '200':
+          description: >-
+            HTTP 200 with `rule_id`, 400 on an empty body or invalid gzip,
+            403 if the key resolves to no user or the caller doesn't own the
+            rule, 409 if a Running task uses this rule.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RuleAddedResponse'
+                  - $ref: '#/components/schemas/ApiError'
+              examples:
+                updated: {value: {status: 200, type: message, msg: Rule updated, rule_id: 4}}
+        '404':
+          description: Unknown rule id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example: {status: 404, type: Error, msg: Rule not found}
+        '409':
+          description: A Task using this rule has a currently Running JobTasks entry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example: {status: 409, type: Error, msg: Rule is in use by a currently running task}
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
 
   /v1/rules/add/{rule_name}:
     post:
@@ -579,6 +634,63 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
               example: {status: 404, type: Error, msg: Wordlist not found}
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
+    put:
+      tags: [Wordlists]
+      summary: Replace a static wordlist's content in place
+      description: >-
+        Overwrites the wordlist's stored file without changing its id or
+        name. The request body is the RAW file bytes (NOT multipart/form-data):
+        plain text or a gzip stream — either way it is stored gzip-compressed
+        at rest and `size`/`byte_size`/`checksum` are recomputed. Refused with
+        400 for a `type: dynamic` wordlist (those are regenerated from the
+        database) and with 409 if a Task using this wordlist has a currently
+        Running JobTasks entry.
+      operationId: updateWordlist
+      x-audience: user
+      security:
+        - userApiKey: []
+      parameters:
+        - name: wordlist_id
+          in: path
+          required: true
+          schema: {type: integer}
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema: {type: string}
+          application/gzip:
+            schema: {type: string, format: binary}
+      responses:
+        '200':
+          description: >-
+            HTTP 200 with `wordlist_id`, 400 on an empty body, invalid gzip,
+            or a dynamic wordlist, 403 if the key resolves to no user or the
+            caller doesn't own the wordlist, 409 if a Running task uses it.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/WordlistAddedResponse'
+                  - $ref: '#/components/schemas/ApiError'
+              examples:
+                updated: {value: {status: 200, type: message, msg: Wordlist updated, wordlist_id: 6}}
+        '404':
+          description: Unknown wordlist id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example: {status: 404, type: Error, msg: Wordlist not found}
+        '409':
+          description: A Task using this wordlist has a currently Running JobTasks entry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example: {status: 409, type: Error, msg: Wordlist is in use by a currently running task}
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
 
@@ -1508,7 +1620,7 @@ components:
       properties:
         status:
           type: integer
-          enum: [400, 403, 404, 426, 500]
+          enum: [400, 403, 404, 409, 426, 500]
         type:
           type: string
           enum: [Error, message]

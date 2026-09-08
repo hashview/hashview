@@ -41,6 +41,7 @@ Notable changes will be documented here
 - `POST /v1/task_groups/add` -- create a task group and its ordered task membership in one call (#401)
 - `POST /v1/task_groups/<task_group_id>/tasks` -- replace or append a task group's task membership (#401)
 - `DELETE /v1/task_groups/<task_group_id>` -- delete a task group, owner/admin only (#401)
+- `PUT /v1/rules/<id>` and `PUT /v1/wordlists/<id>` to replace an existing rule's or static wordlist's content in place (same id, same name) — refused with 409 if a task using the resource has a currently running job (#399)
 
 **Encrypted Database Backup**
 - Download an encrypted `mysqldump` of the database from Settings -> Data Management, protected by a one-time password

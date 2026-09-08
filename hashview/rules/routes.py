@@ -21,6 +21,7 @@ from hashview.utils.utils import (
     apply_name_filter,
     get_filehash,
     get_linecount,
+    resource_in_running_task,
     save_file,
     try_commit,
 )
@@ -193,6 +194,9 @@ def rules_view(rule_id):
     if request.method == 'POST':
         if not can_edit:
             flash('Unauthorized action!', 'danger')
+            return redirect(url_for('rules.rules_view', rule_id=rule.id))
+        if resource_in_running_task(rule_id=rule.id):
+            flash('Rule is in use by a currently running task and cannot be edited.', 'danger')
             return redirect(url_for('rules.rules_view', rule_id=rule.id))
         new_content = request.form.get('content')
         try:

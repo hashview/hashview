@@ -17,6 +17,7 @@ from hashview.models import (
     Hashfiles,
     HashNotifications,
     JobNotifications,
+    JobTasks,
     Rules,
     Settings,
     Tasks,
@@ -250,6 +251,24 @@ class TestRulesView:
                            follow_redirects=True)
         # Flash 'Unauthorized action!' and redirect
         assert b"Unauthorized" in resp.data or resp.status_code in (301, 302)
+        assert open(path).read() == "original\n"
+
+    def test_view_post_refused_when_running_job(self, app, client, tmp_path):
+        """A rule referenced by a Task with a Running JobTasks row cannot be
+        edited in place — same guard as the API's PUT /v1/rules/<id>."""
+        admin = _admin()
+        _login(client, admin)
+        path = _make_rule_file(tmp_path, content="original\n")
+        rule = _make_rule(admin.id, path)
+        task = _make_task_using_rule(admin.id, rule.id)
+        jt = JobTasks(job_id=1, task_id=task.id, status="Running")
+        db.session.add(jt)
+        db.session.commit()
+
+        resp = client.post(f"/rules/edit/{rule.id}",
+                           data={"content": "hacked\n"},
+                           follow_redirects=True)
+        assert b"running task" in resp.data.lower() or resp.status_code in (301, 302)
         assert open(path).read() == "original\n"
 
     def test_view_post_not_found_redirects(self, app, client):

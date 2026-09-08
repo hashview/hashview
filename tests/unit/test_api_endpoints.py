@@ -193,6 +193,110 @@ def test_wordlists_add_writes_file_and_creates_row(
 
 
 @pytest.mark.security
+def test_wordlists_put_replaces_content_keeps_id_and_name(
+    client, app, admin_user, tmp_path, monkeypatch
+):
+    """PUT /v1/wordlists/<id> ingests new content, keeps the row's id/name,
+    and removes the old on-disk file."""
+    import gzip
+
+    monkeypatch.setattr(app, "root_path", str(tmp_path))
+    os.makedirs(os.path.join(str(tmp_path), "control", "wordlists"), exist_ok=True)
+    os.makedirs(os.path.join(str(tmp_path), "control", "tmp"), exist_ok=True)
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    add_resp = client.post("/v1/wordlists/add/my-list", data="alpha\nbeta\n",
+                           content_type="text/plain")
+    wl_id = _json_body(add_resp)["wordlist_id"]
+    old_path = Wordlists.query.get(wl_id).path
+
+    new_body = "gamma\ndelta\nepsilon\n"
+    resp = client.put(f"/v1/wordlists/{wl_id}", data=new_body,
+                      content_type="text/plain")
+    body = _json_body(resp)
+    assert body["status"] == 200
+    assert body["wordlist_id"] == wl_id
+
+    row = Wordlists.query.get(wl_id)
+    assert row.id == wl_id
+    assert row.name == "my-list"
+    assert row.path != old_path
+    assert not os.path.exists(old_path)
+    with gzip.open(row.path, "rb") as fh:
+        assert fh.read() == new_body.encode()
+    assert row.size == 4
+
+
+@pytest.mark.security
+def test_wordlists_put_dynamic_returns_400(client, app, admin_user, tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "root_path", str(tmp_path))
+    os.makedirs(os.path.join(str(tmp_path), "control", "wordlists"), exist_ok=True)
+    os.makedirs(os.path.join(str(tmp_path), "control", "tmp"), exist_ok=True)
+
+    dyn = Wordlists(name="dyn", owner_id=admin_user.id, type="dynamic",
+                    path="/tmp/dyn.txt", size=0, byte_size=0, checksum="c" * 64)
+    _db.session.add(dyn)
+    _db.session.commit()
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.put(f"/v1/wordlists/{dyn.id}", data="x", content_type="text/plain")
+    body = _json_body(resp)
+    assert resp.status_code == 400
+    assert body["status"] == 400
+
+
+@pytest.mark.security
+def test_wordlists_put_not_found_returns_404(client, admin_user):
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.put("/v1/wordlists/424242", data="x", content_type="text/plain")
+    assert resp.status_code == 404
+    assert _json_body(resp)["status"] == 404
+
+
+@pytest.mark.security
+def test_wordlists_put_empty_body_returns_400(client, app, admin_user, tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "root_path", str(tmp_path))
+    os.makedirs(os.path.join(str(tmp_path), "control", "wordlists"), exist_ok=True)
+    os.makedirs(os.path.join(str(tmp_path), "control", "tmp"), exist_ok=True)
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    add_resp = client.post("/v1/wordlists/add/my-list", data="alpha\n",
+                           content_type="text/plain")
+    wl_id = _json_body(add_resp)["wordlist_id"]
+
+    resp = client.put(f"/v1/wordlists/{wl_id}", data="", content_type="text/plain")
+    body = _json_body(resp)
+    assert body["status"] == 400
+    assert "Missing" in body["msg"]
+
+
+@pytest.mark.security
+def test_wordlists_put_refused_when_running_job_returns_409(
+    client, app, admin_user, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(app, "root_path", str(tmp_path))
+    os.makedirs(os.path.join(str(tmp_path), "control", "wordlists"), exist_ok=True)
+    os.makedirs(os.path.join(str(tmp_path), "control", "tmp"), exist_ok=True)
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    add_resp = client.post("/v1/wordlists/add/my-list", data="alpha\n",
+                           content_type="text/plain")
+    wl_id = _json_body(add_resp)["wordlist_id"]
+
+    task = Tasks(name="t", owner_id=admin_user.id, wl_id=wl_id,
+                 hc_attackmode=0, loopback=False)
+    _db.session.add(task)
+    _db.session.commit()
+    jt = JobTasks(job_id=1, task_id=task.id, status="Running")
+    _db.session.add(jt)
+    _db.session.commit()
+
+    resp = client.put(f"/v1/wordlists/{wl_id}", data="beta\n", content_type="text/plain")
+    assert resp.status_code == 409
+    assert _json_body(resp)["status"] == 409
+
+
+@pytest.mark.security
 def test_jobs_start_rejects_agent_cookie(client, authorized_agent):
     """POST /v1/jobs/start/<id> with an agent cookie redirects to not_authorized.
 

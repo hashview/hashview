@@ -980,6 +980,95 @@ def v1_api_add_wordlist(wordlist_name):
     }
     return jsonify(message)
 
+# Replace an existing static wordlist's content in place (same id, same name)
+@api.route('/v1/wordlists/<int:wordlist_id>', methods=['PUT'])
+def v1_api_update_wordlist(wordlist_id):
+    # User-upload action — user-only, same reasoning as v1_api_update_rule.
+    if not is_authorized(user=True, agent=False, request=request):
+        return redirect("/v1/not_authorized")
+
+    user_uuid = request.cookies.get('uuid')
+    user = Users.query.filter_by(api_key=user_uuid).first()
+    if not user:
+        return jsonify({'status': 403, 'type': 'Error', 'msg': 'User not found'})
+
+    wordlist = Wordlists.query.get(wordlist_id)
+    if wordlist is None:
+        return jsonify({'status': 404, 'type': 'Error', 'msg': 'Wordlist not found'}), 404
+
+    # Dynamic lists are regenerated from the DB via /v1/updateWordlist/<id>;
+    # their content is not the caller's to set.
+    if wordlist.type == 'dynamic':
+        return jsonify({
+            'status': 400,
+            'type': 'Error',
+            'msg': 'Dynamic wordlists are regenerated from the database and cannot have their content replaced'
+        }), 400
+
+    if not (user.admin or wordlist.owner_id == user.id):
+        return jsonify({
+            'status': 403,
+            'type': 'Error',
+            'msg': 'You do not have rights to update this wordlist'
+        }), 403
+
+    if resource_in_running_task(wl_id=wordlist.id):
+        return jsonify({
+            'status': 409,
+            'type': 'Error',
+            'msg': 'Wordlist is in use by a currently running task'
+        }), 409
+
+    raw_content = request.get_data()
+    if not raw_content:
+        return jsonify({
+            'status': 400,
+            'type': 'Error',
+            'msg': 'Missing wordlist content in request body'
+        })
+
+    # Ingest into a brand-new compressed-at-rest file (same helper the add
+    # route uses), then repoint this row at it and drop the old file — DB-first,
+    # best-effort unlink, mirroring wordlists_delete's ordering.
+    tmp_path = os.path.abspath(os.path.join(current_app.root_path, 'control/tmp', secrets.token_hex(8)))
+    try:
+        with open(tmp_path, 'wb') as f:
+            f.write(raw_content)
+        replacement = ingest_static_wordlist_file(tmp_path, user.id, wordlist.name)
+    except Exception:
+        current_app.logger.exception('API /v1/wordlists: failed to process wordlist update')
+        return jsonify({
+            'status': 400,
+            'type': 'Error',
+            'msg': 'Failed to process wordlist (not valid text or gzip?).'
+        })
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+    old_path = wordlist.path
+    wordlist.path = replacement.path
+    wordlist.size = replacement.size
+    wordlist.byte_size = replacement.byte_size
+    wordlist.checksum = replacement.checksum
+    db.session.commit()
+
+    if old_path and os.path.exists(old_path):
+        try:
+            os.remove(old_path)
+        except OSError:
+            current_app.logger.exception('Failed to remove old wordlist file: %s', old_path)
+
+    log_event('wordlist.update', actor=(user.email_address, user.id),
+              target=f'wordlist:{wordlist.id} {wordlist.name!r}')
+    message = {
+        'status': 200,
+        'type': 'message',
+        'msg': 'Wordlist updated',
+        'wordlist_id': wordlist.id
+    }
+    return jsonify(message)
+
 # force or restart a queue item
 # used when agent goes offline and comes back online
 # without a running hashcat cmd while task still assigned to them

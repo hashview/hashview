@@ -224,6 +224,8 @@ def test_wordlists_put_replaces_content_keeps_id_and_name(
     assert not os.path.exists(old_path)
     with gzip.open(row.path, "rb") as fh:
         assert fh.read() == new_body.encode()
+    # The replacement is applied to the EXISTING row, not added as a second one.
+    assert Wordlists.query.filter_by(name="my-list").count() == 1
     assert row.size == 4
 
 
@@ -243,6 +245,9 @@ def test_wordlists_put_dynamic_returns_400(client, app, admin_user, tmp_path, mo
     body = _json_body(resp)
     assert resp.status_code == 400
     assert body["status"] == 400
+    # Refused before any file I/O -- nothing landed in control/wordlists.
+    wl_dir = os.path.join(str(tmp_path), "control", "wordlists")
+    assert os.listdir(wl_dir) == []
 
 
 @pytest.mark.security

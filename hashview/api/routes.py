@@ -837,6 +837,7 @@ def v1_api_update_rule(rules_id):
         replace_file_atomic(tmp_final, rule.path)
         rule.size = get_linecount(rule.path)
         rule.checksum = get_filehash(rule.path)
+        rule.last_updated = datetime.utcnow()
         db.session.commit()
     except Exception:
         current_app.logger.exception('API /v1/rules: failed to swap in rule update')
@@ -1051,7 +1052,19 @@ def v1_api_update_wordlist(wordlist_id):
     wordlist.size = replacement.size
     wordlist.byte_size = replacement.byte_size
     wordlist.checksum = replacement.checksum
-    db.session.commit()
+    wordlist.last_updated = datetime.utcnow()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('API /v1/wordlists: failed to save wordlist update')
+        if os.path.exists(replacement.path):
+            os.remove(replacement.path)
+        return jsonify({
+            'status': 500,
+            'type': 'Error',
+            'msg': 'Failed to save wordlist update.'
+        })
 
     if old_path and os.path.exists(old_path):
         try:

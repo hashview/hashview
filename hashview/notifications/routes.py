@@ -26,7 +26,7 @@ def _hash_type_names():
     for sel in (form.hash_type, form.pwdump_hash_type, form.netntlm_hash_type,
                 form.kerberos_hash_type, form.shadow_hash_type):
         for value, label in sel.choices:
-            if value is not None and str(value) not in names:
+            if value is not None and str(value).isdigit() and str(value) not in names:
                 name = label.split(') ', 1)[1] if ') ' in label else label
                 names[str(value)] = name.split(' / ')[0].split(',')[0].strip()
     return names

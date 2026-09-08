@@ -14,14 +14,13 @@ from hashview.models import (
     Hashes,
     HashfileHashes,
     Hashfiles,
-    HashNotifications,
     Jobs,
     JobTasks,
     Users,
     db,
 )
 from hashview.utils.audit import log_event
-from hashview.utils.utils import try_commit
+from hashview.utils.utils import purge_orphaned_hashes, try_commit
 
 hashfiles = Blueprint('hashfiles', __name__)
 
@@ -56,7 +55,7 @@ def hashfiles_list():
         for _sel in (_form.hash_type, _form.pwdump_hash_type, _form.netntlm_hash_type,
                      _form.kerberos_hash_type, _form.shadow_hash_type):
             for _val, _label in _sel.choices:
-                if _val is not None and str(_val) not in hash_type_names:
+                if _val is not None and str(_val).isdigit() and str(_val) not in hash_type_names:
                     _name = _label.split(') ', 1)[1] if ') ' in _label else _label
                     hash_type_names[str(_val)] = _name.split(' / ')[0].split(',')[0].strip()
     except Exception:  # pragma: no cover - defensive: never break the list page
@@ -150,12 +149,7 @@ def _cascade_delete_hashfile(hashfile):
     """
     HashfileHashes.query.filter_by(hashfile_id=hashfile.id).delete(synchronize_session=False)
     db.session.delete(hashfile)
-    Hashes.query.filter(Hashes.cracked == 0).filter(
-        ~exists().where(HashfileHashes.hash_id == Hashes.id)
-    ).delete(synchronize_session=False)
-    HashNotifications.query.filter(
-        ~exists().where(Hashes.id == HashNotifications.hash_id)
-    ).delete(synchronize_session=False)
+    purge_orphaned_hashes()
     return try_commit(f'delete hashfile {hashfile.id}')
 
 

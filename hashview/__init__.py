@@ -2,7 +2,7 @@ import datetime
 import logging
 from logging.config import dictConfig as loggingDictConfig
 
-from flask import Flask, redirect, request, url_for
+from flask import Flask, flash, jsonify, redirect, request, url_for
 from jinja2 import select_autoescape
 
 __version__ = '0.8.3'
@@ -444,6 +444,28 @@ def create_app(testing=False, config_overrides=None):
             }}
         except Exception:  # pragma: no cover - pre-migration / no DB
             return {'notify_channels': defaults}
+
+    @app.errorhandler(413)
+    def _form_too_large(e):
+        """#314: Werkzeug enforces MAX_FORM_MEMORY_SIZE (a byte cap on
+        non-file form fields, e.g. a pasted-hashes textarea) while parsing the
+        request body, before any view function runs -- so this is the only
+        place that can intercept it. File uploads are parsed separately and
+        are not subject to this cap, hence the workaround suggested below.
+
+        Matches the AJAX/normal-submit contract used elsewhere for form
+        errors (see hashview/jobs/routes.py:270,454-455): XHR requests get a
+        JSON error body, normal submits get a flash + redirect back to
+        wherever the request came from.
+        """
+        msg = ('Your submission exceeded the maximum allowed size for pasted '
+               'form data. Try uploading the hashes as a file instead -- file '
+               'uploads are not subject to this limit.')
+        is_ajax = request.headers.get('X-Requested-With') == 'fetch'
+        if is_ajax:
+            return jsonify({'status': 'error', 'msg': msg}), 413
+        flash(msg, 'danger')
+        return redirect(request.referrer or url_for('main.home'))
 
     if not (testing or app.config.get("HASHVIEW_SKIP_SETUP")):
         with app.app_context():

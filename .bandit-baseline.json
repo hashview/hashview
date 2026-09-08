@@ -603,26 +603,6 @@
   },
   "results": [
     {
-      "code": "165     cmd = 'tar -czf hashview/control/tmp/' + filename + ' -C install hashview-agent'\n166     os.system(cmd)\n167 \n",
-      "col_offset": 4,
-      "end_col_offset": 18,
-      "filename": "hashview/agents/routes.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 78,
-        "link": "https://cwe.mitre.org/data/definitions/78.html"
-      },
-      "issue_severity": "HIGH",
-      "issue_text": "Starting a process with a shell, possible injection detected, security issue.",
-      "line_number": 166,
-      "line_range": [
-        166
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b605_start_process_with_a_shell.html",
-      "test_id": "B605",
-      "test_name": "start_process_with_a_shell"
-    },
-    {
       "code": "384     # TODO\n385     os.system(cmd)\n386     return send_from_directory('control/tmp', rules_name + '.gz', mimetype = 'application/octet-stream')\n",
       "col_offset": 4,
       "end_col_offset": 18,

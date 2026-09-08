@@ -53,6 +53,8 @@ from hashview.utils.utils import (
     process_recovered_hash_notifications,
     rechunk_queued_tasks_for_hashtype,
     remove_file,
+    replace_file_atomic,
+    resource_in_running_task,
     send_generated_file,
     slowest_benchmark,
     text_from_field,
@@ -759,6 +761,89 @@ def v1_api_add_rule(rule_name):
         'status': 200,
         'type': 'message',
         'msg': 'Rule added',
+        'rule_id': rule.id
+    }
+    return jsonify(message)
+
+
+# Replace an existing rule's content in place (same id, same name)
+@api.route('/v1/rules/<int:rule_id>', methods=['PUT'])
+def v1_api_update_rule(rule_id):
+    # User-upload action (resolves the caller to a Users row by api_key), so
+    # it's user-only — the agent only GETs rules, it never PUTs here.
+    if not is_authorized(user=True, agent=False, request=request):
+        return redirect("/v1/not_authorized")
+
+    user_uuid = request.cookies.get('uuid')
+    user = Users.query.filter_by(api_key=user_uuid).first()
+    if not user:
+        return jsonify({'status': 403, 'type': 'Error', 'msg': 'User not found'})
+
+    rule = Rules.query.get(rule_id)
+    if rule is None:
+        return jsonify({'status': 404, 'type': 'Error', 'msg': 'Rule not found'}), 404
+
+    if not (user.admin or rule.owner_id == user.id):
+        return jsonify({
+            'status': 403,
+            'type': 'Error',
+            'msg': 'You do not have rights to update this rule'
+        }), 403
+
+    # Swapping content out from under an in-flight crack changes what that
+    # run is actually doing; refuse rather than silently changing the input.
+    if resource_in_running_task(rule_id=rule.id):
+        return jsonify({
+            'status': 409,
+            'type': 'Error',
+            'msg': 'Rule is in use by a currently running task'
+        }), 409
+
+    raw_content = request.get_data()
+    if not raw_content:
+        return jsonify({
+            'status': 400,
+            'type': 'Error',
+            'msg': 'Missing rule content in request body'
+        })
+
+    # Land the replacement in control/tmp first; only swap it onto rule.path
+    # (same filename, same row) once it's known-good, so a bad upload leaves
+    # the existing file intact.
+    tmp_path = os.path.abspath(os.path.join(current_app.root_path, 'control/tmp', secrets.token_hex(8)))
+    tmp_final = os.path.abspath(os.path.join(current_app.root_path, 'control/tmp', secrets.token_hex(8) + '.txt'))
+    try:
+        with open(tmp_path, 'wb') as f:
+            f.write(raw_content)
+        if is_gzip(tmp_path):
+            # Raises on a malformed gzip stream, which doubles as validation
+            decompress_gz(tmp_path, tmp_final)
+        else:
+            os.rename(tmp_path, tmp_final)
+    except Exception:
+        current_app.logger.exception('API /v1/rules: failed to process rule update')
+        if os.path.exists(tmp_final):
+            os.remove(tmp_final)
+        return jsonify({
+            'status': 400,
+            'type': 'Error',
+            'msg': 'Failed to process rule (not valid text or gzip?).'
+        })
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+    replace_file_atomic(tmp_final, rule.path)
+    rule.size = get_linecount(rule.path)
+    rule.checksum = get_filehash(rule.path)
+    db.session.commit()
+
+    log_event('rule.update', actor=(user.email_address, user.id),
+              target=f'rule:{rule.id} {rule.name!r}')
+    message = {
+        'status': 200,
+        'type': 'message',
+        'msg': 'Rule updated',
         'rule_id': rule.id
     }
     return jsonify(message)

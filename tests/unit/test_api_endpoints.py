@@ -1073,6 +1073,141 @@ def test_rules_add_bad_gzip_returns_400(
 
 
 @pytest.mark.security
+def test_rules_put_replaces_content_keeps_id_and_name(
+    client, app, admin_user, tmp_path, monkeypatch
+):
+    """PUT /v1/rules/<id> overwrites the file in place: same id, same name,
+    same path, new size/checksum."""
+    import hashlib
+
+    _rules_dirs(app, tmp_path, monkeypatch)
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+
+    add_resp = client.post("/v1/rules/add/my-rules", data="$1\n$2",
+                           content_type="text/plain")
+    rule_id = _json_body(add_resp)["rule_id"]
+    row_before = Rules.query.get(rule_id)
+    old_path = row_before.path
+
+    new_body = b"^a\n^b\n^c"
+    resp = client.put(f"/v1/rules/{rule_id}", data=new_body,
+                      content_type="text/plain")
+    body = _json_body(resp)
+    assert body["status"] == 200
+    assert body["rule_id"] == rule_id
+
+    row_after = Rules.query.get(rule_id)
+    assert row_after.id == rule_id
+    assert row_after.name == "my-rules"
+    assert row_after.path == old_path
+    with open(row_after.path, "rb") as fh:
+        assert fh.read() == new_body
+    assert row_after.size == 3
+    assert row_after.checksum == hashlib.sha256(new_body).hexdigest()
+
+
+@pytest.mark.security
+def test_rules_put_gzip_body_decompressed(client, app, admin_user, tmp_path, monkeypatch):
+    import gzip
+
+    _rules_dirs(app, tmp_path, monkeypatch)
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    add_resp = client.post("/v1/rules/add/gz-rules", data="$1",
+                           content_type="text/plain")
+    rule_id = _json_body(add_resp)["rule_id"]
+
+    plain = b"^a\n^b\n^c"
+    resp = client.put(f"/v1/rules/{rule_id}", data=gzip.compress(plain),
+                      content_type="application/octet-stream")
+    assert _json_body(resp)["status"] == 200
+    row = Rules.query.get(rule_id)
+    with open(row.path, "rb") as fh:
+        assert fh.read() == plain
+
+
+@pytest.mark.security
+def test_rules_put_not_found_returns_404(client, admin_user):
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.put("/v1/rules/424242", data="x", content_type="text/plain")
+    assert resp.status_code == 404
+    assert _json_body(resp)["status"] == 404
+
+
+@pytest.mark.security
+def test_rules_put_empty_body_returns_400(client, app, admin_user, tmp_path, monkeypatch):
+    _rules_dirs(app, tmp_path, monkeypatch)
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    add_resp = client.post("/v1/rules/add/my-rules", data="$1",
+                           content_type="text/plain")
+    rule_id = _json_body(add_resp)["rule_id"]
+
+    resp = client.put(f"/v1/rules/{rule_id}", data="", content_type="text/plain")
+    body = _json_body(resp)
+    assert body["status"] == 400
+    assert "Missing" in body["msg"]
+
+
+@pytest.mark.security
+def test_rules_put_non_owner_non_admin_returns_403(client, app, tmp_path, monkeypatch):
+    _rules_dirs(app, tmp_path, monkeypatch)
+    owner = Users(first_name="Own", last_name="Er", email_address="owner@example.test",
+                 password="x" * 60, admin=True, api_key="owner-key")
+    other = Users(first_name="Ot", last_name="Her", email_address="other@example.test",
+                 password="x" * 60, admin=False, api_key="other-key")
+    _db.session.add_all([owner, other])
+    _db.session.commit()
+
+    client.set_cookie("uuid", owner.api_key, domain="localhost.test")
+    add_resp = client.post("/v1/rules/add/my-rules", data="$1",
+                           content_type="text/plain")
+    rule_id = _json_body(add_resp)["rule_id"]
+
+    client.set_cookie("uuid", other.api_key, domain="localhost.test")
+    resp = client.put(f"/v1/rules/{rule_id}", data="$3", content_type="text/plain")
+    assert resp.status_code == 403
+    assert _json_body(resp)["status"] == 403
+
+
+@pytest.mark.security
+def test_rules_put_refused_when_running_job_returns_409(
+    client, app, admin_user, tmp_path, monkeypatch
+):
+    _rules_dirs(app, tmp_path, monkeypatch)
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    add_resp = client.post("/v1/rules/add/my-rules", data="$1",
+                           content_type="text/plain")
+    rule_id = _json_body(add_resp)["rule_id"]
+
+    task = Tasks(name="t", owner_id=admin_user.id, rule_id=rule_id,
+                 hc_attackmode=0, loopback=False)
+    _db.session.add(task)
+    _db.session.commit()
+    jt = JobTasks(job_id=1, task_id=task.id, status="Running")
+    _db.session.add(jt)
+    _db.session.commit()
+
+    resp = client.put(f"/v1/rules/{rule_id}", data="$2", content_type="text/plain")
+    assert resp.status_code == 409
+    assert _json_body(resp)["status"] == 409
+
+
+@pytest.mark.security
+def test_rules_put_agent_cookie_rejected(client, authorized_agent, app, admin_user,
+                                         tmp_path, monkeypatch):
+    """Agents only GET rules; PUT must reject an agent uuid."""
+    _rules_dirs(app, tmp_path, monkeypatch)
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    add_resp = client.post("/v1/rules/add/my-rules", data="$1",
+                           content_type="text/plain")
+    rule_id = _json_body(add_resp)["rule_id"]
+
+    client.set_cookie("uuid", authorized_agent.uuid, domain="localhost.test")
+    resp = client.put(f"/v1/rules/{rule_id}", data="$2", content_type="text/plain")
+    assert 300 <= resp.status_code < 400
+    assert "not_authorized" in resp.headers.get("Location", "")
+
+
+@pytest.mark.security
 def test_rules_download_missing_returns_404(client, admin_user):
     """GET /v1/rules/<id> for a nonexistent rule returns a 404 JSON error
     (previously an AttributeError -> 500 HTML page)."""

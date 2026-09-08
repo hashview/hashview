@@ -6,7 +6,10 @@ wordlist_import.run_import_async. External boundaries (Flask-Mail, the Pushover
 HTTP call, the import worker, threads) are mocked.
 """
 
+import errno
 import os
+
+import pytest
 
 import hashview.utils.utils as u
 import hashview.utils.wordlist_import as wi
@@ -173,3 +176,116 @@ def test_run_import_async_runs_within_app_context(app, monkeypatch):
     assert result == {"ok": True}
     assert seen["ctx"] is True
     assert seen["args"] == (["a.txt"], 7)
+
+
+# --- resource_in_running_task -----------------------------------------------
+
+from hashview.models import JobTasks, Rules, Tasks, Wordlists  # noqa: E402
+
+
+def _rule(owner_id, **kw):
+    defaults = dict(name="r", owner_id=owner_id, path="/tmp/x.rule", size=1, checksum="a" * 64)
+    defaults.update(kw)
+    row = Rules(**defaults)
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
+def _wordlist(owner_id, **kw):
+    defaults = dict(name="w", owner_id=owner_id, type="static", path="/tmp/x.gz",
+                     size=1, byte_size=1, checksum="b" * 64)
+    defaults.update(kw)
+    row = Wordlists(**defaults)
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
+def _task(owner_id, **kw):
+    defaults = dict(name="t", owner_id=owner_id, hc_attackmode=0, loopback=False)
+    defaults.update(kw)
+    row = Tasks(**defaults)
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
+def _jobtask(task_id, status):
+    jt = JobTasks(job_id=1, task_id=task_id, status=status)
+    db.session.add(jt)
+    db.session.commit()
+    return jt
+
+
+def test_resource_in_running_task_false_when_unreferenced(app):
+    user = _user()
+    _rule(user.id)
+    assert u.resource_in_running_task(rule_id=999999) is False
+    assert u.resource_in_running_task(wl_id=999999) is False
+
+
+def test_resource_in_running_task_false_when_no_running_jobtask(app):
+    user = _user()
+    rule = _rule(user.id)
+    task = _task(user.id, rule_id=rule.id)
+    _jobtask(task.id, "Queued")
+    assert u.resource_in_running_task(rule_id=rule.id) is False
+
+
+def test_resource_in_running_task_true_for_rule(app):
+    user = _user()
+    rule = _rule(user.id)
+    task = _task(user.id, rule_id=rule.id)
+    _jobtask(task.id, "Running")
+    assert u.resource_in_running_task(rule_id=rule.id) is True
+
+
+def test_resource_in_running_task_true_for_wordlist_wl_id_2(app):
+    """wl_id_2 (the second wordlist slot, e.g. combinator attacks) counts too."""
+    user = _user()
+    wl = _wordlist(user.id)
+    task = _task(user.id, wl_id_2=wl.id)
+    _jobtask(task.id, "Running")
+    assert u.resource_in_running_task(wl_id=wl.id) is True
+
+
+# --- replace_file_atomic -----------------------------------------------------
+
+def test_replace_file_atomic_same_filesystem(tmp_path):
+    src = tmp_path / "src.txt"
+    dst = tmp_path / "dst.txt"
+    src.write_text("new content")
+    dst.write_text("old content")
+    u.replace_file_atomic(str(src), str(dst))
+    assert dst.read_text() == "new content"
+    assert not src.exists()
+
+
+def test_replace_file_atomic_falls_back_on_exdev(tmp_path, monkeypatch):
+    src = tmp_path / "src.txt"
+    dst = tmp_path / "dst.txt"
+    src.write_text("new content")
+    dst.write_text("old content")
+
+    def _raise_exdev(a, b):
+        raise OSError(errno.EXDEV, "cross-device link")
+
+    monkeypatch.setattr(u.os, "replace", _raise_exdev)
+    u.replace_file_atomic(str(src), str(dst))
+    assert dst.read_text() == "new content"
+    assert not src.exists()
+
+
+def test_replace_file_atomic_reraises_other_oserror(tmp_path, monkeypatch):
+    src = tmp_path / "src.txt"
+    dst = tmp_path / "dst.txt"
+    src.write_text("new content")
+    dst.write_text("old content")
+
+    def _raise_other(a, b):
+        raise OSError(errno.EACCES, "permission denied")
+
+    monkeypatch.setattr(u.os, "replace", _raise_other)
+    with pytest.raises(OSError):
+        u.replace_file_atomic(str(src), str(dst))

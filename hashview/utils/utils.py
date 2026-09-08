@@ -1,12 +1,14 @@
 """Flask routes to handle utils"""
 import _md5
 import binascii
+import errno
 import gzip
 import hashlib
 import json
 import os
 import re
 import secrets
+import shutil
 import struct
 from datetime import datetime
 
@@ -240,6 +242,41 @@ def ingest_static_wordlist_file(src_path, owner_id, name):
         size=size,
         byte_size=get_filesize(final_gz),
     )
+
+def resource_in_running_task(rule_id=None, wl_id=None):
+    """Return True if a rule or wordlist is referenced by a Task that has a
+    currently Running JobTasks row.
+
+    Swapping a rule/wordlist's file contents out from under an in-flight
+    crack would silently change what that run is actually doing; callers use
+    this to refuse the swap (409) instead. wl_id checks BOTH Tasks.wl_id and
+    Tasks.wl_id_2 (a task can reference a second wordlist for combinator-style
+    attacks).
+    """
+    if rule_id is not None:
+        task_ids = [t.id for t in Tasks.query.filter_by(rule_id=rule_id).all()]
+    elif wl_id is not None:
+        task_ids = [t.id for t in Tasks.query.filter(
+            (Tasks.wl_id == wl_id) | (Tasks.wl_id_2 == wl_id)).all()]
+    else:
+        return False
+    if not task_ids:
+        return False
+    return JobTasks.query.filter(
+        JobTasks.task_id.in_(task_ids), JobTasks.status == 'Running').first() is not None
+
+
+def replace_file_atomic(src_path, dst_path):
+    """Move src_path onto dst_path, tolerating control/ being a separate mount
+    point. os.replace() raises EXDEV across filesystems; fall back to a
+    copy + unlink in that case (see issue #395)."""
+    try:
+        os.replace(src_path, dst_path)
+    except OSError as error:
+        if error.errno != errno.EXDEV:
+            raise
+        shutil.copyfile(src_path, dst_path)
+        os.remove(src_path)
 
 def get_agent_timeout_minutes():
     """Minutes Hashview waits for an agent check-in before considering it offline.

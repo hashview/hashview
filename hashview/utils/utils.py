@@ -268,14 +268,19 @@ def resource_in_running_task(rule_id=None, wl_id=None):
 
 def replace_file_atomic(src_path, dst_path):
     """Move src_path onto dst_path, tolerating control/ being a separate mount
-    point. os.replace() raises EXDEV across filesystems; fall back to a
-    copy + unlink in that case (see issue #395)."""
+    point. os.replace() raises EXDEV across filesystems; fall back to copying
+    into a same-directory temp file and os.replace()-ing THAT onto dst_path
+    (see issue #395), so a copy that fails partway never leaves dst_path
+    truncated -- the original dst_path is untouched until the copy is known
+    good."""
     try:
         os.replace(src_path, dst_path)
     except OSError as error:
         if error.errno != errno.EXDEV:
             raise
-        shutil.copyfile(src_path, dst_path)
+        dst_tmp = dst_path + '.tmp' + secrets.token_hex(8)
+        shutil.copyfile(src_path, dst_tmp)
+        os.replace(dst_tmp, dst_path)
         os.remove(src_path)
 
 def get_agent_timeout_minutes():

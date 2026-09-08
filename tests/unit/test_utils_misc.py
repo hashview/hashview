@@ -13,7 +13,7 @@ import pytest
 
 import hashview.utils.utils as u
 import hashview.utils.wordlist_import as wi
-from hashview.models import Users, db
+from hashview.models import JobTasks, Rules, Tasks, Users, Wordlists, db
 
 
 def _user(**kw):
@@ -180,9 +180,6 @@ def test_run_import_async_runs_within_app_context(app, monkeypatch):
 
 # --- resource_in_running_task -----------------------------------------------
 
-from hashview.models import JobTasks, Rules, Tasks, Wordlists  # noqa: E402
-
-
 def _rule(owner_id, **kw):
     defaults = dict(name="r", owner_id=owner_id, path="/tmp/x.rule", size=1, checksum="a" * 64)
     defaults.update(kw)
@@ -263,18 +260,27 @@ def test_replace_file_atomic_same_filesystem(tmp_path):
 
 
 def test_replace_file_atomic_falls_back_on_exdev(tmp_path, monkeypatch):
+    """Only the FIRST os.replace (src -> dst) is cross-device; the fallback's
+    own os.replace(tmp, dst) is same-directory and must succeed normally."""
     src = tmp_path / "src.txt"
     dst = tmp_path / "dst.txt"
     src.write_text("new content")
     dst.write_text("old content")
 
-    def _raise_exdev(a, b):
-        raise OSError(errno.EXDEV, "cross-device link")
+    real_replace = u.os.replace
+    calls = []
 
-    monkeypatch.setattr(u.os, "replace", _raise_exdev)
+    def _replace_first_call_exdev(a, b):
+        calls.append((a, b))
+        if len(calls) == 1:
+            raise OSError(errno.EXDEV, "cross-device link")
+        return real_replace(a, b)
+
+    monkeypatch.setattr(u.os, "replace", _replace_first_call_exdev)
     u.replace_file_atomic(str(src), str(dst))
     assert dst.read_text() == "new content"
     assert not src.exists()
+    assert len(calls) == 2
 
 
 def test_replace_file_atomic_reraises_other_oserror(tmp_path, monkeypatch):

@@ -18,6 +18,15 @@ def test_hash_type_names_maps_modes(app):
     assert "1000" in names
 
 
+def test_hash_type_names_skips_custom_sentinel(app):
+    """The 'custom' hash_type sentinel (issue #447) has no ') ' in its label
+    and must be skipped by the isdigit() guard, not stored as a bogus name."""
+    from hashview.jobs.forms import CUSTOM_HASH_TYPE
+    from hashview.notifications.routes import _hash_type_names
+    names = _hash_type_names()
+    assert str(CUSTOM_HASH_TYPE) not in names
+
+
 def test_notifications_list_renders_with_seeded_notification(app, client):
     admin = make_admin()
     login(client, admin)

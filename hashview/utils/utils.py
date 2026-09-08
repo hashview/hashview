@@ -14,6 +14,7 @@ import requests
 from flask import after_this_request, current_app, send_from_directory, url_for
 from flask_mail import Message
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.sql import exists
 
 from hashview.models import (
     AgentBenchmarks,
@@ -35,6 +36,21 @@ from hashview.models import (
 )
 from hashview.utils.chunking import is_chunkable, plan_chunks
 from hashview.utils.hashcat_modes import HASH_ONLY_AUTO_RULES
+
+# Hard cap on how many task assignments one task group may hold (one assignment
+# = one id in the ordered JSON list stored in task_groups.tasks). This is the
+# PRODUCT limit, sized for the regime deployments actually run in: most never
+# pass four-digit task ids, and 10,000 four-digit ids serialize to 60,000 bytes
+# — inside the TEXT column's 65,535.
+#
+# It is deliberately NOT a byte guarantee. json.dumps separates items with
+# ', ', so each id costs its digit count + 2: 10,000 five-digit ids are 70,000
+# bytes, and past an average of ~4.55 digits the column is the tighter limit
+# (5-digit ids: 9,362 entries; 6-digit: 8,191). MySQL runs with
+# STRICT_TRANS_TABLES, so exceeding it is an errno-1406 error, not a
+# truncation. Widening the column to MEDIUMTEXT would leave this cap as the
+# only limit at any id width.
+MAX_TASKS_PER_GROUP = 10000
 
 
 def remove_file(path):
@@ -87,6 +103,29 @@ def try_commit(context=''):
         return False
 
 
+def purge_orphaned_hashes():
+    """Delete uncracked hashes no hashfile links to any more, and notifications
+    whose hash is gone. Two set-based statements; does NOT commit, so the
+    caller owns the transaction.
+
+    Shared by every cascade-delete path (hashfile, bulk hashfile, customer) so
+    they cannot drift apart. Deliberately expressed as "nothing references this
+    any more" rather than as a per-hash reference count: a NOT EXISTS states the
+    invariant directly and cannot orphan a link belonging to someone else,
+    whereas a count has to be read together with whatever else the surrounding
+    loop has already deleted in the same transaction.
+
+    Cracked hashes are kept on purpose — recovered plaintext outlives the
+    hashfile it arrived in.
+    """
+    Hashes.query.filter(Hashes.cracked == 0).filter(
+        ~exists().where(HashfileHashes.hash_id == Hashes.id)
+    ).delete(synchronize_session=False)
+    HashNotifications.query.filter(
+        ~exists().where(Hashes.id == HashNotifications.hash_id)
+    ).delete(synchronize_session=False)
+
+
 def save_file(path, form_file):
     """Save an uploaded file under a randomized, non-attacker-controlled name.
 
@@ -112,12 +151,26 @@ def _count_generator(reader):
         b = reader(1024 * 1024)
 
 def get_linecount(filepath):
-    """Function to return line count of file"""
+    """Function to return line count of file.
+
+    Counts '\\n' bytes and adds one only when the file is non-empty AND its
+    final byte is not '\\n' (an unterminated last line still counts as a
+    line). A file that ends with '\\n' has no such dangling line, so no +1.
+    An empty file has zero lines. The last byte is tracked across the
+    streamed 1 MiB chunks, not read separately, so multi-GB files still
+    never load fully into memory.
+    """
 
     with open(filepath, 'rb') as fp:
         c_generator = _count_generator(fp.raw.read)
-        count = sum(buffer.count(b'\n') for buffer in c_generator)
-        return count + 1
+        count = 0
+        last_byte = b''
+        for buffer in c_generator:
+            count += buffer.count(b'\n')
+            last_byte = buffer[-1:]
+        if last_byte and last_byte != b'\n':
+            count += 1
+        return count
 
 def get_filehash(filepath):
     """Function to sha256 hash of file"""
@@ -187,13 +240,20 @@ def gz_linecount(filepath):
     """Return the line count of a gzipped text file.
 
     Streams the decompressed content (the "zcat | wc -l" equivalent) and uses
-    the SAME semantics as get_linecount (count of '\\n' + 1) so a wordlist's
-    reported line count is identical whether it arrived as plain text or gzip.
-    Raises on a malformed gzip stream (validation).
+    the SAME semantics as get_linecount (count of '\\n', +1 only when the
+    decompressed content is non-empty and its final byte is not '\\n') so a
+    wordlist's reported line count is identical whether it arrived as plain
+    text or gzip. Raises on a malformed gzip stream (validation).
     """
+    count = 0
+    last_byte = b''
     with gzip.open(filepath, 'rb') as f:
-        count = sum(buffer.count(b'\n') for buffer in iter(lambda: f.read(_CHUNK), b''))
-    return count + 1
+        for buffer in iter(lambda: f.read(_CHUNK), b''):
+            count += buffer.count(b'\n')
+            last_byte = buffer[-1:]
+    if last_byte and last_byte != b'\n':
+        count += 1
+    return count
 
 
 def ingest_static_wordlist_file(src_path, owner_id, name):
@@ -959,10 +1019,12 @@ def slowest_benchmark(hash_type):
 
     Chunk sizes are computed from the SLOWEST agent so the weakest hardware still
     finishes a chunk in roughly the target duration. Returns None when no agent
-    has benchmarked this hash type yet (caller then runs the task whole).
+    has benchmarked this hash type yet, or when every agent that tried reported
+    it unsupported (speed 0) -- caller then runs the task whole.
     """
     return db.session.query(db.func.min(AgentBenchmarks.speed)) \
-        .filter(AgentBenchmarks.hash_type == hash_type).scalar()
+        .filter(AgentBenchmarks.hash_type == hash_type, AgentBenchmarks.speed > 0) \
+        .scalar()
 
 
 _SPEED_UNIT_MULT = {'': 1, 'K': 1e3, 'M': 1e6, 'G': 1e9, 'T': 1e12, 'P': 1e15, 'E': 1e18}
@@ -1478,8 +1540,9 @@ def _validate_hashfile(hashfile_path, line_validator):
     """Stream a hashfile and run line_validator(line, line_no) on each non-blank
     line; return the first error string, or False if every line passes.
 
-    Centralises shared robustness: safe decoding (latin-1 never raises on
-    binary/garbage uploads), streaming (no whole-file load into memory),
+    Centralises shared robustness: safe decoding (utf-8-sig with
+    errors='replace' never raises on binary/garbage uploads), streaming (no
+    whole-file load into memory),
     blank/whitespace-only line skipping, the per-line length cap, and an
     empty-file check.
     """

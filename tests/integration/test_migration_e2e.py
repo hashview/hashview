@@ -12,7 +12,7 @@ from sqlalchemy import create_engine, text
 
 from tests.migration.expected_hex import PLAINTEXT_CASES, USERNAME_CASES
 
-DEV_HEAD = "d3a4a6a7b352"
+DEV_HEAD = "a8c4d2e1f5b3"
 
 pytestmark = [pytest.mark.mysql, pytest.mark.migration]
 

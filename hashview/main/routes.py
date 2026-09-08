@@ -95,7 +95,7 @@ def _recovery_feed():
         for _sel in (_f.hash_type, _f.pwdump_hash_type, _f.netntlm_hash_type,
                      _f.kerberos_hash_type, _f.shadow_hash_type):
             for _v, _lab in _sel.choices:
-                if _v is not None and str(_v) not in hash_type_names:
+                if _v is not None and str(_v).isdigit() and str(_v) not in hash_type_names:
                     _nm = _lab.split(') ', 1)[1] if ') ' in _lab else _lab
                     hash_type_names[str(_v)] = _nm.split(' / ')[0].split(',')[0].strip()
     except Exception:  # pragma: no cover - defensive: never break the dashboard

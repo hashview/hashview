@@ -4,11 +4,7 @@ Extends test_customers_routes_guards.py to cover the remaining missing lines:
 - customers_edit: customer not found (lines 108-109)
 - customers_delete: customer not found (lines 165-166)
 - customers_delete: uncracked-hash inner loop with try_commit failure (lines 192-194)
-
-The TypeError bug this file used to xfail (routes.py:185-186 comparing a raw
-Query object to an int) is fixed -- `.count()` is called before the
-comparison -- so `test_customers_delete_with_uncracked_hash_succeeds` below is
-a plain regression test now, not an xfail.
+- customers_delete: uncracked-hash inner loop regression (issue #208), see below
 """
 
 from unittest.mock import patch
@@ -121,14 +117,17 @@ def test_customers_delete_try_commit_failure_302(app, client):
     assert resp.status_code in (301, 302)
 
 
-# ------------------- Regression: uncracked-hash inner loop (formerly crashed)
+# --------------------- Regression: uncracked-hash inner loop (issue #208)
 
 def test_customers_delete_with_uncracked_hash_succeeds(app, client):
     """Deleting a customer whose hashfile has an uncracked hash should work.
 
-    This used to raise TypeError at routes.py:186 (a raw Query object compared
-    to an int, since `.count()` was missing) and return a 500; `.count()` is
-    now called before the comparison, so this is a plain regression test.
+    Regression test for #208/#258/#259: the inner loop in customers_delete
+    used to look the hash up by the association row's own id instead of its
+    hash_id FK, and separately compared a SQLAlchemy Query object to an int
+    (missing .count()), raising TypeError -> HTTP 500. Both were fixed in
+    884bb62 (hash_id lookup + .count()); this test now pins the fixed
+    behavior as a real assertion instead of an xfail.
     """
     admin = _admin()
     _login(client, admin)
@@ -139,15 +138,15 @@ def test_customers_delete_with_uncracked_hash_succeeds(app, client):
     db.session.add(hashfile)
     db.session.commit()
 
-    # Uncracked hash — triggers the inner loop at line 182
+    # Uncracked hash — triggers the inner loop that prunes orphaned hashes
     h = Hashes(sub_ciphertext="u" * 32, ciphertext="v" * 32,
                hash_type=1000, cracked=False)
     db.session.add(h)
     db.session.commit()
 
-    # Use matching ids to ensure the buggy filter_by(id=hashfile_hash.id) hits h.
-    # In a fresh in-memory DB the first rows get id=1 in both tables, so
-    # hashfile_hash.id == h.id == 1.
+    # Matching ids aren't load-bearing anymore (the loop now resolves the
+    # hash via hash_id, not the association's own id), but kept so a fresh
+    # in-memory DB deterministically has hashfile_hash.id == h.id == 1.
     hfh = HashfileHashes(hash_id=h.id, hashfile_id=hashfile.id)
     db.session.add(hfh)
     db.session.commit()
@@ -159,9 +158,7 @@ def test_customers_delete_with_uncracked_hash_succeeds(app, client):
     customer_id = customer.id
     resp = client.post(f"/customers/delete/{customer_id}",
                        follow_redirects=False)
-    # With the bug this is a 500; after the fix it should be a redirect.
     assert resp.status_code in (301, 302), (
-        f"Expected redirect, got {resp.status_code} — "
-        "likely the TypeError at routes.py:186 fired"
+        f"Expected redirect, got {resp.status_code}"
     )
     assert Customers.query.get(customer_id) is None

@@ -188,8 +188,8 @@ class JobTasks(db.Model):
     """Class object to represent JobTasks"""
 
     id = db.Column(db.Integer, primary_key=True)
-    job_id = db.Column(db.Integer, nullable=False)
-    task_id = db.Column(db.Integer, nullable=False)
+    job_id = db.Column(db.Integer, nullable=False, index=True)
+    task_id = db.Column(db.Integer, nullable=False, index=True)
     priority = db.Column(db.Integer, nullable=False, default=3)
     command = db.Column(db.String(1024))
     # status: Running/Paused/Not Started/Completed/Queued/Canceled/Importing
@@ -244,7 +244,7 @@ class Agents(db.Model):
     name = db.Column(db.String(100), nullable=False)         # can probably be reduced
     src_ip = db.Column(db.String(15), nullable=False)
     uuid = db.Column(db.String(60), nullable=False)          # can probably be reduced
-    status = db.Column(db.String(20), nullable=False)        # Pending, Syncing, Working, Idle
+    status = db.Column(db.String(20), nullable=False)        # Pending, Authorized, Working, Idle
     hc_status = db.Column(db.String(6000))
     last_checkin = db.Column(db.DateTime)
     # True once an "agent offline" admin alert has been sent; reset when the agent
@@ -324,7 +324,18 @@ class TaskGroups(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    # Ordered JSON list of task ids. TEXT (65,535 bytes) rather than VARCHAR so
+    # a large membership can't silently overflow. The number of entries is
+    # capped by utils.MAX_TASKS_PER_GROUP — that cap bounds entries, not bytes,
+    # so see the constant's comment for where the column is still the tighter
+    # limit.
     tasks = db.Column(db.Text, nullable=False)
+    # Named (not bare unique=True) so a model-built schema and the
+    # b5c8d9e1f2a4 migration agree on the constraint name — see that
+    # migration and the uix_agent_hashtype precedent above.
+    __table_args__ = (
+        db.UniqueConstraint('name', name='uq_task_groups_name'),
+    )
 
 class Hashes(db.Model):
     """Class object to represent Hashes"""
@@ -338,7 +349,7 @@ class Hashes(db.Model):
     hash_type = db.Column(db.Integer, nullable=False, index=True)
     cracked = db.Column(db.Boolean, nullable=False)
     recovered_at = db.Column(db.DateTime, nullable=True)
-    task_id = db.Column(db.Integer, nullable=True)
+    task_id = db.Column(db.Integer, nullable=True, index=True)
     recovered_by = db.Column(db.Integer, nullable=True)
     plaintext = db.Column(db.String(256), index=True)
 

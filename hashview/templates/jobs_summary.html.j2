@@ -63,11 +63,7 @@
                         <td>
                             {% for a in (assigned if assigned is defined else []) %}
                                 {% set order = loop.index %}
-                                {% for task in tasks %}
-                                    {% if task.id == a.task_id %}
-                                        <span class="mono" style="color:var(--text-mute); margin-right:8px;">{{ '%02d' % order }}</span>{{ task.name }}{% if a.chunks > 1 %} <span class="mono" style="color:var(--text-mute);">({{ a.chunks | commafy }} chunks)</span>{% endif %} <br>
-                                    {% endif %}
-                                {% endfor %}
+                                <span class="mono" style="color:var(--text-mute); margin-right:8px;">{{ '%02d' % order }}</span>{{ task_names.get(a.task_id, '') }}{% if a.chunks > 1 %} <span class="mono" style="color:var(--text-mute);">({{ a.chunks | commafy }} chunks)</span>{% endif %} <br>
                             {% endfor %}
                         </td>
                     </tr>

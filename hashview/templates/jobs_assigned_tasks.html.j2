@@ -34,14 +34,16 @@
                         <div class="card-body" style="padding:6px;">
                             {# assignable_tasks (computed in the route): an assigned task drops out
                                unless it uses a dynamic wordlist, so a non-dynamic task can't be added twice. #}
-                            {% for task in assignable_tasks %}
-                                <form method="POST" action="/jobs/{{job.id}}/assign_task/{{task.id}}">
+                            {% if assignable_tasks %}
+                                <form method="POST" id="task_assign_form">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <button type="submit" class="btn btn-ghost btn-block" style="justify-content:flex-start;">{{ icon('task', size=14) }} {{task.name}}</button>
+                                    {% for task in assignable_tasks %}
+                                        <button type="submit" formaction="/jobs/{{job.id}}/assign_task/{{task.id}}" class="btn btn-ghost btn-block" style="justify-content:flex-start;">{{ icon('task', size=14) }} {{task.name}}</button>
+                                    {% endfor %}
                                 </form>
                             {% else %}
                                 <div class="page-sub" style="padding:8px 10px;">No tasks available.</div>
-                            {% endfor %}
+                            {% endif %}
                         </div>
                     </div>
                 </details>
@@ -53,14 +55,16 @@
                     </summary>
                     <div class="card" style="margin-top:8px; max-height:300px; overflow-y:auto;">
                         <div class="card-body" style="padding:6px;">
-                            {% for task_group in task_groups %}
-                                <form method="POST" action="/jobs/{{job.id}}/assign_task_group/{{task_group.id}}">
+                            {% if task_groups %}
+                                <form method="POST" id="task_group_assign_form">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <button type="submit" class="btn btn-ghost btn-block" style="justify-content:flex-start;">{{ icon('group', size=14) }} {{task_group.name}}</button>
+                                    {% for task_group in task_groups %}
+                                        <button type="submit" formaction="/jobs/{{job.id}}/assign_task_group/{{task_group.id}}" class="btn btn-ghost btn-block" style="justify-content:flex-start;">{{ icon('group', size=14) }} {{task_group.name}}</button>
+                                    {% endfor %}
                                 </form>
                             {% else %}
                                 <div class="page-sub" style="padding:8px 10px;">No task groups available.</div>
-                            {% endfor %}
+                            {% endif %}
                         </div>
                     </div>
                 </details>

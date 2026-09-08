@@ -24,6 +24,12 @@
                 {{ icon('info', size=13) }} Add tasks to this group. Each task runs once in the order selected. Create new tasks from the Tasks menu.
             </div>
 
+            {% if task_group_tasks|length >= max_tasks_per_group %}
+            <div class="flash flash-warning mono" style="font-size:11px;">
+                Limit reached — a task group can hold at most {{ max_tasks_per_group | commafy }} tasks.
+                Remove one before adding another.
+            </div>
+            {% else %}
             <details style="position:relative;">
                 <summary class="btn btn-primary" style="list-style:none; cursor:pointer;">
                     {{ icon('plus', size=15) }} Add Task
@@ -38,6 +44,7 @@
                     </div>
                 </div>
             </details>
+            {% endif %}
         </div>
     </div>
 

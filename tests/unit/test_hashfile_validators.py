@@ -102,14 +102,58 @@ def test_netntlm_duplicate_detection():
 # kerberos
 # ---------------------------------------------------------------------------
 
+# hashcat 6.2.6 --example-hashes, verbatim. Regenerate with:
+#   hashcat -m <mode> --example-hashes --mach
+_HASHCAT_EXAMPLES = {
+    '7500':
+        '$krb5pa$23$user$realm$salt$5cbb0c882a2b26956e81644edbdb746326f4f5f0e947144fb3095dffe4b4b03e854fc1d631323632303636373330383333353630',
+    '13100':
+        '$krb5tgs$23$*user$realm$test/spn*$b548e10f5694ae018d7ad63c257af7dc$35e8e45658860bc31a859b41a08989265f4ef8afd75652ab4d7a30ef151bf6350d879ae189a8cb769e01fa573c6315232b37e4bcad9105520640a781e5fd85c09615e78267e494f433f067cc6958200a82f70627ce0eebc2ac445729c2a8a0255dc3ede2c4973d2d93ac8c1a56b26444df300cb93045d05ff2326affaa3ae97f5cd866c14b78a459f0933a550e0b6507bf8af27c2391ef69fbdd649dd059a4b9ae2440edd96c82479645ccdb06bae0eead3b7f639178a90cf24d9a',
+    '18200':
+        '$krb5asrep$23$user@domain.com:3e156ada591263b8aab0965f5aebd837$007497cb51b6c8116d6407a782ea0e1c5402b17db7afa6b05a6d30ed164a9933c754d720e279c6c573679bd27128fe77e5fea1f72334c1193c8ff0b370fadc6368bf2d49bbfdba4c5dccab95e8c8ebfdc75f438a0797dbfb2f8a1a5f4c423f9bfc1fea483342a11bd56a216f4d5158ccc4b224b52894fadfba3957dfe4b6b8f5f9f9fe422811a314768673e0c924340b8ccb84775ce9defaa3baa0910b676ad0036d13032b0dd94e3b13903cc738a7b6d00b0b3c210d1f972a6c7cae9bd3c959acf7565be528fc179118f28c679f6deeee1456f0781eb8154e18e49cb27b64bf74cd7112a0ebae2102ac',
+    '19600':
+        '$krb5tgs$17$srv_http$synacktiv.local$849e31b3db1c1f203fa20b85$948690f5875125348286ad3346d27b43eaabc71896b620c16de7ddcdbd561628c650c508856a3f574261948b6db4b48332d30536e978046a423ad4368f9a69b4dc4642dab4e0d475d8299be718fd6f98ac85a771b457b2453e78c9411dfce572b19660fe7a5a8246d9b2a91ea2f14d1986ea0a77ecf9b8330bc8fd9ab540bcf46b74c5aa7005cfccd89ec05f66aeab30c6b2bf8595cf6c9a1b68ad885258850c4b1dd9265f270fb2af52fd76c16246df51ea67efc58a65c345686c84e43642febe908a',
+    '19700':
+        '$krb5tgs$18$srv_http$synacktiv.local$16ce51f6eba20c8ee534ff8a$57d07b23643a516834795f0c010da8f549b7e65063e5a367ca9240f9b800adad1734df7e7d5dd8307e785de4f40aacf901df41aa6ce695f8619ec579c1fa57ee93661cf402aeef4e3a42e7e3477645d52c09dc72feade03512dffe0df517344f673c63532b790c242cc1d50f4b4b34976cb6e08ab325b3aefb2684262a5ee9faacb14d059754f50553be5bfa5c4c51e833ff2b6ac02c6e5d4c4eb193e27d7dde301bd1ddf480e5e282b8c27ef37b136c8f140b56de105b73adeb1de16232fa1ab5c9f6',
+    '19800':
+        '$krb5pa$17$hashcat$HASHCATDOMAIN.COM$a17776abe5383236c58582f515843e029ecbff43706d177651b7b6cdb2713b17597ddb35b1c9c470c281589fd1d51cca125414d19e40e333',
+    '19900':
+        '$krb5pa$18$hashcat$HASHCATDOMAIN.COM$96c289009b05181bfd32062962740b1b1ce5f74eb12e0266cde74e81094661addab08c0c1a178882c91a0ed89ae4e0e68d2820b9cce69770',
+    '28800':
+        '$krb5db$17$test$TEST.LOCAL$1c41586d6c060071e08186ee214e725e',
+    '28900':
+        '$krb5db$18$test$TEST.LOCAL$266b5a53a6d663c3f69174f3309acada8e467c097c7973699f86286a6cf1a6c7',
+}
+
+
+@pytest.mark.parametrize("htype", sorted(_HASHCAT_EXAMPLES))
+def test_kerberos_hashcat_example_hashes_validate(htype):
+    """hashcat's own canonical example must always pass its validator.
+
+    A floor, not a safety net: these patterns were originally calibrated FROM
+    the examples, so every one of them passed even while real impacket output
+    was being rejected. It is the mode-specific tests below that carry the
+    weight.
+    """
+    _ok(validate_kerberos_hashfile, [_HASHCAT_EXAMPLES[htype]], htype)
+
+
+# Structurally valid synthetic vectors, with the field lengths hashcat actually
+# requires (swept one character at a time against hashcat 6.2.6, not copied
+# from the examples): 7500 tail exactly 104, 13100/18200 checksum 32 + edata2
+# >= 64, 19600/19700 checksum 24 + edata2 >= 64, 19800/19900 tail 104-112,
+# 28800 tail 32, 28900 tail 64.
+_ED = 'ab' * 64                     # 128 hex, comfortably over the 64 floor
 _KRB = {
-    '7500':  '$krb5pa$23$user$realm$salt$5cbb0c882a2b26956e81644edbdb746326f4f5f0e947144fb3095dffe4b4b03e',
-    '13100': '$krb5tgs$23$*user$realm$test/spn*$b548e10f5694ae018d7ad63c257af7dc$35e8e45658860bc31a859b41a08989265f4ef8af',
-    '18200': '$krb5asrep$23$user@domain.com:3e156ada591263b8aab0965f5aebd837$007497cb51b6c8116d6407a782ea0e1c',
-    '19600': '$krb5tgs$17$srv_http$synacktiv.local$849e31b3db1c1f203fa20b85$948690f5875125348286ad3346d27b43',
-    '19700': '$krb5tgs$18$srv_http$synacktiv.local$16ce51f6eba20c8ee534ff8a$57d07b23643a516834795f0c010da8f5',
+    '7500':  '$krb5pa$23$user$realm$salt$' + 'a' * 104,
+    '13100': '$krb5tgs$23$*user$realm$test/spn*$' + 'b' * 32 + '$' + _ED,
+    '18200': '$krb5asrep$23$user@domain.com:' + 'c' * 32 + '$' + _ED,
+    '19600': '$krb5tgs$17$srv_http$synacktiv.local$' + 'd' * 24 + '$' + _ED,
+    '19700': '$krb5tgs$18$srv_http$synacktiv.local$' + 'e' * 24 + '$' + _ED,
     '19800': '$krb5pa$17$hashcat$HASHCATDOMAIN.COM$' + 'a' * 112,
     '19900': '$krb5pa$18$hashcat$HASHCATDOMAIN.COM$' + 'b' * 112,
+    '28800': '$krb5db$17$test$TEST.LOCAL$' + 'a' * 32,
+    '28900': '$krb5db$18$test$TEST.LOCAL$' + 'b' * 64,
 }
 
 
@@ -125,68 +169,119 @@ def test_kerberos_aliases_35300_35400():
 
 def test_kerberos_invalid():
     _bad(validate_kerberos_hashfile, [_KRB['13100']], '7500')                              # wrong prefix for type
-    _bad(validate_kerberos_hashfile, ['$krb5pa$99$user$realm$salt$' + 'a' * 40], '7500')   # wrong etype
-    _bad(validate_kerberos_hashfile, ['$krb5pa$17$hashcat$DOM$' + 'a' * 111], '19800')     # PA blob 111 not 112
-    _bad(validate_kerberos_hashfile, ['$krb5tgs$17$u$r$849e31b3db1c1f203fa20b85$xyz'], '19600')  # non-hex edata
+    _bad(validate_kerberos_hashfile, ['$krb5pa$99$user$realm$salt$' + 'a' * 104], '7500')  # wrong etype
+    _bad(validate_kerberos_hashfile, ['$krb5tgs$17$u$r$' + 'd' * 24 + '$xyz'], '19600')    # non-hex edata
     _bad(validate_kerberos_hashfile, [_KRB['7500']], '99999')                              # unsupported type
 
 
-# --- $krb5tgs$17/$18 with impacket's SPN field -----------------------------
+# --- field lengths, swept against hashcat rather than assumed ---------------
 #
-# GetUserSPNs.py emits the service principal name as an extra star-wrapped
-# field between the realm and the checksum:
-#   $krb5tgs$18$user$REALM$*MSSQLSvc/host.dom:1433*$<24 hex>$<edata2>
-# hashview used to reject that, so users had to hand-strip the segment.
-#
-# Verified against hashcat 6.2.6 by cracking its own 19700/19600 example hash
-# (password "hashcat") in both shapes: both parse, both recover the same
-# password, and hashcat echoes the hash back with the SPN dropped -- so the
-# field is optional, not required. The 13100-style `*user$realm$spn*` triple is
-# a different thing and hashcat rejects it for 17/18 ("No hashes loaded"), so
-# it must stay rejected here too.
-_SPN = '*MSSQLSvc/sql01.contoso.local:1433*'
-_CK17, _CK18 = '849e31b3db1c1f203fa20b85', '16ce51f6eba20c8ee534ff8a'
-_ED = '57d07b23643a516834795f0c010da8f5'
+# These were all `[0-9a-fA-F]+`, so any hex length passed hashview and the
+# paste succeeded; the hash then failed on the agent with "No hashes loaded",
+# where the user has no way to connect it to what they typed.
 
 
-@pytest.mark.parametrize("htype,etype,checksum", [('19600', '17', _CK17),
-                                                  ('19700', '18', _CK18)])
-def test_kerberos_tgs_aes_accepts_impacket_spn_field(htype, etype, checksum):
+@pytest.mark.parametrize("htype,prefix,length", [
+    ('7500',  '$krb5pa$23$user$realm$salt$', 104),
+    ('28800', '$krb5db$17$test$TEST.LOCAL$', 32),
+    ('28900', '$krb5db$18$test$TEST.LOCAL$', 64),
+])
+def test_kerberos_fixed_length_tails_are_exact(htype, prefix, length):
+    """hashcat accepts exactly one tail length for these three modes."""
+    _ok(validate_kerberos_hashfile, [prefix + 'a' * length], htype)
+    for delta in (-2, -1, 1, 2):
+        _bad(validate_kerberos_hashfile, [prefix + 'a' * (length + delta)], htype)
+
+
+@pytest.mark.parametrize("htype,prefix", [
+    ('19800', '$krb5pa$17$hashcat$HASHCATDOMAIN.COM$'),
+    ('19900', '$krb5pa$18$hashcat$HASHCATDOMAIN.COM$'),
+])
+def test_kerberos_pa_enc_timestamp_window_is_104_to_112(htype, prefix):
+    """The one place hashview was TIGHTER than hashcat.
+
+    The blob is confounder(16) + a DER-encoded PA-ENC-TS-ENC whose length
+    varies with the optional microseconds field + HMAC(12), so the accepted
+    window is 104-112 hex inclusive -- measured by sweeping 80..140. Requiring
+    exactly 112 rejected real 104-hex hashes outright.
+    """
+    for n in range(104, 113):
+        _ok(validate_kerberos_hashfile, [prefix + 'a' * n], htype)
+    for n in (102, 103, 113, 114):
+        _bad(validate_kerberos_hashfile, [prefix + 'a' * n], htype)
+
+
+@pytest.mark.parametrize("htype,vec_prefix,checksum_len", [
+    ('13100', '$krb5tgs$23$*user$realm$spn*$', 32),
+    ('18200', '$krb5asrep$23$user@dom.com:', 32),
+    ('19600', '$krb5tgs$17$u$REALM$', 24),
+    ('19700', '$krb5tgs$18$u$REALM$', 24),
+])
+def test_kerberos_edata2_floor_is_64_hex(htype, vec_prefix, checksum_len):
+    """A truncated paste is caught here instead of on the agent."""
+    head = vec_prefix + 'a' * checksum_len + '$'
+    _ok(validate_kerberos_hashfile, [head + 'b' * 64], htype)
+    _ok(validate_kerberos_hashfile, [head + 'b' * 65], htype)      # odd lengths are fine
+    for n in (32, 62, 63):
+        _bad(validate_kerberos_hashfile, [head + 'b' * n], htype)
+
+
+# --- shapes real tools emit ------------------------------------------------
+
+
+def test_kerberos_asrep_etype_field_is_optional():
+    """Rubeus and John emit $krb5asrep$user@REALM:... with no `23$`.
+
+    hashcat accepts it and echoes it back byte-identical (checked with --left),
+    so there is no stored-form mismatch to worry about -- it can simply be
+    accepted.
+    """
     _ok(validate_kerberos_hashfile,
-        [f'$krb5tgs${etype}$svc_sql$CONTOSO.LOCAL${_SPN}${checksum}${_ED}'], htype)
-
-
-@pytest.mark.parametrize("htype,etype,checksum", [('19600', '17', _CK17),
-                                                  ('19700', '18', _CK18)])
-def test_kerberos_tgs_aes_still_accepts_the_spn_less_shape(htype, etype, checksum):
-    # hashcat's own example shape must keep working -- the SPN field is optional.
+        ['$krb5asrep$user@dom.com:' + 'c' * 32 + '$' + _ED], '18200')
     _ok(validate_kerberos_hashfile,
-        [f'$krb5tgs${etype}$srv_http$synacktiv.local${checksum}${_ED}'], htype)
+        ['$krb5asrep$23$user@dom.com:' + 'c' * 32 + '$' + _ED], '18200')
+    # A machine-account principal carries a literal '$'; the pre-existing
+    # pattern allowed that and making the etype optional must not break it.
+    _ok(validate_kerberos_hashfile,
+        ['$krb5asrep$COMPUTER$@dom.com:' + 'c' * 32 + '$' + _ED], '18200')
+    # A machine account is `<name>$`, so a computer named `18` arrives as
+    # `18$@REALM` -- indistinguishable from an etype to a naive guard, and
+    # hashcat loads it. Regression guard for exactly that false reject.
+    for digits in ('18', '9', '123'):
+        _ok(validate_kerberos_hashfile,
+            [f'$krb5asrep$23${digits}$@dom.com:' + 'c' * 32 + '$' + _ED], '18200')
+        _ok(validate_kerberos_hashfile,
+            [f'$krb5asrep${digits}$@dom.com:' + 'c' * 32 + '$' + _ED], '18200')
+    # ...but a wrong etype is still a mode/hash mismatch worth catching, even
+    # though hashcat itself shrugs and accepts it. Without the lookahead the
+    # optional-etype group turns `[^:]+` into a wildcard that swallows `17$`.
+    for bad_etype in ('17', '18', '999'):
+        _bad(validate_kerberos_hashfile,
+             [f'$krb5asrep${bad_etype}$user@dom.com:' + 'c' * 32 + '$' + _ED], '18200')
 
 
-def test_kerberos_tgs_aes_rejects_13100_style_star_triple():
-    # hashcat refuses `*user$realm$spn*` for etype 17/18, so accepting it here
-    # would only let a hash through that the agent could never load.
+def test_kerberos_tgs_rc4_rejects_a_nested_star():
+    """`\*.+\*` let a '*' inside the triple through; hashcat rejects it."""
     _bad(validate_kerberos_hashfile,
-         [f'$krb5tgs$18$*srv_http$synacktiv.local$http/web*${_CK18}${_ED}'], '19700')
+         ['$krb5tgs$23$*us*er$realm$spn*$' + 'b' * 32 + '$' + _ED], '13100')
+    _ok(validate_kerberos_hashfile,
+        ['$krb5tgs$23$*user$realm$spn*$' + 'b' * 32 + '$' + _ED], '13100')
+
+
+def test_kerberos_tgs_rc4_bare_and_john_shapes_stay_rejected():
+    """A deliberate, documented divergence from hashcat.
+
+    hashcat also loads `$krb5tgs$23$<ck>$<edata>` and John's
+    `$krb5tgs$<spn>:<ck>$<edata>`, and both round-trip verbatim -- but neither
+    carries a principal where the importer looks for one
+    (``line.split('$')[3]``), so accepting them would file a hex blob as the
+    username. No roasting tool in common use emits either shape, so they stay
+    rejected until the importer can parse them.
+    """
     _bad(validate_kerberos_hashfile,
-         [f'$krb5tgs$17$*srv_http$synacktiv.local$http/web*${_CK17}${_ED}'], '19600')
-
-
-def test_kerberos_tgs_aes_spn_field_does_not_loosen_the_rest():
-    # An SPN present must not become a wildcard for the fields around it.
-    bad = [
-        f'$krb5tgs$18$u$R${_SPN}$16ce51f6eba20c8ee534ff${_ED}',      # checksum 22 hex, not 24
-        f'$krb5tgs$18$u$R${_SPN}$zzzzzzzzzzzzzzzzzzzzzzzz${_ED}',    # checksum not hex
-        f'$krb5tgs$18$u$R${_SPN}${_CK18}$',                          # no edata2
-        f'$krb5tgs$18$u$R${_SPN}${_CK18}$xyz',                       # edata2 not hex
-        f'$krb5tgs$18$u$${_SPN}${_CK18}${_ED}',                      # empty realm
-        f'$krb5tgs$18$u$R$*spn${_CK18}${_ED}',                       # unterminated star
-        f'$krb5tgs$23$u$R${_SPN}${_CK18}${_ED}',                     # etype 23 is not 19700
-    ]
-    for line in bad:
-        _bad(validate_kerberos_hashfile, [line], '19700')
-
+         ['$krb5tgs$23$' + 'b' * 32 + '$' + _ED], '13100')
+    _bad(validate_kerberos_hashfile,
+         ['$krb5tgs$test/spn:' + 'b' * 32 + '$' + _ED], '13100')
 
 # ---------------------------------------------------------------------------
 # shadow (500/1500/1800/3200)

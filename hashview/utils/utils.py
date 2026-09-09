@@ -914,10 +914,18 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                 # principal at index 3 in both shapes.
                 hash_id = import_hash_only(
                     line=normalize_kerberos_hash(line.rstrip(), hash_type), hash_type=hash_type)
-                if hash_type == '18200':
-                    username = line.split('$')[3].split(':')[0]
+                if hash_type in ('18200', '35400'):
+                    # $krb5asrep$23$user@REALM:<ck>$<edata>, or the same without
+                    # the etype field (Rubeus/John) -- which shifts every field
+                    # one left, so index 3 would be the edata blob. Take the
+                    # field carrying the ':' either way.
+                    principal = next(
+                        (field for field in line.split('$') if ':' in field), '')
+                    username = principal.split(':')[0]
                 else:
-                    username = line.split('$')[3]
+                    # 13100/35300 wrap the principal in a star-delimited triple
+                    # (*user$realm$spn*), so index 3 arrives as '*user'.
+                    username = line.split('$')[3].lstrip('*')
             elif file_type == 'NetNTLM':
                 # 5600, domain is case sensitve. Hashcat returns username in
                 # upper case.
@@ -1767,10 +1775,34 @@ def validate_netntlm_hashfile(hashfile_path, hash_type=None):
 
 # Per-mode Kerberos structure (prefix + etype + fixed-length hex parts).
 # Variable principal/realm/SPN/salt strings are matched leniently.
+# Field lengths below were swept against hashcat 6.2.6 one character at a time
+# rather than copied from its example hashes -- the examples are what these
+# patterns were originally calibrated from, which is exactly why they used to
+# reject real tool output. Accepted sets measured: 7500 tail exactly 104;
+# 28800 exactly 32; 28900 exactly 64; 19800/19900 the inclusive window 104-112;
+# and an edata2 floor of exactly 64 hex on 13100/18200/19600/19700 (odd lengths
+# fine, no upper bound -- real blobs run 370-470). A too-loose pattern moves the
+# failure from paste time, where the user can fix it, to job-run time, where the
+# agent just reports "No hashes loaded".
 _KERBEROS_RE = {
-    '7500':  re.compile(r'^\$krb5pa\$23\$[^$]+\$[^$]*\$[^$]*\$[0-9a-fA-F]+$'),
-    '13100': re.compile(r'^\$krb5tgs\$23\$\*.+\*\$[0-9a-fA-F]{32}\$[0-9a-fA-F]+$'),
-    '18200': re.compile(r'^\$krb5asrep\$23\$[^:]+:[0-9a-fA-F]{32}\$[0-9a-fA-F]+$'),
+    '7500':  re.compile(r'^\$krb5pa\$23\$[^$]+\$[^$]*\$[^$]*\$[0-9a-fA-F]{104}$'),
+    # \*[^*]+\* not \*.+\*: hashcat rejects a nested '*' inside the triple.
+    '13100': re.compile(r'^\$krb5tgs\$23\$\*[^*]+\*\$[0-9a-fA-F]{32}\$[0-9a-fA-F]{64,}$'),
+    # The etype field is optional: Rubeus and John emit $krb5asrep$user@REALM:...
+    # with no `23$`, and hashcat accepts it and echoes it back unchanged. The
+    # lookahead is what keeps the field optional without making it a wildcard:
+    # `[^:]+` would otherwise swallow `17$user@dom` whole and let a wrong etype
+    # through as part of the principal. `[^:]+` rather than `[^$:]+` so a
+    # machine-account principal (`COMPUTER$@REALM`) still passes, as before.
+    #
+    # The inner `(?![@:])` matters: a machine account is `<name>$`, so a
+    # computer named `18` gives `18$@REALM`, which a bare `(?![0-9]{1,3}\$)`
+    # guard cannot tell from an etype and wrongly rejects. Digits followed by
+    # `$@` or `$:` are therefore a principal, not an etype -- confirmed against
+    # hashcat, which loads all of `18$@REALM`, `9$@REALM` and `123$@REALM`.
+    '18200': re.compile(
+        r'^\$krb5asrep\$(?:23\$)?(?![0-9]{1,3}\$(?![@:]))'
+        r'[^:]+:[0-9a-fA-F]{32}\$[0-9a-fA-F]{64,}$'),
     # etype 17/18: impacket's GetUserSPNs.py emits the service principal name as
     # an extra star-wrapped field between the realm and the checksum, e.g.
     #   $krb5tgs$18$user$REALM$*MSSQLSvc/host.dom:1433*$<24 hex>$<edata2>
@@ -1780,13 +1812,16 @@ _KERBEROS_RE = {
     # `*user$realm$spn*` triple: hashcat rejects that for 17/18 ("No hashes
     # loaded"), so the stars stay confined to their own field.
     '19600': re.compile(
-        r'^\$krb5tgs\$17\$[^$]+\$[^$]+\$(?:\*[^*]*\*\$)?[0-9a-fA-F]{24}\$[0-9a-fA-F]+$'),
+        r'^\$krb5tgs\$17\$[^$]+\$[^$]+\$(?:\*[^*]*\*\$)?[0-9a-fA-F]{24}\$[0-9a-fA-F]{64,}$'),
     '19700': re.compile(
-        r'^\$krb5tgs\$18\$[^$]+\$[^$]+\$(?:\*[^*]*\*\$)?[0-9a-fA-F]{24}\$[0-9a-fA-F]+$'),
-    '19800': re.compile(r'^\$krb5pa\$17\$[^$]+\$[^$]+\$[0-9a-fA-F]{112}$'),
-    '19900': re.compile(r'^\$krb5pa\$18\$[^$]+\$[^$]+\$[0-9a-fA-F]{112}$'),
-    '28800': re.compile(r'^\$krb5db\$17\$[^$]+\$[^$]+\$[0-9a-fA-F]+$'),
-    '28900': re.compile(r'^\$krb5db\$18\$[^$]+\$[^$]+\$[0-9a-fA-F]+$'),
+        r'^\$krb5tgs\$18\$[^$]+\$[^$]+\$(?:\*[^*]*\*\$)?[0-9a-fA-F]{24}\$[0-9a-fA-F]{64,}$'),
+    # 104-112, not exactly 112: the encrypted blob is confounder(16) + a
+    # DER-encoded PA-ENC-TS-ENC whose length varies with the optional
+    # microseconds field + HMAC(12), so a real 104-hex hash was being rejected.
+    '19800': re.compile(r'^\$krb5pa\$17\$[^$]+\$[^$]+\$[0-9a-fA-F]{104,112}$'),
+    '19900': re.compile(r'^\$krb5pa\$18\$[^$]+\$[^$]+\$[0-9a-fA-F]{104,112}$'),
+    '28800': re.compile(r'^\$krb5db\$17\$[^$]+\$[^$]+\$[0-9a-fA-F]{32}$'),
+    '28900': re.compile(r'^\$krb5db\$18\$[^$]+\$[^$]+\$[0-9a-fA-F]{64}$'),
 }
 # 35300/35400 are the NT-optimised variants of 13100/18200 with an identical
 # on-the-wire hash format, so they reuse those patterns.

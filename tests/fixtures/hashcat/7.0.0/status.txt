@@ -1,0 +1,48 @@
+hashcat (v7.0.0) starting - session [capture]
+
+Initializing bridges. Please be patient...Initialized bridgesInitializing backend runtimes. Please be patient...Initialized backend runtimesInitializing backend devices. Please be patient...Initialized backend devicesMinimum password length supported by kernel: 0
+Maximum password length supported by kernel: 27
+
+Counting lines in /tmp/tmp.6vgDW5G9kF/hashes.txt. Please be patient...Counted lines in /tmp/tmp.6vgDW5G9kF/hashes.txtParsed Hashes: 1/1 (100.00%)Parsed Hashes: 1/1 (100.00%)Sorting hashes. Please be patient...Sorted hashesRemoving duplicate hashes. Please be patient...Removed duplicate hashesSorting salts. Please be patient...Sorted saltsComparing hashes with potfile entries. Please be patient...Compared hashes with potfile entriesGenerating bitmap tables...Generated bitmap tablesHashes: 1 digests; 1 unique digests, 1 unique salts
+Bitmaps: 16 bits, 65536 entries, 0x0000ffff mask, 262144 bytes, 5/13 rotates
+Rules: 1
+
+Optimizers applied:
+* Optimized-Kernel
+* Zero-Byte
+* Precompute-Init
+* Meet-In-The-Middle
+* Early-Skip
+* Not-Salted
+* Not-Iterated
+* Single-Hash
+* Single-Salt
+* Raw-Hash
+
+Watchdog: Hardware monitoring interface not found on your system.
+Watchdog: Temperature abort trigger disabled.
+
+Initializing bridge salts. Please be patient...Initialized bridge saltsInitializing device kernels and memory. Please be patient...Initializing backend runtime for device #1. Please be patient...Initialized backend runtime for device #1Host memory allocated for this attack: 516 MB (3847 MB free)
+
+Initialized device kernels and memoryStarting self-test. Please be patient...Finished self-testDictionary cache built:
+* Filename..: /tmp/tmp.6vgDW5G9kF/wordlist.txt
+* Passwords.: 5
+* Bytes.....: 37
+* Keyspace..: 5
+* Runtime...: 0 secs
+
+Starting autotune. Please be patient...Finished autotune                                                          The wordlist or mask that you are using is too small.
+This means that hashcat cannot use the full parallel power of your device(s).
+Hashcat is expecting at least 16384 base words but only got 0.0% of that.
+Unless you supply more work, your cracking speed will drop.
+For tips on supplying more work, see: https://hashcat.net/faq/morework
+
+                                                          [s]tatus [p]ause [b]ypass [c]heckpoint [f]inish [q]uit =>                                                           Approaching final keyspace - workload adjusted.
+
+[s]tatus [p]ause [b]ypass [c]heckpoint [f]inish [q]uit => 
+
+{ "session": "capture", "guess": { "guess_base": "/tmp/tmp.6vgDW5G9kF/wordlist.txt", "guess_base_count": 1, "guess_base_offset": 1, "guess_base_percent": 100.00, "guess_mask_length": 4294967295, "guess_mod": null, "guess_mod_count": 1, "guess_mod_offset": 1, "guess_mod_percent": 100.00, "guess_mode": 1 }, "status": 3, "target": "8846f7eaee8fb117ad06bdd830b7586c", "progress": [0, 5], "restore_point": 0, "recovered_hashes": [0, 1], "recovered_salts": [0, 1], "rejected": 0, "devices": [ { "device_id": 1, "device_name": "cpu-haswell-VirtualApple @ 2.50GHz", "device_type": "CPU", "speed": 0, "temp": -1, "util": -1, "fanspeed": -1, "corespeed": -1, "memoryspeed": -1, "buslanes": -1 } "power": -1 } ], "time_start": 1787598887, "estimated_stop": 1787598887 }
+
+[s]tatus [p]ause [b]ypass [c]heckpoint [f]inish [q]uit =>                                                           { "session": "capture", "guess": { "guess_base": "/tmp/tmp.6vgDW5G9kF/wordlist.txt", "guess_base_count": 1, "guess_base_offset": 1, "guess_base_percent": 100.00, "guess_mask_length": 4294967295, "guess_mod": null, "guess_mod_count": 1, "guess_mod_offset": 1, "guess_mod_percent": 100.00, "guess_mode": 1 }, "status": 6, "target": "8846f7eaee8fb117ad06bdd830b7586c", "progress": [5, 5], "restore_point": 0, "recovered_hashes": [1, 1], "recovered_salts": [1, 1], "rejected": 0, "devices": [ { "device_id": 1, "device_name": "cpu-haswell-VirtualApple @ 2.50GHz", "device_type": "CPU", "speed": 56, "temp": -1, "util": -1, "fanspeed": -1, "corespeed": -1, "memoryspeed": -1, "buslanes": -1 } "power": -1 } ], "time_start": 1787598887, "estimated_stop": 1787598887 }
+Started: Mon Aug 24 19:14:34 2026
+Stopped: Mon Aug 24 19:14:48 2026

@@ -110,6 +110,24 @@ control/wordlists/deadbeef
 # surfaced whenever the allowlist itself is edited.
 ignore trustedsec mentions in the example
 
+# --- Hashcat version-interop CI matrix false positives ---
+# The scanner reads whole changed files, so adding the matrix workflow and its
+# fixtures surfaces public hashcat.net/GitHub links and release-archive
+# checksums. None are secrets.
+
+# Public hashcat release archive download URL (hashcat/hashcat GitHub releases).
+github\.com/hashcat/hashcat
+# Public hashcat.net wiki/FAQ/Discord links referenced in docs and the plan.
+hashcat\.net
+# SHA-256 checksums of public hashcat release archives, pinned for the
+# version-interop matrix fixtures (tests/hashcat_matrix, capture scripts).
+sha256:\s*"[0-9a-f]{64}"
+
+# Test-only dummy credential literals used by the agent/API test suites
+# (not real secrets).
+api_key="test-api-key"
+api_key="scope-audit-key"
+
 # --- CONTRIBUTING.md false positives ---
 # Public documentation link to the Conventional Commits spec.
 conventionalcommits\.org
@@ -133,3 +151,9 @@ api_key="user-api-key-
 # Not a credential -- it's a fixed dummy LM response reused across the file's
 # existing NetNTLM tests.
 1122334455667788AABBCCDDEEFF1122334455667788AABBCCDD
+
+# --- tests/integration/test_analytics_docker_bugs.py false positives ---
+# Throwaway login credentials used by the opt-in docker analytics bugtest.
+# Gate: pytest.mark.docker_analytics, skipped unless HASHVIEW_DOCKER_BASE_URL set.
+# Test creates prefixed rows (zz-analytics-bugtest*) for teardown. Not a real credential.
+LOGIN_PASSWORD = "bugtest-password-123"

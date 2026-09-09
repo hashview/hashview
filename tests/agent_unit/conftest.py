@@ -33,7 +33,17 @@ if "agent.config" not in sys.modules:
     _config_stub.Config = Config
     sys.modules["agent.config"] = _config_stub
 
+import importlib.util  # noqa: E402 - after the agent.config stub is installed
+
 import pytest  # noqa: E402 - after the agent.config stub is installed
+
+# test_hashcat_contract.py alone in this directory imports from hashview
+# (hashview.utils.utils for the outfile contract assertion) and therefore
+# requires server runtime deps (Flask, etc.). When those aren't installed —
+# e.g. in the e2e-only CI venv that only has requirements-dev.txt — skip
+# collection of this file so pytest doesn't fail trying to import hashview.
+if importlib.util.find_spec("flask") is None:
+    collect_ignore = ["test_hashcat_contract.py"]
 
 
 @pytest.fixture(autouse=True)

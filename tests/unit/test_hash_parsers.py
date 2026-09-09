@@ -213,35 +213,81 @@ def test_normalize_kerberos_hash_strips_only_the_aes_spn_field():
            f"$*MSSQLSvc/sql01.contoso.local:1433*${_KRB_CK18}${_KRB_ED}")
     plain = f"$krb5tgs$18$svc_sql$CONTOSO.LOCAL${_KRB_CK18}${_KRB_ED}"
 
-    assert normalize_kerberos_hash(spn) == plain
+    assert normalize_kerberos_hash(spn, "19700") == plain
     # idempotent: a hash that never had an SPN is untouched
-    assert normalize_kerberos_hash(plain) == plain
+    assert normalize_kerberos_hash(plain, "19700") == plain
     # etype 17 too
     assert normalize_kerberos_hash(
-        f"$krb5tgs$17$u$R$*http/web*$849e31b3db1c1f203fa20b85${_KRB_ED}"
+        f"$krb5tgs$17$u$R$*http/web*$849e31b3db1c1f203fa20b85${_KRB_ED}", "19600"
     ) == f"$krb5tgs$17$u$R$849e31b3db1c1f203fa20b85${_KRB_ED}"
-    # 13100's star-wrapped triple round-trips through hashcat verbatim, so it
-    # must NOT be touched
-    tgs23 = f"$krb5tgs$23$*user$realm$test/spn*${'a' * 32}${_KRB_ED}"
-    assert normalize_kerberos_hash(tgs23) == tgs23
+
+
+def test_normalize_kerberos_hash_preserves_principal_case_for_aes_etypes():
+    """The principal is part of the AES Kerberos salt.
+
+    Measured on hashcat 6.2.6: upper-casing the principal in its own 19700
+    example hash drops recovery to 0/1, while upper-casing the realm still
+    cracks 1/1 (hashcat normalises the realm itself). hashcat lower-cases the
+    hex fields on output and leaves principal and realm verbatim, so that is
+    the shape to store -- folding the principal produces a hash that is
+    accepted, queued, and can never crack.
+    """
+    from hashview.utils.utils import normalize_kerberos_hash
+
+    got = normalize_kerberos_hash(
+        f"$krb5tgs$18$SQLSvc$CONTOSO.LOCAL$*MSSQLSvc/a.b:1433*"
+        f"${_KRB_CK18.upper()}${_KRB_ED.upper()}", "19700")
+    assert got == f"$krb5tgs$18$SQLSvc$CONTOSO.LOCAL${_KRB_CK18}${_KRB_ED}"
+
+    # every principal-salted mode, not just TGS-REP
+    for htype, tag, etype in (("19800", "krb5pa", "17"), ("19900", "krb5pa", "18"),
+                              ("28800", "krb5db", "17"), ("28900", "krb5db", "18")):
+        got = normalize_kerberos_hash(
+            f"${tag}${etype}$MixedCase$CONTOSO.LOCAL${'A' * 104}", htype)
+        assert got == f"${tag}${etype}$MixedCase$CONTOSO.LOCAL${'a' * 104}", htype
+
+
+def test_normalize_kerberos_hash_folds_case_for_unsalted_rc4_etypes():
+    """RC4 keys are MD4(password) with no salt, so case cannot matter there.
+
+    Verified on hashcat: 13100 and 18200 still crack 1/1 with the principal and
+    realm upper-cased. These keep the historical all-lower-case stored form,
+    which is equally a round-trip fixed point and preserves de-duplication of
+    the same hash pasted in different cases.
+    """
+    from hashview.utils.utils import normalize_kerberos_hash
+
+    tgs23 = f"$krb5tgs$23$*USER$REALM$test/spn*${'A' * 32}${_KRB_ED.upper()}"
+    assert normalize_kerberos_hash(tgs23, "13100") == tgs23.lower()
+    asrep = f"$krb5asrep$23$USER@CONTOSO.LOCAL:{'A' * 32}${_KRB_ED.upper()}"
+    assert normalize_kerberos_hash(asrep, "18200") == asrep.lower()
 
 
 @pytest.mark.security
 def test_kerberos_import_stores_the_shape_hashcat_echoes_back(app, tmp_path):
-    """An SPN-bearing hash must be stored without the SPN.
+    """An SPN-bearing, mixed-case hash must be stored exactly as hashcat echoes it.
 
-    hashcat drops the SPN field from its outfile, and a recovered hash is
-    matched by an exact md5 of the stored ciphertext, so storing the SPN would
-    leave the crack unmatchable and silently discarded -- worse than the
-    rejection that used to happen at paste time.
+    hashcat drops the SPN, lower-cases the hex and preserves the principal, and
+    a recovered hash is matched by an exact md5 of the stored ciphertext -- so
+    any other stored shape leaves the crack unmatchable and silently discarded.
+
+    The expected string below is not assumed, it is hashcat 6.2.6's own
+    rendering. Confirmed two ways, because a mixed-case principal cannot be
+    cracked on demand (the salt is wrong by construction) and so never reaches
+    a normal outfile: ``--left`` and ``--show`` both re-encode through the same
+    writer the crack path uses -- proven by feeding them upper-case hex and
+    watching it come back folded -- and both echo ``SQLSvc``/``Contoso.Local``
+    verbatim. Neither the agent nor the ingest route touches case in between
+    (hashview/api/routes.py builds the lookup key straight from the reported
+    line), so stored form == reported form == this string.
     """
     from hashview.utils.utils import get_md5_hash
 
     hashfile_id = _make_user_and_hashfile()
     path = tmp_path / "krb.txt"
     path.write_text(
-        f"$krb5tgs$18$svc_sql$CONTOSO.LOCAL"
-        f"$*MSSQLSvc/sql01.contoso.local:1433*${_KRB_CK18}${_KRB_ED}\n"
+        f"$krb5tgs$18$SQLSvc$CONTOSO.LOCAL"
+        f"$*MSSQLSvc/sql01.contoso.local:1433*${_KRB_CK18.upper()}${_KRB_ED.upper()}\n"
     )
 
     import_hashfilehashes(
@@ -255,11 +301,11 @@ def test_kerberos_import_stores_the_shape_hashcat_echoes_back(app, tmp_path):
     assert len(links) == 1
     stored = Hashes.query.get(links[0].hash_id)
 
-    # what hashcat will report on a crack, lowercased the way imports are
-    echoed = f"$krb5tgs$18$svc_sql$CONTOSO.LOCAL${_KRB_CK18}${_KRB_ED}".lower()
+    echoed = f"$krb5tgs$18$SQLSvc$CONTOSO.LOCAL${_KRB_CK18}${_KRB_ED}"
     assert "*" not in stored.ciphertext
     assert stored.ciphertext == echoed
+    # the principal's case survived -- this is what makes the hash crackable
+    assert "SQLSvc" in stored.ciphertext
     # the agent-upload lookup keys off this md5; it has to match
     assert stored.sub_ciphertext == get_md5_hash(echoed)
-    # the principal, not the SPN, is the username
-    assert _all_usernames(hashfile_id) == {"svc_sql"}
+    assert _all_usernames(hashfile_id) == {"SQLSvc"}

@@ -772,13 +772,41 @@ _KRB_TGS_AES_SPN_RE = re.compile(
     r'^(\$krb5tgs\$1[78]\$[^$]+\$[^$]+\$)\*[^*]*\*\$([0-9a-fA-F]{24}\$[0-9a-fA-F]+)$')
 
 
-def normalize_kerberos_hash(line):
-    """Strip impacket's SPN field from a $krb5tgs$17/$18 hash.
+# Kerberos modes whose long-term key is salted with REALM + principal, i.e. the
+# AES etypes (17/18). Measured on hashcat 6.2.6 by upper-casing the principal in
+# each mode's own example hash: 19600/19700/19800/19900/28800/28900 stop cracking
+# (0/1 recovered), while the RC4 etypes 7500/13100/18200 still crack because
+# their key is MD4(password) with no salt at all. So the principal's case is
+# load-bearing for exactly these six, and folding it silently destroys the hash.
+_KRB_PRINCIPAL_SALTED = frozenset({'19600', '19700', '19800', '19900', '28800', '28900'})
 
-    Returns the line unchanged for every other Kerberos format, and is
-    idempotent -- a hash that never carried an SPN is untouched.
+
+def normalize_kerberos_hash(line, hash_type):
+    """Return a Kerberos hash in the exact form hashcat echoes back on a crack.
+
+    A recovered hash is matched to its row by an exact md5 of the stored
+    ciphertext, so the stored form has to be a fixed point of what hashcat
+    prints. Measured against hashcat 6.2.6, that means:
+
+    * drop impacket's star-wrapped SPN field ($krb5tgs$17/$18 only) -- hashcat
+      parses it, ignores it for the salt, and omits it from its outfile;
+    * lower-case the hex fields, which hashcat normalises;
+    * leave the principal and realm exactly as supplied, which hashcat does.
+
+    For the principal-salted AES etypes that last point is not cosmetic: the
+    principal is part of the Kerberos salt, so lower-casing a service account
+    like ``SQLSvc`` yields a hash that is accepted, queued, and can never crack.
+    The unsalted RC4 etypes keep the historical all-lower-case form, which is
+    equally a fixed point for them and preserves existing de-duplication.
     """
-    return _KRB_TGS_AES_SPN_RE.sub(r'\1\2', line)
+    line = _KRB_TGS_AES_SPN_RE.sub(r'\1\2', line)
+    if str(hash_type) not in _KRB_PRINCIPAL_SALTED:
+        return line.lower()
+    # ['', tag, etype, principal, realm, <hex fields...>]
+    parts = line.split('$')
+    if len(parts) < 6:
+        return line.lower()
+    return '$'.join(parts[:5] + [field.lower() for field in parts[5:]])
 
 
 def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
@@ -885,7 +913,7 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                 # left alone for the username split below, which reads the
                 # principal at index 3 in both shapes.
                 hash_id = import_hash_only(
-                    line=normalize_kerberos_hash(line.lower().rstrip()), hash_type=hash_type)
+                    line=normalize_kerberos_hash(line.rstrip(), hash_type), hash_type=hash_type)
                 if hash_type == '18200':
                     username = line.split('$')[3].split(':')[0]
                 else:

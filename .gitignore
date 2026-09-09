@@ -163,3 +163,7 @@ coverage.json
 
 # superpowers visual brainstorm scratch
 .superpowers/
+# Agent planning/spec docs are working artifacts, not deliverables --
+# they don't belong in the repo. Keep them out of commits entirely.
+docs/superpowers/
+docs/plans/

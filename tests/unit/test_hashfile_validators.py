@@ -8,6 +8,7 @@ netntlm arity bug, sha512crypt rounds=, locked shadow accounts).
 """
 
 import os
+import re
 import tempfile
 
 import pytest
@@ -282,6 +283,70 @@ def test_kerberos_tgs_rc4_bare_and_john_shapes_stay_rejected():
          ['$krb5tgs$23$' + 'b' * 32 + '$' + _ED], '13100')
     _bad(validate_kerberos_hashfile,
          ['$krb5tgs$test/spn:' + 'b' * 32 + '$' + _ED], '13100')
+
+
+# --- 19600/19700 asterisk-in-user/realm regression (real gap vs. hashcat) --
+#
+# The OLD 19600/19700 patterns used [^$]+ for the user and realm fields, which
+# let an asterisk inside either field validate. hashcat detects the SPN form
+# with strchr(line_buf + 13, '*'), so ANY asterisk after the mode field puts
+# its parser into SPN mode; it then fails to find a closing delimiter and
+# rejects the hash with "Separator unmatched" (measured on real hashcat
+# 7.1.2). That let three shapes pass validation at paste time and then die on
+# the agent with "No hashes loaded" -- exactly the "too loose" failure class
+# this pattern set out to eliminate. The fix narrows the class to [^$*]+.
+#
+# A vector only pins the fix if it is rejected by the OLD ([^$]+) class too --
+# one such vector slipped through review on another branch. So each case
+# below is proven twice: rejected by the OLD relaxed pattern below (mirrored
+# here, not the production one) as well as by the actual fixed validator.
+_OLD_RELAXED_KERBEROS_RE = {
+    '19600': re.compile(
+        r'^\$krb5tgs\$17\$[^$]+\$[^$]+\$(?:\*[^*]*\*\$)?[0-9a-fA-F]{24}\$[0-9a-fA-F]{64,}$'),
+    '19700': re.compile(
+        r'^\$krb5tgs\$18\$[^$]+\$[^$]+\$(?:\*[^*]*\*\$)?[0-9a-fA-F]{24}\$[0-9a-fA-F]{64,}$'),
+}
+
+
+@pytest.mark.parametrize("htype,vec", [
+    ('19600', '$krb5tgs$17$srv_h*ttp$synacktiv.local$' + 'd' * 24 + '$' + _ED),   # * in user
+    ('19700', '$krb5tgs$18$srv_h*ttp$synacktiv.local$' + 'e' * 24 + '$' + _ED),   # * in user
+    ('19600', '$krb5tgs$17$srv_http$synack*tiv.local$' + 'd' * 24 + '$' + _ED),   # * in realm
+    ('19700', '$krb5tgs$18$srv_http$synack*tiv.local$' + 'e' * 24 + '$' + _ED),   # * in realm
+    ('19600', '$krb5tgs$17$sr*v_h*ttp$synacktiv.local$' + 'd' * 24 + '$' + _ED),  # two * in user
+    ('19700', '$krb5tgs$18$sr*v_h*ttp$synacktiv.local$' + 'e' * 24 + '$' + _ED),  # two * in user
+])
+def test_kerberos_19600_19700_reject_asterisk_in_user_or_realm(htype, vec):
+    # A vector that both patterns reject pins nothing -- confirm the OLD
+    # relaxed class actually accepted this shape before asserting the fixed
+    # validator now rejects it.
+    assert _OLD_RELAXED_KERBEROS_RE[htype].match(vec), (
+        "vector is not actually accepted by the old [^$]+ class; "
+        "it pins nothing"
+    )
+    _bad(validate_kerberos_hashfile, [vec], htype)
+
+
+@pytest.mark.parametrize("htype,checksum_char", [('19600', 'd'), ('19700', 'e')])
+def test_kerberos_19600_19700_empty_spn_still_validates(htype, checksum_char):
+    """The empty-SPN control `$**$` matches hashcat and must keep validating."""
+    realm_map = {'19600': ('17', 'd'), '19700': ('18', 'e')}
+    ver, _ = realm_map[htype]
+    vec = (
+        f'$krb5tgs${ver}$srv_http$synacktiv.local$**$'
+        + checksum_char * 24 + '$' + _ED
+    )
+    _ok(validate_kerberos_hashfile, [vec], htype)
+
+
+@pytest.mark.parametrize("htype,vec", [
+    ('19600', _KRB['19600']),
+    ('19700', _KRB['19700']),
+])
+def test_kerberos_19600_19700_star_free_control_still_validates(htype, vec):
+    """Star-free control: the tightened class must not reject ordinary hashes."""
+    _ok(validate_kerberos_hashfile, [vec], htype)
+
 
 # ---------------------------------------------------------------------------
 # shadow (500/1500/1800/3200)

@@ -1811,10 +1811,19 @@ _KERBEROS_RE = {
     # segment is optional here rather than required. It is NOT the 13100-style
     # `*user$realm$spn*` triple: hashcat rejects that for 17/18 ("No hashes
     # loaded"), so the stars stay confined to their own field.
+    #
+    # The user/realm fields use [^$*] rather than [^$]: hashcat detects the
+    # SPN form with strchr(line_buf + 13, '*'), so ANY asterisk anywhere after
+    # the mode field puts its parser into SPN mode. An asterisk inside the
+    # user or realm field then has no matching closing delimiter in the
+    # expected place and hashcat rejects the whole line ("Separator
+    # unmatched"/"Hash parsing error") -- measured on 7.1.2. [^$]+ let such
+    # hashes validate at paste time and then die on the agent with "No hashes
+    # loaded", exactly the too-loose failure class this pattern set out to fix.
     '19600': re.compile(
-        r'^\$krb5tgs\$17\$[^$]+\$[^$]+\$(?:\*[^*]*\*\$)?[0-9a-fA-F]{24}\$[0-9a-fA-F]{64,}$'),
+        r'^\$krb5tgs\$17\$[^$*]+\$[^$*]+\$(?:\*[^*]*\*\$)?[0-9a-fA-F]{24}\$[0-9a-fA-F]{64,}$'),
     '19700': re.compile(
-        r'^\$krb5tgs\$18\$[^$]+\$[^$]+\$(?:\*[^*]*\*\$)?[0-9a-fA-F]{24}\$[0-9a-fA-F]{64,}$'),
+        r'^\$krb5tgs\$18\$[^$*]+\$[^$*]+\$(?:\*[^*]*\*\$)?[0-9a-fA-F]{24}\$[0-9a-fA-F]{64,}$'),
     # 104-112, not exactly 112: the encrypted blob is confounder(16) + a
     # DER-encoded PA-ENC-TS-ENC whose length varies with the optional
     # microseconds field + HMAC(12), so a real 104-hex hash was being rejected.

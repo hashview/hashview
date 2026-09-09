@@ -6,7 +6,7 @@ and DB side effects against the in-memory app.
 """
 
 
-from hashview.jobs.forms import JobsForm
+from hashview.jobs.forms import JobsForm, JobsNewHashFileForm
 from hashview.models import (
     Hashes,
     HashfileHashes,
@@ -145,6 +145,25 @@ def test_jobs_add_get_renders(app, client):
     make_customer()
     resp = client.get("/jobs/add")
     assert resp.status_code == 200
+
+
+def test_jobs_add_customer_dropdown_lists_add_new_first(app, client):
+    """#133: '+ Add new customer...' must precede every customer option so it's
+    reachable without scrolling past an alphabetized customer list."""
+    admin = make_admin()
+    login(client, admin)
+    make_customer(name="Acme Corp")
+    make_customer(name="Zeta Inc")
+
+    resp = client.get("/jobs/add")
+    assert resp.status_code == 200
+    body = resp.data
+
+    add_new = body.index(b"value='add_new'")
+    assert add_new < body.index(b"Acme Corp")
+    assert add_new < body.index(b"Zeta Inc")
+    # --SELECT-- stays first so it remains the default-selected placeholder
+    assert body.index(b"--SELECT--") < add_new
 
 
 def test_jobs_add_post_creates_job(app, client):
@@ -430,6 +449,75 @@ def test_jobs_summary_without_tasks_redirects(app, client):
     assert resp.status_code in (301, 302)
 
 
+def test_jobs_summary_scales_with_assigned_tasks_not_library(app, client, tmp_path):
+    """Issue #422: job summary should only query assigned task names, not the
+    entire tasks table. Response size must scale with assigned task count, not
+    total task library size."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    hf, _ = _hashfile_with_hash(cust, admin)
+    job = _job(admin, cust, hashfile_id=hf.id)
+
+    # Seed 50 extra tasks in the library.
+    wl = _static_wl(admin, tmp_path)
+    for i in range(50):
+        _task(admin, name=f"ignored-{i}", wl_id=wl.id)
+
+    # Assign exactly 2 tasks to the job.
+    assigned_task1 = _task(admin, name="assigned-1", wl_id=wl.id)
+    assigned_task2 = _task(admin, name="assigned-2", wl_id=wl.id)
+    _assign(job, assigned_task1)
+    _assign(job, assigned_task2)
+
+    db.session.add(Settings(enabled_job_weights=False))
+    db.session.commit()
+
+    # The old nested-loop template only ever *rendered* task.name for rows
+    # where task.id == a.task_id, so absence of "ignored-N" text and a
+    # response-size threshold cannot distinguish the fix from the O(assigned
+    # x library) bug at this fixture's scale (2 assigned x 52 library tasks is
+    # only ~4KB of loop whitespace either way). What actually distinguishes
+    # them is the query issued: the fixed route filters Tasks by the assigned
+    # ids; the old route loaded every row via Tasks.query.all(). Inspect the
+    # SQL the same way test_rules_pagination.py does for the equivalent bug.
+    from sqlalchemy import event
+
+    statements = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(" ".join(statement.split()).lower())
+
+    engine = db.engine
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        resp = client.get(f"/jobs/{job.id}/summary")
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert resp.status_code == 200
+
+    # Verify both assigned task names appear in the rendered output, in order.
+    assert b"assigned-1" in resp.data
+    assert b"assigned-2" in resp.data
+    assert b"01</span>assigned-1" in resp.data
+    assert b"02</span>assigned-2" in resp.data
+
+    # Verify that ignored (unassigned) library tasks do NOT appear.
+    for i in range(50):
+        assert f"ignored-{i}".encode() not in resp.data
+
+    # The decisive check: no query against `tasks` may be an unfiltered
+    # full-table scan (Tasks.query.all() has no WHERE clause at all).
+    row_loads = [s for s in statements
+                 if s.startswith("select") and " from tasks" in s
+                 and "count(" not in s]
+    assert any("id in" in s for s in row_loads), \
+        f"no id-scoped task lookup found; saw: {row_loads}"
+    unfiltered = [s for s in row_loads if " where " not in s]
+    assert not unfiltered, f"unrestricted scan of tasks: {unfiltered}"
+
+
 def test_jobs_start_queues_job(app, client, tmp_path):
     admin = make_admin()
     login(client, admin)
@@ -491,3 +579,79 @@ def test_validate_job_allows_unique_name(app):
 
     # No exception -> passes
     assert form.validate_name(_Field()) is None
+
+
+def test_jobs_new_hashfile_form_pwdump_hash_type_default(app):
+    """Test that an unbound JobsNewHashFileForm has pwdump_hash_type defaulting to '1000'."""
+    form = JobsNewHashFileForm()
+    assert form.pwdump_hash_type.data == '1000'
+
+
+def test_jobs_list_tasks_single_csrf_token_for_task_dropdown(app, client):
+    """Issue #422 (3): Task library should render one form + one CSRF token for many
+    tasks, not one form + token per task. This test verifies:
+    - Only ONE csrf_token input is rendered per task assignment form
+    - Task assignment via formaction still works end-to-end
+    """
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+
+    # Seed 50 tasks to make the per-task overhead obvious
+    tasks = [_task(admin, name=f"task_{i}") for i in range(50)]
+
+    resp = client.get(f"/jobs/{job.id}/tasks")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+
+    # Verify that the form structure uses formaction (one form with multiple buttons)
+    # not separate forms per task. Count should be exactly 1, not 50.
+    form_count = body.count('<form method="POST" id="task_assign_form">')
+    assert form_count == 1, f"Expected 1 task assignment form with id='task_assign_form', got {form_count}"
+
+    # Also verify buttons use formaction, not separate forms
+    # With 50 tasks, we should have 50 buttons with formaction in the one form
+    formaction_count = body.count('formaction="/jobs/')
+    assert formaction_count >= 50, f"Expected at least 50 formaction buttons (one per task), got {formaction_count}"
+
+    # Verify task assignment via formaction still works
+    task = tasks[0]
+    resp = client.post(f"/jobs/{job.id}/assign_task/{task.id}", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    assert JobTasks.query.filter_by(job_id=job.id, task_id=task.id).count() == 1
+
+
+def test_jobs_list_tasks_single_csrf_token_for_task_group_dropdown(app, client):
+    """Issue #422 (3): Task group library should also render one form + one CSRF token,
+    not one per group.
+    """
+    import json
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+
+    # Seed 30 task groups
+    task = _task(admin, name="group_member_task")
+    task_groups = []
+    for i in range(30):
+        tg = TaskGroups(name=f"group_{i}", owner_id=admin.id,
+                       tasks=json.dumps([task.id]))
+        db.session.add(tg)
+        task_groups.append(tg)
+    db.session.commit()
+
+    resp = client.get(f"/jobs/{job.id}/tasks")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+
+    # Verify the form structure uses formaction (one form with multiple buttons)
+    form_count = body.count('<form method="POST" id="task_group_assign_form">')
+    assert form_count == 1, f"Expected 1 task group assignment form, got {form_count}"
+
+    # Verify task group assignment still works
+    tg = task_groups[0]
+    resp = client.post(f"/jobs/{job.id}/assign_task_group/{tg.id}", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    assert JobTasks.query.filter_by(job_id=job.id).count() == 1

@@ -74,8 +74,9 @@ def hashcat_status(filepath):
     with open(filepath, encoding='utf-8', errors='replace') as hashcat_output:
         for line in hashcat_output:
             # Iterate the whole file; the last valid status line wins. We read this
-            # while hashcat is still writing it (via tee), so a line can be partial
-            # or malformed -- skip those rather than aborting the status poll.
+            # while hashcat is still writing to it directly (no shell/tee involved,
+            # per #297), so a line can be partial or malformed -- skip those rather
+            # than aborting the status poll.
             if not line.startswith('{'):
                 continue
             try:

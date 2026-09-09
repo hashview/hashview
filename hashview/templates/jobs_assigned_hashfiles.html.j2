@@ -30,7 +30,7 @@
         '1700': '82a9dda829eb7f8ffe9fbe49e45d47d2dad9664fbb7adf72492e3c81ebd3e29134d9bc12212bf83c6840f10e8246b9db54a4859b7ccd0123d86e5872c1e5082f'
     };
     var HV_PASTE_DEFAULT = 'Paste one hash per line…';
-    var HV_HAS_EXISTING = {{ 'true' if hashfiles.count() else 'false' }};
+    var HV_HAS_EXISTING = {{ 'true' if hashfiles|length else 'false' }};
     var HV_DEFAULT_TAB = "{{ default_tab }}";
 
     // Disable Next until the active tab's required fields are valid. The button
@@ -54,6 +54,16 @@
         }
     }
 
+    function hvCustomHashType(sel){
+        var d = document.getElementById('custom_hash_type_div');
+        var on = (sel && sel.value === 'custom');
+        d.style.display = on ? 'block' : 'none';
+        var inp = d.querySelector('input');
+        if (inp) inp.required = on;
+        if (inp && !on) inp.value = '';
+        hvHfGate();
+    }
+
     // show the hash-type select that matches the chosen file format
     function showHashTypeSelected(sel){
         var map = {pwdump:'pwdump_hash_type_div', NetNTLM:'netntlm_hash_type_div', kerberos:'kerberos_hash_type_div',
@@ -73,6 +83,15 @@
         // --hex-salt applies only to the colon-delimited hash_only / user_hash formats
         var hs = document.getElementById('hex_salt_div');
         if (hs) hs.style.display = (sel.value === 'hash_only' || sel.value === 'user_hash') ? 'flex' : 'none';
+        // custom mode entry is only meaningful for hash_only / user_hash; hide it
+        // (and clear its required flag) when switching to any other format, and
+        // re-evaluate it (in case the hash_type select still holds 'custom' from
+        // an earlier selection) when switching back to hash_only / user_hash.
+        if (sel.value !== 'hash_only' && sel.value !== 'user_hash') {
+            hvCustomHashType(null);
+        } else {
+            hvCustomHashType(vsel);
+        }
         hvHfGate();
     }
 
@@ -170,8 +189,14 @@
                         <div id="netntlm_hash_type_div" style="display:none;">{{ jobsNewHashFileForm.netntlm_hash_type(class="select", onchange="hvHashTypeExample(this)") }}</div>
                         <div id="kerberos_hash_type_div" style="display:none;">{{ jobsNewHashFileForm.kerberos_hash_type(class="select", onchange="hvHashTypeExample(this)") }}</div>
                         <div id="shadow_hash_type_div" style="display:none;">{{ jobsNewHashFileForm.shadow_hash_type(class="select", onchange="hvHashTypeExample(this)") }}</div>
-                        <div id="hash_type_div" style="display:none;">{{ jobsNewHashFileForm.hash_type(class="select", onchange="hvHashTypeExample(this)") }}</div>
+                        <div id="hash_type_div" style="display:none;">{{ jobsNewHashFileForm.hash_type(class="select", onchange="hvHashTypeExample(this); hvCustomHashType(this)") }}</div>
                     </div>
+                </div>
+
+                <div id="custom_hash_type_div" style="display:none;">
+                    <label class="field-label" for="custom_hash_type">Custom hashcat mode <span class="req">*</span></label>
+                    {{ jobsNewHashFileForm.custom_hash_type(class=("input is-invalid" if jobsNewHashFileForm.custom_hash_type.errors else "input"), placeholder="e.g. 31337") }}
+                    {% if jobsNewHashFileForm.custom_hash_type.errors %}<div class="invalid-feedback">{% for e in jobsNewHashFileForm.custom_hash_type.errors %}<span>{{ e }}</span>{% endfor %}</div>{% endif %}
                 </div>
 
                 {# --hex-salt: only the colon-delimited hash_only / user_hash formats carry a
@@ -220,7 +245,7 @@
         {# Use existing #}
         <div id="pane-existing" style="display:{{ 'block' if default_tab == 'existing' else 'none' }};">
             <form action='' id='hf_form_existing' method='post' name='hf_form'>
-                {% if hashfiles.count() %}
+                {% if hashfiles|length %}
                 {% set ns = namespace(has_match=false) %}
                 {% for hashfile in hashfiles %}{% if hashfile.id == job.hashfile_id %}{% set ns.has_match = true %}{% endif %}{% endfor %}
                 <table class="tbl">
@@ -259,7 +284,7 @@
 <div class="wizard-nav">
     <a class="btn" href="{{ url_for('jobs.jobs_list') }}">{{ icon('arrowLeft', size=15) }} Back</a>
     <span class="spacer"></span>
-    <button type="submit" id="hf_next" form="{{ 'hf_form_existing' if default_tab == 'existing' else 'hf_form' }}" class="btn btn-primary"{% if default_tab == 'existing' and not hashfiles.count() %} style="display:none;"{% endif %}>Next {{ icon('arrowRight', size=15) }}</button>
+    <button type="submit" id="hf_next" form="{{ 'hf_form_existing' if default_tab == 'existing' else 'hf_form' }}" class="btn btn-primary"{% if default_tab == 'existing' and not hashfiles|length %} style="display:none;"{% endif %}>Next {{ icon('arrowRight', size=15) }}</button>
 </div>
 
 {# ---- hashfile import progress modal (opened when the Upload/Paste form submits) ----

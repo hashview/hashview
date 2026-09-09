@@ -43,6 +43,11 @@ password="hashed-pw"
 api_key="user-api-key-admin"
 src_ip="127\.0\.0\.1"
 
+# Test-only dummy credential literals in tests/unit/test_api_task_groups.py
+# (owner/other-user fixtures for #401's /v1 task-group endpoint tests).
+api_key="user-api-key-owner"
+api_key="user-api-key-other"
+
 # test fixture api_key literal in the download tests (not a real secret)
 api_key="dl-key"
 
@@ -109,6 +114,32 @@ sha256:\s*"[0-9a-f]{64}"
 api_key="test-api-key"
 api_key="scope-audit-key"
 
-# LM hash response constant used by machine-account/hash-parser tests
-# (a fixed test fixture value, not a real credential).
+# --- CONTRIBUTING.md false positives ---
+# Public documentation link to the Conventional Commits spec.
+conventionalcommits\.org
+
+# --- tests/unit/test_issue_xfail_import_hash_type_int.py false positives ---
+# A throwaway MySQL 4.1 (hashcat -m 300) SHA1 test digest; its 40 hex chars
+# trip the AWS-secret-key heuristic. Not a credential.
+FCF7C1B8749CF99D88E5F34271D636178FB5D130
+# Dummy api_key literals in the API-route test fixtures. Deliberately stops at
+# the shared prefix so the pattern also matches this very line, which the
+# generic secret-assign rule flags whenever it is added or moved.
+api_key="user-api-key-
+
+# 0.0.0.0 is the wildcard bind address, not a real host IP. Flagged whenever a
+# compose file or doc explains why a port no longer binds it (#394).
+0\.0\.0\.0
+
+# --- tests/unit/test_machine_account_filter.py false positives ---
+# Throwaway NetNTLM lm_resp test fixture (52 hex/alpha chars) trips the
+# AWS-secret-key heuristic whenever a new test function using it is added.
+# Not a credential -- it's a fixed dummy LM response reused across the file's
+# existing NetNTLM tests.
 1122334455667788AABBCCDDEEFF1122334455667788AABBCCDD
+
+# --- tests/integration/test_analytics_docker_bugs.py false positives ---
+# Throwaway login credentials used by the opt-in docker analytics bugtest.
+# Gate: pytest.mark.docker_analytics, skipped unless HASHVIEW_DOCKER_BASE_URL set.
+# Test creates prefixed rows (zz-analytics-bugtest*) for teardown. Not a real credential.
+LOGIN_PASSWORD = "bugtest-password-123"

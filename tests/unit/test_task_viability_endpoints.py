@@ -136,3 +136,22 @@ def test_get_benchmark_empty_table(client, admin_user):
     _auth(client, admin_user.api_key)
     body = _body(client.get("/v1/agents/benchmark"))
     assert body["status"] == 200 and body["performance"] == {}
+
+
+def test_get_benchmark_fleet_wide_excludes_zero_speed_rows(client, admin_user):
+    """A mode with one unsupported (speed=0) agent report and one real speed
+    must report the real speed, matching slowest_benchmark's own
+    ``AgentBenchmarks.speed > 0`` filter -- a stray 0 here would let a
+    consumer computing work / performance[mode] divide by zero."""
+    _bench(agent_id=1, hash_type=1000, speed=0)
+    _bench(agent_id=2, hash_type=1000, speed=60_000_000_000)
+    # A mode where the ONLY report is unsupported must be absent entirely,
+    # not reported as 0.
+    _bench(agent_id=1, hash_type=2000, speed=0)
+
+    _auth(client, admin_user.api_key)
+    body = _body(client.get("/v1/agents/benchmark"))
+
+    assert body["status"] == 200
+    assert body["performance"]["1000"] == 60_000_000_000
+    assert "2000" not in body["performance"]

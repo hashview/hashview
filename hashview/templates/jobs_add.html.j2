@@ -60,10 +60,10 @@
                 <label class="field-label" for="customer_id">Customer <span class="req">*</span></label>
                 <select class="select" id="customer_id" name="customer_id" onchange="showDiv()" required>
                     <option value>--SELECT--</option>
+                    <option value='add_new'>+ Add new customer...</option>
                     {% for customer in customers %}
                         <option value='{{customer.id}}'>{{customer.name}}</option>
                     {% endfor %}
-                    <option value='add_new'>+ Add new customer...</option>
                 </select>
             </div>
 

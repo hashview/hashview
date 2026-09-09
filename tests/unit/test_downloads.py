@@ -24,6 +24,7 @@ from hashview.models import (
     Wordlists,
     db,
 )
+from hashview.utils.utils import get_md5_hash
 
 
 def _admin():
@@ -51,7 +52,7 @@ def _make_hashfile_with_hashes(owner_id):
         ("ccc333", None, False),
     ]
     for ct, pt, cracked in specs:
-        h = Hashes(sub_ciphertext="0" * 8, ciphertext=ct, hash_type=0,
+        h = Hashes(sub_ciphertext=get_md5_hash(ct), ciphertext=ct, hash_type=0,
                    cracked=cracked, plaintext=pt)
         db.session.add(h)
         db.session.commit()
@@ -120,7 +121,7 @@ def test_hashfile_export_preserves_non_latin1_plaintext(app, client):
     db.session.add(hf)
     db.session.commit()
     plain = "пароль-密码-🔒"          # Cyrillic + CJK + emoji, all > U+00FF
-    h = Hashes(sub_ciphertext="0" * 8, ciphertext="ddd444", hash_type=0,
+    h = Hashes(sub_ciphertext=get_md5_hash("ddd444"), ciphertext="ddd444", hash_type=0,
                cracked=True, plaintext=plain)
     db.session.add(h)
     db.session.commit()
@@ -233,7 +234,7 @@ def _tmp_dir_entries(app):
 
 
 def _cracked(plaintext, ciphertext):
-    h = Hashes(sub_ciphertext="0" * 8, ciphertext=ciphertext, hash_type=1000,
+    h = Hashes(sub_ciphertext=get_md5_hash(ciphertext), ciphertext=ciphertext, hash_type=1000,
                cracked=True, plaintext=plaintext)
     db.session.add(h)
     db.session.commit()

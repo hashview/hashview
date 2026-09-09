@@ -1,0 +1,67 @@
+name: Close issues on merge to v0.8.3-dev
+
+# GitHub's native "Closes #N" auto-close only fires when a PR merges into the
+# repo's default branch (main). Most fixes here land on v0.8.3-dev instead, so
+# without this workflow those issues stay open after the fix ships. This scans
+# the merged PR's title, body, and commit messages for the standard GitHub
+# closing keywords and closes the referenced issues by hand.
+on:
+  pull_request:
+    types: [closed]
+    branches: [v0.8.3-dev]
+
+jobs:
+  close-issues:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: read
+    steps:
+      - name: Close issues referenced by closing keywords
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+            });
+            const text = [pr.title, pr.body || '', ...commits.map(c => c.commit.message)].join('\n');
+
+            // Same keyword set GitHub recognizes for auto-close: close(s/d),
+            // fix(es/ed), resolve(s/d).
+            const pattern = /\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\s*:?\s*#(\d+)/gi;
+            const issueNumbers = new Set();
+            let match;
+            while ((match = pattern.exec(text)) !== null) {
+              issueNumbers.add(Number(match[3]));
+            }
+
+            for (const issueNumber of issueNumbers) {
+              try {
+                const { data: issue } = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                });
+                if (issue.state === 'closed') continue;
+
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  body: `Closed automatically: referenced by #${pr.number}, merged into \`${pr.base.ref}\`.`,
+                });
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  state: 'closed',
+                });
+              } catch (err) {
+                core.warning(`Could not close #${issueNumber}: ${err.message}`);
+              }
+            }

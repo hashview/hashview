@@ -27,6 +27,7 @@ import pytest
 
 from hashview.models import Agents, Hashes, HashfileHashes, Users
 from hashview.models import db as _db
+from hashview.utils.utils import get_md5_hash
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -77,7 +78,7 @@ def _search(client, payload=None, *, raw=None, content_type="application/json"):
 
 def _seed_hash(ciphertext, hash_type, cracked, plaintext=None):
     h = Hashes(
-        sub_ciphertext="0" * 32,
+        sub_ciphertext=get_md5_hash(ciphertext),
         ciphertext=ciphertext,
         hash_type=hash_type,
         cracked=cracked,

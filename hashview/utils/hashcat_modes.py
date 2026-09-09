@@ -13,6 +13,8 @@ spec table used by hashview.utils.utils.validate_hash_only_hashfile. Specs:
 Only fixed-shape parts are constrained, so legitimate hashes are not rejected.
 """
 
+CUSTOM_HASH_TYPE = 'custom'   # sentinel select value for a manually-entered mode; never persisted to the DB
+
 HASH_TYPE_CHOICES = [
     ('', '------SELECT------'),
     ('0', '(0) MD5'),

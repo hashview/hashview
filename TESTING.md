@@ -367,7 +367,7 @@ The unit job measures more than a single line number:
 
 ## CI workflows
 
-Seven workflows run on push / PR (plus one scheduled). Each gates a distinct
+Eight workflows run on push / PR (plus one scheduled). Each gates a distinct
 slice:
 
 | Workflow | Trigger | What it gates |
@@ -377,6 +377,7 @@ slice:
 | `e2e-crack.yml` | push, PR | The multi-agent real-crack harness via `run_e2e_crack_compose.sh`, using a pinned + checksummed SecLists rockyou. |
 | `db-parity.yml` | push, PR | MySQL/MariaDB parity (see below). |
 | `migration-e2e.yml` | push, PR | The main→dev migration + backfill harness (see below). 35-minute timeout; checks out with `fetch-depth: 0` so `origin/main` is available to build the "old" image. |
+| `kerberos-hashcat-interop.yml` | push, PR (path-filtered), manual dispatch | Real-binary hashcat Kerberos interop matrix (see below). |
 | `lint.yml` | push, PR | Ruff lint, Bandit SAST vs the committed baseline (server + agent), `pip-audit` of production deps, and OpenAPI spec validation. |
 | `pylint.yml` | push | Pylint across Python 3.11/3.12/3.13. |
 | `mutation.yml` | weekly cron + manual dispatch | Non-blocking `mutmut` campaign; uploads a survivor report artifact (never fails the build). |
@@ -423,6 +424,57 @@ containers/volumes/worktree for debugging), `DOCKER_PLATFORM`.
 `tests/run_migration_e2e.sh` and in `tests/integration/test_migration_e2e.py`
 (currently `d3a4a6a7b352`). Adding a migration requires bumping both, or this
 suite fails even though `alembic upgrade head` succeeds.
+
+### Kerberos hashcat interop (`kerberos-hashcat-interop.yml`)
+
+`hashview.utils.utils.normalize_kerberos_hash` preserves user/realm case and
+strips the SPN field for Kerberos modes 19600/19700 so that stored ciphertext
+stays byte-identical to what hashcat itself echoes for a cracked hash —
+recovery matches on `md5(ciphertext)` (`hashview/api/routes.py`), so any drift
+between our normalization and hashcat's own echo format silently breaks
+recovery for every hash it touches. `tests/unit/test_normalize_kerberos_hash.py`
+and friends pin fixed expectations, but a real hashcat release changing its
+own behavior would only show up here, against the live binary.
+
+`tests/hashcat_interop/test_kerberos_aes_interop.py` drives the real `hashcat`
+binary (never a mock) and asserts, across all AES-mode Kerberos types
+(19600/19700/19800/19900/28800/28900):
+
+- both the no-SPN and Impacket SPN-bearing input forms are accepted
+- hashcat strips the SPN from its echoed line
+- hex fields are lowercased in the echo
+- username and realm are echoed verbatim
+- the all-star form (`$krb5tgs$<ver>$*user*realm*spn*$...`) is rejected
+- the username is part of the AES salt, so its case must survive import
+  (realm case is preserved only so the stored ciphertext matches hashcat's
+  verbatim echo — the realm itself is not part of the salt)
+- round-trip equality between `normalize_kerberos_hash` and the live binary's
+  own normalized form (via `--left`)
+
+The CI job runs this suite against five pinned hashcat releases (6.2.6, 7.0.0,
+7.1.0, 7.1.1, 7.1.2), fetched and sha256-verified by
+`tests/hashcat_interop/fetch_hashcat.sh`, on a CPU-only OpenCL device (`pocl`).
+It only triggers on changes to `hashview/utils/utils.py`,
+`tests/hashcat_interop/**`, or the workflow itself.
+
+**The gate fails on any skip.** A skipped test exits 0, so a job step greps
+the pytest log for `skipped` and fails the job if found — otherwise a
+force-skipped module (see the note on `tests/hashcat_interop/conftest.py`
+below) would make this gate report success while proving nothing.
+
+Run it locally against your own `hashcat` binary:
+
+```
+HASHCAT_BIN=$(which hashcat) ./.venv/bin/python -m pytest tests/hashcat_interop -q -rs
+```
+
+Without `HASHCAT_BIN` set, the whole module skips cleanly (no error) — this is
+expected for local dev but not tolerated in CI. `tests/hashcat_interop/`
+carries its own `conftest.py` that overrides the repo-root autouse
+`ensure_setup`/`configure_page` fixtures; without that override every test
+here would additionally request Playwright's `page` and the `live_server`
+fixture (which skips without `HASHVIEW_E2E_BASE_URL`), silently no-opping the
+whole module even with `HASHCAT_BIN` set.
 
 ## Mutation testing (`mutation.yml`)
 

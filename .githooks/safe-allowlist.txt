@@ -119,3 +119,12 @@ api_key="user-api-key-
 # Not a credential -- it's a fixed dummy LM response reused across the file's
 # existing NetNTLM tests.
 1122334455667788AABBCCDDEEFF1122334455667788AABBCCDD
+
+# --- tests/integration/test_analytics_docker_bugs.py false positives ---
+# Throwaway login for the opt-in docker analytics bugtest. The module is gated
+# behind pytest.mark.docker_analytics and skips unless HASHVIEW_DOCKER_BASE_URL
+# is set, and everything it creates is prefixed zz-analytics-bugtest so teardown
+# deletes only its own rows. Not a credential. Anchored on the exact literal so
+# a real LOGIN_PASSWORD assignment still trips the generic secret-assign rule,
+# and the pattern matches its own line here, which that rule also flags.
+LOGIN_PASSWORD = "bugtest-password-123"

@@ -196,3 +196,70 @@ def test_hash_only_ntlm_lowercases(app, tmp_path):
 
     row = Hashes.query.first()
     assert row.ciphertext == "8846f7eaee8fb117ad06bdd830b7586c"
+
+
+# ---------------------------------------------------------------------------
+# kerberos $krb5tgs$17/$18 — impacket's SPN field
+# ---------------------------------------------------------------------------
+
+_KRB_CK18 = "16ce51f6eba20c8ee534ff8a"
+_KRB_ED = "57d07b23" * 8
+
+
+def test_normalize_kerberos_hash_strips_only_the_aes_spn_field():
+    from hashview.utils.utils import normalize_kerberos_hash
+
+    spn = (f"$krb5tgs$18$svc_sql$CONTOSO.LOCAL"
+           f"$*MSSQLSvc/sql01.contoso.local:1433*${_KRB_CK18}${_KRB_ED}")
+    plain = f"$krb5tgs$18$svc_sql$CONTOSO.LOCAL${_KRB_CK18}${_KRB_ED}"
+
+    assert normalize_kerberos_hash(spn) == plain
+    # idempotent: a hash that never had an SPN is untouched
+    assert normalize_kerberos_hash(plain) == plain
+    # etype 17 too
+    assert normalize_kerberos_hash(
+        f"$krb5tgs$17$u$R$*http/web*$849e31b3db1c1f203fa20b85${_KRB_ED}"
+    ) == f"$krb5tgs$17$u$R$849e31b3db1c1f203fa20b85${_KRB_ED}"
+    # 13100's star-wrapped triple round-trips through hashcat verbatim, so it
+    # must NOT be touched
+    tgs23 = f"$krb5tgs$23$*user$realm$test/spn*${'a' * 32}${_KRB_ED}"
+    assert normalize_kerberos_hash(tgs23) == tgs23
+
+
+@pytest.mark.security
+def test_kerberos_import_stores_the_shape_hashcat_echoes_back(app, tmp_path):
+    """An SPN-bearing hash must be stored without the SPN.
+
+    hashcat drops the SPN field from its outfile, and a recovered hash is
+    matched by an exact md5 of the stored ciphertext, so storing the SPN would
+    leave the crack unmatchable and silently discarded -- worse than the
+    rejection that used to happen at paste time.
+    """
+    from hashview.utils.utils import get_md5_hash
+
+    hashfile_id = _make_user_and_hashfile()
+    path = tmp_path / "krb.txt"
+    path.write_text(
+        f"$krb5tgs$18$svc_sql$CONTOSO.LOCAL"
+        f"$*MSSQLSvc/sql01.contoso.local:1433*${_KRB_CK18}${_KRB_ED}\n"
+    )
+
+    import_hashfilehashes(
+        hashfile_id=hashfile_id,
+        hashfile_path=str(path),
+        file_type="kerberos",
+        hash_type="19700",
+    )
+
+    links = HashfileHashes.query.filter_by(hashfile_id=hashfile_id).all()
+    assert len(links) == 1
+    stored = Hashes.query.get(links[0].hash_id)
+
+    # what hashcat will report on a crack, lowercased the way imports are
+    echoed = f"$krb5tgs$18$svc_sql$CONTOSO.LOCAL${_KRB_CK18}${_KRB_ED}".lower()
+    assert "*" not in stored.ciphertext
+    assert stored.ciphertext == echoed
+    # the agent-upload lookup keys off this md5; it has to match
+    assert stored.sub_ciphertext == get_md5_hash(echoed)
+    # the principal, not the SPN, is the username
+    assert _all_usernames(hashfile_id) == {"svc_sql"}

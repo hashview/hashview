@@ -131,6 +131,63 @@ def test_kerberos_invalid():
     _bad(validate_kerberos_hashfile, [_KRB['7500']], '99999')                              # unsupported type
 
 
+# --- $krb5tgs$17/$18 with impacket's SPN field -----------------------------
+#
+# GetUserSPNs.py emits the service principal name as an extra star-wrapped
+# field between the realm and the checksum:
+#   $krb5tgs$18$user$REALM$*MSSQLSvc/host.dom:1433*$<24 hex>$<edata2>
+# hashview used to reject that, so users had to hand-strip the segment.
+#
+# Verified against hashcat 6.2.6 by cracking its own 19700/19600 example hash
+# (password "hashcat") in both shapes: both parse, both recover the same
+# password, and hashcat echoes the hash back with the SPN dropped -- so the
+# field is optional, not required. The 13100-style `*user$realm$spn*` triple is
+# a different thing and hashcat rejects it for 17/18 ("No hashes loaded"), so
+# it must stay rejected here too.
+_SPN = '*MSSQLSvc/sql01.contoso.local:1433*'
+_CK17, _CK18 = '849e31b3db1c1f203fa20b85', '16ce51f6eba20c8ee534ff8a'
+_ED = '57d07b23643a516834795f0c010da8f5'
+
+
+@pytest.mark.parametrize("htype,etype,checksum", [('19600', '17', _CK17),
+                                                  ('19700', '18', _CK18)])
+def test_kerberos_tgs_aes_accepts_impacket_spn_field(htype, etype, checksum):
+    _ok(validate_kerberos_hashfile,
+        [f'$krb5tgs${etype}$svc_sql$CONTOSO.LOCAL${_SPN}${checksum}${_ED}'], htype)
+
+
+@pytest.mark.parametrize("htype,etype,checksum", [('19600', '17', _CK17),
+                                                  ('19700', '18', _CK18)])
+def test_kerberos_tgs_aes_still_accepts_the_spn_less_shape(htype, etype, checksum):
+    # hashcat's own example shape must keep working -- the SPN field is optional.
+    _ok(validate_kerberos_hashfile,
+        [f'$krb5tgs${etype}$srv_http$synacktiv.local${checksum}${_ED}'], htype)
+
+
+def test_kerberos_tgs_aes_rejects_13100_style_star_triple():
+    # hashcat refuses `*user$realm$spn*` for etype 17/18, so accepting it here
+    # would only let a hash through that the agent could never load.
+    _bad(validate_kerberos_hashfile,
+         [f'$krb5tgs$18$*srv_http$synacktiv.local$http/web*${_CK18}${_ED}'], '19700')
+    _bad(validate_kerberos_hashfile,
+         [f'$krb5tgs$17$*srv_http$synacktiv.local$http/web*${_CK17}${_ED}'], '19600')
+
+
+def test_kerberos_tgs_aes_spn_field_does_not_loosen_the_rest():
+    # An SPN present must not become a wildcard for the fields around it.
+    bad = [
+        f'$krb5tgs$18$u$R${_SPN}$16ce51f6eba20c8ee534ff${_ED}',      # checksum 22 hex, not 24
+        f'$krb5tgs$18$u$R${_SPN}$zzzzzzzzzzzzzzzzzzzzzzzz${_ED}',    # checksum not hex
+        f'$krb5tgs$18$u$R${_SPN}${_CK18}$',                          # no edata2
+        f'$krb5tgs$18$u$R${_SPN}${_CK18}$xyz',                       # edata2 not hex
+        f'$krb5tgs$18$u$${_SPN}${_CK18}${_ED}',                      # empty realm
+        f'$krb5tgs$18$u$R$*spn${_CK18}${_ED}',                       # unterminated star
+        f'$krb5tgs$23$u$R${_SPN}${_CK18}${_ED}',                     # etype 23 is not 19700
+    ]
+    for line in bad:
+        _bad(validate_kerberos_hashfile, [line], '19700')
+
+
 # ---------------------------------------------------------------------------
 # shadow (500/1500/1800/3200)
 # ---------------------------------------------------------------------------

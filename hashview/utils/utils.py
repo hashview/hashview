@@ -760,6 +760,27 @@ def _raw_username_for_history_check(line, file_type, hash_type):
     return None
 
 
+# $krb5tgs$17/$18 only: impacket and Rubeus put the service principal name in a
+# star-wrapped field between the realm and the checksum. hashcat parses it,
+# ignores it for the salt, and echoes the hash back WITHOUT it. Recovered hashes
+# are matched by an exact md5 of the stored ciphertext (import_hash_only above,
+# and the agent-upload lookup in hashview/api/routes.py), so storing the SPN
+# would leave every crack for that hash unmatchable and silently discarded --
+# strictly worse than the rejection this replaced. Store what hashcat hands
+# back. 13100 keeps its star-wrapped triple: that one does round-trip verbatim.
+_KRB_TGS_AES_SPN_RE = re.compile(
+    r'^(\$krb5tgs\$1[78]\$[^$]+\$[^$]+\$)\*[^*]*\*\$([0-9a-fA-F]{24}\$[0-9a-fA-F]+)$')
+
+
+def normalize_kerberos_hash(line):
+    """Strip impacket's SPN field from a $krb5tgs$17/$18 hash.
+
+    Returns the line unchanged for every other Kerberos format, and is
+    idempotent -- a hash that never carried an SPN is untouched.
+    """
+    return _KRB_TGS_AES_SPN_RE.sub(r'\1\2', line)
+
+
 def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
     """Function to hashfile"""
 
@@ -859,7 +880,12 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
                     hash_id = import_hash_only(line=line.split(':')[3].lower(), hash_type='1000')
                     username = candidate_username
             elif file_type == 'kerberos':
-                hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
+                # Normalized so the stored ciphertext equals what hashcat will
+                # echo back on a crack; see normalize_kerberos_hash. `line` is
+                # left alone for the username split below, which reads the
+                # principal at index 3 in both shapes.
+                hash_id = import_hash_only(
+                    line=normalize_kerberos_hash(line.lower().rstrip()), hash_type=hash_type)
                 if hash_type == '18200':
                     username = line.split('$')[3].split(':')[0]
                 else:
@@ -1717,8 +1743,18 @@ _KERBEROS_RE = {
     '7500':  re.compile(r'^\$krb5pa\$23\$[^$]+\$[^$]*\$[^$]*\$[0-9a-fA-F]+$'),
     '13100': re.compile(r'^\$krb5tgs\$23\$\*.+\*\$[0-9a-fA-F]{32}\$[0-9a-fA-F]+$'),
     '18200': re.compile(r'^\$krb5asrep\$23\$[^:]+:[0-9a-fA-F]{32}\$[0-9a-fA-F]+$'),
-    '19600': re.compile(r'^\$krb5tgs\$17\$[^$]+\$[^$]+\$[0-9a-fA-F]{24}\$[0-9a-fA-F]+$'),
-    '19700': re.compile(r'^\$krb5tgs\$18\$[^$]+\$[^$]+\$[0-9a-fA-F]{24}\$[0-9a-fA-F]+$'),
+    # etype 17/18: impacket's GetUserSPNs.py emits the service principal name as
+    # an extra star-wrapped field between the realm and the checksum, e.g.
+    #   $krb5tgs$18$user$REALM$*MSSQLSvc/host.dom:1433*$<24 hex>$<edata2>
+    # hashcat 6.2.6 accepts both that and its own SPN-less example shape, cracks
+    # them identically, and echoes the hash back with the SPN dropped -- so the
+    # segment is optional here rather than required. It is NOT the 13100-style
+    # `*user$realm$spn*` triple: hashcat rejects that for 17/18 ("No hashes
+    # loaded"), so the stars stay confined to their own field.
+    '19600': re.compile(
+        r'^\$krb5tgs\$17\$[^$]+\$[^$]+\$(?:\*[^*]*\*\$)?[0-9a-fA-F]{24}\$[0-9a-fA-F]+$'),
+    '19700': re.compile(
+        r'^\$krb5tgs\$18\$[^$]+\$[^$]+\$(?:\*[^*]*\*\$)?[0-9a-fA-F]{24}\$[0-9a-fA-F]+$'),
     '19800': re.compile(r'^\$krb5pa\$17\$[^$]+\$[^$]+\$[0-9a-fA-F]{112}$'),
     '19900': re.compile(r'^\$krb5pa\$18\$[^$]+\$[^$]+\$[0-9a-fA-F]{112}$'),
     '28800': re.compile(r'^\$krb5db\$17\$[^$]+\$[^$]+\$[0-9a-fA-F]+$'),

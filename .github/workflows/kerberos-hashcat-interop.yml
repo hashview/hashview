@@ -1,0 +1,89 @@
+name: Kerberos Hashcat Interop
+
+# Validates hashview.utils.utils.normalize_kerberos_hash against five pinned
+# real hashcat releases, so upstream drift in hashcat's own Kerberos parsing
+# (SPN handling, hex casing, echo format) doesn't silently break recovery.
+# See tests/hashcat_interop/ and TESTING.md.
+
+on:
+  push:
+    paths:
+      - "hashview/utils/utils.py"
+      - "tests/hashcat_interop/**"
+      - ".github/workflows/kerberos-hashcat-interop.yml"
+  pull_request:
+    paths:
+      - "hashview/utils/utils.py"
+      - "tests/hashcat_interop/**"
+      - ".github/workflows/kerberos-hashcat-interop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hashcat-interop:
+    runs-on: ubuntu-latest
+    # The suite takes about 80s per version locally; generous headroom for
+    # the download/extraction of each pinned release on top of that.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "6.2.6"
+            sha256: "96697e9ef6a795d45863c91d61be85a9f138596e3151e7c2cd63ccf48aaa8783"
+          - version: "7.0.0"
+            sha256: "19e126642e1db7902125072dce539c53485c721735325a747bd03e8af3135d78"
+          - version: "7.1.0"
+            sha256: "37be13b2dfdd1da7a3f68847ff817a22c144fc8d76170f51aae412e8b3ee24fd"
+          - version: "7.1.1"
+            sha256: "e09f88233ae8a88e0e60d68c20e4f5094d9122af533a7d186a45d8d55d08f3a0"
+          - version: "7.1.2"
+            sha256: "80db0316387794ce9d14ed376da75b8a7742972485b45db790f5f8260307ff98"
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      # No GPU on the runner; pocl supplies a CPU OpenCL device, which is
+      # enough for hashcat to load and run against.
+      - name: Install 7z and a CPU OpenCL device
+        run: sudo apt-get install -y -qq p7zip-full pocl-opencl-icd ocl-icd-libopencl1
+
+      - name: Fetch hashcat ${{ matrix.version }}
+        id: fetch
+        run: |
+          dir="$(tests/hashcat_interop/fetch_hashcat.sh "${{ matrix.version }}" "${{ matrix.sha256 }}" "${RUNNER_TEMP}/hashcat")"
+          echo "dir=${dir}" >> "$GITHUB_OUTPUT"
+
+      # A skipped test exits 0, so assert these actually ran. The repo-root
+      # conftest declares an autouse Playwright/live_server fixture that once
+      # force-skipped this whole module even with HASHCAT_BIN set, which would
+      # make this gate a no-op that always reports success.
+      - name: Assert live hashcat Kerberos interop contracts
+        # shell: bash is load-bearing. The default shell for `run:` is
+        # `bash -e {0}` WITHOUT pipefail, so `pytest | tee` would take tee's
+        # exit status and a failing pytest would go green. `shell: bash` runs
+        # `bash --noprofile --norc -eo pipefail {0}`.
+        shell: bash
+        env:
+          HASHCAT_BIN: ${{ steps.fetch.outputs.dir }}/hashcat.bin
+        run: |
+          python -m pytest tests/hashcat_interop -q -rs | tee "${RUNNER_TEMP}/interop.log"
+          if grep -q "skipped" "${RUNNER_TEMP}/interop.log"; then
+            echo "::error::live hashcat interop tests were skipped; the gate proved nothing"
+            exit 1
+          fi

@@ -747,6 +747,55 @@ def _raw_username_for_history_check(line, file_type, hash_type):
     return None
 
 
+# $krb5tgs$17/$18 only: impacket and Rubeus put the service principal name in a
+# star-wrapped field between the realm and the checksum. hashcat parses it,
+# ignores it for the salt, and echoes the hash back WITHOUT it. Recovered hashes
+# are matched by an exact md5 of the stored ciphertext (import_hash_only above,
+# and the agent-upload lookup in hashview/api/routes.py), so storing the SPN
+# would leave every crack for that hash unmatchable and silently discarded --
+# strictly worse than the rejection this replaced. Store what hashcat hands
+# back. 13100 keeps its star-wrapped triple: that one does round-trip verbatim.
+_KRB_TGS_AES_SPN_RE = re.compile(
+    r'^(\$krb5tgs\$1[78]\$[^$]+\$[^$]+\$)\*[^*]*\*\$([0-9a-fA-F]{24}\$[0-9a-fA-F]+)$')
+
+
+# Kerberos modes whose long-term key is salted with REALM + principal, i.e. the
+# AES etypes (17/18). Measured on hashcat 6.2.6 by upper-casing the principal in
+# each mode's own example hash: 19600/19700/19800/19900/28800/28900 stop cracking
+# (0/1 recovered), while the RC4 etypes 7500/13100/18200 still crack because
+# their key is MD4(password) with no salt at all. So the principal's case is
+# load-bearing for exactly these six, and folding it silently destroys the hash.
+_KRB_PRINCIPAL_SALTED = frozenset({'19600', '19700', '19800', '19900', '28800', '28900'})
+
+
+def normalize_kerberos_hash(line, hash_type):
+    """Return a Kerberos hash in the exact form hashcat echoes back on a crack.
+
+    A recovered hash is matched to its row by an exact md5 of the stored
+    ciphertext, so the stored form has to be a fixed point of what hashcat
+    prints. Measured against hashcat 6.2.6, that means:
+
+    * drop impacket's star-wrapped SPN field ($krb5tgs$17/$18 only) -- hashcat
+      parses it, ignores it for the salt, and omits it from its outfile;
+    * lower-case the hex fields, which hashcat normalises;
+    * leave the principal and realm exactly as supplied, which hashcat does.
+
+    For the principal-salted AES etypes that last point is not cosmetic: the
+    principal is part of the Kerberos salt, so lower-casing a service account
+    like ``SQLSvc`` yields a hash that is accepted, queued, and can never crack.
+    The unsalted RC4 etypes keep the historical all-lower-case form, which is
+    equally a fixed point for them and preserves existing de-duplication.
+    """
+    line = _KRB_TGS_AES_SPN_RE.sub(r'\1\2', line)
+    if str(hash_type) not in _KRB_PRINCIPAL_SALTED:
+        return line.lower()
+    # ['', tag, etype, principal, realm, <hex fields...>]
+    parts = line.split('$')
+    if len(parts) < 6:
+        return line.lower()
+    return '$'.join(parts[:5] + [field.lower() for field in parts[5:]])
+
+
 # Hashfile import is batched. It used to run one SELECT + INSERT + commit per
 # new hash inside import_hash_only, plus another INSERT + commit for every
 # hashfile_hashes row -- roughly 2N commits for N hashes, each forcing an InnoDB
@@ -855,11 +904,25 @@ def _classify_hashfile_line(line, file_type, hash_type, present_usernames):
             return _LINE_SKIP
         return line.split(':')[3].lower(), '1000', candidate_username
     elif file_type == 'kerberos':
-        ciphertext = line.lower().rstrip()
-        if hash_type == '18200':
-            username = line.split('$')[3].split(':')[0]
+        # Normalized so the stored ciphertext equals what hashcat will echo
+        # back on a crack -- a recovered hash is matched by an exact md5 of
+        # the stored ciphertext, so a plain .lower() (which folds a
+        # principal-salted AES etype's case-sensitive principal) makes the
+        # hash uncrackable. See normalize_kerberos_hash. `line` is left alone
+        # for the username split below, which reads the principal at index 3.
+        ciphertext = normalize_kerberos_hash(line.rstrip(), hash_type)
+        if hash_type in ('18200', '35400'):
+            # $krb5asrep$23$user@REALM:<ck>$<edata>, or the same without
+            # the etype field (Rubeus/John) -- which shifts every field
+            # one left, so index 3 would be the edata blob. Take the
+            # field carrying the ':' either way.
+            principal = next(
+                (field for field in line.split('$') if ':' in field), '')
+            username = principal.split(':')[0]
         else:
-            username = line.split('$')[3]
+            # 13100/35300 wrap the principal in a star-delimited triple
+            # (*user$realm$spn*), so index 3 arrives as '*user'.
+            username = line.split('$')[3].lstrip('*')
         return ciphertext, hash_type, username
     elif file_type == 'NetNTLM':
         # 5600, domain is case sensitve. Hashcat returns username in
@@ -1843,16 +1906,62 @@ def validate_netntlm_hashfile(hashfile_path, hash_type=None):
 
 # Per-mode Kerberos structure (prefix + etype + fixed-length hex parts).
 # Variable principal/realm/SPN/salt strings are matched leniently.
+# Field lengths below were swept against hashcat 6.2.6 one character at a time
+# rather than copied from its example hashes -- the examples are what these
+# patterns were originally calibrated from, which is exactly why they used to
+# reject real tool output. Accepted sets measured: 7500 tail exactly 104;
+# 28800 exactly 32; 28900 exactly 64; 19800/19900 the inclusive window 104-112;
+# and an edata2 floor of exactly 64 hex on 13100/18200/19600/19700 (odd lengths
+# fine, no upper bound -- real blobs run 370-470). A too-loose pattern moves the
+# failure from paste time, where the user can fix it, to job-run time, where the
+# agent just reports "No hashes loaded".
 _KERBEROS_RE = {
-    '7500':  re.compile(r'^\$krb5pa\$23\$[^$]+\$[^$]*\$[^$]*\$[0-9a-fA-F]+$'),
-    '13100': re.compile(r'^\$krb5tgs\$23\$\*.+\*\$[0-9a-fA-F]{32}\$[0-9a-fA-F]+$'),
-    '18200': re.compile(r'^\$krb5asrep\$23\$[^:]+:[0-9a-fA-F]{32}\$[0-9a-fA-F]+$'),
-    '19600': re.compile(r'^\$krb5tgs\$17\$[^$]+\$[^$]+\$[0-9a-fA-F]{24}\$[0-9a-fA-F]+$'),
-    '19700': re.compile(r'^\$krb5tgs\$18\$[^$]+\$[^$]+\$[0-9a-fA-F]{24}\$[0-9a-fA-F]+$'),
-    '19800': re.compile(r'^\$krb5pa\$17\$[^$]+\$[^$]+\$[0-9a-fA-F]{112}$'),
-    '19900': re.compile(r'^\$krb5pa\$18\$[^$]+\$[^$]+\$[0-9a-fA-F]{112}$'),
-    '28800': re.compile(r'^\$krb5db\$17\$[^$]+\$[^$]+\$[0-9a-fA-F]+$'),
-    '28900': re.compile(r'^\$krb5db\$18\$[^$]+\$[^$]+\$[0-9a-fA-F]+$'),
+    '7500':  re.compile(r'^\$krb5pa\$23\$[^$]+\$[^$]*\$[^$]*\$[0-9a-fA-F]{104}$'),
+    # \*[^*]+\* not \*.+\*: hashcat rejects a nested '*' inside the triple.
+    '13100': re.compile(r'^\$krb5tgs\$23\$\*[^*]+\*\$[0-9a-fA-F]{32}\$[0-9a-fA-F]{64,}$'),
+    # The etype field is optional: Rubeus and John emit $krb5asrep$user@REALM:...
+    # with no `23$`, and hashcat accepts it and echoes it back unchanged. The
+    # lookahead is what keeps the field optional without making it a wildcard:
+    # `[^:]+` would otherwise swallow `17$user@dom` whole and let a wrong etype
+    # through as part of the principal. `[^:]+` rather than `[^$:]+` so a
+    # machine-account principal (`COMPUTER$@REALM`) still passes, as before.
+    #
+    # The inner `(?![@:])` matters: a machine account is `<name>$`, so a
+    # computer named `18` gives `18$@REALM`, which a bare `(?![0-9]{1,3}\$)`
+    # guard cannot tell from an etype and wrongly rejects. Digits followed by
+    # `$@` or `$:` are therefore a principal, not an etype -- confirmed against
+    # hashcat, which loads all of `18$@REALM`, `9$@REALM` and `123$@REALM`.
+    '18200': re.compile(
+        r'^\$krb5asrep\$(?:23\$)?(?![0-9]{1,3}\$(?![@:]))'
+        r'[^:]+:[0-9a-fA-F]{32}\$[0-9a-fA-F]{64,}$'),
+    # etype 17/18: impacket's GetUserSPNs.py emits the service principal name as
+    # an extra star-wrapped field between the realm and the checksum, e.g.
+    #   $krb5tgs$18$user$REALM$*MSSQLSvc/host.dom:1433*$<24 hex>$<edata2>
+    # hashcat 6.2.6 accepts both that and its own SPN-less example shape, cracks
+    # them identically, and echoes the hash back with the SPN dropped -- so the
+    # segment is optional here rather than required. It is NOT the 13100-style
+    # `*user$realm$spn*` triple: hashcat rejects that for 17/18 ("No hashes
+    # loaded"), so the stars stay confined to their own field.
+    #
+    # The user/realm fields use [^$*] rather than [^$]: hashcat detects the
+    # SPN form with strchr(line_buf + 13, '*'), so ANY asterisk anywhere after
+    # the mode field puts its parser into SPN mode. An asterisk inside the
+    # user or realm field then has no matching closing delimiter in the
+    # expected place and hashcat rejects the whole line ("Separator
+    # unmatched"/"Hash parsing error") -- measured on 7.1.2. [^$]+ let such
+    # hashes validate at paste time and then die on the agent with "No hashes
+    # loaded", exactly the too-loose failure class this pattern set out to fix.
+    '19600': re.compile(
+        r'^\$krb5tgs\$17\$[^$*]+\$[^$*]+\$(?:\*[^*]*\*\$)?[0-9a-fA-F]{24}\$[0-9a-fA-F]{64,}$'),
+    '19700': re.compile(
+        r'^\$krb5tgs\$18\$[^$*]+\$[^$*]+\$(?:\*[^*]*\*\$)?[0-9a-fA-F]{24}\$[0-9a-fA-F]{64,}$'),
+    # 104-112, not exactly 112: the encrypted blob is confounder(16) + a
+    # DER-encoded PA-ENC-TS-ENC whose length varies with the optional
+    # microseconds field + HMAC(12), so a real 104-hex hash was being rejected.
+    '19800': re.compile(r'^\$krb5pa\$17\$[^$]+\$[^$]+\$[0-9a-fA-F]{104,112}$'),
+    '19900': re.compile(r'^\$krb5pa\$18\$[^$]+\$[^$]+\$[0-9a-fA-F]{104,112}$'),
+    '28800': re.compile(r'^\$krb5db\$17\$[^$]+\$[^$]+\$[0-9a-fA-F]{32}$'),
+    '28900': re.compile(r'^\$krb5db\$18\$[^$]+\$[^$]+\$[0-9a-fA-F]{64}$'),
 }
 # 35300/35400 are the NT-optimised variants of 13100/18200 with an identical
 # on-the-wire hash format, so they reuse those patterns.

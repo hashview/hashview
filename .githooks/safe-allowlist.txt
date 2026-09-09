@@ -87,6 +87,12 @@ hashcat/hashcat/releases
 # Pinned sha256 checksums of the five hashcat releases, matched via the yaml
 # key they appear under rather than a bare 64-hex pattern.
 sha256: "[0-9a-f]{64}"
+# "hashcat" is the published plaintext hashcat's own --example-hashes ships
+# for these Kerberos modes (the M1/M2/M7 crack target in
+# test_kerberos_aes_interop.py), not a credential. Anchored on the exact
+# literal, not a general PASSWORD\s*= shape, so a real credential assignment
+# still trips the generic rule.
+PASSWORD = "hashcat"
 
 # --- tests/unit/test_wordlist_gzip_storage.py false positives ---
 # The scanner reads whole changed files, so touching this test surfaces its

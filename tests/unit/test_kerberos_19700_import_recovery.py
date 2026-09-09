@@ -31,7 +31,7 @@ The hashcat_echo() helper models hashcat's established behavior (verified 6.2.6-
 - Lowercases hex fields (checksum, edata)
 - Preserves username and realm case verbatim
 
-That behavior is proven by tests/hashcat_matrix/test_kerberos_19700_interop.py.
+That behavior is proven by tests/hashcat_interop/test_kerberos_aes_interop.py.
 """
 
 import pytest
@@ -73,7 +73,7 @@ def hashcat_echo(ciphertext: str) -> str:
     byte-identical to what hashcat will echo, or recovery (matching on
     md5(ciphertext)) breaks.
 
-    This model is proven correct by tests/hashcat_matrix/test_kerberos_19700_interop.py.
+    This model is proven correct by tests/hashcat_interop/test_kerberos_aes_interop.py.
     """
     # Parse the form: $krb5tgs$18$user$realm[*spn*]$checksum$edata
     parts = ciphertext.split("$")

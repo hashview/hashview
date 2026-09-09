@@ -11,6 +11,7 @@ from hashview.models import (
     JobTasks,
     db,
 )
+from hashview.utils.utils import get_md5_hash
 from tests.unit.helpers import login, make_admin, make_customer, make_user
 
 
@@ -19,7 +20,7 @@ def test_home_renders_with_recovery_feed(app, client):
     # which exercises the nested _hexdec helper.
     admin = make_admin()
     login(client, admin)
-    h = Hashes(sub_ciphertext="0" * 8, ciphertext="abc", hash_type=1000,
+    h = Hashes(sub_ciphertext=get_md5_hash("abc"), ciphertext="abc", hash_type=1000,
                cracked=True, plaintext="Summer2024",
                recovered_at=datetime(2024, 1, 2), recovered_by=admin.id)
     db.session.add(h)
@@ -33,7 +34,7 @@ def test_home_renders_with_recovery_feed(app, client):
 
 def _seed_recovered(admin, *, delta, plaintext, username):
     """A cracked hash recovered `delta` ago, wired into the recovery feed."""
-    h = Hashes(sub_ciphertext="0" * 8, ciphertext=plaintext[::-1], hash_type=1000,
+    h = Hashes(sub_ciphertext=get_md5_hash(plaintext[::-1]), ciphertext=plaintext[::-1], hash_type=1000,
                cracked=True, plaintext=plaintext,
                recovered_at=datetime.now() - delta, recovered_by=admin.id)
     db.session.add(h)
@@ -193,7 +194,7 @@ def test_dashboard_recovery_fragment(app, client):
     # /dashboard/recovery returns just the live-feed table fragment (polled ~5s).
     admin = make_admin()
     login(client, admin)
-    h = Hashes(sub_ciphertext="0" * 8, ciphertext="abc", hash_type=1000,
+    h = Hashes(sub_ciphertext=get_md5_hash("abc"), ciphertext="abc", hash_type=1000,
                cracked=True, plaintext="Winter2025",
                recovered_at=datetime(2024, 1, 3), recovered_by=admin.id)
     db.session.add(h)
@@ -298,7 +299,7 @@ def test_chart_data_buckets_by_rolling_day(app):
                               ciphertext="c", hash_type=1000, cracked=True,
                               plaintext="pw", recovered_at=ts))
     # An uncracked hash recovered recently must never be counted.
-    db.session.add(Hashes(sub_ciphertext="u0", ciphertext="c", hash_type=1000,
+    db.session.add(Hashes(sub_ciphertext=get_md5_hash("c"), ciphertext="c", hash_type=1000,
                           cracked=False, recovered_at=now - timedelta(hours=1)))
     db.session.commit()
 

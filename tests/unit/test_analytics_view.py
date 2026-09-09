@@ -18,6 +18,7 @@ from hashview.models import (
     Users,
     db,
 )
+from hashview.utils.utils import get_md5_hash
 
 
 def _admin():
@@ -35,7 +36,7 @@ def _login(client, user):
 
 
 def _hash(ciphertext, plaintext, cracked):
-    h = Hashes(sub_ciphertext="0" * 8, ciphertext=ciphertext, hash_type=1000,
+    h = Hashes(sub_ciphertext=get_md5_hash(ciphertext), ciphertext=ciphertext, hash_type=1000,
                cracked=cracked, plaintext=plaintext,
                recovered_at=datetime(2024, 1, 2) if cracked else None)
     db.session.add(h)
@@ -234,7 +235,7 @@ def test_recovery_over_time_hourly_toggle_and_48h_cap(app, client):
     # recent cluster (2 @ 10:00, 1 @ 11:00) + one recovery 5 days earlier
     stamps = [base, base, base + timedelta(hours=1), base - timedelta(days=5)]
     for i, ts in enumerate(stamps):
-        h = Hashes(sub_ciphertext="0" * 8, ciphertext=f"c{i}", hash_type=1000,
+        h = Hashes(sub_ciphertext=get_md5_hash(f"c{i}"), ciphertext=f"c{i}", hash_type=1000,
                    cracked=True, plaintext=f"p{i}", recovered_at=ts)
         db.session.add(h)
         db.session.commit()
@@ -368,7 +369,7 @@ def _task(owner_id, name, attackmode=0, rule_id=None):
 def _cracked_for_task(hashfile_id, task_id, n, prefix):
     """n cracked hashes attributed to task_id, linked to the hashfile."""
     for i in range(n):
-        h = Hashes(sub_ciphertext="0" * 8, ciphertext="%s%d" % (prefix, i), hash_type=1000,
+        h = Hashes(sub_ciphertext=get_md5_hash("%s%d" % (prefix, i)), ciphertext="%s%d" % (prefix, i), hash_type=1000,
                    cracked=True, plaintext="pw-%s-%d" % (prefix, i),
                    recovered_at=datetime(2024, 1, 2), task_id=task_id)
         db.session.add(h)
@@ -396,7 +397,7 @@ def test_recovery_by_task_groups_counts_shares_and_scopes(app, client):
     _cracked_for_task(hf.id, t_rule.id, 6, "r")     # 6 recovered
     _cracked_for_task(hf.id, t_mask.id, 1, "m")     # 1 recovered
     # a cracked hash with no task_id is unattributable and must be excluded
-    orphan = Hashes(sub_ciphertext="0" * 8, ciphertext="orphan", hash_type=1000,
+    orphan = Hashes(sub_ciphertext=get_md5_hash("orphan"), ciphertext="orphan", hash_type=1000,
                     cracked=True, plaintext="orphan", recovered_at=datetime(2024, 1, 2),
                     task_id=None)
     db.session.add(orphan)

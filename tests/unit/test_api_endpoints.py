@@ -13,6 +13,7 @@ Auth model recap (see ``is_authorized``):
   (or, for two buggy routes, the typo'd ``/vi/not_authorized``).
 """
 
+import itertools
 import json
 import os
 from unittest import mock
@@ -35,6 +36,7 @@ from hashview.models import (
     Wordlists,
 )
 from hashview.models import db as _db
+from hashview.utils.utils import get_md5_hash
 
 # ---------------------------------------------------------------------------
 # Local fixtures
@@ -830,11 +832,20 @@ def test_jobs_delete_non_owner_returns_403(client, admin_user, regular_user):
 # ---------------------------------------------------------------------------
 
 
+_SEED_SEQ = itertools.count()
+
+
 def _seed_hash(hashfile_id, hash_type, cracked):
-    """Seed one Hashes row linked to a hashfile via HashfileHashes."""
+    """Seed one Hashes row linked to a hashfile via HashfileHashes.
+
+    The ciphertext carries a counter because callers seed several rows per
+    hashfile and uq_hashes_sub_ciphertext_hash_type (correctly) forbids two
+    rows for the same hash.
+    """
+    ciphertext = f"deadbeef{next(_SEED_SEQ):024d}"
     h = Hashes(
-        sub_ciphertext="0" * 32,
-        ciphertext="deadbeef",
+        sub_ciphertext=get_md5_hash(ciphertext),
+        ciphertext=ciphertext,
         hash_type=hash_type,
         cracked=cracked,
     )
@@ -1311,7 +1322,7 @@ def test_jobs_add_creates_notification_rows(client, admin_user):
     _db.session.add(task)
     _db.session.commit()
     cracked = Hashes(
-        sub_ciphertext="1" * 32,
+        sub_ciphertext=get_md5_hash("cafebabe"),
         ciphertext="cafebabe",
         hash_type=1000,
         cracked=True,

@@ -19,6 +19,7 @@ import re
 import pytest
 
 from hashview.models import Customers, Hashes, HashfileHashes, Hashfiles, db
+from hashview.utils.utils import get_md5_hash
 from tests.unit.helpers import login, make_admin
 
 
@@ -39,7 +40,7 @@ def _seed_shared_groups(n_groups):
         plaintext = f"SharedPw{g}!"
         for member in range(2):
             ct = f"ct{g}_{member}"
-            h = Hashes(sub_ciphertext="0" * 8, ciphertext=ct, hash_type=1000,
+            h = Hashes(sub_ciphertext=get_md5_hash(ct), ciphertext=ct, hash_type=1000,
                        cracked=True, plaintext=plaintext)
             db.session.add(h)
             db.session.commit()

@@ -24,6 +24,7 @@ from hashview.models import (
     Tasks,
     db,
 )
+from hashview.utils.utils import get_md5_hash
 from tests.unit.helpers import login, make_admin, make_customer
 
 
@@ -184,7 +185,7 @@ def test_lucky_assigns_all_when_fewer_than_ten_effective_tasks_exist(app, client
     db.session.commit()
 
     target_hash = Hashes(
-        sub_ciphertext="0" * 32,
+        sub_ciphertext=get_md5_hash("AAA"),
         ciphertext="AAA",
         hash_type=1000,
         cracked=False,

@@ -22,6 +22,7 @@ Covers the uncovered line ranges:
 """
 
 import io
+import itertools
 import json as _json
 
 import pytest
@@ -42,6 +43,7 @@ from hashview.models import (
     Wordlists,
     db,
 )
+from hashview.utils.utils import get_md5_hash
 
 # ---------------------------------------------------------------------------
 # Shared helpers (mirrors test_jobs_routes_guards.py style, no imports from it)
@@ -122,11 +124,18 @@ _HASHFILE_FORM_BASE = {
 }
 
 
+# Each call must produce a distinct hash: uq_hashes_sub_ciphertext_hash_type
+# forbids two rows for the same hash, and several tests attach more than one
+# hashfile.
+_HF_SEQ = itertools.count()
+
+
 def _attach_hashfile(job, owner_id, cracked=False, name="hf-br.txt"):
     hf = Hashfiles(name=name, customer_id=job.customer_id, owner_id=owner_id)
     db.session.add(hf)
     db.session.commit()
-    h = Hashes(sub_ciphertext="e" * 32, ciphertext="f" * 32, hash_type=1000,
+    ciphertext = f"f{next(_HF_SEQ):031d}"
+    h = Hashes(sub_ciphertext=get_md5_hash(ciphertext), ciphertext=ciphertext, hash_type=1000,
                cracked=cracked, plaintext="pw" if cracked else None)
     db.session.add(h)
     db.session.commit()
@@ -242,14 +251,17 @@ def test_jobs_assigned_hashfile_less_than_one_percent_cracked(app, client):
     db.session.add(hf)
     db.session.commit()
     # Add 200 hashes, 1 cracked
-    cracked_hash = Hashes(sub_ciphertext="c" * 32, ciphertext="c" * 32,
+    cracked_hash = Hashes(sub_ciphertext=get_md5_hash("c" * 32), ciphertext="c" * 32,
                           hash_type=1000, cracked=True, plaintext="pw")
     db.session.add(cracked_hash)
     db.session.commit()
     db.session.add(HashfileHashes(hash_id=cracked_hash.id, hashfile_id=hf.id))
     for i in range(199):
-        h = Hashes(sub_ciphertext=("a" + str(i)).ljust(32, "0")[:32],
-                   ciphertext=("b" + str(i)).ljust(32, "0")[:32],
+        # Zero-padded, not ljust-padded: ("a" + "1").ljust(32, "0") and
+        # ("a" + "10").ljust(32, "0") are the same string, so the old fixture
+        # silently created fewer than 199 distinct hashes.
+        ciphertext = f"b{i:031d}"
+        h = Hashes(sub_ciphertext=get_md5_hash(ciphertext), ciphertext=ciphertext,
                    hash_type=1000, cracked=False)
         db.session.add(h)
         db.session.commit()
@@ -733,7 +745,7 @@ def test_jobs_assign_lucky_with_data_assigns_tasks(app, client):
     effective_task = _make_task(user.id, wl.id, name="lucky-task")
 
     # Create a cracked hash that references the effective_task and same hash_type
-    cracked_h = Hashes(sub_ciphertext="d" * 32, ciphertext="d" * 32,
+    cracked_h = Hashes(sub_ciphertext=get_md5_hash("d" * 32), ciphertext="d" * 32,
                        hash_type=1000, cracked=True,
                        plaintext="pw", task_id=effective_task.id)
     db.session.add(cracked_h)
@@ -887,7 +899,7 @@ def test_jobs_assign_notification_hashes_multi_method_post(app, client):
     job = _make_job(user.id, customer.id)
     _, h = _attach_hashfile(job, user.id, cracked=False)
     # Add a second uncracked hash that we will NOT select (hits the continue branch)
-    h2 = Hashes(sub_ciphertext="e" * 32, ciphertext="e1" * 16, hash_type=1000,
+    h2 = Hashes(sub_ciphertext=get_md5_hash("e1" * 16), ciphertext="e1" * 16, hash_type=1000,
                 cracked=False)
     db.session.add(h2)
     db.session.commit()

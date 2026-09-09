@@ -13,7 +13,7 @@ from datetime import datetime
 import requests
 from flask import after_this_request, current_app, send_from_directory, url_for
 from flask_mail import Message
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.sql import exists
 
 from hashview.models import (
@@ -909,11 +909,29 @@ def _resolve_hash_ids(wanted):
     return found
 
 
-def _import_chunk(hashfile_id, rows):
+def _import_chunk(hashfile_id, rows, _retrying=False):
     """Resolve, insert and link one chunk of parsed rows, then commit once.
 
     ``rows`` is a list of ``(ciphertext, hash_type, username)``.
+
+    Retries once on an integrity error. uq_hashes_sub_ciphertext_hash_type makes
+    the lookup-then-insert a *checked* race rather than a silent one: if a
+    concurrent import inserts one of these hashes between our SELECT and our
+    INSERT, the insert now fails instead of quietly creating a second row for
+    the same hash. The retry's lookup finds the other importer's row and
+    inserts only what is still missing.
     """
+    try:
+        return _import_chunk_once(hashfile_id, rows)
+    except IntegrityError:
+        db.session.rollback()
+        if _retrying:
+            raise
+        return _import_chunk(hashfile_id, rows, _retrying=True)
+
+
+def _import_chunk_once(hashfile_id, rows):
+    """One attempt at resolving, inserting and linking a chunk."""
     # Key every row once. The md5 is computed a single time per row here; the
     # old path computed it twice for every new hash.
     keyed = [(str(row_type), get_md5_hash(ciphertext), ciphertext, row_type, username)

@@ -12,6 +12,7 @@ read from the session (avoids rendering the whole settings page).
 from datetime import datetime
 
 from hashview.models import Hashes, Settings, Users, db
+from hashview.utils.utils import get_md5_hash
 
 
 def _admin(admin=True):
@@ -29,7 +30,7 @@ def _login(client, user):
 
 
 def _cracked(ciphertext):
-    h = Hashes(sub_ciphertext="0" * 8, ciphertext=ciphertext, hash_type=1000, cracked=True,
+    h = Hashes(sub_ciphertext=get_md5_hash(ciphertext), ciphertext=ciphertext, hash_type=1000, cracked=True,
                plaintext="secret", recovered_at=datetime(2024, 1, 1), task_id=5, recovered_by=1)
     db.session.add(h)
     db.session.commit()
@@ -41,7 +42,7 @@ def test_purge_cracked_resets_hashes(app, client):
     _login(client, user)
     _cracked("aaa")
     _cracked("bbb")
-    uncracked = Hashes(sub_ciphertext="0" * 8, ciphertext="ccc", hash_type=1000, cracked=False)
+    uncracked = Hashes(sub_ciphertext=get_md5_hash("ccc"), ciphertext="ccc", hash_type=1000, cracked=False)
     db.session.add(uncracked)
     db.session.commit()
 

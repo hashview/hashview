@@ -76,7 +76,7 @@ def test_lucky_assigns_historically_effective_tasks_for_hash_type(
     # handler looks this up via HashfileHashes -> Hashes to derive the
     # hash_type used for the "most effective tasks" lookup.
     target_hash = Hashes(
-        sub_ciphertext="0" * 32,
+        sub_ciphertext=get_md5_hash("AAA"),
         ciphertext="AAA",
         hash_type=1000,
         cracked=False,
@@ -106,7 +106,7 @@ def test_lucky_assigns_historically_effective_tasks_for_hash_type(
         )
     db_session.add(
         Hashes(
-            sub_ciphertext="a" * 32,
+            sub_ciphertext=get_md5_hash("T2-CT-0"),
             ciphertext="T2-CT-0",
             hash_type=1000,
             cracked=True,
@@ -176,7 +176,7 @@ def test_lucky_caps_at_ten_tasks_when_more_are_effective(app, client, db_session
     db_session.commit()
 
     target_hash = Hashes(
-        sub_ciphertext="0" * 32,
+        sub_ciphertext=get_md5_hash("AAA"),
         ciphertext="AAA",
         hash_type=1000,
         cracked=False,

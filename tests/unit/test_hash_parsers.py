@@ -323,3 +323,95 @@ def test_import_returns_false_on_a_malformed_user_hash_line(app, tmp_path):
 
     _, _, ok = _count_import(hashfile_id, path, "user_hash", "1000")
     assert ok is False
+
+
+@pytest.mark.security
+def test_duplicate_hash_type_sub_ciphertext_is_rejected_by_the_database(app):
+    """uq_hashes_sub_ciphertext_hash_type enforces what the dedup assumed.
+
+    The import looks a hash up by this pair and inserts when absent, so without
+    the constraint two concurrent imports of the same hash could both miss and
+    both insert. Nothing enforced it before.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    db.session.add(Hashes(hash_type=1000, sub_ciphertext="a" * 32,
+                          ciphertext="one", cracked=0))
+    db.session.commit()
+
+    db.session.add(Hashes(hash_type=1000, sub_ciphertext="a" * 32,
+                          ciphertext="two-different-ciphertext", cracked=0))
+    with pytest.raises(IntegrityError):
+        db.session.commit()
+    db.session.rollback()
+
+    # The same sub_ciphertext under a *different* hash_type is still fine: an
+    # NTLM hash and an MD5 hash can be the same 32 hex characters, which is
+    # exactly why the constraint is on the pair and not on sub_ciphertext alone.
+    db.session.add(Hashes(hash_type=0, sub_ciphertext="a" * 32,
+                          ciphertext="one", cracked=0))
+    db.session.commit()
+    assert Hashes.query.filter_by(sub_ciphertext="a" * 32).count() == 2
+
+
+@pytest.mark.security
+def test_import_chunk_retries_once_after_a_concurrent_insert(app, tmp_path, monkeypatch):
+    """A losing race is retried, not surfaced.
+
+    With the constraint in place, a concurrent import inserting one of our
+    hashes between our lookup and our insert makes the insert fail rather than
+    silently duplicate. _import_chunk retries once; the retry's lookup finds
+    the other importer's row.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    from hashview.utils import utils as utils_mod
+
+    hashfile_id = _make_user_and_hashfile()
+    path = tmp_path / "raced.txt"
+    path.write_text("\n".join(_md5_lines(5, "race")) + "\n")
+
+    real_once = utils_mod._import_chunk_once
+    calls = []
+
+    def flaky(hf_id, rows):
+        calls.append(len(rows))
+        if len(calls) == 1:
+            db.session.rollback()
+            raise IntegrityError("simulated concurrent insert", None, Exception())
+        return real_once(hf_id, rows)
+
+    monkeypatch.setattr(utils_mod, "_import_chunk_once", flaky)
+    assert utils_mod.import_hashfilehashes(
+        hashfile_id=hashfile_id, hashfile_path=str(path),
+        file_type="hash_only", hash_type="1000") is True
+
+    assert len(calls) == 2, "the chunk should be attempted exactly twice"
+    assert Hashes.query.count() == 5
+    assert HashfileHashes.query.filter_by(hashfile_id=hashfile_id).count() == 5
+
+
+@pytest.mark.security
+def test_import_chunk_reraises_if_the_retry_also_conflicts(app, tmp_path, monkeypatch):
+    """One retry, not an unbounded loop."""
+    from sqlalchemy.exc import IntegrityError
+
+    from hashview.utils import utils as utils_mod
+
+    hashfile_id = _make_user_and_hashfile()
+    path = tmp_path / "always.txt"
+    path.write_text("\n".join(_md5_lines(2, "always")) + "\n")
+
+    calls = []
+
+    def always_conflict(hf_id, rows):
+        calls.append(1)
+        db.session.rollback()
+        raise IntegrityError("persistent conflict", None, Exception())
+
+    monkeypatch.setattr(utils_mod, "_import_chunk_once", always_conflict)
+    with pytest.raises(IntegrityError):
+        utils_mod.import_hashfilehashes(
+            hashfile_id=hashfile_id, hashfile_path=str(path),
+            file_type="hash_only", hash_type="1000")
+    assert len(calls) == 2, "exactly one retry, then give up"

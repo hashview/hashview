@@ -341,7 +341,10 @@ class Hashes(db.Model):
     """Class object to represent Hashes"""
 
     id = db.Column(db.Integer, primary_key=True)
-    sub_ciphertext = db.Column(db.String(32), nullable=False, index=True)
+    # No standalone index: uq_hashes_sub_ciphertext_hash_type leads with this
+    # column, so it is a leftmost-prefix superset of the index this replaces.
+    # See migration f3b8c1a7d942.
+    sub_ciphertext = db.Column(db.String(32), nullable=False)
     # TEXT (not VARCHAR): hashes get long (NetNTLMv2, Kerberos) and the column
     # holds some non-ASCII bytes, so a utf8mb4 VARCHAR large enough would exceed
     # MySQL's 65,535-byte row limit. TEXT is stored off-page and holds ~64 KB.
@@ -358,9 +361,20 @@ class Hashes(db.Model):
     # instead of full scans + filesorts:
     #   (cracked, recovered_at) -> recovery feed ORDER BY recovered_at, chart ranges
     #   (cracked, task_id)      -> per-task recovered counts (GROUP BY task_id)
+    #
+    # The unique constraint is what the import's dedup already assumed: it looks
+    # a hash up by (hash_type, sub_ciphertext) and inserts when absent, so
+    # without it two concurrent imports of the same hash can both miss and both
+    # insert -- and a duplicate splits crack state, because both cracked-hash
+    # ingest paths take .first() with cracked='0', so one copy gets the
+    # plaintext while a hashfile pointing at the other still reads uncracked.
+    # sub_ciphertext leads so the constraint also serves every read of that
+    # column on its own, which is why it no longer carries a separate index.
     __table_args__ = (
         db.Index('ix_hashes_cracked_recovered_at', 'cracked', 'recovered_at'),
         db.Index('ix_hashes_cracked_task_id', 'cracked', 'task_id'),
+        db.UniqueConstraint('sub_ciphertext', 'hash_type',
+                            name='uq_hashes_sub_ciphertext_hash_type'),
     )
 
 class JobNotifications(db.Model):

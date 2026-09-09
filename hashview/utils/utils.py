@@ -13,7 +13,7 @@ from datetime import datetime
 import requests
 from flask import after_this_request, current_app, send_from_directory, url_for
 from flask_mail import Message
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.sql import exists
 
 from hashview.models import (
@@ -635,19 +635,6 @@ def get_cracked_hash_verifier(hash_type):
     None if the server cannot locally recompute it (=> reject the import)."""
     return CRACKED_HASH_VERIFIERS.get(int(hash_type))
 
-def import_hash_only(line, hash_type):
-    """Function to import single hash"""
-
-    hash = Hashes.query.filter_by(hash_type=hash_type, sub_ciphertext=get_md5_hash(line)).first()
-
-    if hash:
-        return hash.id
-
-    new_hash = Hashes(hash_type=hash_type, sub_ciphertext=get_md5_hash(line), ciphertext=line, cracked=0)
-    db.session.add(new_hash)
-    db.session.commit()
-    return new_hash.id
-
 def bytes_to_text(raw):
     """Decode recovered bytes for storage/display: UTF-8 when valid, else the
     lossless hashcat-style ``$HEX[<hex>]`` marker. Usernames + plaintext are
@@ -760,138 +747,281 @@ def _raw_username_for_history_check(line, file_type, hash_type):
     return None
 
 
+# Hashfile import is batched. It used to run one SELECT + INSERT + commit per
+# new hash inside import_hash_only, plus another INSERT + commit for every
+# hashfile_hashes row -- roughly 2N commits for N hashes, each forcing an InnoDB
+# redo-log fsync, which is what made a large hashfile take minutes (#363). Now a
+# chunk of parsed lines is resolved with one SELECT per hash_type, the genuinely
+# new rows go in with one statement, and the chunk is committed once.
+#
+# 5,000 amortises the round trips while keeping both the IN list and the
+# executemany payload well inside max_allowed_packet; tests/seed_perf_db.py
+# settled on the same chunk size against this schema.
+_IMPORT_CHUNK_SIZE = 5000
+# The dedup SELECT is sub-batched so the IN list stays a sane size.
+_IMPORT_LOOKUP_BATCH = 1000
+
+# Sentinels from _classify_hashfile_line: this line contributes no row, or the
+# file is malformed and the whole import should be abandoned.
+_LINE_SKIP = object()
+_LINE_ABORT = object()
+
+
+def _classify_hashfile_line(line, file_type, hash_type, present_usernames):
+    """Parse one hashfile line into ``(ciphertext, hash_type, username)``.
+
+    Returns ``_LINE_SKIP`` for a line that is deliberately dropped (an AD
+    machine account, or a ``_history0`` row whose base account is also present
+    in the file) and ``_LINE_ABORT`` for a malformed file.
+
+    Deliberately pure -- it touches no database. Separating the parsing from the
+    writing is what lets the caller batch, and it collects the per-format quirks
+    in one reviewable place. Note that several branches reassign ``line`` and
+    then derive the username from the *reassigned* value; that ordering is
+    load-bearing and is preserved exactly as it was when each branch called
+    import_hash_only inline. The pwdump branch likewise still overrides
+    hash_type to '1000' for the row it emits, whatever was selected.
+    """
+    username = None
+    if file_type == 'hash_only':
+        # DCC2 is the one hash_only mode whose ciphertext carries a
+        # username, so it is the one that can carry a '_history0' row
+        # duplicating its account's current-password row (#412).
+        if str(hash_type) == '2100':
+            dcc2_fields = line.lower().rstrip().split('#')
+            if len(dcc2_fields) > 1:
+                base = history_zero_base_name(dcc2_fields[1])
+                if base is not None and base.strip().lower() in present_usernames:
+                    return _LINE_SKIP
+        # forcing lower casing of hash as hashcat will return lower cased version of the has and we want to match what we imported.
+        if hash_type in ('300', '1731', '1000'):
+            ciphertext = line.lower().rstrip()
+        elif hash_type == '2100':
+            line = line.lower().rstrip()
+            line = line.replace('$dcc2$', '$DCC2$')
+            ciphertext = line
+        else:
+            ciphertext = line.rstrip()
+        # extract username from dcc2 hash
+        if hash_type == '2100':
+            username = line.split('#')[1]
+        else:
+            username = None
+        return ciphertext, hash_type, username
+    elif file_type == 'user_hash':
+        if ':' in line:
+            # NTDS dumps are routinely cut down to 'user:nthash', so AD
+            # machine accounts and duplicate '_history0' rows (#412)
+            # reach this format too. Filter before the row is buffered, or
+            # the ciphertext orphans in `hashes` and still gets cracked.
+            # hash_type arrives as an int on the API path (routes.py takes
+            # <int:hash_type>).
+            candidate_username = line.split(':')[0]
+            if (str(hash_type) in _NTLM_FAMILY_HASH_TYPES
+                    and is_machine_account(candidate_username)):
+                return _LINE_SKIP
+            base = history_zero_base_name(candidate_username)
+            if (str(hash_type) in _AD_HISTORY_HASH_TYPES
+                    and base is not None and base.strip().lower() in present_usernames):
+                return _LINE_SKIP
+            if hash_type == '300' or hash_type == '1731':
+                ciphertext = line.lower().rstrip()
+                username = line.split(':')[0]
+            elif hash_type == '2100':
+                line = line.split(':', 1)[1].rstrip()
+                line = line.lower()
+                line = line.replace('$dcc2$', '$DCC2$')
+                ciphertext = line
+                username = line.split(':')[0]
+            else:
+                # hashcat emits hex hashes (e.g. NTLM) lowercased, so store
+                # them lowercased too -- otherwise the md5(ciphertext) lookup
+                # on crack upload misses (mirrors the hash_only path above).
+                hash_value = line.split(':', 1)[1].rstrip()
+                if hash_type in ('300', '1731', '1000'):
+                    hash_value = hash_value.lower()
+                ciphertext = hash_value
+                username = line.split(':')[0]
+            return ciphertext, hash_type, username
+        return _LINE_ABORT
+    elif file_type == 'shadow':
+        return line.split(':')[1], hash_type, line.split(':')[0]
+    elif file_type == 'pwdump':
+        # do we let user select LM so that we crack those instead of NTLM?
+        candidate_username = line.split(':')[0]
+        base = history_zero_base_name(candidate_username)
+        if is_machine_account(candidate_username) or (
+                base is not None and base.strip().lower() in present_usernames):
+            return _LINE_SKIP
+        return line.split(':')[3].lower(), '1000', candidate_username
+    elif file_type == 'kerberos':
+        ciphertext = line.lower().rstrip()
+        if hash_type == '18200':
+            username = line.split('$')[3].split(':')[0]
+        else:
+            username = line.split('$')[3]
+        return ciphertext, hash_type, username
+    elif file_type == 'NetNTLM':
+        # 5600, domain is case sensitve. Hashcat returns username in
+        # upper case.
+        candidate_username = line.split(':')[0]
+        base = history_zero_base_name(candidate_username)
+        if is_machine_account(candidate_username) or (
+                base is not None and base.strip().lower() in present_usernames):
+            return _LINE_SKIP
+        # uppercase uesrname in line
+        line_list = line.split(':')
+        # uppercase the username in line
+        line_list[0] = line_list[0].upper()
+        # lowercase the rest (except domain name) 3,4,5
+        line_list[3] = line_list[3].lower()
+        line_list[4] = line_list[4].lower()
+        line_list[5] = line_list[5].lower()
+        line = ':'.join(line_list)
+        return line.rstrip(), hash_type, line.split(':', maxsplit=1)[0]
+    return _LINE_ABORT
+
+
+def _resolve_hash_ids(wanted):
+    """Map ``(hash_type_key, sub_ciphertext) -> hashes.id`` for rows that exist.
+
+    ``wanted`` maps that key to ``(hash_type, ciphertext)``. One SELECT per
+    hash_type per _IMPORT_LOOKUP_BATCH sub_ciphertexts, rather than one per
+    hash. The hash_type value is passed through as supplied rather than coerced,
+    because the column is an Integer and callers hand it in as either a str or
+    an int -- the backend's numeric coercion is what makes both work, and
+    tests/unit/test_issue_xfail_import_hash_type_int.py pins that.
+    """
+    by_type = {}
+    for (type_key, sub), (row_type, _ciphertext) in wanted.items():
+        by_type.setdefault(type_key, (row_type, []))[1].append(sub)
+
+    found = {}
+    for type_key, (row_type, subs) in by_type.items():
+        for offset in range(0, len(subs), _IMPORT_LOOKUP_BATCH):
+            batch = subs[offset:offset + _IMPORT_LOOKUP_BATCH]
+            rows = db.session.query(Hashes.id, Hashes.sub_ciphertext).filter(
+                Hashes.hash_type == row_type,
+                Hashes.sub_ciphertext.in_(batch),
+            ).all()
+            for hash_id, sub in rows:
+                found[(type_key, sub)] = hash_id
+    return found
+
+
+def _import_chunk(hashfile_id, rows, _retrying=False):
+    """Resolve, insert and link one chunk of parsed rows, then commit once.
+
+    ``rows`` is a list of ``(ciphertext, hash_type, username)``.
+
+    Retries once on an integrity error. uq_hashes_sub_ciphertext_hash_type makes
+    the lookup-then-insert a *checked* race rather than a silent one: if a
+    concurrent import inserts one of these hashes between our SELECT and our
+    INSERT, the insert now fails instead of quietly creating a second row for
+    the same hash. The retry's lookup finds the other importer's row and
+    inserts only what is still missing.
+    """
+    try:
+        return _import_chunk_once(hashfile_id, rows)
+    except IntegrityError:
+        db.session.rollback()
+        if _retrying:
+            raise
+        return _import_chunk(hashfile_id, rows, _retrying=True)
+
+
+def _import_chunk_once(hashfile_id, rows):
+    """One attempt at resolving, inserting and linking a chunk."""
+    # Key every row once. The md5 is computed a single time per row here; the
+    # old path computed it twice for every new hash.
+    keyed = [(str(row_type), get_md5_hash(ciphertext), ciphertext, row_type, username)
+             for ciphertext, row_type, username in rows]
+
+    # Collapse duplicates *within* the chunk before inserting. The old code
+    # relied on read-your-writes from a per-row commit to notice a repeat later
+    # in the same file; keying on (hash_type, sub_ciphertext) does that without
+    # a round trip, and a duplicate spanning two chunks is still caught by the
+    # lookup below, because earlier chunks are already committed.
+    wanted = {}
+    for type_key, sub, ciphertext, row_type, _username in keyed:
+        wanted.setdefault((type_key, sub), (row_type, ciphertext))
+
+    found = _resolve_hash_ids(wanted)
+
+    missing = [key for key in wanted if key not in found]
+    if missing:
+        db.session.bulk_insert_mappings(Hashes, [
+            {
+                'hash_type': wanted[key][0],
+                'sub_ciphertext': key[1],
+                'ciphertext': wanted[key][1],
+                'cracked': 0,
+            }
+            for key in missing
+        ])
+        db.session.flush()
+        # bulk_insert_mappings does not populate primary keys, so read them
+        # back -- still one SELECT per batch rather than one per row.
+        found.update(_resolve_hash_ids({key: wanted[key] for key in missing}))
+
+    db.session.bulk_insert_mappings(HashfileHashes, [
+        {
+            'hash_id': found[(type_key, sub)],
+            'hashfile_id': hashfile_id,
+            'username': None if username is None else text_from_field(username),
+        }
+        for type_key, sub, _ciphertext, _row_type, username in keyed
+        if (type_key, sub) in found
+    ])
+    db.session.commit()
+
+
+def _present_usernames(hashfile_path, file_type, hash_type):
+    """Usernames present in the file as their own row (not stripped of any
+    suffix), so a '_history0' row can be recognised as a duplicate of its
+    account's current-password row and dropped only then (issue #412)."""
+    with open(hashfile_path, encoding='utf-8', errors='surrogateescape') as file:
+        return {
+            raw.strip().lower()
+            for raw in (
+                _raw_username_for_history_check(line, file_type, hash_type)
+                for line in file
+            )
+            if raw
+        }
+
+
 def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
     """Function to hashfile"""
 
-    # Open file. errors='surrogateescape' so a non-UTF-8 hashfile never crashes
-    # on read; each stored field is normalised to text via text_from_field().
-    file = open(hashfile_path, encoding='utf-8', errors='surrogateescape')
-    lines = file.readlines()
+    # The file is read twice and streamed both times -- once to collect the
+    # usernames the history filter needs, once to import. It used to be pulled
+    # into memory whole with readlines().
+    #
+    # errors='surrogateescape' so a non-UTF-8 hashfile never crashes on read;
+    # each stored field is normalised to text via text_from_field().
+    present_usernames = _present_usernames(hashfile_path, file_type, hash_type)
 
-    # Usernames present in the file as their own row (not stripped of any
-    # suffix), so a '_history0' row can be recognised as a duplicate of its
-    # account's current-password row and dropped only then (issue #412).
-    present_usernames = {
-        raw.strip().lower()
-        for raw in (
-            _raw_username_for_history_check(line, file_type, hash_type)
-            for line in lines
-        )
-        if raw
-    }
-
-    # for line in file,
-    for line in lines:
-        # If line is empty:
-        username = None
-        if len(line) > 0:
-            if file_type == 'hash_only':
-                # DCC2 is the one hash_only mode whose ciphertext carries a
-                # username, so it is the one that can carry a '_history0' row
-                # duplicating its account's current-password row (#412).
-                if str(hash_type) == '2100':
-                    dcc2_fields = line.lower().rstrip().split('#')
-                    if len(dcc2_fields) > 1:
-                        base = history_zero_base_name(dcc2_fields[1])
-                        if base is not None and base.strip().lower() in present_usernames:
-                            continue
-                # forcing lower casing of hash as hashcat will return lower cased version of the has and we want to match what we imported.
-                if hash_type in ('300', '1731', '1000'):
-                    hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
-                elif hash_type == '2100':
-                    line = line.lower().rstrip()
-                    line = line.replace('$dcc2$', '$DCC2$')
-                    hash_id = import_hash_only(line, hash_type)
-                else:
-                    hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
-                # extract username from dcc2 hash
-                if hash_type == '2100':
-                    username = line.split('#')[1]
-                else:
-                    username = None
-            elif file_type == 'user_hash':
-                if ':' in line:
-                    # NTDS dumps are routinely cut down to 'user:nthash', so AD
-                    # machine accounts and duplicate '_history0' rows (#412)
-                    # reach this format too. Filter before import_hash_only()
-                    # or the ciphertext orphans in `hashes` and still gets
-                    # cracked. hash_type arrives as an int on the API path
-                    # (routes.py takes <int:hash_type>).
-                    candidate_username = line.split(':')[0]
-                    if (str(hash_type) in _NTLM_FAMILY_HASH_TYPES
-                            and is_machine_account(candidate_username)):
-                        continue
-                    base = history_zero_base_name(candidate_username)
-                    if (str(hash_type) in _AD_HISTORY_HASH_TYPES
-                            and base is not None and base.strip().lower() in present_usernames):
-                        continue
-                    if hash_type == '300' or hash_type == '1731':
-                        hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
-                        username = line.split(':')[0]
-                    elif hash_type == '2100':
-                        line = line.split(':',1)[1].rstrip()
-                        line = line.lower()
-                        line = line.replace('$dcc2$', '$DCC2$')
-                        hash_id = import_hash_only(line, hash_type)
-                        username = line.split(':')[0]
-                    else:
-                        # hashcat emits hex hashes (e.g. NTLM) lowercased, so store
-                        # them lowercased too -- otherwise the md5(ciphertext) lookup
-                        # on crack upload misses (mirrors the hash_only path above).
-                        hash_value = line.split(':', 1)[1].rstrip()
-                        if hash_type in ('300', '1731', '1000'):
-                            hash_value = hash_value.lower()
-                        hash_id = import_hash_only(line=hash_value, hash_type=hash_type)
-                        username = line.split(':')[0]
-                else:
-                    return False
-            elif file_type == 'shadow':
-                hash_id= import_hash_only(line=line.split(':')[1], hash_type=hash_type)
-                username = line.split(':')[0]
-            elif file_type == 'pwdump':
-                # do we let user select LM so that we crack those instead of NTLM?
-                candidate_username = line.split(':')[0]
-                base = history_zero_base_name(candidate_username)
-                if is_machine_account(candidate_username) or (
-                        base is not None and base.strip().lower() in present_usernames):
-                    continue
-                else:
-                    hash_id = import_hash_only(line=line.split(':')[3].lower(), hash_type='1000')
-                    username = candidate_username
-            elif file_type == 'kerberos':
-                hash_id = import_hash_only(line=line.lower().rstrip(), hash_type=hash_type)
-                if hash_type == '18200':
-                    username = line.split('$')[3].split(':')[0]
-                else:
-                    username = line.split('$')[3]
-            elif file_type == 'NetNTLM':
-                # 5600, domain is case sensitve. Hashcat returns username in
-                # upper case.
-                candidate_username = line.split(':')[0]
-                base = history_zero_base_name(candidate_username)
-                if is_machine_account(candidate_username) or (
-                        base is not None and base.strip().lower() in present_usernames):
-                    continue
-                else:
-                    # uppercase uesrname in line
-                    line_list = line.split(':')
-                    # uppercase the username in line
-                    line_list[0] = line_list[0].upper()
-                    # lowercase the rest (except domain name) 3,4,5
-                    line_list[3] = line_list[3].lower()
-                    line_list[4] = line_list[4].lower()
-                    line_list[5] = line_list[5].lower()
-                    line = ':'.join(line_list)
-                    hash_id = import_hash_only(line=line.rstrip(), hash_type=hash_type)
-                    username = line.split(':', maxsplit=1)[0]
-            else:
+    pending = []
+    with open(hashfile_path, encoding='utf-8', errors='surrogateescape') as file:
+        for line in file:
+            if len(line) == 0:
+                continue
+            row = _classify_hashfile_line(line, file_type, hash_type, present_usernames)
+            if row is _LINE_ABORT:
+                # Drop the partial chunk. Chunks already committed stay, which
+                # is what the per-row-commit version did as well.
+                db.session.rollback()
                 return False
-            if username is None:
-                hashfilehashes = HashfileHashes(hash_id=hash_id, hashfile_id=hashfile_id)
-            else:
-                hashfilehashes = HashfileHashes(hash_id=hash_id, username=text_from_field(username), hashfile_id=hashfile_id)
-            db.session.add(hashfilehashes)
-            db.session.commit()
+            if row is _LINE_SKIP:
+                continue
+            pending.append(row)
+            if len(pending) >= _IMPORT_CHUNK_SIZE:
+                _import_chunk(hashfile_id, pending)
+                pending = []
+
+    if pending:
+        _import_chunk(hashfile_id, pending)
 
     return True
 

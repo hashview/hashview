@@ -40,6 +40,7 @@ from hashview.setup import (
 from hashview.utils.utils import (
     dynamic_password_length_wordlists,
     generate_recovered_password_wordlist,
+    get_md5_hash,
     update_dynamic_wordlist,
 )
 
@@ -77,7 +78,7 @@ def _make_wordlist(tmp_path, name: str) -> Wordlists:
 
 def _write_plain(plaintext: str, ciphertext: str):
     h = Hashes(
-        sub_ciphertext="0" * 32,
+        sub_ciphertext=get_md5_hash(ciphertext),
         ciphertext=ciphertext,
         hash_type=1000,
         cracked=True,

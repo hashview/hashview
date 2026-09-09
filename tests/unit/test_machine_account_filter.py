@@ -306,7 +306,7 @@ def test_netntlm_drops_history_zero_only_when_base_present(app, tmp_path):
 
 @pytest.mark.security
 def test_filtered_rows_do_not_create_hash_rows(app, tmp_path):
-    """The filter must run *before* import_hash_only, or the ciphertext lands in
+    """The filter must run *before* the row is buffered, or the ciphertext lands in
     `hashes` with no hashfile row pointing at it and still gets cracked.
 
     The unscoped `Hashes` query is deliberate: an orphaned row is by definition

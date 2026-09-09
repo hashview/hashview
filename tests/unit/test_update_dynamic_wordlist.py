@@ -24,7 +24,7 @@ from hashview.models import (
     Wordlists,
     db,
 )
-from hashview.utils.utils import update_dynamic_wordlist
+from hashview.utils.utils import get_md5_hash, update_dynamic_wordlist
 
 
 def _make_user(app):
@@ -59,7 +59,7 @@ def _make_wordlist(app, tmp_path, name: str) -> Wordlists:
 def _write_hash(plaintext_bytes: bytes, hash_type: int = 1000, ciphertext: str = None):
     """Insert a cracked hash row whose plaintext is stored as plain text."""
     h = Hashes(
-        sub_ciphertext="0" * 32,
+        sub_ciphertext=get_md5_hash(ciphertext or ("a" * 32)),
         ciphertext=ciphertext or ("a" * 32),
         hash_type=hash_type,
         cracked=True,

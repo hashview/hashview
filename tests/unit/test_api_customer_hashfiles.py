@@ -25,6 +25,7 @@ routes); the cookie domain must equal the test ``SERVER_NAME`` (localhost.test)
 for Werkzeug 3.x to send it.
 """
 
+import itertools
 import json
 
 import pytest
@@ -38,6 +39,7 @@ from hashview.models import (
     Users,
 )
 from hashview.models import db as _db
+from hashview.utils.utils import get_md5_hash
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -94,15 +96,23 @@ def _seed_hashfile(name, customer_id, owner_id):
     return hf
 
 
+_SEED_SEQ = itertools.count()
+
+
 def _seed_hash(hashfile_id, hash_type, cracked):
     """Add one Hashes row of the given type and link it to a hashfile.
 
     Mirrors the real ingest path: a Hashes row plus a HashfileHashes junction
     row. `cracked` is a bool; Hashes.cracked is a non-nullable boolean column.
     """
+    # itertools counter: callers seed several hashes with identical arguments,
+    # and uq_hashes_sub_ciphertext_hash_type (correctly) forbids two rows for
+    # the same hash -- production would dedupe them into one row with two
+    # hashfile_hashes links.
+    ciphertext = f"hash-{hashfile_id}-{hash_type}-{int(cracked)}-{next(_SEED_SEQ)}"
     h = Hashes(
-        sub_ciphertext="0" * 32,
-        ciphertext=f"hash-{hashfile_id}-{hash_type}-{int(cracked)}",
+        sub_ciphertext=get_md5_hash(ciphertext),
+        ciphertext=ciphertext,
         hash_type=hash_type,
         cracked=cracked,
     )

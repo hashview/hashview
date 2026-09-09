@@ -197,7 +197,7 @@ def test_pwdump_is_unaffected_by_the_hash_type_argument(app, tmp_path):
 
 @pytest.mark.security
 def test_hash_type_column_holds_an_integer_after_a_string_import(app, tmp_path):
-    """``import_hash_only`` writes ``hash_type`` straight into an Integer column.
+    """The import path writes ``hash_type`` straight into an Integer column.
     The proposed fix (normalise to ``str`` at the top of the function) makes the
     API path pass a string too, so pin that a string argument still lands as an
     integer and stays findable by the int-keyed queries elsewhere.
@@ -244,7 +244,7 @@ def test_user_hash_mysql41_is_lowercased_when_hash_type_is_an_int(app, tmp_path)
     ``else`` at :720 that 1000 falls through to. Both are dead on the API path.
 
     Only the casing is pinned. That branch also hands the *whole* ``user:hash``
-    line to ``import_hash_only`` instead of the hash field, so the ciphertext is
+    line through as the ciphertext instead of the hash field, so the ciphertext is
     stored as ``alice:fcf7…`` on the UI path too — a separate defect (#445),
     deliberately not blessed by an equality assertion here.
     """
@@ -288,7 +288,7 @@ def test_api_upload_stores_ntlm_lowercased(client, app, api_user, customer):
 
 @pytest.mark.security
 @pytest.mark.xfail(strict=True,
-                   reason="#444: the uppercase row has a different sub_ciphertext, so import_hash_only's dedup misses the cracked corpus")
+                   reason="#444: the uppercase row has a different sub_ciphertext, so the import dedup misses the cracked corpus")
 def test_api_upload_instacracks_against_the_existing_corpus(client, app, api_user,
                                                             customer):
     """The same hash recovered by an earlier job must be reported as

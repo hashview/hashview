@@ -39,4 +39,4 @@ not part of the default suite.
 | `../../../Dockerfile.agent` | agent image |
 | `../../../docker-compose.e2e.yml` | agent1 + agent2 services |
 | `../../run_e2e_crack_compose.sh` | orchestrator |
-| `../test_multiagent_ntlm_crack.py` | assertions |
+| `../../crack/test_multiagent_ntlm_crack.py` | assertions |

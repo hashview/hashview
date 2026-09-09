@@ -1,8 +1,9 @@
 """Unit tests for hash file parsers in ``hashview.utils.utils``.
 
 These tests pin parser behavior for the file formats the app supports:
-- **pwdump**: filters out machine accounts (``trailing $``) AND ``$_history``
-  entries (the AD-related fix called out in the CHANGELOG)
+- **pwdump**: filters out machine accounts (``trailing $``) AND a duplicate
+  ``_history0``/bare ``_history`` row when the account's current-password
+  row is also present (issue #412); ``_history1`` and up are always kept
 - **shadow**: extracts username + crypt-style hash
 - **NetNTLM (5500/5600)**: filters machine accounts, uppercases the
   username, lowercases the ciphertext parts
@@ -54,8 +55,10 @@ def _all_usernames(hashfile_id: int):
 
 @pytest.mark.security
 def test_pwdump_filters_machine_accounts_and_history(app, tmp_path):
-    """Lines ending in ``$`` (machine accounts) and ``$_history`` lines should
-    be dropped during pwdump import."""
+    """Lines ending in ``$`` (machine accounts) are always dropped. A
+    ``_history0`` row is dropped only because its base account (``alice``) is
+    also in the file (issue #412); ``_history1`` is a real, distinct password
+    and is always kept."""
     hashfile_id = _make_user_and_hashfile()
     path = tmp_path / "pwdump.txt"
     path.write_text(
@@ -64,9 +67,10 @@ def test_pwdump_filters_machine_accounts_and_history(app, tmp_path):
             "alice:1001:aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c:::",
             # machine account — should be skipped
             "WIN10$:1002:aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586d:::",
-            # history entry — should be skipped
+            # duplicate of alice's current password — should be skipped
             "alice_history0:1003:aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586e:::",
-            "alice$_history1:1004:aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586f:::",
+            # a real, distinct prior password — should land
+            "alice_history1:1004:aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586f:::",
         ]) + "\n"
     )
 
@@ -78,9 +82,7 @@ def test_pwdump_filters_machine_accounts_and_history(app, tmp_path):
     )
 
     usernames = _all_usernames(hashfile_id)
-    assert "alice" in usernames
-    assert "WIN10$" not in usernames
-    assert not any("_history" in u for u in usernames)
+    assert usernames == {"alice", "alice_history1"}
 
 
 @pytest.mark.security

@@ -2,8 +2,10 @@
 
 Generated counterparts to tests/unit/test_hash_parsers.py: instead of pinning
 single examples, these assert invariants over arbitrary usernames/hashes —
-the parser must never import machine accounts (trailing $), never import
-*_history entries, and never crash on weird-but-structurally-valid lines.
+the parser must never import machine accounts (trailing $), never import a
+*_history0 entry when its base account is also present (issue #412, while
+*_history1 and up are always imported), and never crash on weird-but-
+structurally-valid lines.
 
 Hypothesis runs each test body many times inside ONE function-scoped ``app``
 fixture instance, so DB state accumulates across examples. Every example
@@ -123,11 +125,32 @@ def test_pwdump_machine_accounts_never_imported(app, username, nt):
 
 @pytest.mark.security
 @PROPERTY_SETTINGS
-@given(username=USERNAME, suffix=st.integers(min_value=0, max_value=99), nt=HEX32)
-def test_pwdump_history_entries_never_imported(app, username, suffix, nt):
-    """``*_history*`` entries are NTLM password-history records (the AD fix in
-    the CHANGELOG) and must never be imported. The bare-username control line
-    on the same file confirms the filter is selective."""
+@given(username=USERNAME, nt=HEX32)
+def test_pwdump_history_zero_never_imported_when_base_present(app, username, nt):
+    """``*_history0`` duplicates its account's current-password hash (issue
+    #412), so it must never be imported when that current-password row is
+    also present. The bare-username control line on the same file confirms
+    the filter is selective."""
+    hashfile_id = _make_user_and_hashfile()
+    history_user = f"{username}_history0"
+    text = (
+        f"{history_user}:1001:aad3b435b51404eeaad3b435b51404ee:{nt}:::\n"
+        f"{username}:1002:aad3b435b51404eeaad3b435b51404ee:{nt}:::\n"
+    )
+    _import_text(text, hashfile_id, file_type="pwdump", hash_type="1000")
+
+    usernames = {row.username for row in _imported_rows(hashfile_id)}
+    assert history_user not in usernames, f"history entry {history_user} was imported"
+    assert usernames == {username}
+
+
+@pytest.mark.security
+@PROPERTY_SETTINGS
+@given(username=USERNAME, suffix=st.integers(min_value=1, max_value=99), nt=HEX32)
+def test_pwdump_history_nonzero_always_imported(app, username, suffix, nt):
+    """``*_history1`` and up are real, distinct prior passwords (issue #412)
+    and must always be imported, even when the account's current-password row
+    is also present in the same file."""
     hashfile_id = _make_user_and_hashfile()
     history_user = f"{username}_history{suffix}"
     text = (
@@ -137,10 +160,7 @@ def test_pwdump_history_entries_never_imported(app, username, suffix, nt):
     _import_text(text, hashfile_id, file_type="pwdump", hash_type="1000")
 
     usernames = {row.username for row in _imported_rows(hashfile_id)}
-    assert not any("_history" in u for u in usernames), (
-        f"history entry {history_user} was imported"
-    )
-    assert usernames == {username}
+    assert usernames == {username, history_user}
 
 
 # --- invariant 3: NetNTLM machine accounts + case normalisation -------------

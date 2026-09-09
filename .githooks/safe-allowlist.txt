@@ -112,3 +112,10 @@ api_key="user-api-key-
 # 0.0.0.0 is the wildcard bind address, not a real host IP. Flagged whenever a
 # compose file or doc explains why a port no longer binds it (#394).
 0\.0\.0\.0
+
+# --- tests/unit/test_machine_account_filter.py false positives ---
+# Throwaway NetNTLM lm_resp test fixture (52 hex/alpha chars) trips the
+# AWS-secret-key heuristic whenever a new test function using it is added.
+# Not a credential -- it's a fixed dummy LM response reused across the file's
+# existing NetNTLM tests.
+1122334455667788AABBCCDDEEFF1122334455667788AABBCCDD

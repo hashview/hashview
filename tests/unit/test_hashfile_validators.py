@@ -330,8 +330,8 @@ def test_kerberos_19600_19700_reject_asterisk_in_user_or_realm(htype, vec):
 @pytest.mark.parametrize("htype,checksum_char", [('19600', 'd'), ('19700', 'e')])
 def test_kerberos_19600_19700_empty_spn_still_validates(htype, checksum_char):
     """The empty-SPN control `$**$` matches hashcat and must keep validating."""
-    realm_map = {'19600': ('17', 'd'), '19700': ('18', 'e')}
-    ver, _ = realm_map[htype]
+    ver_map = {'19600': '17', '19700': '18'}
+    ver = ver_map[htype]
     vec = (
         f'$krb5tgs${ver}$srv_http$synacktiv.local$**$'
         + checksum_char * 24 + '$' + _ED

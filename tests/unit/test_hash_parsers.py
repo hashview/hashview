@@ -9,7 +9,7 @@ These tests pin parser behavior for the file formats the app supports:
   username, lowercases the ciphertext parts
 - **hash_only**: handles non-1000 hash types
 
-The parsers commit rows to the DB via ``import_hash_only`` /
+The parsers commit rows to the DB via ``_import_chunk`` /
 ``import_hashfilehashes``, so we use an in-memory SQLite app from the unit
 conftest.
 """
@@ -196,3 +196,130 @@ def test_hash_only_ntlm_lowercases(app, tmp_path):
 
     row = Hashes.query.first()
     assert row.ciphertext == "8846f7eaee8fb117ad06bdd830b7586c"
+
+
+# ---------------------------------------------------------------------------
+# batched import (#363)
+# ---------------------------------------------------------------------------
+
+
+def _count_import(hashfile_id, path, file_type, hash_type):
+    """Run an import, returning (commits, statements, ok)."""
+    from sqlalchemy import event
+
+    statements = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement.split()[0].upper())
+
+    commits = [0]
+    real_commit = db.session.commit
+
+    def counting_commit():
+        commits[0] += 1
+        return real_commit()
+
+    event.listen(db.engine, "before_cursor_execute", record)
+    db.session.commit = counting_commit
+    try:
+        ok = import_hashfilehashes(hashfile_id=hashfile_id, hashfile_path=str(path),
+                                   file_type=file_type, hash_type=hash_type)
+    finally:
+        db.session.commit = real_commit
+        event.remove(db.engine, "before_cursor_execute", record)
+    return commits[0], statements, ok
+
+
+def _md5_lines(n, prefix="u"):
+    import hashlib
+    return [hashlib.md5(f"{prefix}{i}".encode()).hexdigest() for i in range(n)]
+
+
+@pytest.mark.security
+def test_import_commits_once_per_chunk_not_once_per_row(app, tmp_path):
+    """The #363 regression guard.
+
+    Import used to issue one SELECT + INSERT + commit per new hash and another
+    INSERT + commit per link row -- ~2N commits, each an InnoDB redo-log fsync,
+    which is what made a large hashfile take minutes. Measured on this file
+    before the change: 3,000 commits and 6,000 statements; after: 1 and 4.
+
+    Asserted as "does not grow with row count" rather than as an exact number,
+    so it cannot be satisfied by a rewrite that is merely different.
+    """
+    hashfile_id = _make_user_and_hashfile()
+    uniq = _md5_lines(1000)
+    path = tmp_path / "batched.txt"
+    # 50% overlap: the second half repeats the first, the realistic case
+    path.write_text("\n".join(uniq + uniq) + "\n")
+
+    commits, statements, ok = _count_import(hashfile_id, path, "hash_only", "1000")
+    assert ok is True
+    # 2,000 lines fit one chunk, so this is a single transaction.
+    assert commits == 1, f"expected one commit for one chunk, got {commits}"
+    assert len(statements) < 20, f"per-row statements are back: {len(statements)}"
+    # ...and the data is still exactly right.
+    assert Hashes.query.count() == 1000
+    assert HashfileHashes.query.filter_by(hashfile_id=hashfile_id).count() == 2000
+
+
+@pytest.mark.security
+def test_import_cost_scales_with_chunks_not_rows(app, tmp_path):
+    """Doubling the rows at a fixed chunk size must not double the statements."""
+    from hashview.utils import utils as utils_mod
+
+    hashfile_id = _make_user_and_hashfile()
+    original = utils_mod._IMPORT_CHUNK_SIZE
+    utils_mod._IMPORT_CHUNK_SIZE = 100
+    try:
+        path = tmp_path / "a.txt"
+        path.write_text("\n".join(_md5_lines(200, "a")) + "\n")
+        commits_200, _, _ = _count_import(hashfile_id, path, "hash_only", "1000")
+
+        path2 = tmp_path / "b.txt"
+        path2.write_text("\n".join(_md5_lines(400, "b")) + "\n")
+        commits_400, _, _ = _count_import(hashfile_id, path2, "hash_only", "1000")
+    finally:
+        utils_mod._IMPORT_CHUNK_SIZE = original
+
+    assert commits_200 == 2      # 200 rows / 100 per chunk
+    assert commits_400 == 4      # 400 rows / 100 per chunk, not 400 commits
+
+
+@pytest.mark.security
+def test_import_dedupes_duplicates_that_span_two_chunks(app, tmp_path):
+    """Cross-chunk dedup no longer relies on read-your-writes from a per-row commit.
+
+    Within a chunk duplicates collapse on (hash_type, sub_ciphertext) before the
+    insert; across chunks the earlier chunk is already committed, so the lookup
+    finds it. Both halves have to hold or a hash gets inserted twice.
+    """
+    from hashview.utils import utils as utils_mod
+
+    hashfile_id = _make_user_and_hashfile()
+    original = utils_mod._IMPORT_CHUNK_SIZE
+    utils_mod._IMPORT_CHUNK_SIZE = 10
+    try:
+        uniq = _md5_lines(10, "dup")
+        path = tmp_path / "spanning.txt"
+        # 10 unique, then the same 10 again -> chunk 2 must find chunk 1's rows,
+        # and a third copy inside chunk 2 must collapse within the chunk.
+        path.write_text("\n".join(uniq + uniq + uniq) + "\n")
+        _, _, ok = _count_import(hashfile_id, path, "hash_only", "1000")
+    finally:
+        utils_mod._IMPORT_CHUNK_SIZE = original
+
+    assert ok is True
+    assert Hashes.query.count() == 10
+    assert HashfileHashes.query.filter_by(hashfile_id=hashfile_id).count() == 30
+
+
+@pytest.mark.security
+def test_import_returns_false_on_a_malformed_user_hash_line(app, tmp_path):
+    """A user_hash line with no ':' aborts the import, as it did before."""
+    hashfile_id = _make_user_and_hashfile()
+    path = tmp_path / "bad.txt"
+    path.write_text("alice:8846f7eaee8fb117ad06bdd830b7586c\nno-colon-here\n")
+
+    _, _, ok = _count_import(hashfile_id, path, "user_hash", "1000")
+    assert ok is False

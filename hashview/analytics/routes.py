@@ -82,6 +82,25 @@ def _distinct_hash_count(customer_id, hashfile_id, cracked=None):
             .with_entities(Hashes.id).distinct().count())
 
 
+def _distinct_account_count(customer_id, hashfile_id, cracked=None):
+    """Distinct accounts in the scope: one per (hash, username) pair.
+
+    The scope stays every hashfile_hashes row in range -- that part was always
+    right -- but the UNIT is an account rather than a join row. A join-row count
+    counts one account twice when it is reached through two hashfiles, and again
+    for every duplicate row in a hashfile (this instance holds 89,475 groups of
+    identical (hashfile_id, hash_id, username) rows, from repeated lines in the
+    source file: hashfile_hashes has no unique constraint on the triple).
+
+    A row with no username collapses to one per hash, so a hash_only import --
+    which carries no usernames at all -- still contributes its hashes rather
+    than nothing. SQL DISTINCT groups NULLs together, which is what gives that
+    behaviour for free; COUNT(DISTINCT a, b) would instead drop those rows.
+    """
+    return (_scoped_hash_query(customer_id, hashfile_id, cracked)
+            .with_entities(Hashes.id, HashfileHashes.username).distinct().count())
+
+
 def _local_part(username):
     """DOMAIN\\user or *user -> bare user (netntlm / kerberos style names)."""
     if not username:
@@ -334,10 +353,26 @@ def get_analytics():
     # Decode hashcat's `$HEX[...]` marker once here so every plaintext-derived
     # chart below (length, strength, char-classes, masks, top passwords) measures
     # the real password rather than the wrapper. Mirrors Wrapped's _decode_plain.
+    #
+    # One row per ACCOUNT, not per hashfile_hashes join row (#385). Hashes ->
+    # HashfileHashes is one-to-many, so without the distinct a single account
+    # reached through two hashfiles -- or listed twice in one file -- became two
+    # people, and every figure below inflated with it. The reuse donut was the
+    # visible symptom: it read 100% on a scope whose passwords were all distinct,
+    # because each hash "shared" its password with its own duplicate row.
+    #
+    # Deliberately NOT distinct on Hashes.id. Imports dedupe hashes globally on
+    # (hash_type, sub_ciphertext), so on this instance one hashes row serves
+    # 1,048 accounts using "Training$1" -- a per-hash corpus cannot see
+    # cross-account reuse at all and would report ~0% reuse, which is wrong in
+    # the opposite direction. Hashes.id is selected only so the distinct applies
+    # to the account identity rather than to (plaintext, username), which would
+    # merge two same-named accounts in different domains.
     corpus = [(decode_hex_plain(plaintext), username)
-              for plaintext, username in
+              for _hash_id, plaintext, username in
               _scoped_hash_query(customer_id, hashfile_id, cracked=True)
-              .with_entities(Hashes.plaintext, HashfileHashes.username).all()]
+              .with_entities(Hashes.id, Hashes.plaintext, HashfileHashes.username)
+              .distinct().all()]
     total_cracked = len(corpus)
 
     freq = Counter()
@@ -404,8 +439,11 @@ def get_analytics():
     heatmap_rows, heatmap_cols, heatmap_max, rotations, strength_dist = _structure_breakdowns(corpus)
 
     # ---- scope totals (uncracked is derived in the template as total - cracked) ----
-    accounts = _scoped_hash_query(customer_id, hashfile_id).count()
-    accounts_cracked = _scoped_hash_query(customer_id, hashfile_id, cracked=True).count()
+    # Accounts, not join rows -- same unit as `corpus`, so accounts_cracked and
+    # total_cracked agree instead of the page quoting two different "cracked"
+    # numbers (#385).
+    accounts = _distinct_account_count(customer_id, hashfile_id)
+    accounts_cracked = _distinct_account_count(customer_id, hashfile_id, cracked=True)
     unique_hashes = _distinct_hash_count(customer_id, hashfile_id)
     unique_cracked = _distinct_hash_count(customer_id, hashfile_id, cracked=True)
     runtime = (_scoped_hashfiles(customer_id, hashfile_id)

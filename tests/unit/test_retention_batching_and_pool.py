@@ -12,6 +12,8 @@ about what gets deleted -- the deletion semantics are pinned by
 tests/unit/test_scheduler_retention_inner.py and must not move.
 """
 
+import contextlib
+import logging
 from datetime import datetime, timedelta
 
 import pytest
@@ -30,6 +32,33 @@ from hashview.scheduler import (
     _delete_exclusive_hashes,
     _delete_hashfile_links,
 )
+
+
+@contextlib.contextmanager
+def _captured_error_log():
+    """Capture hashview.error records WITHOUT writing to the real error.log.
+
+    tests/unit/conftest.py's control_dirs fixture creates the real
+    hashview/control/logs, and configure_audit_logging attaches rotating file
+    handlers to it -- so a test that fires the 500 hook appends to the operator's
+    live forensic log. Merely adding a capture handler leaves the file handlers in
+    place; the logger's handlers are swapped out wholesale and restored instead.
+    """
+    from hashview.utils.audit import ERROR_LOGGER
+
+    logger = logging.getLogger(ERROR_LOGGER)
+    saved = logger.handlers[:]
+    captured = {}
+
+    class _Grab(logging.Handler):
+        def emit(self, record):
+            captured.update(getattr(record, "audit", {}))
+
+    logger.handlers = [_Grab()]
+    try:
+        yield captured
+    finally:
+        logger.handlers = saved
 
 
 def _admin():
@@ -392,26 +421,13 @@ def test_connection_errors_are_classified_for_pool_reporting():
 def test_pool_counters_are_logged_with_a_checkout_timeout(app, monkeypatch):
     """The incident's own log line said the pool was full but not whether the
     connections were in use. A TimeoutError now carries the counters."""
-    import logging
-
     from sqlalchemy.exc import TimeoutError as SATimeoutError
 
-    from hashview.utils.audit import ERROR_LOGGER, _on_request_exception
+    from hashview.utils.audit import _on_request_exception
 
-    captured = {}
-
-    class _Grab(logging.Handler):
-        def emit(self, record):
-            captured.update(getattr(record, "audit", {}))
-
-    handler = _Grab()
-    logger = logging.getLogger(ERROR_LOGGER)
-    logger.addHandler(handler)
-    try:
+    with _captured_error_log() as captured:
         with app.test_request_context("/dashboard/recovery"):
             _on_request_exception(app, SATimeoutError("QueuePool limit", None, None))
-    finally:
-        logger.removeHandler(handler)
 
     assert captured.get("event") == "server.error"
     assert "QueuePool limit" in captured.get("detail", "")
@@ -421,24 +437,11 @@ def test_pool_counters_are_logged_with_a_checkout_timeout(app, monkeypatch):
 
 def test_unrelated_errors_do_not_carry_pool_counters(app):
     """Only connection errors get the extra field, so ordinary 500s stay clean."""
-    import logging
+    from hashview.utils.audit import _on_request_exception
 
-    from hashview.utils.audit import ERROR_LOGGER, _on_request_exception
-
-    captured = {}
-
-    class _Grab(logging.Handler):
-        def emit(self, record):
-            captured.update(getattr(record, "audit", {}))
-
-    handler = _Grab()
-    logger = logging.getLogger(ERROR_LOGGER)
-    logger.addHandler(handler)
-    try:
+    with _captured_error_log() as captured:
         with app.test_request_context("/dashboard"):
             _on_request_exception(app, ValueError("template blew up"))
-    finally:
-        logger.removeHandler(handler)
 
     assert captured.get("event") == "server.error"
     assert "pool" not in captured

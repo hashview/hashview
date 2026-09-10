@@ -556,3 +556,301 @@ def test_shared_groups_need_two_distinct_named_accounts(app, client):
     assert 'name="plaintext" value="RealShared1"' in html
     assert 'name="plaintext" value="DupPass1"' not in html
     assert 'name="plaintext" value="AnonPass1"' not in html
+
+
+# ---------------------------------------------------------------------------
+# account unit, not join rows (#385)
+# ---------------------------------------------------------------------------
+
+
+def _ctx(client, qs=""):
+    """GET /analytics and return the context the template received."""
+    from flask import template_rendered
+
+    captured = {}
+
+    def record(sender, template, context, **extra):
+        if "total_cracked" in context:
+            captured.update(context)
+
+    template_rendered.connect(record)
+    try:
+        resp = client.get("/analytics" + qs)
+    finally:
+        template_rendered.disconnect(record)
+    assert resp.status_code == 200
+    return captured
+
+
+def _customer_with_hashfiles(admin, name, n_files):
+    cust = Customers(name=name)
+    db.session.add(cust)
+    db.session.commit()
+    files = []
+    for i in range(n_files):
+        hf = Hashfiles(name=f"{name}-{i}", customer_id=cust.id, owner_id=admin.id)
+        db.session.add(hf)
+        files.append(hf)
+    db.session.commit()
+    return cust, files
+
+
+def test_one_account_in_two_hashfiles_is_not_password_reuse(app, client):
+    """The regression the issue was filed for.
+
+    One account whose hash sits in two hashfiles used to be counted twice, so it
+    "shared" a password with its own duplicate row and the donut read 100%
+    reused on a scope where every password is distinct.
+    """
+    admin = _admin()
+    _login(client, admin)
+    cust, (hf_a, hf_b) = _customer_with_hashfiles(admin, "TwoFiles", 2)
+    for name, pw in (("alice", "Alpha1"), ("bob", "Bravo2")):
+        h = _hash(f"ct-{name}", pw, True)
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf_a.id, username=name))
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf_b.id, username=name))
+    db.session.commit()
+
+    ctx = _ctx(client, f"?customer_id={cust.id}")
+    assert ctx["total_cracked"] == 2, "two accounts, not four join rows"
+    assert ctx["reused_pct"] == 0.0
+    assert ctx["unique_pct"] == 100.0
+    assert ctx["top_reuse_count"] == 1
+    assert [p["n"] for p in ctx["top_passwords"]] == [1, 1]
+
+
+def test_duplicate_rows_in_one_hashfile_are_counted_once(app, client):
+    """hashfile_hashes has no unique constraint on (hashfile, hash, username).
+
+    Repeated lines in a source file therefore produce identical rows -- 89,475
+    such groups on the instance this was measured against -- which inflated a
+    single-hashfile scope too. Selecting one hashfile was not a workaround.
+    """
+    admin = _admin()
+    _login(client, admin)
+    cust, (hf,) = _customer_with_hashfiles(admin, "Dupes", 1)
+    h = _hash("ct-dup", "Solo1", True)
+    for _ in range(3):
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id, username="carol"))
+    db.session.commit()
+
+    ctx = _ctx(client, f"?hashfile_id={hf.id}")
+    assert ctx["total_cracked"] == 1
+    assert ctx["reused_pct"] == 0.0
+    assert ctx["top_reuse_count"] == 1
+
+
+def test_genuine_cross_account_reuse_is_still_reported(app, client):
+    """The fix must not become a per-hash count.
+
+    Imports dedupe hashes globally on (hash_type, sub_ciphertext), so two
+    accounts with the same password share ONE hashes row. Deduping the corpus on
+    Hashes.id -- the fix the issue suggested -- would make that invisible and
+    report 0% reuse no matter how widely a password is shared.
+    """
+    admin = _admin()
+    _login(client, admin)
+    cust, (hf,) = _customer_with_hashfiles(admin, "RealReuse", 1)
+    shared = _hash("ct-shared", "Summer2025", True)
+    for name in ("dave", "erin", "frank"):
+        db.session.add(HashfileHashes(hash_id=shared.id, hashfile_id=hf.id, username=name))
+    solo = _hash("ct-solo", "Unique99", True)
+    db.session.add(HashfileHashes(hash_id=solo.id, hashfile_id=hf.id, username="gina"))
+    db.session.commit()
+
+    ctx = _ctx(client, f"?hashfile_id={hf.id}")
+    assert ctx["total_cracked"] == 4                 # 4 accounts, 2 hashes
+    assert ctx["top_reuse_count"] == 3               # not 1
+    assert ctx["reused_pct"] == 75.0                 # 3 of 4 accounts share
+    assert ctx["unique_pct"] == 25.0
+
+
+def test_password_property_charts_stay_weighted_by_account(app, client):
+    """Length/mask/charset are per account, so a widely shared password counts
+    once per account holding it -- otherwise a password used by a thousand
+    people would weigh the same as one used by nobody else."""
+    admin = _admin()
+    _login(client, admin)
+    cust, (hf,) = _customer_with_hashfiles(admin, "Weighted", 1)
+    shared = _hash("ct-w", "aaaaaa", True)           # length 6, one class
+    for name in ("h1", "h2", "h3"):
+        db.session.add(HashfileHashes(hash_id=shared.id, hashfile_id=hf.id, username=name))
+    db.session.commit()
+
+    ctx = _ctx(client, f"?hashfile_id={hf.id}")
+    assert ctx["total_cracked"] == 3
+    # length_dist is [{'len': n, 'n': count}] -- the six-character password must
+    # weigh 3, one per account, not 1 (per hash) and not 3-with-duplicates.
+    lengths = {row["len"]: row["n"] for row in ctx["length_dist"]}
+    assert lengths == {6: 3}, lengths
+    assert ctx["masks"][0]["n"] == 3
+
+
+def test_accounts_tile_and_cracked_corpus_agree(app, client):
+    """The page used to quote two different "cracked" numbers -- a join-row
+    count in the ACCOUNTS donut and another in the chart denominators."""
+    admin = _admin()
+    _login(client, admin)
+    cust, (hf_a, hf_b) = _customer_with_hashfiles(admin, "Agree", 2)
+    h1 = _hash("ct-1", "One11", True)
+    h2 = _hash("ct-2", None, False)
+    db.session.add(HashfileHashes(hash_id=h1.id, hashfile_id=hf_a.id, username="ida"))
+    db.session.add(HashfileHashes(hash_id=h1.id, hashfile_id=hf_b.id, username="ida"))
+    db.session.add(HashfileHashes(hash_id=h2.id, hashfile_id=hf_a.id, username="jack"))
+    db.session.commit()
+
+    ctx = _ctx(client, f"?customer_id={cust.id}")
+    assert ctx["accounts_cracked"] == ctx["total_cracked"] == 1
+    assert ctx["accounts"] == 2                      # ida + jack, not 3 join rows
+
+
+def test_rows_without_a_username_count_once_per_hash(app, client):
+    """hash_only imports carry no usernames, so those rows have no account
+    identity -- they must still contribute one entry per hash rather than
+    vanishing (COUNT(DISTINCT a, b) would drop them) or inflating."""
+    admin = _admin()
+    _login(client, admin)
+    cust, (hf_a, hf_b) = _customer_with_hashfiles(admin, "NoNames", 2)
+    h = _hash("ct-anon", "Anon1", True)
+    db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf_a.id, username=None))
+    db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf_b.id, username=None))
+    db.session.commit()
+
+    ctx = _ctx(client, f"?customer_id={cust.id}")
+    assert ctx["total_cracked"] == 1
+    assert ctx["accounts"] == 1
+    assert ctx["reused_pct"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# download scope must match the page's scope
+# ---------------------------------------------------------------------------
+
+
+def _two_customers(admin):
+    """Customer A with one cracked account, customer B with two."""
+    cust_a = Customers(name="AlphaCo")
+    cust_b = Customers(name="BetaCo")
+    db.session.add_all([cust_a, cust_b])
+    db.session.commit()
+    hf_a = Hashfiles(name="a.txt", customer_id=cust_a.id, owner_id=admin.id)
+    hf_b = Hashfiles(name="b.txt", customer_id=cust_b.id, owner_id=admin.id)
+    db.session.add_all([hf_a, hf_b])
+    db.session.commit()
+    ha = _hash("ct-alpha", "AlphaPass", True)
+    db.session.add(HashfileHashes(hash_id=ha.id, hashfile_id=hf_a.id, username="alpha1"))
+    for name, pw in (("beta1", "BetaPass"), ("beta2", "BetaPass")):
+        hb = _hash(f"ct-{name}", pw, True)
+        db.session.add(HashfileHashes(hash_id=hb.id, hashfile_id=hf_b.id, username=name))
+    db.session.commit()
+    return cust_a, cust_b, hf_a, hf_b
+
+
+def test_download_scoped_by_hashfile_alone_does_not_return_everything(app, client):
+    """`?hashfile_id=N` with no customer_id used to hand back the whole database.
+
+    The page resolves hashfile_id first (_scoped_hash_query), but the download
+    routes re-implemented the scoping as `if customer_id: ... else: <no filter>`,
+    so this URL rendered one hashfile's charts and then exported every hash in
+    the instance.
+    """
+    admin = _admin()
+    _login(client, admin)
+    _cust_a, _cust_b, hf_a, _hf_b = _two_customers(admin)
+
+    body = client.get(f"/analytics/download?type=found&hashfile_id={hf_a.id}").get_data(as_text=True)
+    assert "AlphaPass" in body
+    assert "BetaPass" not in body, "download leaked hashes outside the selected hashfile"
+
+
+def test_download_scoped_by_customer_alone(app, client):
+    admin = _admin()
+    _login(client, admin)
+    _cust_a, cust_b, _hf_a, _hf_b = _two_customers(admin)
+
+    body = client.get(f"/analytics/download?type=found&customer_id={cust_b.id}").get_data(as_text=True)
+    assert "BetaPass" in body
+    assert "AlphaPass" not in body
+
+
+def test_download_hashfile_wins_over_customer_like_the_page(app, client):
+    """Both args set: hashfile_id decides, matching _scoped_hash_query's if/elif."""
+    admin = _admin()
+    _login(client, admin)
+    cust_a, _cust_b, _hf_a, hf_b = _two_customers(admin)
+
+    body = client.get(
+        f"/analytics/download?type=found&customer_id={cust_a.id}&hashfile_id={hf_b.id}"
+    ).get_data(as_text=True)
+    assert "BetaPass" in body
+    assert "AlphaPass" not in body
+
+
+def test_download_unscoped_still_returns_everything(app, client):
+    """No scope args is the all-customers view, and must stay unrestricted."""
+    admin = _admin()
+    _login(client, admin)
+    _two_customers(admin)
+
+    body = client.get("/analytics/download?type=found").get_data(as_text=True)
+    assert "AlphaPass" in body and "BetaPass" in body
+
+
+def test_fig8_download_is_scoped_by_hashfile_alone(app, client):
+    """Username = Password export, same scoping defect."""
+    admin = _admin()
+    _login(client, admin)
+    cust_a = Customers(name="UP-A")
+    cust_b = Customers(name="UP-B")
+    db.session.add_all([cust_a, cust_b])
+    db.session.commit()
+    hf_a = Hashfiles(name="upa", customer_id=cust_a.id, owner_id=admin.id)
+    hf_b = Hashfiles(name="upb", customer_id=cust_b.id, owner_id=admin.id)
+    db.session.add_all([hf_a, hf_b])
+    db.session.commit()
+    for hf, name in ((hf_a, "selfa"), (hf_b, "selfb")):
+        h = _hash(f"ct-{name}", name, True)          # password == username
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id, username=name))
+    db.session.commit()
+
+    body = client.get(f"/analytics/download/fig8?hashfile_id={hf_a.id}").get_data(as_text=True)
+    assert "selfa" in body
+    assert "selfb" not in body
+
+
+def test_fig9_download_is_scoped_and_counts_accounts(app, client):
+    """The shared-password export was unscoped AND counted link rows.
+
+    A single account listed twice in one hashfile used to satisfy
+    `HAVING COUNT(*) > 1` and be exported as sharing a password with itself.
+    """
+    admin = _admin()
+    _login(client, admin)
+    cust = Customers(name="SharedCo")
+    other = Customers(name="OtherCo")
+    db.session.add_all([cust, other])
+    db.session.commit()
+    hf = Hashfiles(name="shared", customer_id=cust.id, owner_id=admin.id)
+    hf_other = Hashfiles(name="other", customer_id=other.id, owner_id=admin.id)
+    db.session.add_all([hf, hf_other])
+    db.session.commit()
+
+    # two accounts genuinely sharing a password -> should be exported
+    shared = _hash("ct-share", "TeamPass1", True)
+    db.session.add(HashfileHashes(hash_id=shared.id, hashfile_id=hf.id, username="kim"))
+    db.session.add(HashfileHashes(hash_id=shared.id, hashfile_id=hf.id, username="lee"))
+    # one account listed twice -> must NOT be exported
+    dupe = _hash("ct-dupe", "SoloPass1", True)
+    for _ in range(2):
+        db.session.add(HashfileHashes(hash_id=dupe.id, hashfile_id=hf.id, username="mo"))
+    # another customer's shared pair -> must not leak into this scope
+    outside = _hash("ct-out", "OutPass1", True)
+    db.session.add(HashfileHashes(hash_id=outside.id, hashfile_id=hf_other.id, username="nan"))
+    db.session.add(HashfileHashes(hash_id=outside.id, hashfile_id=hf_other.id, username="opal"))
+    db.session.commit()
+
+    body = client.get(f"/analytics/download/fig9?hashfile_id={hf.id}").get_data(as_text=True)
+    names = {line.strip() for line in body.splitlines() if line.strip()}
+    assert {"kim", "lee"} <= names
+    assert "mo" not in names, "a duplicated single account is not a shared password"
+    assert "nan" not in names and "opal" not in names, "leaked another customer's accounts"

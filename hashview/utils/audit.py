@@ -157,6 +157,49 @@ def log_event(event, target=None, outcome='success', detail=None, actor=None):
         pass
 
 
+def pool_snapshot():
+    """Current SQLAlchemy connection-pool counters, or ``None`` if unavailable.
+
+    Pure introspection -- it reads the pool's own accounting and never opens a
+    connection, which is what makes it safe to call from the handler for a
+    *pool exhaustion* error. ``checkedout`` is the number in use and
+    ``overflow`` how far past ``pool_size`` the pool has had to stretch
+    (negative until it starts using the overflow), so together they say whether
+    an exhaustion was real contention or simply an undersized pool.
+
+    Returns whatever the pool implementation exposes: SQLite's
+    SingletonThreadPool (the unit tests) has none of the QueuePool counters, so
+    the dict is filtered down to the callables that actually exist.
+    """
+    try:
+        from hashview.models import db
+        pool = db.engine.pool
+        snapshot = {'impl': type(pool).__name__}
+        for name in ('size', 'checkedin', 'checkedout', 'overflow', 'timeout'):
+            probe = getattr(pool, name, None)
+            if callable(probe):
+                snapshot[name] = probe()
+        return snapshot
+    except Exception:   # nosec B110 - diagnostics must never break error logging
+        return None
+
+
+def _is_connection_error(exception):
+    """True for the SQLAlchemy errors whose diagnosis needs the pool counters.
+
+    TimeoutError is the pool refusing to hand out a connection within
+    pool_timeout; OperationalError covers the server-side equivalents ("too
+    many connections", "server has gone away"). Imported lazily so this module
+    stays importable without SQLAlchemy.
+    """
+    try:
+        from sqlalchemy.exc import OperationalError
+        from sqlalchemy.exc import TimeoutError as SATimeoutError
+    except Exception:   # pragma: no cover - SQLAlchemy is a hard dependency
+        return False
+    return isinstance(exception, SATimeoutError | OperationalError)
+
+
 def _on_request_exception(sender, exception, **extra):
     """got_request_exception receiver: record every unhandled exception (the
     ones that yield an HTTP 500) to error.log with a traceback.
@@ -168,18 +211,28 @@ def _on_request_exception(sender, exception, **extra):
         actor_email, actor_id = resolve_actor()
         method = request.method if has_request_context() else None
         path = request.path if has_request_context() else None
+        entry = {
+            'event': 'server.error',
+            'actor': actor_email,
+            'actor_id': actor_id,
+            'ip': _safe_remote_addr(),
+            'target': f'{method} {path}',
+            'outcome': 'failure',
+            'detail': repr(exception),
+        }
+        # A pool-exhaustion traceback says the pool was full but not why, and by
+        # the time anyone reads the log the pool is idle again. Recording the
+        # counters alongside the error is the difference between "connections
+        # were all checked out, something was holding them" and "the pool is
+        # simply too small for this load".
+        if _is_connection_error(exception):
+            snapshot = pool_snapshot()
+            if snapshot:
+                entry['pool'] = snapshot
         logging.getLogger(ERROR_LOGGER).error(
             'server.error',
             exc_info=exception,
-            extra={'audit': {
-                'event': 'server.error',
-                'actor': actor_email,
-                'actor_id': actor_id,
-                'ip': _safe_remote_addr(),
-                'target': f'{method} {path}',
-                'outcome': 'failure',
-                'detail': repr(exception),
-            }},
+            extra={'audit': entry},
         )
     except Exception:  # nosec B110 - the error-logger must not itself raise during exception handling
         pass

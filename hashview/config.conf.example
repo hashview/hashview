@@ -22,6 +22,16 @@ SECRET_KEY = change-me-to-a-random-string
 host = localhost
 username = username
 password = password
+# Connection-pool sizing. Unset, Hashview uses pool_size=10 / max_overflow=20,
+# i.e. up to 30 concurrent database connections for this process. Raise them if
+# you run many agents plus many concurrent operators, and keep the total well
+# below MySQL's max_connections (151 by default) so other clients -- and a
+# second Hashview process -- can still connect.
+#
+# Raising these does not fix a stall caused by one long-running transaction; it
+# only buys time before the pool empties. See hashview/config.py.
+# pool_size = 10
+# max_overflow = 20
 
 [SMTP]
 server = smtp.example.com

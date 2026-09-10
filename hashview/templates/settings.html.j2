@@ -286,6 +286,80 @@
 
         {# ---- Data management ---- #}
         <div class="hv-settings-pane" data-pane="data" style="display:none;">
+
+            {# Rollup of the `hashes` table. Every figure links to the export of the
+               exact rows it counts: 'all' the ciphertexts, 'found' as
+               ciphertext:plaintext, 'left' the ciphertexts still uncracked. #}
+            {% macro count_link(value, mode, type, cls='') %}
+                {%- if value -%}
+                    <a class="hv-count-link {{ cls }}" href="{{ url_for('settings.settings_hashes_download', mode=mode or None, type=type) }}"
+                       title="Download these {{ value | commafy }} hash(es) as a .txt file">{{ value | commafy }}</a>
+                {%- else -%}
+                    <span class="{{ cls }} hv-count-zero">0</span>
+                {%- endif -%}
+            {% endmacro %}
+
+            <div class="card hv-hashes-card" style="margin-bottom:var(--gap);">
+                <div class="card-head">
+                    <span class="dot-led {{ 'on' if hashes_total else 'idle' }}"></span><h3>Hashes table</h3>
+                    <span class="mono hv-hashes-meta" style="margin-left:auto; font-size:10.5px;">{{ hashes_rows | length }} hash type{{ '' if hashes_rows | length == 1 else 's' }} · {{ hashes_total | commafy }} rows</span>
+                </div>
+                <div class="card-body">
+                    {% if not hashes_total %}
+                        <div class="mono hv-hashes-empty" style="padding:26px; text-align:center; font-size:12px;">no hashes imported yet</div>
+                    {% else %}
+                        {% set cracked_pct = hashes_cracked / hashes_total * 100 %}
+                        <div class="grid" style="grid-template-columns:repeat(3,1fr); margin-bottom:18px;">
+                            <div class="kpi">
+                                <div class="kpi-label">{{ icon('hash', size=13) }} Total hashes</div>
+                                <div class="kpi-value">{{ count_link(hashes_total, '', 'all') }}</div>
+                            </div>
+                            <div class="kpi">
+                                <div class="kpi-label">{{ icon('key', size=13) }} Recovered</div>
+                                <div class="kpi-value accent">{{ count_link(hashes_cracked, '', 'found') }}</div>
+                                <div class="kpi-foot mono">{{ cracked_pct | round(1) }}% of all hashes</div>
+                            </div>
+                            <div class="kpi hv-kpi-dim">
+                                <div class="kpi-label">{{ icon('lock', size=13) }} Unrecovered</div>
+                                <div class="kpi-value">{{ count_link(hashes_total - hashes_cracked, '', 'left') }}</div>
+                                <div class="kpi-foot mono">{{ (100 - cracked_pct) | round(1) }}% remaining</div>
+                            </div>
+                        </div>
+
+                        <div style="height:1px; background:var(--border-soft); margin:0 0 18px;"></div>
+
+                        <div style="overflow-x:auto;">
+                        <table class="tbl">
+                            <thead>
+                                <tr>
+                                    <th style="width:62px;">Mode</th>
+                                    <th>Hash type</th>
+                                    <th class="center">Total</th>
+                                    <th class="center">Recovered</th>
+                                    <th class="center">Unrecovered</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in hashes_rows %}
+                                <tr>
+                                    <td class="mono hv-hash-mode">{{ row.mode or '—' }}</td>
+                                    <td class="mono hv-hash-name">{{ row.name }}</td>
+                                    <td class="center num">{{ count_link(row.total, row.mode, 'all') }}</td>
+                                    <td class="center num hv-hash-found">{{ count_link(row.cracked, row.mode, 'found') }}</td>
+                                    <td class="center num hv-hash-left">{{ count_link(row.uncracked, row.mode, 'left') }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        </div>
+                        <div class="field-hint" style="margin-top:12px; display:flex; align-items:flex-start; gap:6px;">
+                            {{ icon('info', size=12) }}
+                            <span>Counts come from the <span class="mono hv-hashes-lit">hashes</span> table only — one row per unique (sub_ciphertext, hash_type), so a hash shared by several hashfiles is counted once. Click any figure to download those hashes as a text file; recovered exports are <span class="mono hv-hashes-lit">hash:plaintext</span>.</span>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
             <div class="card">
                 <div class="card-body">
                     {# Back up database (mysqldump -> gz -> AES-256 encrypted with a one-time password) #}

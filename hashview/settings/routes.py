@@ -5,6 +5,7 @@ from datetime import datetime
 
 from flask import (
     Blueprint,
+    Response,
     abort,
     current_app,
     flash,
@@ -13,9 +14,11 @@ from flask import (
     render_template,
     request,
     send_from_directory,
+    stream_with_context,
     url_for,
 )
 from flask_login import current_user, login_required
+from sqlalchemy import func
 
 import hashview
 from hashview.models import Hashes, Settings, db
@@ -26,10 +29,16 @@ from hashview.utils.backup import (
     create_encrypted_db_backup,
     purge_stale_backups,
 )
+from hashview.utils.hashcat_modes import hash_type_names
 from hashview.utils.utils import send_slack_channel
 
 # control/tmp filename of a generated backup, e.g. '1a2b3c4d5e6f7a8b.sql.gz.enc'
 _BACKUP_TOKEN_RE = re.compile(r'^[0-9a-f]{16}\.sql\.gz\.enc$')
+
+# A hashcat mode as it may arrive in a query string. ASCII digits only, and short
+# enough that the value stays inside MySQL's signed INT range -- see the comment in
+# settings_hashes_download for why neither half of that is optional.
+_MODE_RE = re.compile(r'^[0-9]{1,7}$')
 
 
 settings = Blueprint('settings', __name__)
@@ -43,6 +52,66 @@ def _human_size(num):
                 return '%d B' % num
             return (f'{num:.1f} {unit}').replace('.0 ', ' ')
         num /= 1024.0
+
+
+# Export flavours for the Data-management hashes table. Each maps to one column
+# of that table, so the link under a figure downloads exactly the rows it counts.
+_HASH_EXPORT_TYPES = ('all', 'found', 'left')
+
+# Exports are paged on the primary key rather than fetched in one go: this table
+# covers the whole corpus (869k rows on this instance) and the mysqlconnector
+# dialect reports supports_server_side_cursors = False, so yield_per() cannot
+# stop the driver from buffering the entire result set client-side -- measured at
+# a 114 MB peak for the largest export. Keyset paging keeps that flat at ~4 MB
+# for ~28% more wall-clock, and works the same on SQLite. 5,000 was measured
+# against 20,000, which cost 3x the memory for no time saved.
+_HASH_EXPORT_BATCH = 5000
+
+
+def _hashes_rollup():
+    """Per-hash_type totals straight from the ``hashes`` table.
+
+    No join to hashfile_hashes: `hashes` already holds one row per unique
+    (sub_ciphertext, hash_type), so a hash shared by several hashfiles is counted
+    once. That makes these figures deliberately different from the per-customer
+    numbers on /analytics, which count accounts.
+
+    Two grouped queries rather than one COUNT + SUM(CASE WHEN cracked). Measured
+    on a 869k-row table, the single-query form takes ~2.8s: it scans
+    ix_hashes_hash_type but has to fetch `cracked` from the clustered row for
+    every one of those rows. Splitting it lets each half stay index-only -- the
+    totals are covered by ix_hashes_hash_type, and the cracked counts range-scan
+    ix_hashes_cracked_recovered_at over the (much smaller) cracked partition.
+    Same numbers, ~400ms. Neither index is new; nothing on the insert path pays
+    for this page.
+
+    Returns ``(rows, total, cracked)`` with rows ordered by size, each a dict of
+    mode / name / total / cracked / uncracked.
+    """
+    names = hash_type_names(short=False)
+    totals = db.session.query(
+        Hashes.hash_type, func.count(Hashes.id),
+    ).group_by(Hashes.hash_type).all()
+    cracked_counts = dict(db.session.query(
+        Hashes.hash_type, func.count(Hashes.id),
+    ).filter(Hashes.cracked == 1).group_by(Hashes.hash_type).all())
+
+    rows = []
+    for hash_type, total in totals:
+        total = int(total or 0)
+        cracked = int(cracked_counts.get(hash_type) or 0)
+        mode = '' if hash_type is None else str(hash_type)
+        rows.append({
+            'mode': mode,
+            # LM (3000) is deliberately absent from the mode tables, and a row
+            # could carry any mode at all via the API, so fall back to the number.
+            'name': names.get(mode, 'mode ' + mode if mode else 'unknown'),
+            'total': total,
+            'cracked': cracked,
+            'uncracked': total - cracked,
+        })
+    rows.sort(key=lambda row: (-row['total'], row['mode']))
+    return rows, sum(r['total'] for r in rows), sum(r['cracked'] for r in rows)
 
 
 #############################################
@@ -128,6 +197,10 @@ def settings_list():
             hashview_form.azure_allowed_groups.data = settings.azure_allowed_groups
             # azure_client_secret is write-only — never echo it back to the page.
 
+        # Only on the render path -- a successful POST redirects, and this is the
+        # one part of the page that costs a couple of grouped queries.
+        hashes_rows, hashes_total, hashes_cracked = _hashes_rollup()
+
         try:
             database_version = db.session.execute('SELECT version_num FROM alembic_version LIMIT 1;').scalar()
         except Exception:
@@ -144,6 +217,9 @@ def settings_list():
             backupForm          = DatabaseBackupForm(),
             tmp_folder_size     = tmp_folder_size,
             audit_logs_size     = audit_logs_size,
+            hashes_rows         = hashes_rows,
+            hashes_total        = hashes_total,
+            hashes_cracked      = hashes_cracked,
             application_version = hashview.__version__,
             database_version    = database_version,
             default_azure_redirect = default_azure_redirect,
@@ -290,3 +366,92 @@ def clear_logs():
     log_event('logs.clear', detail=f'removed_backups={removed_backups}')
     flash('Audit and error logs cleared.', 'success')
     return redirect(url_for('settings.settings_list'))
+
+
+@settings.route('/settings/hashes/download', methods=['GET'])
+@login_required
+def settings_hashes_download():
+    """Stream the hashes behind one figure of the Data-management hashes table.
+
+    ``type`` picks the column -- ``all`` every hash, ``found`` the recovered ones
+    as ``ciphertext:plaintext``, ``left`` the ones still uncracked. ``mode``
+    narrows to a single hash_type; omitted, it exports every mode (the table's
+    summary tiles).
+
+    Straight off ``hashes`` with no hashfile join, so the file holds exactly as
+    many lines as the figure that linked to it: one per unique
+    (sub_ciphertext, hash_type). Usernames live on hashfile_hashes and are
+    therefore not in scope here -- /analytics is where per-customer,
+    username-bearing exports come from.
+    """
+    if not current_user.admin:
+        abort(403)
+
+    export_type = request.args.get('type', 'all')
+    if export_type not in _HASH_EXPORT_TYPES:
+        abort(400)
+
+    # Digits only, and converted to an int *here* rather than inside the generator.
+    # Everything below runs while the response body is being iterated, after the 200
+    # and the Content-Disposition header are already committed -- an exception there
+    # cannot become the abort(400) this guard intends. It degrades to a bare 500, or
+    # for a non-latin-1 filename it dies inside werkzeug's send_header and hangs the
+    # request. So the whole class is settled before the Response is constructed.
+    #
+    # str.isdigit() on its own is not that check. It is also true for superscript
+    # digits (U+00B2 SUPERSCRIPT TWO, which int() rejects outright) and for non-ASCII
+    # decimal digits (U+0662 ARABIC-INDIC TWO, which int() reads as 2 while the raw
+    # character stays in the filename). The 7-digit bound then keeps the value under
+    # MySQL's signed INT ceiling, past which the driver raises DataError; hashcat's
+    # highest real mode is five digits.
+    mode = request.args.get('mode', '')
+    if mode and not _MODE_RE.match(mode):
+        abort(400)
+    mode_int = int(mode) if mode else None
+
+    def page(after_id):
+        """One batch of rows with an id above ``after_id``, in id order.
+
+        Ordering on the PK makes this a plain index range scan: MySQL appends the
+        PK to every secondary index, so ix_hashes_hash_type already behaves as
+        (hash_type, id) for the per-mode exports.
+        """
+        query = db.session.query(Hashes.id, Hashes.ciphertext, Hashes.plaintext) \
+            .filter(Hashes.id > after_id)
+        if mode_int is not None:
+            query = query.filter(Hashes.hash_type == mode_int)
+        if export_type == 'found':
+            query = query.filter(Hashes.cracked == 1)
+        elif export_type == 'left':
+            query = query.filter(Hashes.cracked == 0)
+        return query.order_by(Hashes.id).limit(_HASH_EXPORT_BATCH).all()
+
+    log_event('hashes.export', detail=f'type={export_type} mode={mode or "all"}')
+
+    def generate():
+        after_id = 0
+        while True:
+            rows = page(after_id)
+            if not rows:
+                return
+            for row_id, ciphertext, plaintext in rows:
+                after_id = row_id
+                if ciphertext is None:
+                    continue
+                if export_type == 'found':
+                    # Cracked rows always carry a plaintext; an empty password is
+                    # a legitimate value, so only a genuine NULL is skipped.
+                    if plaintext is None:
+                        continue
+                    yield f'{ciphertext}:{plaintext}\n'
+                else:
+                    yield f'{ciphertext}\n'
+            if len(rows) < _HASH_EXPORT_BATCH:
+                return
+
+    filename = f'hashes_{mode or "all"}_{export_type}.txt'
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/plain',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )

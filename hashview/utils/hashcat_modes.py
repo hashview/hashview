@@ -830,3 +830,43 @@ HASH_ONLY_AUTO_RULES = {
     '29543': ('prefix', '$luks$'),
     '29700': ('prefix', '$keepass$'),
 }
+
+
+# The pwdump select is the one hashfile-form choice list that isn't a constant --
+# it offers NTLM only, and 1000 already appears in HASH_TYPE_CHOICES, so the
+# reverse map below doesn't need it.
+_NAME_CHOICE_LISTS = (
+    HASH_TYPE_CHOICES,
+    KERBEROS_HASH_TYPE_CHOICES,
+    NETNTLM_HASH_TYPE_CHOICES,
+    SHADOW_HASH_TYPE_CHOICES,
+)
+
+
+def hash_type_names(short=True):
+    """Reverse-map hashcat modes -> friendly names, from the form's own choices.
+
+    Keys are modes as ``str`` (the DB column is an Integer, so callers coerce).
+    Derived from the choice lists rather than a second hand-kept table, so the
+    names shown in the UI can never drift from the ones offered at import.
+
+    ``short=True`` (the default) truncates at the first ``,`` or ``/`` for
+    badge-sized labels -- the historical behaviour of the per-blueprint copies
+    this replaces. That truncation collapses whole families to one word
+    ("Kerberos 5" for 13100, 18200 and 19700 alike), so anything listing several
+    modes side by side wants ``short=False``, which keeps hashcat's full
+    description and only strips the redundant ``(mode) `` prefix.
+
+    Modes hashview deliberately doesn't offer (LM/3000) are absent; callers fall
+    back to the bare mode number.
+    """
+    names = {}
+    for choices in _NAME_CHOICE_LISTS:
+        for value, label in choices:
+            if value is None or not str(value).isdigit() or str(value) in names:
+                continue
+            name = label.split(') ', 1)[1] if ') ' in label else label
+            if short:
+                name = name.split(' / ')[0].split(',')[0]
+            names[str(value)] = name.strip()
+    return names

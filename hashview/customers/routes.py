@@ -4,7 +4,6 @@ from flask_login import current_user, login_required
 from sqlalchemy import case, func
 
 from hashview.customers.forms import CustomersForm
-from hashview.jobs.forms import JobsNewHashFileForm
 from hashview.models import (
     Customers,
     Hashes,
@@ -14,23 +13,13 @@ from hashview.models import (
     db,
 )
 from hashview.utils.audit import log_event
+from hashview.utils.hashcat_modes import hash_type_names
 from hashview.utils.utils import purge_orphaned_hashes, try_commit
 
 
 def _hash_type_names():
     """Reverse-map hashcat modes -> friendly names from the new-hashfile form choices."""
-    names = {}
-    try:
-        f = JobsNewHashFileForm()
-        for sel in (f.hash_type, f.pwdump_hash_type, f.netntlm_hash_type,
-                    f.kerberos_hash_type, f.shadow_hash_type):
-            for v, lab in sel.choices:
-                if v is not None and str(v) and str(v).isdigit() and str(v) not in names:
-                    nm = lab.split(') ', 1)[1] if ') ' in lab else lab
-                    names[str(v)] = nm.split(' / ')[0].split(',')[0].strip()
-    except Exception:  # pragma: no cover - defensive
-        names = {}
-    return names
+    return hash_type_names()
 
 customers = Blueprint('customers', __name__)
 

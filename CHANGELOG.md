@@ -45,6 +45,10 @@ Notable changes will be documented here
 **Encrypted Database Backup**
 - Download an encrypted `mysqldump` of the database from Settings -> Data Management, protected by a one-time password
 
+**Hashes Table Overview**
+- Settings -> Data Management now shows what the `hashes` table actually holds: total / recovered / unrecovered across the instance, then a per-hash-type breakdown naming each hashcat mode. Counts come from the `hashes` table alone -- one row per unique (sub_ciphertext, hash_type) -- so a hash shared by several hashfiles is counted once, unlike the per-customer, per-account figures on Analytics
+- Every figure in that table is a download link: click a total for those hashes, Recovered for `hash:plaintext` of the cracked ones, or Unrecovered for the hashes still outstanding. Each file holds exactly as many lines as the figure that linked to it. Exports are admin-only, audited, and streamed in primary-key pages so a full-corpus download doesn't buffer in the server's memory
+
 **hashcat Version Interoperability CI**
 - Added a hashcat version interoperability CI matrix: offline contract tests run Hashview's status/benchmark/outfile/flag parsers over committed captures from five hashcat releases on every PR, and a scheduled workflow re-runs them against the real binaries plus a live `--skip`/`--limit` slice check, filing an issue when a newer hashcat release appears.
 

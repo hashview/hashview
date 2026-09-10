@@ -2,7 +2,6 @@
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from hashview.jobs.forms import JobsNewHashFileForm
 from hashview.models import (
     Hashes,
     HashfileHashes,
@@ -13,6 +12,7 @@ from hashview.models import (
     Settings,
     db,
 )
+from hashview.utils.hashcat_modes import hash_type_names
 from hashview.utils.utils import try_commit
 
 notifications = Blueprint('notifications', __name__)
@@ -21,15 +21,7 @@ notifications = Blueprint('notifications', __name__)
 def _hash_type_names():
     """hashcat mode -> concise friendly name, derived from the job-hashfile
     form's own choices (same mapping the jobs views use) for the HASHTYPE badge."""
-    names = {}
-    form = JobsNewHashFileForm()
-    for sel in (form.hash_type, form.pwdump_hash_type, form.netntlm_hash_type,
-                form.kerberos_hash_type, form.shadow_hash_type):
-        for value, label in sel.choices:
-            if value is not None and str(value).isdigit() and str(value) not in names:
-                name = label.split(') ', 1)[1] if ') ' in label else label
-                names[str(value)] = name.split(' / ')[0].split(',')[0].strip()
-    return names
+    return hash_type_names()
 
 
 @notifications.route("/notifications", methods=['GET', 'POST'])

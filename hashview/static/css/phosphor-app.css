@@ -418,3 +418,41 @@ html[data-sidebar="collapsed"] .user-chip > a { display: none; }
    signal it's a link. */
 .rec-x-link { color: inherit; text-decoration: none; cursor: pointer; }
 .rec-x-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Settings -> Data management: the hashes-table card. Colour follows the design
+   spec: the phosphor amber is reserved for Recovered, which is the one figure the
+   eye should land on. Everything else uses the ordinary body inks -- labels, Mode
+   and the card meta grey (--text-mute); the headline figures, Total and Hash type
+   white (--text); the Unrecovered figures a step back (--text-dim). Painting the
+   whole card amber flattens that hierarchy and was tried and reverted.
+
+   These are classes rather than inline styles only so the palette lives in one
+   place; each one restates what the design put inline. Scoped to .hv-hashes-card
+   because .kpi / .tbl / .field-hint are shared app-wide -- and deliberately silent
+   about .kpi-label, .kpi-foot, .kpi-value, .kpi-value.accent, .field-hint and
+   td.num, which already inherit exactly the ink the design asks for.            */
+.hv-hashes-card .hv-hashes-meta,
+.hv-hashes-card .hv-hashes-empty,
+.hv-hashes-card .hv-hash-mode { color: var(--text-mute); }
+.hv-hashes-card .hv-hash-name { color: var(--text); font-size: 12.5px; }
+.hv-hashes-card .hv-hashes-lit { color: var(--text-dim); }
+.hv-hashes-card .tbl td.hv-hash-found { color: var(--primary); text-shadow: var(--glow-text); }
+.hv-hashes-card .tbl td.num.hv-hash-left,
+.hv-hashes-card .hv-kpi-dim .kpi-value { color: var(--text-dim); }
+
+/* Every figure in the table is a link that downloads exactly the rows it counts.
+   A bare number in a cell doesn't read as clickable, so these carry a dotted
+   underline until hovered; the colour is inherited so each column keeps the ink
+   set above, and hover lifts just that one figure to the accent. */
+.hv-count-link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--border-bright);
+  cursor: pointer;
+}
+.hv-count-link:hover { color: var(--primary); border-bottom-color: var(--primary); }
+.hv-count-link:hover .ico { color: var(--primary); }
+/* A zero has nothing to download, so it isn't a link -- and in the Recovered
+   column it must not inherit that column's amber glow (the design switches the
+   glow off when there are no cracks). */
+.hv-hashes-card .hv-count-zero { color: var(--text-mute); text-shadow: none; }

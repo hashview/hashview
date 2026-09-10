@@ -202,9 +202,30 @@ def test_218_search_missing_hash_key_is_handled(client, admin_user):
 
 @pytest.mark.security
 def test_219_jobs_add_uses_proper_null_filter():
-    src = inspect.getsource(api_routes.v1_api_post_add_job)
+    # The top-effective-tasks query moved out of the view into
+    # utils.top_effective_task_ids, shared by /v1/jobs/add and the web UI's
+    # lucky-assign (they had drifted: one spelling was the broken one). Inspect it
+    # where it now lives, and keep both callers honest.
+    from hashview.jobs import routes as jobs_routes
+    from hashview.utils import utils
+
+    def code_only(fn):
+        """Source with comment lines dropped.
+
+        The guard is about the filter the query actually uses, not about prose:
+        a comment explaining the #219 bug necessarily quotes the broken form, and
+        matching raw source would flag that as the bug itself.
+        """
+        return "\n".join(line for line in inspect.getsource(fn).splitlines()
+                          if not line.lstrip().startswith("#"))
+
+    src = code_only(utils.top_effective_task_ids)
     assert "Hashes.task_id is not None" not in src
     assert "Hashes.task_id.isnot(None)" in src
+
+    for caller in (api_routes.v1_api_post_add_job,
+                   jobs_routes.jobs_assign_lucky_task_group):
+        assert "Hashes.task_id is not None" not in code_only(caller)
 
 
 # ---------------------------------------------------------------------------

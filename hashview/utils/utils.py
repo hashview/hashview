@@ -1254,6 +1254,51 @@ def update_dynamic_wordlist(wordlist_id, dest_path=None):
 
     return target_path
 
+def top_effective_task_ids(hash_type, limit=10):
+    """Task ids that have recovered the most hashes of ``hash_type``, best first.
+
+    Feeds the "assign the top N tasks" action in the web UI (jobs_assign_lucky_
+    task_group) and in the API (/v1/jobs/add with a lucky task group). Returns
+    ids only -- both callers use nothing else -- so the result can be fed
+    straight into JobTasks.
+
+    **The join to `tasks` is load-bearing, not decoration.** `hashes.task_id`
+    has no foreign key, and a task can be deleted while its recoveries stay
+    behind: tasks_delete refuses only while the task is still referenced by a
+    job or a task group, never for the hashes it cracked. So this column
+    routinely points at tasks that no longer exist (one such id on the reference
+    instance, carrying 224 cracked rows), and the INNER JOIN is the single thing
+    stopping a deleted task from being assigned to a new job.
+
+    Do NOT relax it to an outer join to surface deleted names here. The listing
+    and Wrapped pages deliberately label a deleted task as deleted, because they
+    only display it; this result is assigned. Preserving that distinction is what
+    tests/unit/test_lucky_task_assignment.py exists to enforce.
+    """
+    rows = (db.session.query(Hashes.task_id)
+            .join(Tasks, Tasks.id == Hashes.task_id)
+            # isnot(None) is redundant against the join -- a NULL task_id cannot
+            # match tasks.id -- but it stays deliberately: issue #219 was this
+            # filter written as `Hashes.task_id is not None`, a Python identity
+            # test on the column object that is always True and filters nothing.
+            # test_api_issues_xfail.py::test_219_jobs_add_uses_proper_null_filter
+            # inspects this source to stop that form coming back, so the correct
+            # spelling has to be present to pin it.
+            #
+            # `!= 0` earns its place on behaviour: 0 is the historical
+            # "not attributed" sentinel and, unlike NULL, would survive the join
+            # if a tasks row with id 0 ever existed.
+            .filter(Hashes.cracked == '1',
+                    Hashes.task_id.isnot(None),
+                    Hashes.task_id != 0,
+                    Hashes.hash_type == hash_type)
+            .group_by(Hashes.task_id)
+            .order_by(db.func.count(Hashes.id).desc())
+            .limit(limit)
+            .all())
+    return [row[0] for row in rows]
+
+
 def hashtypes_in_use():
     """Set of distinct hash_type values currently present in the hashes table.
 

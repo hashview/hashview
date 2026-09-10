@@ -447,16 +447,95 @@ def test_unrelated_errors_do_not_carry_pool_counters(app):
     assert "pool" not in captured
 
 
+def test_data_retention_cleanup_logs_pool_state_on_success(app, caplog):
+    """The outer job wrapper -- the one actually scheduled hourly -- must log the
+    pool snapshot every time it finishes, not just when
+    _data_retention_cleanup_inner is called directly (as the tests above do)."""
+    import logging
+
+    from hashview.scheduler import data_retention_cleanup
+
+    with caplog.at_level(logging.INFO, logger=app.logger.name):
+        data_retention_cleanup(app)
+
+    assert any("DataRetentionCleanup pool state" in r.message for r in caplog.records), (
+        [r.message for r in caplog.records])
+
+
+def test_data_retention_cleanup_logs_pool_state_even_after_a_failure(app, monkeypatch, caplog):
+    """The pool snapshot is the diagnostic for exactly the case where something
+    went wrong, so it has to run from `finally`, not just the success branch."""
+    import logging
+
+    from hashview import scheduler
+
+    def _boom(db, mailer, logger):
+        raise RuntimeError("simulated retention failure")
+
+    monkeypatch.setattr(scheduler, "_data_retention_cleanup_inner", _boom)
+
+    with caplog.at_level(logging.INFO, logger=app.logger.name):
+        scheduler.data_retention_cleanup(app)
+
+    messages = [r.message for r in caplog.records]
+    assert any("Result(Failure)" in m for m in messages), messages
+    assert any("DataRetentionCleanup pool state" in m for m in messages), messages
+
+
 #############################################
 # Pool configuration
 #############################################
 
-def test_engine_options_pin_the_pool_deliberately():
+def _fresh_config_module(tmp_path, monkeypatch, database_overrides=None):
+    """Import ``hashview.config`` from scratch against a throwaway config.conf.
+
+    hashview.config reads 'hashview/config.conf' (relative to cwd) at class-body
+    execution time, and bare-indexes ``file_config['SERVER']['SERVER_NAME']`` --
+    so importing the real module KeyErrors on a fresh checkout that has no
+    config.conf on disk (it's gitignored; see
+    test_form_memory_limit_413.py::test_max_form_memory_size_defaults_to_flask_default_when_absent
+    and test_issue_xfail_misc.py::test_db_password_with_percent_is_parsed for the
+    same constraint). Nothing else in the unit suite imports hashview.config --
+    create_app() only does so when ``testing`` is falsy -- so this module has
+    never been imported by the time these tests run, and there is no cached
+    sys.modules entry to fall back on.
+
+    This writes a complete, throwaway config.conf into an isolated cwd and
+    imports the module fresh, so the test is self-contained instead of
+    depending on (or corrupting) whatever config.conf happens to exist on the
+    machine running it.
+    """
+    import configparser
+    import sys
+
+    config_dir = tmp_path / "hashview"
+    config_dir.mkdir()
+    parser = configparser.ConfigParser()
+    parser.read_dict({
+        "SERVER": {"SERVER_NAME": "example.com:5000"},
+        "database": {
+            "username": "hashview", "password": "hashview", "host": "localhost",
+            **(database_overrides or {}),
+        },
+        "SMTP": {
+            "server": "smtp.example.com", "port": "25", "use_tls": "False",
+            "username": "", "password": "", "default_sender": "hashview@example.com",
+        },
+    })
+    with open(config_dir / "config.conf", "w") as f:
+        parser.write(f)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delitem(sys.modules, "hashview.config", raising=False)
+    import hashview.config as fresh_config
+    monkeypatch.delitem(sys.modules, "hashview.config", raising=False)
+    return fresh_config
+
+
+def test_engine_options_pin_the_pool_deliberately(tmp_path, monkeypatch):
     """The defaults SQLAlchemy would otherwise pick (5 + 10) are what the incident
     ran out of, so the values are asserted rather than left implicit."""
-    from hashview.config import Config
-
-    options = Config.SQLALCHEMY_ENGINE_OPTIONS
+    options = _fresh_config_module(tmp_path, monkeypatch).Config.SQLALCHEMY_ENGINE_OPTIONS
     assert options["pool_size"] >= 10
     assert options["max_overflow"] >= 20
     assert options["pool_pre_ping"] is True
@@ -469,3 +548,17 @@ def test_engine_options_pin_the_pool_deliberately():
     # Total connections must stay well under MySQL's default max_connections (151)
     # so other clients, and a second Hashview process, can still connect.
     assert options["pool_size"] + options["max_overflow"] <= 60
+
+
+def test_engine_options_are_tunable_via_config_conf(tmp_path, monkeypatch):
+    """An operator running many agents plus many operators can raise pool_size /
+    max_overflow via config.conf -- see config.conf.example's [database]
+    pool_size / max_overflow comment. Unset, they must still fall back to
+    10 / 20 (pinned above), not KeyError on an older config.conf that predates
+    the keys."""
+    options = _fresh_config_module(
+        tmp_path, monkeypatch,
+        database_overrides={"pool_size": "15", "max_overflow": "40"},
+    ).Config.SQLALCHEMY_ENGINE_OPTIONS
+    assert options["pool_size"] == 15
+    assert options["max_overflow"] == 40

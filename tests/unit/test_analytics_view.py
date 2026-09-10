@@ -720,3 +720,137 @@ def test_rows_without_a_username_count_once_per_hash(app, client):
     assert ctx["total_cracked"] == 1
     assert ctx["accounts"] == 1
     assert ctx["reused_pct"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# download scope must match the page's scope
+# ---------------------------------------------------------------------------
+
+
+def _two_customers(admin):
+    """Customer A with one cracked account, customer B with two."""
+    cust_a = Customers(name="AlphaCo")
+    cust_b = Customers(name="BetaCo")
+    db.session.add_all([cust_a, cust_b])
+    db.session.commit()
+    hf_a = Hashfiles(name="a.txt", customer_id=cust_a.id, owner_id=admin.id)
+    hf_b = Hashfiles(name="b.txt", customer_id=cust_b.id, owner_id=admin.id)
+    db.session.add_all([hf_a, hf_b])
+    db.session.commit()
+    ha = _hash("ct-alpha", "AlphaPass", True)
+    db.session.add(HashfileHashes(hash_id=ha.id, hashfile_id=hf_a.id, username="alpha1"))
+    for name, pw in (("beta1", "BetaPass"), ("beta2", "BetaPass")):
+        hb = _hash(f"ct-{name}", pw, True)
+        db.session.add(HashfileHashes(hash_id=hb.id, hashfile_id=hf_b.id, username=name))
+    db.session.commit()
+    return cust_a, cust_b, hf_a, hf_b
+
+
+def test_download_scoped_by_hashfile_alone_does_not_return_everything(app, client):
+    """`?hashfile_id=N` with no customer_id used to hand back the whole database.
+
+    The page resolves hashfile_id first (_scoped_hash_query), but the download
+    routes re-implemented the scoping as `if customer_id: ... else: <no filter>`,
+    so this URL rendered one hashfile's charts and then exported every hash in
+    the instance.
+    """
+    admin = _admin()
+    _login(client, admin)
+    _cust_a, _cust_b, hf_a, _hf_b = _two_customers(admin)
+
+    body = client.get(f"/analytics/download?type=found&hashfile_id={hf_a.id}").get_data(as_text=True)
+    assert "AlphaPass" in body
+    assert "BetaPass" not in body, "download leaked hashes outside the selected hashfile"
+
+
+def test_download_scoped_by_customer_alone(app, client):
+    admin = _admin()
+    _login(client, admin)
+    _cust_a, cust_b, _hf_a, _hf_b = _two_customers(admin)
+
+    body = client.get(f"/analytics/download?type=found&customer_id={cust_b.id}").get_data(as_text=True)
+    assert "BetaPass" in body
+    assert "AlphaPass" not in body
+
+
+def test_download_hashfile_wins_over_customer_like_the_page(app, client):
+    """Both args set: hashfile_id decides, matching _scoped_hash_query's if/elif."""
+    admin = _admin()
+    _login(client, admin)
+    cust_a, _cust_b, _hf_a, hf_b = _two_customers(admin)
+
+    body = client.get(
+        f"/analytics/download?type=found&customer_id={cust_a.id}&hashfile_id={hf_b.id}"
+    ).get_data(as_text=True)
+    assert "BetaPass" in body
+    assert "AlphaPass" not in body
+
+
+def test_download_unscoped_still_returns_everything(app, client):
+    """No scope args is the all-customers view, and must stay unrestricted."""
+    admin = _admin()
+    _login(client, admin)
+    _two_customers(admin)
+
+    body = client.get("/analytics/download?type=found").get_data(as_text=True)
+    assert "AlphaPass" in body and "BetaPass" in body
+
+
+def test_fig8_download_is_scoped_by_hashfile_alone(app, client):
+    """Username = Password export, same scoping defect."""
+    admin = _admin()
+    _login(client, admin)
+    cust_a = Customers(name="UP-A")
+    cust_b = Customers(name="UP-B")
+    db.session.add_all([cust_a, cust_b])
+    db.session.commit()
+    hf_a = Hashfiles(name="upa", customer_id=cust_a.id, owner_id=admin.id)
+    hf_b = Hashfiles(name="upb", customer_id=cust_b.id, owner_id=admin.id)
+    db.session.add_all([hf_a, hf_b])
+    db.session.commit()
+    for hf, name in ((hf_a, "selfa"), (hf_b, "selfb")):
+        h = _hash(f"ct-{name}", name, True)          # password == username
+        db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id, username=name))
+    db.session.commit()
+
+    body = client.get(f"/analytics/download/fig8?hashfile_id={hf_a.id}").get_data(as_text=True)
+    assert "selfa" in body
+    assert "selfb" not in body
+
+
+def test_fig9_download_is_scoped_and_counts_accounts(app, client):
+    """The shared-password export was unscoped AND counted link rows.
+
+    A single account listed twice in one hashfile used to satisfy
+    `HAVING COUNT(*) > 1` and be exported as sharing a password with itself.
+    """
+    admin = _admin()
+    _login(client, admin)
+    cust = Customers(name="SharedCo")
+    other = Customers(name="OtherCo")
+    db.session.add_all([cust, other])
+    db.session.commit()
+    hf = Hashfiles(name="shared", customer_id=cust.id, owner_id=admin.id)
+    hf_other = Hashfiles(name="other", customer_id=other.id, owner_id=admin.id)
+    db.session.add_all([hf, hf_other])
+    db.session.commit()
+
+    # two accounts genuinely sharing a password -> should be exported
+    shared = _hash("ct-share", "TeamPass1", True)
+    db.session.add(HashfileHashes(hash_id=shared.id, hashfile_id=hf.id, username="kim"))
+    db.session.add(HashfileHashes(hash_id=shared.id, hashfile_id=hf.id, username="lee"))
+    # one account listed twice -> must NOT be exported
+    dupe = _hash("ct-dupe", "SoloPass1", True)
+    for _ in range(2):
+        db.session.add(HashfileHashes(hash_id=dupe.id, hashfile_id=hf.id, username="mo"))
+    # another customer's shared pair -> must not leak into this scope
+    outside = _hash("ct-out", "OutPass1", True)
+    db.session.add(HashfileHashes(hash_id=outside.id, hashfile_id=hf_other.id, username="nan"))
+    db.session.add(HashfileHashes(hash_id=outside.id, hashfile_id=hf_other.id, username="opal"))
+    db.session.commit()
+
+    body = client.get(f"/analytics/download/fig9?hashfile_id={hf.id}").get_data(as_text=True)
+    names = {line.strip() for line in body.splitlines() if line.strip()}
+    assert {"kim", "lee"} <= names
+    assert "mo" not in names, "a duplicated single account is not a shared password"
+    assert "nan" not in names and "opal" not in names, "leaked another customer's accounts"

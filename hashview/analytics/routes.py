@@ -16,7 +16,7 @@ from flask import (
     stream_with_context,
 )
 from flask_login import login_required
-from sqlalchemy import func, select
+from sqlalchemy import func
 
 from hashview.models import Customers, Hashes, HashfileHashes, Hashfiles, Jobs, Tasks, db
 from hashview.utils.utils import decode_hex_plain
@@ -597,18 +597,15 @@ def analytics_download_hashes():
 
     filename += '.txt'
 
-    if customer_id:
-        # we have a customer
-        if hashfile_id:
-            cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile_id).all()
-            uncracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==hashfile_id).all()
-        else:
-            # just a customer, no specific hashfile
-            cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).join(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '1').all()
-            uncracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).join(Hashfiles, HashfileHashes.hashfile_id==Hashfiles.id).filter(Hashfiles.customer_id == customer_id).filter(Hashes.cracked == '0').all()
-    else:
-        cracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='1').all()
-        uncracked_hashes = db.session.query(Hashes, HashfileHashes).join(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked=='0').all()
+    # Scoped through the same helper the page uses. These routes used to
+    # re-implement the scoping as `if customer_id: if hashfile_id: ... else: ...`
+    # with an unscoped outer else, so `?hashfile_id=N` with no customer_id
+    # rendered one hashfile's charts and then handed back the ENTIRE database.
+    # _scoped_hash_query resolves hashfile_id first, exactly as the page does.
+    cracked_hashes = (_scoped_hash_query(customer_id, hashfile_id, cracked=True)
+                      .with_entities(Hashes, HashfileHashes).all())
+    uncracked_hashes = (_scoped_hash_query(customer_id, hashfile_id, cracked=False)
+                        .with_entities(Hashes, HashfileHashes).all())
 
     def generate():
         if download_type == 'found':
@@ -653,66 +650,14 @@ def analytics_download_fig9():
 
     filename += '.txt'
 
-    # Gather the usernames from fig9_table logic (same as in the template)
-    if customer_id:
-        # we have a customer
-        if hashfile_id:
-            # Specific hashfile
-            fig9_hashes_ids = db.session.query(HashfileHashes) \
-                .where(HashfileHashes.hashfile_id == hashfile_id) \
-                .group_by(HashfileHashes.hash_id) \
-                .having(func.count() > 1) \
-                .with_entities(HashfileHashes.hash_id) \
-                .subquery()
-
-            fig9_usernames = (
-                db.session.execute(
-                    select(HashfileHashes.username)
-                        .where(HashfileHashes.hashfile_id == hashfile_id)
-                        .where(HashfileHashes.hash_id.in_(fig9_hashes_ids))
-                        .distinct()
-                )
-                .scalars()
-                .all()
-            )
-        else:
-            # All hashfiles for the customer
-            fig9_hashes_ids = db.session.query(HashfileHashes) \
-                .join(Hashfiles, HashfileHashes.hashfile_id == Hashfiles.id) \
-                .where(Hashfiles.customer_id == customer_id) \
-                .group_by(HashfileHashes.hash_id) \
-                .having(func.count() > 1) \
-                .with_entities(HashfileHashes.hash_id) \
-                .subquery()
-
-            fig9_usernames = (
-                db.session.execute(
-                    select(HashfileHashes.username)
-                        .join(Hashfiles, HashfileHashes.hashfile_id == Hashfiles.id)
-                        .where(Hashfiles.customer_id == customer_id)
-                        .where(HashfileHashes.hash_id.in_(fig9_hashes_ids))
-                        .distinct()
-                )
-                .scalars()
-                .all()
-            )
-    else:
-        # No customer filter – all hashfiles
-        fig9_hashes_ids = db.session.query(HashfileHashes) \
-            .group_by(HashfileHashes.hash_id) \
-            .having(func.count() > 1) \
-            .with_entities(HashfileHashes.hash_id) \
-            .subquery()
-
-        fig9_usernames = (
-            db.session.execute(
-                select(HashfileHashes.username)
-                    .where(HashfileHashes.hash_id.in_(fig9_hashes_ids))
-                    .distinct()
-            )
-            .scalars()
-            .all()
-        )
+    # Delegated to _shared_groups, which the Shared Passwords card and
+    # /analytics/download/shared already use. This route previously carried its
+    # own copy of the logic with two defects: the same unscoped outer else as
+    # above, and `.having(func.count() > 1)` over hashfile_hashes rows, so a
+    # single account listed twice looked like a shared password (#385).
+    fig9_usernames = sorted({username
+                             for users in _shared_groups(customer_id, hashfile_id).values()
+                             for username in users})
 
     def generate():
         for entry in fig9_usernames:
@@ -746,31 +691,10 @@ def analytics_download_fig8():
     filename += '.txt'
 
     # Gather the usernames where password == username using the same logic as fig8_table
-    if customer_id:
-        if hashfile_id:
-            # Specific hashfile
-            fig8_cracked_hashes = db.session.query(Hashes, HashfileHashes) \
-                .join(HashfileHashes, Hashes.id == HashfileHashes.hash_id) \
-                .filter(Hashes.cracked == '1') \
-                .filter(HashfileHashes.hashfile_id == hashfile_id) \
-                .with_entities(Hashes.plaintext, HashfileHashes.username) \
-                .all()
-        else:
-            # All hashfiles for the customer
-            fig8_cracked_hashes = db.session.query(Hashes, HashfileHashes) \
-                .join(HashfileHashes, Hashes.id == HashfileHashes.hash_id) \
-                .join(Hashfiles, HashfileHashes.hashfile_id == Hashfiles.id) \
-                .filter(Hashfiles.customer_id == customer_id) \
-                .filter(Hashes.cracked == '1') \
-                .with_entities(Hashes.plaintext, HashfileHashes.username) \
-                .all()
-    else:
-        # No customer filter – all hashfiles
-        fig8_cracked_hashes = db.session.query(Hashes, HashfileHashes) \
-            .join(HashfileHashes, Hashes.id == HashfileHashes.hash_id) \
-            .filter(Hashes.cracked == '1') \
-            .with_entities(Hashes.plaintext, HashfileHashes.username) \
-            .all()
+    # Same helper as the page and the same scoping precedence; see the comment
+    # in analytics_download_hashes for what the hand-rolled version did wrong.
+    fig8_cracked_hashes = (_scoped_hash_query(customer_id, hashfile_id, cracked=True)
+                           .with_entities(Hashes.plaintext, HashfileHashes.username).all())
 
     def generate():
         for entry in fig8_cracked_hashes:

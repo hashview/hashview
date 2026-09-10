@@ -36,6 +36,38 @@ class Config:
         + file_config['database']['host'] + '/hashview?charset=utf8mb4'
     )
 
+    # Connection-pool sizing. Previously unset, which left SQLAlchemy's own
+    # defaults of pool_size=5 / max_overflow=10 -- a 15-connection ceiling that
+    # nobody chose, against a MySQL max_connections of 151. When a long-running
+    # transaction (the hourly retention purge was the culprit) made other
+    # queries block, 15 in-flight requests parked the entire pool and every new
+    # request -- agents included -- failed in before_request with
+    # "QueuePool limit of size 5 overflow 10 reached".
+    #
+    # 10 + 20 is headroom, not a fix for that (a bigger pool fills too, just
+    # slower); the retention batching is the fix. It is deliberately well under
+    # max_connections so several processes can share the server.
+    #
+    # pool_pre_ping validates a connection before handing it out, which is what
+    # stops "MySQL server has gone away" after an idle period. pool_recycle must
+    # stay below MySQL's wait_timeout (28800 here) so the pool retires a
+    # connection before the server does. pool_timeout is spelled out rather than
+    # left implicit because it interacts with innodb_lock_wait_timeout: a query
+    # blocked on a row lock holds its connection for up to that long, so if the
+    # lock timeout exceeds this value the pool gives up before the blocked
+    # queries do.
+    #
+    # SQLite is unaffected: the unit tests replace SQLALCHEMY_ENGINE_OPTIONS
+    # wholesale (its SingletonThreadPool rejects max_overflow outright), and the
+    # URI above is always MySQL.
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_size': int(file_config['database'].get('pool_size', 10)),
+        'max_overflow': int(file_config['database'].get('max_overflow', 20)),
+        'pool_timeout': 30,
+        'pool_recycle': 3600,
+        'pool_pre_ping': True,
+    }
+
     # SMTP Config
     MAIL_SERVER = file_config['SMTP']['server']
     MAIL_PORT = file_config['SMTP']['port']

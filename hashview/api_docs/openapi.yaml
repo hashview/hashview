@@ -1443,7 +1443,10 @@ paths:
         failing line aborts the whole request with body status 500 and rolls
         back, so no lines are committed unless every line verifies. Matching
         uncracked hashes are marked cracked and credited to the calling user,
-        and per-hash recovery notifications fire.
+        and per-hash recovery notifications fire. A plaintext wrapped in
+        hashcat's `$HEX[...]` form is decoded to its raw bytes before
+        verification, so passwords with leading/trailing whitespace,
+        delimiters, or non-UTF-8 bytes verify.
       operationId: importCrackedHashes
       x-audience: user
       security:

@@ -211,7 +211,7 @@ class JobTasks(db.Model):
     # (_expand_mask swaps a '?x' position for a 1-2 char literal) and hc_mask is
     # String(50), so 64 is enough TODAY -- but that is an undocumented coupling
     # between two tables, and a truncated mask is still a valid mask, so it would
-    # crack the wrong keyspace silently rather than erroring. See #-mask widening.
+    # crack the wrong keyspace silently rather than erroring.
     chunk_mask = db.Column(db.String(255), nullable=True)
 
 class Customers(db.Model):

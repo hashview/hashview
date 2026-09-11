@@ -108,6 +108,9 @@
                         {% else %}
                         <a class="icon-btn" href="{{ url_for('wordlists.wordlists_download', wordlist_id=wordlist.id) }}" title="Download">{{ icon('download', size=15) }}</a>
                         {% endif %}
+                        {# offered on every static row: there is no wordlist edit route, so
+                           this is also the only way to update one's contents in place #}
+                        <button type="button" class="icon-btn" title="{{ 'Restore missing file' if gone else 'Replace file' }}" onclick="document.getElementById('restore-{{ wordlist.id }}').showModal()">{{ icon('upload', size=15) }}</button>
                         <button type="button" class="icon-btn" title="Info" onclick="document.getElementById('info-{{ wordlist.id }}').showModal()">{{ icon('info', size=15) }}</button>
                         <button type="button" class="icon-btn act-del" title="Delete" onclick="document.getElementById('del-{{ wordlist.id }}').showModal()">{{ icon('trash', size=15) }}</button>
                     </div>
@@ -511,6 +514,44 @@
 {% endfor %}
 
 {% for wordlist in wordlists %}
+{% if wordlist.type != 'dynamic' %}
+{% set gone = wordlist.id in missing_wl_ids %}
+<dialog class="hv-dialog" id="restore-{{ wordlist.id }}" style="max-width:560px; width:94vw;">
+    <div class="hv-dialog-head">
+        {{ icon('upload', size=16) }}
+        <div style="line-height:1.2;">
+            <h3 style="margin:0;">{{ 'Restore' if gone else 'Replace' }} {{ wordlist.name }}</h3>
+            <div class="mono" style="font-size:10px; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-mute); margin-top:3px;">replace the file in place</div>
+        </div>
+        <button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close">{{ icon('x', size=15) }}</button>
+    </div>
+    <form method="POST" action="{{ url_for('wordlists.wordlists_restore', wordlist_id=wordlist.id) }}" enctype="multipart/form-data">
+        {{ wordlistRestoreForm.hidden_tag() }}
+        <div class="hv-dialog-body">
+            <div class="field-hint" style="margin:0 0 var(--gap);">
+                {{ 'Restores' if gone else 'Replaces' }} the file <strong>in place</strong> — entry
+                <span class="mono">#{{ wordlist.id }}</span>, path <span class="mono">{{ wordlist.path.split('/')|last }}</span> —
+                so the {{ wl_task_count.get(wordlist.id, 0) | commafy }} task{{ '' if wl_task_count.get(wordlist.id, 0) == 1 else 's' }}
+                using it keep working. This does <strong>not</strong> create a new entry.
+            </div>
+            <div class="dropzone" onclick="this.querySelector('input[type=file]').click()">
+                {{ icon('upload', size=34) }}
+                <div style="margin-top:12px; color:var(--text);">Drop the wordlist (<span class="mono" style="color:var(--primary);">.txt</span> or <span class="mono" style="color:var(--primary);">.gz</span>) here or <span style="color:var(--primary); text-decoration:underline;">browse</span></div>
+                {{ wordlistRestoreForm.wordlist(style="display:none;") }}
+            </div>
+            <div class="field-hint" style="margin-top:var(--gap);">
+                {{ icon('info', size=13) }} Importing from <span class="mono">control/wordlists_import/</span> will
+                <strong>not</strong> restore this entry — it creates a new one, leaving this row's tasks still broken.
+            </div>
+        </div>
+        <div class="hv-dialog-foot">
+            <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+            <button type="submit" class="btn btn-primary">{{ icon('upload', size=15) }} {{ 'Restore' if gone else 'Replace' }} wordlist file</button>
+        </div>
+    </form>
+</dialog>
+{% endif %}
+
 <dialog class="hv-dialog" id="del-{{ wordlist.id }}">
     <div class="hv-dialog-head"><h3>Delete {{ wordlist.name }}?</h3><button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close">{{ icon('x', size=15) }}</button></div>
     <div class="hv-dialog-body">This will permanently delete the wordlist. Are you sure you want to continue?</div>

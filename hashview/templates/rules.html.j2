@@ -80,6 +80,7 @@
                     <div style="display:flex; gap:4px; justify-content:center;">
                         {% if gone %}
                         <span class="icon-btn" style="opacity:.4; cursor:not-allowed;" title="File is missing on disk — nothing to download">{{ icon('download', size=15) }}</span>
+                        <button type="button" class="icon-btn" title="Restore from file" onclick="document.getElementById('restore-{{ rule.id }}').showModal()">{{ icon('upload', size=15) }}</button>
                         {% else %}
                         <a class="icon-btn" href="{{ url_for('rules.rules_download', rule_id=rule.id) }}" title="Download">{{ icon('download', size=15) }}</a>
                         {% endif %}
@@ -258,6 +259,39 @@
         <button class="btn" onclick="this.closest('dialog').close()">Close</button>
     </div>
 </dialog>
+
+{% if rule.id in missing_rule_ids %}
+<dialog class="hv-dialog" id="restore-{{ rule.id }}" style="max-width:560px; width:94vw;">
+    <div class="hv-dialog-head">
+        {{ icon('upload', size=16) }}
+        <div style="line-height:1.2;">
+            <h3 style="margin:0;">Restore {{ rule.name }}</h3>
+            <div class="mono" style="font-size:10px; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-mute); margin-top:3px;">replace the missing file in place</div>
+        </div>
+        <button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close">{{ icon('x', size=15) }}</button>
+    </div>
+    <form method="POST" action="{{ url_for('rules.rules_restore', rule_id=rule.id) }}" enctype="multipart/form-data">
+        {{ ruleRestoreForm.hidden_tag() }}
+        <div class="hv-dialog-body">
+            <div class="field-hint" style="margin:0 0 var(--gap);">
+                Restores the file <strong>in place</strong> — entry <span class="mono">#{{ rule.id }}</span>,
+                path <span class="mono">{{ rule.path.split('/')|last }}</span> — so the
+                {{ rule_task_count.get(rule.id, 0) | commafy }} task{{ '' if rule_task_count.get(rule.id, 0) == 1 else 's' }}
+                using it keep working. This does <strong>not</strong> create a new entry.
+            </div>
+            <div class="dropzone" onclick="this.querySelector('input[type=file]').click()">
+                {{ icon('upload', size=34) }}
+                <div style="margin-top:12px; color:var(--text);">Drop the <span class="mono" style="color:var(--primary);">.rule</span> file here or <span style="color:var(--primary); text-decoration:underline;">browse</span></div>
+                {{ ruleRestoreForm.rules(style="display:none;") }}
+            </div>
+        </div>
+        <div class="hv-dialog-foot">
+            <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+            <button type="submit" class="btn btn-primary">{{ icon('upload', size=15) }} Restore rule file</button>
+        </div>
+    </form>
+</dialog>
+{% endif %}
 
 <dialog class="hv-dialog" id="del-{{ rule.id }}">
     <div class="hv-dialog-head"><h3>Delete {{ rule.name }}?</h3><button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close">{{ icon('x', size=15) }}</button></div>

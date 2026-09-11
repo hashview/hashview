@@ -256,6 +256,76 @@ def gz_linecount(filepath):
     return count
 
 
+def _compress_wordlist_to(src_path, dest_gz):
+    """Compress an uploaded wordlist (plain text OR gzip) to ``dest_gz`` at -9.
+
+    Shared core of ingest_static_wordlist_file (new row) and
+    restore_static_wordlist_file (existing row). For an already-gzipped upload
+    we decompress it first -- which validates the gzip -- count lines from the
+    plaintext, then RE-compress at -9, since the user may have uploaded a
+    weakly-compressed .gz.
+
+    Returns the line count. Raises on an invalid gzip; always cleans up its own
+    temp file.
+    """
+    tmp_dir = os.path.join(current_app.root_path, 'control/tmp')
+    if is_gzip(src_path):
+        tmp_plain = os.path.join(tmp_dir, secrets.token_hex(8))
+        try:
+            decompress_gz(src_path, tmp_plain)      # raises on bad gzip
+            size = get_linecount(tmp_plain)
+            compress_to_gz(tmp_plain, dest_gz, 9)
+        finally:
+            if os.path.exists(tmp_plain):
+                os.remove(tmp_plain)
+    else:
+        size = get_linecount(src_path)
+        compress_to_gz(src_path, dest_gz, 9)
+    return size
+
+def restore_static_wordlist_file(src_path, wordlist):
+    """Replace a static wordlist's file IN PLACE, keeping its row and path.
+
+    The point of the exercise (issue #383): a stranded row is repaired without
+    minting a new id or a new filename, so every Tasks.wl_id / wl_id_2, every
+    already-materialized JobTasks.command, and every Hashes.task_id attribution
+    stays valid. Re-uploading through wordlists_add cannot do this -- it always
+    mints a fresh path -- which is why a re-upload orphans the reference
+    further instead of fixing it.
+
+    Deliberately a sibling of ingest_static_wordlist_file rather than a mode
+    flag on it: that function's contract is "returns an unsaved Wordlists row"
+    and it has three callers who would all have to read a branch they don't use.
+
+    Compresses into control/tmp first and os.replace()s onto the stored path, so
+    a rejected upload can never destroy a file that is still good. The basename
+    is preserved, which is what keeps build_hashcat_command emitting the
+    identical agent-side path. Mutates size/checksum/byte_size/last_updated on
+    the row; the CALLER commits.
+    """
+    wordlists_dir = os.path.join(current_app.root_path, 'control/wordlists')
+    tmp_dir = os.path.join(current_app.root_path, 'control/tmp')
+    # Normalize into control/wordlists: the row's stored path may be relative,
+    # and only this directory is ever served from.
+    dest_gz = os.path.join(wordlists_dir, os.path.basename(wordlist.path or ''))
+    if not os.path.basename(dest_gz):
+        dest_gz = os.path.join(wordlists_dir, secrets.token_hex(8) + '.gz')
+
+    staged = os.path.join(tmp_dir, secrets.token_hex(8) + '.gz')
+    try:
+        size = _compress_wordlist_to(src_path, staged)   # raises on bad gzip
+        os.replace(staged, dest_gz)
+    finally:
+        if os.path.exists(staged):
+            os.remove(staged)
+
+    wordlist.path = dest_gz
+    wordlist.size = size
+    wordlist.checksum = get_filehash(dest_gz)     # checksum of the COMPRESSED file
+    wordlist.byte_size = get_filesize(dest_gz)
+    wordlist.last_updated = datetime.today()
+    return wordlist
+
 def ingest_static_wordlist_file(src_path, owner_id, name):
     """Ingest an uploaded wordlist (plain text OR gzip) into compressed storage.
 
@@ -273,23 +343,8 @@ def ingest_static_wordlist_file(src_path, owner_id, name):
     Raises on an invalid gzip upload; always cleans up its own temp files.
     """
     wordlists_dir = os.path.join(current_app.root_path, 'control/wordlists')
-    tmp_dir = os.path.join(current_app.root_path, 'control/tmp')
     final_gz = os.path.join(wordlists_dir, secrets.token_hex(8) + '.gz')
-
-    if is_gzip(src_path):
-        # Decompress to a temp file so we can hash the plaintext-equivalent and
-        # re-compress at -9. gz_linecount also validates the gzip stream.
-        tmp_plain = os.path.join(tmp_dir, secrets.token_hex(8))
-        try:
-            decompress_gz(src_path, tmp_plain)      # raises on bad gzip
-            size = get_linecount(tmp_plain)
-            compress_to_gz(tmp_plain, final_gz, 9)
-        finally:
-            if os.path.exists(tmp_plain):
-                os.remove(tmp_plain)
-    else:
-        size = get_linecount(src_path)
-        compress_to_gz(src_path, final_gz, 9)
+    size = _compress_wordlist_to(src_path, final_gz)
 
     return Wordlists(
         name=name,

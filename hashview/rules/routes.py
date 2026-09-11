@@ -1,4 +1,6 @@
 import os
+import secrets
+from datetime import datetime
 
 from flask import (
     Blueprint,
@@ -15,7 +17,7 @@ from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
 from hashview.models import Hashes, Jobs, JobTasks, Rules, Tasks, Users, Wordlists, db
-from hashview.rules.forms import RulesForm
+from hashview.rules.forms import RuleRestoreForm, RulesForm
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
     apply_name_filter,
@@ -164,6 +166,7 @@ def rules_list():
                            pagination=pagination, sort_by=sort_by, sort_order=sort_order,
                            name_filter=name_filter,
                            missing_rule_ids=missing_rules, rule_bytes=rule_bytes,
+                           ruleRestoreForm=RuleRestoreForm(),
                            form_err=session.pop('rules_form_err', None))
 
 @rules.route("/rules/add", methods=['GET', 'POST'])
@@ -207,13 +210,22 @@ def rules_view(rule_id):
     if rule is None:
         flash('Rule not found — it may have already been deleted.', 'warning')
         return redirect(url_for('rules.rules_list'))
-    # Read file content
-    try:
-        with open(rule.path) as f:
-            content = f.read()
-    except Exception as e:
-        flash(f'Error reading file: {e}', 'danger')
-        return redirect(url_for('rules.rules_list'))
+    # Read file content. A file that is GONE yields an empty editor rather than
+    # bailing out: that turns this route into the in-place restore for a
+    # stranded row (issue #383), and it is what makes the startup backfill's
+    # own advice -- "re-upload the wordlist to restore it" -- actually possible
+    # for rules without minting a new row and orphaning every task reference.
+    # A file that is present but unreadable still bails; that is a real error.
+    src_path = resolve_control_file(rule.path, 'rules')
+    file_missing = src_path is None
+    content = ''
+    if not file_missing:
+        try:
+            with open(src_path) as f:
+                content = f.read()
+        except Exception as e:
+            flash(f'Error reading file: {e}', 'danger')
+            return redirect(url_for('rules.rules_list'))
 
     can_edit = current_user.admin or rule.owner_id == current_user.id
 
@@ -222,21 +234,94 @@ def rules_view(rule_id):
             flash('Unauthorized action!', 'danger')
             return redirect(url_for('rules.rules_view', rule_id=rule.id))
         new_content = request.form.get('content')
+        # This route can now CREATE a file, so normalize the write target into
+        # control/rules the way remove_rule_file does. That keeps a crafted or
+        # legacy path from writing outside the rules directory, and self-heals a
+        # row whose stored path was relative.
+        dest_path = os.path.join(current_app.root_path, 'control/rules',
+                                 os.path.basename(rule.path or ''))
         try:
-            with open(rule.path, 'w') as f:
+            with open(dest_path, 'w') as f:
                 f.write(new_content)
             # Update metadata
-            rule.size = get_linecount(rule.path)
-            rule.checksum = get_filehash(rule.path)
+            rule.path = dest_path
+            rule.size = get_linecount(dest_path)
+            rule.checksum = get_filehash(dest_path)
             db.session.commit()
-            log_event('rule.edit', target=f'rule:{rule.id} {rule.name!r}')
-            flash('Rule file updated.', 'success')
+            if file_missing:
+                log_event('rule.restore', target=f'rule:{rule.id} {rule.name!r}',
+                          detail=f'path={dest_path}')
+                flash('Rule file restored. Every task that uses it works again.', 'success')
+            else:
+                log_event('rule.edit', target=f'rule:{rule.id} {rule.name!r}')
+                flash('Rule file updated.', 'success')
         except Exception as e:
             flash(f'Error saving file: {e}', 'danger')
         return redirect(url_for('rules.rules_view', rule_id=rule.id))
 
-    return render_template('rules_edit.html.j2', rule=rule, content=content, can_edit=can_edit)
+    return render_template('rules_edit.html.j2', rule=rule, content=content,
+                           can_edit=can_edit, file_missing=file_missing)
  
+
+@rules.route("/rules/<int:rule_id>/restore", methods=['POST'])
+@login_required
+def rules_restore(rule_id):
+    """Replace a rule's file IN PLACE, keeping the row's id and path (#383).
+
+    The remedy for a row that outlived its file while tasks still reference it.
+    Re-uploading through rules_add cannot fix that case -- it always mints a new
+    row and a new path, so the stale Tasks.rule_id is orphaned further.
+
+    Owner-or-admin, deliberately not admin-only: restoring a file is strictly
+    less destructive than the delete the owner can already do, and admin-gating
+    it would funnel every routine re-upload through an admin.
+    """
+    rule = Rules.query.get(rule_id)
+    if rule is None:
+        flash('Rule not found — it may have already been deleted.', 'warning')
+        return redirect(url_for('rules.rules_list'))
+    if not (current_user.admin or rule.owner_id == current_user.id):
+        flash('Unauthorized action!', 'danger')
+        return redirect(url_for('rules.rules_list'))
+
+    form = RuleRestoreForm()
+    if not form.validate_on_submit() or not form.rules.data:
+        flash('Please choose a .rule file to restore from.', 'danger')
+        return redirect(url_for('rules.rules_list'))
+
+    # Stage under control/tmp and os.replace() onto the stored path, so a failed
+    # upload can never destroy a file that is still good. The basename is
+    # preserved, which is what keeps build_hashcat_command emitting the same
+    # agent-side path -- and therefore what keeps materialized JobTasks.command
+    # strings valid across the restore.
+    tmp_path = os.path.join(current_app.root_path, 'control/tmp', secrets.token_hex(8))
+    dest_path = os.path.join(current_app.root_path, 'control/rules',
+                             os.path.basename(rule.path or ''))
+    if not os.path.basename(dest_path):
+        dest_path = os.path.join(current_app.root_path, 'control/rules',
+                                 secrets.token_hex(8) + '.txt')
+    try:
+        form.rules.data.save(tmp_path)
+        os.replace(tmp_path, dest_path)
+    except Exception:
+        current_app.logger.exception('Failed to restore rule file for rule %s', rule_id)
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        flash('Rule file could not be restored.', 'danger')
+        return redirect(url_for('rules.rules_list'))
+
+    rule.path = dest_path
+    rule.size = get_linecount(dest_path)
+    rule.checksum = get_filehash(dest_path)
+    rule.last_updated = datetime.today()
+    if not try_commit(f'restore rule {rule_id}'):
+        flash('Rule file could not be restored.', 'danger')
+        return redirect(url_for('rules.rules_list'))
+    log_event('rule.restore', target=f'rule:{rule.id} {rule.name!r}',
+              detail=f'path={dest_path}')
+    flash('Rule file restored. Every task that uses it works again.', 'success')
+    return redirect(url_for('rules.rules_list'))
+
 
 @rules.route("/rules/download/<int:rule_id>", methods=['GET'])
 @login_required

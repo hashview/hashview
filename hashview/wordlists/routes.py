@@ -23,12 +23,13 @@ from hashview.utils.utils import (
     ingest_static_wordlist_file,
     missing_wordlist_ids,
     resolve_control_file,
+    restore_static_wordlist_file,
     send_generated_file,
     try_commit,
     update_dynamic_wordlist,
 )
 from hashview.utils.wordlist_import import list_importable, run_import_async
-from hashview.wordlists.forms import WordlistsForm
+from hashview.wordlists.forms import WordlistRestoreForm, WordlistsForm
 
 wordlists = Blueprint('wordlists', __name__)
 
@@ -124,6 +125,7 @@ def wordlists_list():
                            wl_task_count=wl_task_count, wl_job_count=wl_job_count,
                            wl_owner=wl_owner, wordlistsForm=WordlistsForm(),
                            missing_wl_ids=missing_wl, wl_bytes=wl_bytes,
+                           wordlistRestoreForm=WordlistRestoreForm(),
                            import_files=list_importable(current_app))
 
 
@@ -249,6 +251,65 @@ def wordlists_delete(wordlist_id):
         flash('Wordlist has been deleted!', 'success')
     else:
         flash('Unauthorized Action!', 'danger')
+    return redirect(url_for('wordlists.wordlists_list'))
+
+
+@wordlists.route("/wordlists/<int:wordlist_id>/restore", methods=['POST'])
+@login_required
+def wordlists_restore(wordlist_id):
+    """Replace a wordlist's file IN PLACE, keeping the row's id and path (#383).
+
+    The remedy for a row that outlived its file while tasks still reference it.
+    Re-uploading through wordlists_add cannot fix that case -- ingest always
+    mints a new row and a new path, so the stale Tasks.wl_id is orphaned
+    further. Scp'ing into control/wordlists_import/ has the same problem: the
+    importer calls the same ingest.
+
+    This is also the only way to update a static wordlist's contents at all --
+    there is no wordlist edit route.
+
+    Owner-or-admin, deliberately not admin-only: restoring a file is strictly
+    less destructive than the delete the owner can already do.
+    """
+    wordlist = Wordlists.query.get(wordlist_id)
+    if wordlist is None:
+        flash('Wordlist not found — it may have already been deleted.', 'warning')
+        return redirect(url_for('wordlists.wordlists_list'))
+    if not (current_user.admin or wordlist.owner_id == current_user.id):
+        flash('Unauthorized Action!', 'danger')
+        return redirect(url_for('wordlists.wordlists_list'))
+    if wordlist.type == 'dynamic':
+        # A dynamic list has nothing to restore: its content is generated from
+        # the database on every download. The Update button is its refresh.
+        flash('Dynamic Wordlists are generated from the database and can not be restored.', 'danger')
+        return redirect(url_for('wordlists.wordlists_list'))
+
+    form = WordlistRestoreForm()
+    if not form.validate_on_submit() or not form.wordlist.data:
+        flash('Please choose a wordlist file to restore from.', 'danger')
+        return redirect(url_for('wordlists.wordlists_list'))
+
+    tmp_path = os.path.join(current_app.root_path, 'control/tmp', secrets.token_hex(8))
+    try:
+        form.wordlist.data.save(tmp_path)
+        # Compresses into control/tmp and os.replace()s onto the stored path, so
+        # an invalid gzip leaves a still-good file untouched.
+        restore_static_wordlist_file(tmp_path, wordlist)
+    except Exception:
+        current_app.logger.exception('Failed to restore wordlist file for wordlist %s', wordlist_id)
+        db.session.rollback()
+        flash('Wordlist could not be restored — the upload was not a valid wordlist or gzip file.', 'danger')
+        return redirect(url_for('wordlists.wordlists_list'))
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+    if not try_commit(f'restore wordlist {wordlist_id}'):
+        flash('Wordlist could not be restored.', 'danger')
+        return redirect(url_for('wordlists.wordlists_list'))
+    log_event('wordlist.restore', target=f'wordlist:{wordlist.id} {wordlist.name!r}',
+              detail=f'path={wordlist.path}')
+    flash('Wordlist file restored. Every task that uses it works again.', 'success')
     return redirect(url_for('wordlists.wordlists_list'))
 
 

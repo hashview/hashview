@@ -5,8 +5,8 @@
 
 <div class="page-head">
     <div>
-        <h1 class="page-title">Edit Rule</h1>
-        <div class="page-sub">// {{ rule.name }}{% if not can_edit %} · read-only{% endif %}</div>
+        <h1 class="page-title">{{ 'Restore Rule' if file_missing else 'Edit Rule' }}</h1>
+        <div class="page-sub">// {{ rule.name }}{% if not can_edit %} · read-only{% endif %}{% if file_missing %}<span style="color:var(--red);"> · file missing on disk</span>{% endif %}</div>
     </div>
     <a class="btn" href="{{ url_for('rules.rules_list') }}" role="button">{{ icon('arrowLeft', size=15) }} Back</a>
 </div>
@@ -17,6 +17,14 @@
             {{ icon('rule', size=15) }}<h3>{{ rule.name }}</h3>
         </div>
         <div class="card-body">
+            {% if file_missing %}
+            <div class="flash flash-danger" style="margin-bottom:var(--gap);">
+                This rule's file is gone from disk, so the editor is empty. Paste the rule
+                contents and save to restore it <strong>in place</strong> — the entry keeps its
+                id and path, so every task that uses it keeps working. For a large rule file,
+                use <strong>Restore from file</strong> on the Rules page instead.
+            </div>
+            {% endif %}
             <div class="field" style="margin-bottom:0;">
                 <label class="field-label" for="content">Rule Contents</label>
                 <textarea class="textarea mono" id="content" name="content" rows="20" spellcheck="false"{% if not can_edit %} disabled{% endif %}>{{ content }}</textarea>
@@ -29,7 +37,7 @@
     <div class="wizard-nav">
         <a class="btn" href="{{ url_for('rules.rules_list') }}" role="button">{{ icon('arrowLeft', size=15) }} Cancel</a>
         <span class="spacer"></span>
-        <button type="submit" class="btn btn-primary">{{ icon('check', size=15) }} Update</button>
+        <button type="submit" class="btn btn-primary">{{ icon('check', size=15) }} {{ 'Restore rule file' if file_missing else 'Update' }}</button>
     </div>
     {% endif %}
 </form>

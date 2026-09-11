@@ -18,7 +18,11 @@ from hashview.models import (
 )
 from hashview.tasks.forms import TasksForm
 from hashview.utils.audit import log_event
-from hashview.utils.utils import apply_name_filter, try_commit
+from hashview.utils.utils import (
+    apply_name_filter,
+    resolve_control_file,
+    try_commit,
+)
 
 tasks = Blueprint('tasks', __name__)
 
@@ -110,9 +114,13 @@ def tasks_list():
     wl_filesize = {}
     for wid in referenced_wl:
         w = wl_by_id.get(wid)
-        if w and w.path:
+        # Resolve through the shared helper so a relative/legacy stored path
+        # still finds its file, and so this agrees with the missing badge
+        # everywhere else (issue #383).
+        src_path = resolve_control_file(getattr(w, 'path', None), 'wordlists') if w else None
+        if src_path:
             try:
-                wl_filesize[wid] = _human_size(os.path.getsize(w.path))
+                wl_filesize[wid] = _human_size(os.path.getsize(src_path))
             except OSError:
                 pass
 

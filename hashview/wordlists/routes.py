@@ -21,6 +21,7 @@ from hashview.models import Hashes, JobTasks, Rules, Tasks, Users, Wordlists, db
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
     ingest_static_wordlist_file,
+    resolve_control_file,
     send_generated_file,
     try_commit,
     update_dynamic_wordlist,
@@ -252,12 +253,17 @@ def wordlists_download(wordlist_id):
         return send_generated_file(tmp_dir, os.path.basename(tmp_txt),
                                    as_attachment=True, download_name=download_name)
 
-    if not wordlist.path or not os.path.exists(wordlist.path):
+    # Resolve through the shared helper rather than stat'ing wordlist.path
+    # directly: the stored path can be relative (legacy/seeded rows) and only
+    # control/wordlists is ever served from, so this agrees with
+    # GET /v1/wordlists/<id> and the missing badge on the listing (issue #383).
+    src_path = resolve_control_file(wordlist.path, 'wordlists')
+    if src_path is None:
         flash('Wordlist file not found on disk.', 'danger')
         return redirect(url_for('wordlists.wordlists_list'))
 
-    directory = os.path.dirname(os.path.abspath(wordlist.path))
-    filename = os.path.basename(wordlist.path)
+    directory = os.path.dirname(src_path)
+    filename = os.path.basename(src_path)
     ext = '.gz' if wordlist.path.endswith('.gz') else '.txt'
     download_name = (secure_filename(wordlist.name) or 'wordlist') + ext
     return send_from_directory(directory, filename, as_attachment=True,

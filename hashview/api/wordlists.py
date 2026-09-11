@@ -39,6 +39,7 @@ from hashview.utils.utils import (
     compress_to_gz,
     ingest_static_wordlist_file,
     remove_file,
+    resolve_control_file,
     send_generated_file,
     update_dynamic_wordlist,
 )
@@ -83,8 +84,14 @@ def v1_api_get_wordlist_download(wordlist_id):
         # send_from_directory's bare HTML page, so the agent logs an actionable
         # body and the operator knows to re-upload. (Mirrors /v1/rules/<id>.)
         wordlist_name = os.path.basename(wordlist.path or '')
-        src_path = os.path.join(wordlists_dir, wordlist_name)
-        if not wordlist_name or not os.path.exists(src_path):
+        if resolve_control_file(wordlist.path, 'wordlists') is None:
+            # Log it here too: without this the only evidence an agent is
+            # re-asking for a dead file every sync lives in that agent's log,
+            # on another host.
+            current_app.logger.warning(
+                'Wordlist %s has no file on disk (path=%s); serving 404 to the '
+                'caller. Restore or delete it from the Wordlists page (#383).',
+                wordlist.id, wordlist.path)
             return jsonify({'status': 404, 'type': 'Error',
                             'msg': 'Wordlist file missing on disk: ' + (wordlist_name or '(no path)')}), 404
         return send_from_directory(wordlists_dir, wordlist_name, mimetype='application/octet-stream')

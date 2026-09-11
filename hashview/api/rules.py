@@ -42,6 +42,7 @@ from hashview.utils.utils import (
     get_linecount,
     is_gzip,
     remove_rule_file,
+    resolve_control_file,
     send_generated_file,
 )
 
@@ -75,10 +76,15 @@ def v1_api_get_rules_download(rules_id):
     # that. No shell; pure-Python streamed gzip -9 (same pattern as the
     # dynamic-wordlist download above). The random tmp name avoids predictable
     # paths and collisions between concurrent downloads.
-    rules_dir = os.path.join(current_app.root_path, 'control/rules')
     tmp_dir = os.path.join(current_app.root_path, 'control/tmp')
-    src_path = os.path.join(rules_dir, os.path.basename(rules.path))
-    if not os.path.exists(src_path):
+    src_path = resolve_control_file(rules.path, 'rules')
+    if src_path is None:
+        # Log it here too: without this the only evidence an agent is re-asking
+        # for a dead file every sync lives in that agent's log, on another host.
+        current_app.logger.warning(
+            'Rule %s has no file on disk (path=%s); serving 404 to the caller. '
+            'Restore or delete it from the Rules page (issue #383).',
+            rules.id, rules.path)
         return jsonify({'status': 404, 'type': 'Error', 'msg': 'Rule file missing on disk'}), 404
 
     tmp_gz = os.path.join(tmp_dir, secrets.token_hex(8) + '.gz')

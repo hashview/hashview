@@ -23,6 +23,7 @@ from hashview.models import (
     Users,
     db,
 )
+from tests.unit.helpers import make_rule_with_file
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -297,8 +298,9 @@ class TestRulesDownload:
     def test_download_happy_path(self, app, client, tmp_path):
         admin = _admin()
         _login(client, admin)
-        path = _make_rule_file(tmp_path, content="$A\n", name="dl-rule")
-        rule = _make_rule(admin.id, path, name="dl-rule")
+        # The file has to live in control/rules: that is the only place the
+        # download route resolves a row's file from (#383).
+        rule = make_rule_with_file(admin.id, name="dl-rule", content=b"$A\n")
 
         resp = client.get(f"/rules/download/{rule.id}")
         assert resp.status_code == 200

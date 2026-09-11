@@ -22,6 +22,7 @@ from hashview.utils.utils import (
     get_filehash,
     get_linecount,
     remove_rule_file,
+    resolve_control_file,
     save_file,
     try_commit,
 )
@@ -217,12 +218,17 @@ def rules_view(rule_id):
 def rules_download(rule_id):
     """Deliver a rule file's contents."""
     rule = Rules.query.get_or_404(rule_id)
-    if not rule.path or not os.path.exists(rule.path):
+    # Resolve through the shared helper rather than stat'ing rule.path directly:
+    # the stored path can be relative (seeded rows) and only control/rules is
+    # ever served from, so this agrees with GET /v1/rules/<id> and the missing
+    # badge on the listing (issue #383).
+    src_path = resolve_control_file(rule.path, 'rules')
+    if src_path is None:
         flash('Rule file not found on disk.', 'danger')
         return redirect(url_for('rules.rules_list'))
 
-    directory = os.path.dirname(os.path.abspath(rule.path))
-    filename = os.path.basename(rule.path)
+    directory = os.path.dirname(src_path)
+    filename = os.path.basename(src_path)
     download_name = secure_filename(rule.name) or 'rules'
     if not download_name.endswith('.rule'):
         download_name += '.rule'

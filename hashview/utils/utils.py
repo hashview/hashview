@@ -1254,6 +1254,78 @@ def update_dynamic_wordlist(wordlist_id, dest_path=None):
 
     return target_path
 
+def resolve_control_file(stored_path, subdir):
+    """Absolute path to a catalog row's file under ``control/<subdir>``, or None.
+
+    ``subdir`` is 'rules' or 'wordlists'. The stored path is reduced to its
+    BASENAME and joined to ``<app.root_path>/control/<subdir>`` -- the one
+    directory the download routes serve from and the upload routes write to.
+
+    Single candidate, deliberately: no fallback to the raw stored path. That is
+    what remove_rule_file, GET /v1/rules/<id> and GET /v1/wordlists/<id> already
+    do, so detection, serving and deletion can never disagree about which file a
+    row owns. It also resolves the seeded rows -- 'Best64 Rule' and the original
+    Rockyou.txt carry a path relative to the package -- correctly no matter what
+    the process CWD is, which a raw os.path.exists(row.path) does not, and it
+    keeps a crafted or legacy path from reaching outside the control directory.
+
+    hashview/setup/__init__.py has a sibling _resolve() that DOES fall back to
+    the stored path; that one's job is relocation (finding a stray file so it can
+    be normalized into the canonical dir), not detection. Leave it be.
+
+    Returns None for an empty/NULL path or when the file is absent.
+    """
+    if not stored_path:
+        return None
+    target = os.path.join(current_app.root_path, 'control', subdir,
+                          os.path.basename(stored_path))
+    return target if os.path.exists(target) else None
+
+def rule_file_missing(rule):
+    """True when this rule's row has outlived its file on disk (issue #383)."""
+    return resolve_control_file(getattr(rule, 'path', None), 'rules') is None
+
+def wordlist_file_missing(wordlist):
+    """True when this wordlist's row has outlived its file on disk (issue #383).
+
+    A DYNAMIC wordlist is never missing. Its file is a regenerable cache, not
+    the source of truth: every download goes through
+    update_dynamic_wordlist(id, dest_path=<tmp>), which rebuilds the content
+    from the database into a per-request temp file and never reads
+    wordlist.path. The canonical file is a zero-byte placeholder written once at
+    seed time and only ever refreshed by the manual Update button -- so both its
+    absence AND its zero length are the expected state, and reporting either
+    would be a permanent false alarm on every install.
+    """
+    if (getattr(wordlist, 'type', None) or '').lower() == 'dynamic':
+        return False
+    return resolve_control_file(getattr(wordlist, 'path', None), 'wordlists') is None
+
+def missing_rule_ids(rules=None):
+    """Ids of Rules rows whose file is gone. Pass already-loaded rows to reuse them.
+
+    One os.path.exists per row rather than a cached listdir of the directory:
+    these tables hold single-digit-to-tens of rows while control/rules and
+    control/wordlists accumulate orphaned files from deleted rows and test runs,
+    so a directory set costs far more allocations than the handful of stats it
+    would save. If either table ever reaches ~1,000 rows, swap the probe in these
+    bulk helpers (only) for a memoized os.scandir set.
+    """
+    if rules is None:
+        rules = db.session.query(Rules.id, Rules.path).all()
+    return {r.id for r in rules if resolve_control_file(r.path, 'rules') is None}
+
+def missing_wordlist_ids(wordlists=None):
+    """Ids of static Wordlists rows whose file is gone. Dynamic rows never qualify.
+
+    See missing_rule_ids for why this stats per row, and wordlist_file_missing
+    for why dynamic lists are excluded.
+    """
+    if wordlists is None:
+        wordlists = db.session.query(
+            Wordlists.id, Wordlists.path, Wordlists.type).all()
+    return {w.id for w in wordlists if wordlist_file_missing(w)}
+
 def remove_rule_file(stored_path):
     """Best-effort removal of a rule's file from ``control/rules``.
 

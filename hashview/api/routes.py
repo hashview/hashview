@@ -58,6 +58,7 @@ from hashview.utils.utils import (
     process_recovered_hash_notifications,
     rechunk_queued_tasks_for_hashtype,
     remove_file,
+    remove_rule_file,
     send_generated_file,
     slowest_benchmark,
     task_uses_dynamic_wordlist,
@@ -705,6 +706,84 @@ def v1_api_get_rules_download(rules_id):
     compress_to_gz(src_path, tmp_gz, 9)
     return send_generated_file(
         tmp_dir, os.path.basename(tmp_gz), mimetype='application/octet-stream')
+
+# Delete a rule
+@api.route('/v1/rules/<int:rules_id>', methods=['DELETE'])
+def v1_api_delete_rule(rules_id):
+    """Delete a rule row. Owner or admin only, and never while a task uses it.
+
+    Mirrors the web UI's rules_delete guard for guard: a rule referenced by any
+    task cannot be deleted, because Tasks.rule_id has no foreign key and the
+    orphaned reference would make those tasks unrunnable. Tasks.rule_id is the
+    only reference to check -- j_rule and k_rule are hashcat's inline -j/-k rule
+    strings, not rows in this table.
+
+    The rule's file under control/rules goes too, via the same helper the web UI
+    uses, so the two paths cannot drift (#397).
+    """
+    if not is_authorized(user=True, agent=False, request=request):
+        return redirect("/v1/not_authorized")
+
+    uuid = request.cookies.get('uuid')
+    user = Users.query.filter_by(api_key=uuid).first()
+    # Both refusals below carry a real HTTP 403, where the sibling deletes
+    # (jobs, hashfiles, task groups) answer 200 with status 403 in the body.
+    # That is deliberate: this endpoint exists for API-only tooling (#397), the
+    # repo's own spec for the issue asserts a 403 status code, and the envelope
+    # still reports 403 either way -- so a client reading the body sees no
+    # change and a client reading the status code stops being told "OK" when it
+    # was refused. The endpoint already answers a real 404 and a real 409.
+    if not user:
+        return jsonify({
+            'status': 403,
+            'type': 'Error',
+            'msg': 'User not found'
+        }), 403
+
+    rule = Rules.query.get(rules_id)
+    if rule is None:
+        return jsonify({'status': 404, 'type': 'Error', 'msg': 'Rule not found'}), 404
+
+    if not (user.admin or rule.owner_id == user.id):
+        return jsonify({
+            'status': 403,
+            'type': 'Error',
+            'msg': 'You do not have rights to delete this rule'
+        }), 403
+
+    # Checked before the delete, not repaired after: a task pointing at a
+    # missing rule builds a hashcat command with no rule file.
+    if Tasks.query.filter_by(rule_id=rule.id).first():
+        return jsonify({
+            'status': 409,
+            'type': 'Error',
+            'msg': 'Rule is currently used in a task and can not be deleted'
+        }), 409
+
+    # Path captured before the row goes; the row is removed first so a failed
+    # unlink only orphans a file (see remove_rule_file).
+    rule_path = rule.path
+    rule_target = f'rule:{rule.id} {rule.name!r}'
+    try:
+        db.session.delete(rule)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('API /v1/rules: failed to delete rule')
+        return jsonify({
+            'status': 500,
+            'type': 'Error',
+            'msg': 'Failed to delete rule.'
+        })
+
+    log_event('rule.delete', actor=(user.email_address, user.id), target=rule_target)
+    remove_rule_file(rule_path)
+    return jsonify({
+        'status': 200,
+        'type': 'message',
+        'msg': 'Rule deleted',
+        'rule_id': rules_id
+    })
 
 # Create new rule
 @api.route('/v1/rules/add/<rule_name>', methods=['POST'])

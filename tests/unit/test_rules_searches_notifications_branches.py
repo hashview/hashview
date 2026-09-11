@@ -371,6 +371,61 @@ class TestRulesDelete:
         assert resp.status_code in (301, 302)
         assert Rules.query.get(rule.id) is None
 
+    def test_delete_removes_the_rule_file(self, app, client, tmp_path, monkeypatch):
+        """The web route used to leave the file behind where wordlists_delete
+        unlinks it (#397); it now goes through the same helper as the API."""
+        monkeypatch.setattr(app, "root_path", str(tmp_path))
+        rules_dir = tmp_path / "control" / "rules"
+        rules_dir.mkdir(parents=True)
+        rule_file = rules_dir / "deadbeef.txt"
+        rule_file.write_text("$1\n")
+
+        admin = _admin()
+        _login(client, admin)
+        rule = _make_rule(admin.id, str(rule_file))
+
+        client.post(f"/rules/delete/{rule.id}", follow_redirects=False)
+
+        assert Rules.query.get(rule.id) is None
+        assert not rule_file.exists()
+
+    def test_delete_does_not_unlink_outside_the_rules_directory(
+            self, app, client, tmp_path, monkeypatch):
+        """Paths are resolved to control/rules/<basename>, so a row pointing
+        elsewhere cannot make the delete reach outside it."""
+        monkeypatch.setattr(app, "root_path", str(tmp_path))
+        (tmp_path / "control" / "rules").mkdir(parents=True)
+        outsider = tmp_path / "precious.rule"
+        outsider.write_text("keep me\n")
+
+        admin = _admin()
+        _login(client, admin)
+        rule = _make_rule(admin.id, str(outsider))
+
+        client.post(f"/rules/delete/{rule.id}", follow_redirects=False)
+
+        assert Rules.query.get(rule.id) is None
+        assert outsider.exists(), "unlink escaped control/rules"
+
+    def test_delete_keeps_a_file_a_second_rule_points_at(
+            self, app, client, tmp_path, monkeypatch):
+        monkeypatch.setattr(app, "root_path", str(tmp_path))
+        rules_dir = tmp_path / "control" / "rules"
+        rules_dir.mkdir(parents=True)
+        shared = rules_dir / "shared.txt"
+        shared.write_text("$1\n")
+
+        admin = _admin()
+        _login(client, admin)
+        first = _make_rule(admin.id, str(shared), name="dupe-a", checksum="b" * 64)
+        second = _make_rule(admin.id, str(shared), name="dupe-b", checksum="c" * 64)
+
+        client.post(f"/rules/delete/{second.id}", follow_redirects=False)
+
+        assert Rules.query.get(second.id) is None
+        assert Rules.query.get(first.id) is not None
+        assert shared.exists()
+
     def test_delete_try_commit_failure_flashes(self, app, client, tmp_path):
         """Cover rules_delete lines 186-187: try_commit returns False → flash danger."""
         admin = _admin()

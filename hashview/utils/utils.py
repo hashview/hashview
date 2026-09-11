@@ -1505,6 +1505,48 @@ def agent_telemetry(agents):
     return out
 
 
+def mask_argv(mask):
+    """Split a stored mask field into argv elements, at option boundaries only.
+
+    The Hashcat-mask field is free-form and unvalidated, and the UI offers no
+    home for a custom charset, so operators put the whole thing in it:
+
+        ?1?1?1?1?1 -1 ?u?l?d
+
+    Passed as a single argv element that reaches hashcat as one giant mask and
+    dies with "Custom-charset 1 is undefined." (verified against 6.2.6). The
+    tokens have to be separate arguments.
+
+    Splitting on every space would be wrong, though: a literal space is a valid
+    mask character, and `hashcat -a 3 --stdout '?d ?d'` really does emit "1 0",
+    "0 0" and so on -- which works today precisely because the field arrives as
+    one element. Cracking a passphrase like "Word 1234" depends on it.
+
+    So the split happens only from the first token that looks like a hashcat
+    option (starts with '-'). Everything before that is the mask and keeps its
+    spaces; the option and everything after it become their own elements. Both
+    argument orders work, because hashcat's getopt permutes options past
+    positionals -- checked for modes 3, 6 and 7, including mode 7 where the
+    option lands between the mask and the wordlist.
+
+    The one case this cannot resolve is a mask whose own text starts a
+    space-separated token with '-' (say "?u?l -?d"): that is read as an option.
+    It is ambiguous by construction, and the real fix is to stop overloading
+    this field -- give custom charsets their own inputs.
+
+    An empty or None mask is returned unchanged rather than dropped, so this is
+    purely a split and nothing else about the command moves.
+    """
+    if not mask:
+        return [mask]
+    tokens = mask.split()
+    for index, token in enumerate(tokens):
+        if token.startswith('-'):
+            head = ' '.join(tokens[:index])
+            return ([head] if head else []) + tokens[index:]
+    return [mask]
+
+
 def build_hashcat_command(job_id, task_id, chunk=None, job_task_id=None):
     """Build the hashcat crack invocation as an argv LIST (list[str]).
 
@@ -1631,13 +1673,13 @@ def build_hashcat_command(job_id, task_id, chunk=None, job_task_id=None):
     # Maskmode — the mask is a literal argv element (previously unquoted in the
     # shell string).
     elif attackmode == 3:
-        argv += ['-a', '3', target_file, mask]
+        argv += ['-a', '3', target_file] + mask_argv(mask)
     # Hybrid (Wordlist + Mask)
     elif attackmode == 6:
-        argv += ['-a', '6', target_file, relative_wordlist_path, mask]
+        argv += ['-a', '6', target_file, relative_wordlist_path] + mask_argv(mask)
     # Hybrid (Mask + Wordlist)
     elif attackmode == 7:
-        argv += ['-a', '7', target_file, mask, relative_wordlist_path]
+        argv += ['-a', '7', target_file] + mask_argv(mask) + [relative_wordlist_path]
 
     return argv
 

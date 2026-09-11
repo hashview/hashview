@@ -26,12 +26,12 @@ from hashview.models import (
     HashfileHashes,
     Hashfiles,
     Jobs,
-    Rules,
     Tasks,
     Users,
     db,
 )
 from hashview.utils.utils import build_hashcat_command, ingest_static_wordlist_file
+from tests.unit.helpers import make_rule_with_file
 
 
 def _cmd_str(*args, **kwargs):
@@ -92,11 +92,9 @@ def _wordlist(user, name="WL"):
 
 
 def _rule(user, name="best64"):
-    rule = Rules(name=name, owner_id=user.id, path="control/rules/best64.rule",
-                 checksum="0" * 64, size=1)
-    db.session.add(rule)
-    db.session.commit()
-    return rule
+    # File-backed: the task pickers exclude a rule/wordlist whose file is
+    # gone from disk (#383), so these rows must really exist on disk.
+    return make_rule_with_file(user.id, name=name)
 
 
 def _build(user, *, attackmode, wl=None, wl_id_2=None, rule_id=None,
@@ -155,7 +153,8 @@ def test_loopback_emitted_for_straight_with_rule_when_enabled(app):
     rule = _rule(user)
     cmd, _, _ = _build(user, attackmode=0, wl=wl, rule_id=rule.id, loopback=True)
     assert " --loopback" in cmd
-    assert "-r control/rules/best64.rule" in cmd        # still a dict+rule command
+    # the helper randomises the stored filename; the agent-side path is its basename
+    assert f"-r control/rules/{os.path.basename(rule.path)}" in cmd  # still dict+rule
 
 
 @pytest.mark.security

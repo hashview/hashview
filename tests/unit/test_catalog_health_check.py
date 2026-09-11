@@ -268,3 +268,25 @@ def test_a_failing_transport_still_unlatches_on_recovery(app, monkeypatch):
     _catalog_health_check_inner(db, _LOG)
 
     assert Wordlists.query.get(wl.id).file_missing_notified is False
+
+
+@pytest.mark.security
+def test_restored_alert_names_the_referencing_tasks(app, monkeypatch, tmp_path):
+    """The restored body passed an empty task map, so every recovered row was
+    reported as "not referenced by any task" whether or not that was true -- and
+    that line is the one telling an admin whether anything still needs fixing."""
+    admin = make_admin()
+    wl = make_wordlist_with_file(admin.id, name="restored-used.gz")
+    wl.file_missing_notified = True
+    db.session.commit()
+    task = Tasks(name="uses-it", hc_attackmode=0, owner_id=admin.id, wl_id=wl.id)
+    db.session.add(task)
+    db.session.commit()
+
+    calls = _capture(monkeypatch)
+    _catalog_health_check_inner(db, _LOG)
+
+    assert len(calls) == 1
+    body = calls[0][1]
+    assert "not referenced by any task" not in body, body
+    assert str(task.id) in body, body

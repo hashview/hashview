@@ -589,9 +589,15 @@ def _catalog_health_check_inner(db :SQLAlchemy, logger :Logger):
         # "3 missing, 2 restored" Pushover title reads badly, and the two
         # directions call for different operator action (none, vs. go fix it).
         total = len(restored_rules) + len(restored_wordlists)
+        # Real task references, not {}: _catalog_alert_lines prints "not
+        # referenced by any task" whenever the map has no entry, so an empty one
+        # told the admins that every recovered row was unused. The task list is
+        # the line that decides whether anything still needed fixing.
+        re_by_rule, re_by_wordlist = _catalog_task_references(
+            {r.id for r in restored_rules}, {w.id for w in restored_wordlists})
         body = ['These Hashview rule/wordlist files are back on disk:', '']
-        body += _catalog_alert_lines(restored_rules, {}, 'rule')
-        body += _catalog_alert_lines(restored_wordlists, {}, 'wordlist')
+        body += _catalog_alert_lines(restored_rules, re_by_rule, 'rule')
+        body += _catalog_alert_lines(restored_wordlists, re_by_wordlist, 'wordlist')
         logger.info('CatalogHealthCheck: %d catalog file(s) restored; notifying admins.', total)
         try:
             notify_admins(

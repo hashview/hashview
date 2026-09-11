@@ -167,17 +167,37 @@ def test_status_json_only_after_the_sentinel_is_ignored(tmp_path):
         "expected the human-readable status block, i.e. --status-json ignored")
 
 
-def test_an_old_agents_duplicate_flag_is_harmless_in_mask_mode(tmp_path):
-    """The back-compat claim, verified live.
+@pytest.mark.parametrize("attackmode", [3, 6, 7])
+def test_an_old_agents_duplicate_flag_across_every_mask_mode(tmp_path, attackmode):
+    """The back-compat claim, verified live in all three mask modes.
 
-    An un-upgraded agent appends --status-json to whatever it is sent. Because
-    the server already emitted one BEFORE the sentinel, the trailing duplicate is
-    just an extra positional that -a 3 ignores -- so a mode-3 chunk still runs,
-    still cracks, and still reports status on an old agent.
+    An un-upgraded agent appends --status-json to whatever it is sent, and after
+    the sentinel that token is an extra POSITIONAL. Whether that is harmless
+    depends entirely on how many positionals the mode already has:
+
+      * mode 3 takes <hashfile> <mask>, so the duplicate is a third positional
+        hashcat ignores. The chunk runs, cracks, and still reports status.
+      * mode 6 takes <hashfile> <wordlist> <mask>; the duplicate becomes a
+        fourth, and hashcat opens the MASK as a wordlist.
+      * mode 7 takes <hashfile> <mask> <wordlist>; it opens --status-json as one.
+
+    Both hybrids exit 255. That is not a regression -- they are equally broken
+    with a dash mask before this change -- and it is what the CHANGELOG means by
+    "modes 6 and 7 with such a mask need the updated agent". Pinned per mode so
+    the claim rests on measurement rather than on mode 3 generalised.
     """
-    argv = _argv("-?d?d") + ["--status-json"]
-    proc, recovered = _run(tmp_path, argv, "dup", extra=("--status", "--status-timer=1"))
+    wordlist = tmp_path / f"dupwl{attackmode}.txt"
+    wordlist.write_text("\n", encoding="utf-8")   # one empty word: mask-only
+    argv = _argv("-?d?d", attackmode, str(wordlist)) + ["--status-json"]
+    proc, recovered = _run(tmp_path, argv, f"dup{attackmode}",
+                           extra=("--status", "--status-timer=1"))
 
-    assert proc.returncode in (0, 1), proc.stderr.strip()
-    assert "75f7508e6d57bac3a6260f7932f19d0d" in recovered
-    assert not [ln for ln in proc.stdout.splitlines() if ln.startswith("Status.")]
+    if attackmode == 3:
+        assert proc.returncode in (0, 1), proc.stderr.strip()
+        assert "75f7508e6d57bac3a6260f7932f19d0d" in recovered
+        assert not [ln for ln in proc.stdout.splitlines() if ln.startswith("Status.")]
+    else:
+        assert proc.returncode == 255, (
+            f"mode {attackmode} unexpectedly survived the duplicate: "
+            f"{proc.returncode} {proc.stderr.strip()!r}")
+        assert "No such file or directory" in proc.stderr, proc.stderr.strip()

@@ -12,6 +12,7 @@
 </div>
 
 <form method="POST" action="">
+    {{ form.hidden_tag() }}
     <div class="card">
         <div class="card-head">
             {{ icon('rule', size=15) }}<h3>{{ rule.name }}</h3>

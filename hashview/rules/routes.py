@@ -17,7 +17,7 @@ from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
 from hashview.models import Hashes, Jobs, JobTasks, Rules, Tasks, Users, Wordlists, db
-from hashview.rules.forms import RuleRestoreForm, RulesForm
+from hashview.rules.forms import RuleContentForm, RuleRestoreForm, RulesForm
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
     apply_name_filter,
@@ -229,12 +229,21 @@ def rules_view(rule_id):
             return redirect(url_for('rules.rules_list'))
 
     can_edit = current_user.admin or rule.owner_id == current_user.id
+    contentForm = RuleContentForm()
 
     if request.method == 'POST':
         if not can_edit:
             flash('Unauthorized action!', 'danger')
             return redirect(url_for('rules.rules_view', rule_id=rule.id))
-        new_content = request.form.get('content')
+        # Gate on the form, not request.form: this route WRITES (and, since the
+        # #383 work, creates) a file under control/rules, and there is no global
+        # CSRFProtect -- so reading the textarea directly left it drivable from
+        # any page an owner or admin happened to visit.
+        if not contentForm.validate_on_submit():
+            flash('Could not save the rule file — the form was invalid or expired. '
+                  'Please try again.', 'danger')
+            return redirect(url_for('rules.rules_view', rule_id=rule.id))
+        new_content = contentForm.content.data or ''
         # This route can now CREATE a file, so normalize the write target into
         # control/rules the way remove_rule_file does. That keeps a crafted or
         # legacy path from writing outside the rules directory, and self-heals a
@@ -261,7 +270,8 @@ def rules_view(rule_id):
         return redirect(url_for('rules.rules_view', rule_id=rule.id))
 
     return render_template('rules_edit.html.j2', rule=rule, content=content,
-                           can_edit=can_edit, file_missing=file_missing)
+                           can_edit=can_edit, file_missing=file_missing,
+                           form=contentForm)
  
 
 @rules.route("/rules/<int:rule_id>/restore", methods=['POST'])

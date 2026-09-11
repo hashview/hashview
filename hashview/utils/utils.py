@@ -1334,7 +1334,12 @@ def resolve_control_file(stored_path, subdir):
         return None
     target = os.path.join(current_app.root_path, 'control', subdir,
                           os.path.basename(stored_path))
-    return target if os.path.exists(target) else None
+    # isfile, not exists: os.path.basename('/x/..') is '..' and basename('a/b/')
+    # is '', so a path of that shape resolves to control/<subdir>/.. or to the
+    # directory itself -- both of which exist. The row would read as healthy and
+    # then fail later in getsize() or os.replace(). Traversal is already
+    # neutralised by the basename call above ('../../etc/passwd' -> 'passwd').
+    return target if os.path.isfile(target) else None
 
 def rule_file_missing(rule):
     """True when this rule's row has outlived its file on disk (issue #383)."""

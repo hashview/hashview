@@ -249,3 +249,14 @@ def test_v1_download_404_logs_the_row(app, client, tmp_path, caplog):
     assert resp.status_code == 404
     assert resp.get_json()["msg"].startswith("Wordlist file missing on disk")
     assert any("has no file on disk" in r.getMessage() for r in caplog.records)
+
+
+def test_a_directory_shaped_path_is_reported_missing(app, tmp_path):
+    """os.path.basename('/x/..') is '..' and basename('a/b/') is '', so those
+    resolve to control/<subdir>/.. and to the directory itself -- both of which
+    os.path.exists() calls True. The row then read as healthy and failed later in
+    getsize() or os.replace() instead. Traversal itself is already neutralised by
+    the basename call: '../../etc/passwd' resolves to 'passwd'."""
+    for stored in ('/somewhere/..', 'a/b/', '..', '.', ''):
+        assert resolve_control_file(stored, 'rules') is None, stored
+        assert resolve_control_file(stored, 'wordlists') is None, stored

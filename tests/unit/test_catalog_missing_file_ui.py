@@ -146,7 +146,12 @@ def test_tasks_add_choices_exclude_a_missing_rule_but_keep_none(app, client, tmp
     assert "healthy-rule" in html
     assert gone.name not in html
     assert 'value="None"' in html
-    assert present.id
+    # The healthy rule is actually SELECTABLE and the stranded one is not, scoped
+    # to the rule picker (ids collide with the attackmode select otherwise).
+    # `assert present.id` was always true and asserted nothing.
+    rule_select = re.search(r'id="rule_id"(.*?)</select>', html, re.S).group(1)
+    assert f'value="{present.id}"' in rule_select
+    assert f'value="{gone.id}"' not in rule_select
 
 
 @pytest.mark.security

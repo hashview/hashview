@@ -4,6 +4,8 @@ Covers the listings (badge, disabled download, info-modal size) and the task
 pickers (excluded when adding, preserved and labelled when editing).
 """
 
+import re
+
 import pytest
 
 from hashview.models import Rules, Tasks, Wordlists, db
@@ -193,8 +195,10 @@ def test_task_edit_resave_preserves_a_missing_wl_id(app, client, tmp_path):
     admin = make_admin()
     login(client, admin)
     gone = _gone_wordlist(admin.id, tmp_path)
-    # The hidden wl_id_2 select still submits whatever it happens to show, which
-    # for a mode-0 task is the first offered (i.e. present) wordlist.
+    # The hidden wl_id_2 select still submits whatever it happens to show. Here
+    # that is the healthy wordlist only because it gets the lower id; see
+    # test_task_edit_survives_a_missing_wordlist_at_the_lowest_id for the other
+    # ordering, which is the one that used to break.
     other = make_wordlist_with_file(admin.id, name="healthy-wl")
     task = Tasks(name="stranded", hc_attackmode=0, owner_id=admin.id, wl_id=gone.id)
     db.session.add(task)
@@ -311,3 +315,55 @@ def test_api_add_task_accepts_present_files(app, client):
                                               "rule_id": rule.id, "hc_attackmode": 0})
     assert resp.get_json()["status"] == 200
     assert Tasks.query.filter_by(name="api-task-ok").first() is not None
+
+
+def test_task_edit_survives_a_missing_wordlist_at_the_lowest_id(app, client, tmp_path):
+    """The ordering IS the bug, which is why the tests above miss it.
+
+    The edit modal renders every missing wordlist (keep_missing=True), but the
+    route re-admits only the task's own value, and wl_id_2 only for attackmode 1.
+    The hidden wl_id_2 select still submits, and hvEditTask leaves it on its first
+    option for a non-combinator task -- so when the stranded wordlist sorts first,
+    a plain dictionary edit submits a value the form rejects and is discarded.
+    """
+    admin = make_admin()
+    login(client, admin)
+    gone = _gone_wordlist(admin.id, tmp_path, name="zz-gone")   # created first: lowest id
+    healthy = make_wordlist_with_file(admin.id, name="healthy-wl")
+    assert gone.id < healthy.id
+
+    html = client.get("/tasks").get_data(as_text=True)
+    wl2 = re.search(r'id="etk-wl2"(.*?)</select>', html, re.S).group(1)
+    first_offered = re.search(r'<option value="(\d+)"', wl2).group(1)
+    assert first_offered == str(gone.id), (
+        "premise: the browser submits this option for a non-combinator task")
+
+    task = Tasks(name="plain", hc_attackmode=0, owner_id=admin.id, wl_id=healthy.id)
+    db.session.add(task)
+    db.session.commit()
+
+    resp = client.post(f"/tasks/edit/{task.id}", data={
+        "name": "plain-renamed", "hc_attackmode": "0",
+        "wl_id": str(healthy.id), "wl_id_2": first_offered, "rule_id": "None"})
+
+    assert resp.status_code in (301, 302), "the edit was rejected, not saved"
+    assert Tasks.query.get(task.id).name == "plain-renamed"
+
+
+def test_task_edit_mask_mode_ignores_both_wordlist_selects(app, client, tmp_path):
+    """Mode 3 carries no wordlist at all, so BOTH hidden selects submit a value
+    the choices exclude."""
+    admin = make_admin()
+    login(client, admin)
+    gone = _gone_wordlist(admin.id, tmp_path, name="zz-gone")
+    make_wordlist_with_file(admin.id, name="healthy-wl")
+    task = Tasks(name="masky", hc_attackmode=3, owner_id=admin.id, hc_mask="?d?d?d")
+    db.session.add(task)
+    db.session.commit()
+
+    resp = client.post(f"/tasks/edit/{task.id}", data={
+        "name": "masky-renamed", "hc_attackmode": "3", "hc_mask": "?d?d?d",
+        "wl_id": str(gone.id), "wl_id_2": str(gone.id), "rule_id": "None"})
+
+    assert resp.status_code in (301, 302), "the edit was rejected, not saved"
+    assert Tasks.query.get(task.id).name == "masky-renamed"

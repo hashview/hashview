@@ -386,6 +386,25 @@ def task_edit(task_id):
         # Keeping this task's own name must not trip the uniqueness validator.
         tasksForm._editing_id = task.id
 
+        # The modal's hidden selects still SUBMIT -- display:none does not stop a
+        # browser -- and the edit modal deliberately renders missing rows
+        # (keep_missing=True) that the choices above exclude. So a mode-0 edit
+        # submits whatever wl_id_2 happened to show, which is the first offered
+        # wordlist, and that is a FILE MISSING one whenever the lowest-id wordlist
+        # is stranded. pre_validate then fails and the whole edit is silently
+        # discarded. Only the fields the submitted attack mode actually uses are
+        # meaningful; the per-mode branches below persist nothing else.
+        try:
+            submitted_mode = int(request.form.get('hc_attackmode', task.hc_attackmode))
+        except (TypeError, ValueError):
+            submitted_mode = task.hc_attackmode
+        if submitted_mode not in (0, 1, 6, 7):
+            tasksForm.wl_id.validate_choice = False
+        if submitted_mode != 1:
+            tasksForm.wl_id_2.validate_choice = False
+        if submitted_mode != 0:
+            tasksForm.rule_id.validate_choice = False
+
         if tasksForm.validate_on_submit():
 
             if tasksForm.hc_attackmode.data == 0:

@@ -41,6 +41,7 @@ from hashview.utils.utils import (
     get_filehash,
     get_linecount,
     is_gzip,
+    missing_rule_ids,
     remove_rule_file,
     resolve_control_file,
     send_generated_file,
@@ -54,11 +55,17 @@ def v1_api_get_rules():
 
     update_heartbeat(request.cookies.get('uuid'))
     rules = Rules.query.all()
-    message = {
-        'status': 200,
-        'rules': alchemy_to_native(rules)
-    }
-    return jsonify(message)
+    rows = alchemy_to_native(rules)
+    missing_ids = missing_rule_ids(rules)
+    for row in rows:
+        # Grafted AFTER serialization: AlchemyEncoder emits declared columns
+        # only, and `missing` is computed, not stored (issue #383). Setting it
+        # on the ORM instance would also serialize -- the encoder walks dir(obj)
+        # -- but it would pollute the identity map with a non-column attribute.
+        # Always emitted, true or false, so a client can tell a healthy catalog
+        # from a server that predates the flag (key absent).
+        row['missing'] = row.get('id') in missing_ids
+    return jsonify({'status': 200, 'rules': rows})
 
 
 # serve a rules file

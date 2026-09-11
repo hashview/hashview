@@ -38,6 +38,7 @@ from hashview.utils.audit import log_event
 from hashview.utils.utils import (
     compress_to_gz,
     ingest_static_wordlist_file,
+    missing_wordlist_ids,
     remove_file,
     resolve_control_file,
     send_generated_file,
@@ -53,11 +54,15 @@ def v1_api_get_wordlist():
 
     update_heartbeat(request.cookies.get('uuid'))
     wordlists = Wordlists.query.all()
-    message = {
-        'status': 200,
-        'wordlists': alchemy_to_native(wordlists)
-    }
-    return jsonify(message)
+    rows = alchemy_to_native(wordlists)
+    missing_ids = missing_wordlist_ids(wordlists)
+    for row in rows:
+        # Grafted AFTER serialization; see the identical note in api/rules.py.
+        # Always false for a dynamic list: its file is regenerated from the
+        # database on every download, so `missing` says nothing about whether
+        # anything exists at `path` (issue #383).
+        row['missing'] = row.get('id') in missing_ids
+    return jsonify({'status': 200, 'wordlists': rows})
 
 
 # serve a wordlist

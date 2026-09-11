@@ -226,6 +226,21 @@ def sync_rules():
             continue
 
         local_entry = rules_manifest.data.get(rule_id)
+
+        # The server knows this row has no file on disk (issue #383), so the
+        # download would only 404. Skip it and say what to do about it, instead
+        # of re-asking on every task assignment and logging a bare HTTP 404.
+        # No escalation from here: POST /v1/error notifies every admin directly,
+        # so N agents x every heartbeat would be a storm. The server's own
+        # hourly catalog sweep owns the alerting.
+        if entry.get('missing'):
+            LOG.warning('Rule %s (%s) is flagged missing on the server; skipping the '
+                        'download and keeping any local copy. Restore or delete it '
+                        'on the server.', rule_id, entry.get('name', filename))
+            if local_entry:
+                new_manifest[rule_id] = local_entry
+            continue
+
         if local_entry and local_entry.get('checksum') == remote_checksum:
             # Up to date; keep as-is.
             new_manifest[rule_id] = local_entry
@@ -233,16 +248,27 @@ def sync_rules():
 
         if local_entry:
             LOG.debug('Rule %s changed on the server; re-downloading.', rule_id)
-            old_name = local_entry.get('filename')
-            old_path = os.path.join('control/rules', old_name) if old_name else None
-            if old_path and os.path.exists(old_path):
-                os.remove(old_path)
         else:
             LOG.info('Downloading new rule %s.', rule_id)
 
         installed = _install_rule_file(rule_id, entry['id'], filename, remote_checksum)
         if installed:
             new_manifest[rule_id] = installed
+            # Remove the superseded file only AFTER a successful install, and
+            # only when the name actually changed (_install_rule_file writes via
+            # control/tmp + os.replace, so a same-name update is atomic anyway).
+            old_name = local_entry.get('filename') if local_entry else None
+            if old_name and old_name != filename:
+                old_path = os.path.join('control/rules', old_name)
+                if os.path.exists(old_path):
+                    os.remove(old_path)
+        elif local_entry:
+            # Keep this entry so the still-valid local file isn't pruned as an
+            # orphan (mirrors sync_wordlists). Without this, ANY failed download
+            # -- one transient 502 -- deleted the good local copy, and the next
+            # task using the rule made hashcat fail, which makes run_hashcat
+            # SIGINT the whole agent and wedges the JobTask in Running.
+            new_manifest[rule_id] = local_entry
 
     if new_manifest != rules_manifest.data:
         rules_manifest.data = new_manifest
@@ -364,6 +390,18 @@ def sync_wordlists():
         dest_filename = _gz_name(base_filename)
 
         local_entry = wordlists_manifest.data.get(wl_id)
+
+        # The server knows this row has no file on disk (issue #383), so the
+        # download would only 404. Skip it and keep any local copy; the server's
+        # hourly catalog sweep owns the admin alerting (see sync_rules).
+        if entry.get('missing'):
+            LOG.warning('Wordlist %s (%s) is flagged missing on the server; skipping '
+                        'the download and keeping any local copy. Restore or delete '
+                        'it on the server.', wl_id, entry.get('name', base_filename))
+            if local_entry:
+                new_manifest[wl_id] = local_entry
+            continue
+
         if local_entry and local_entry.get('checksum') == remote_checksum:
             # Up to date; keep as-is.
             new_manifest[wl_id] = local_entry

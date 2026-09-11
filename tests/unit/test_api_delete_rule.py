@@ -24,7 +24,9 @@ from unittest import mock
 
 import pytest
 
-from hashview.api import routes as api_routes
+# The rule handlers moved to hashview.api.rules in the #441 split, so that is
+# the namespace they resolve is_authorized / log_event from.
+from hashview.api import rules as api_rules
 from hashview.models import Agents, Rules, Tasks, Users
 from hashview.models import db as _db
 
@@ -114,7 +116,7 @@ def test_delete_agent_cookie_rejected(client, owner_user, authorized_agent):
 @pytest.mark.security
 def test_delete_cookie_no_user_returns_403(client, owner_user):
     rule = _rule(owner_user)
-    with mock.patch.object(api_routes, "is_authorized", return_value=True):
+    with mock.patch.object(api_rules, "is_authorized", return_value=True):
         client.set_cookie("uuid", "not-a-real-key", domain="localhost.test")
         resp = client.delete(f"/v1/rules/{rule.id}")
     # Real HTTP 403, unlike the sibling deletes which answer 200 with the code
@@ -277,7 +279,7 @@ def test_deleting_a_duplicate_leaves_its_twin(client, owner_user):
 def test_delete_is_audited(client, owner_user):
     rule = _rule(owner_user, name="audited")
     client.set_cookie("uuid", owner_user.api_key, domain="localhost.test")
-    with mock.patch.object(api_routes, "log_event") as logged:
+    with mock.patch.object(api_rules, "log_event") as logged:
         client.delete(f"/v1/rules/{rule.id}")
 
     assert logged.called

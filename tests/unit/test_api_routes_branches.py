@@ -1982,9 +1982,11 @@ def test_rules_add_user_not_found_returns_403(client, monkeypatch):
     returns 403 'User not found' (line 435).
 
     We monkeypatch is_authorized to True but use a uuid with no matching user.
+    Patched on hashview.api.rules, which is where the handler now lives and so
+    where it resolves the name from (issue #441 split routes.py per resource).
     """
-    import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "is_authorized", lambda user, agent, request: True)
+    import hashview.api.rules as rules_mod
+    monkeypatch.setattr(rules_mod, "is_authorized", lambda user, agent, request: True)
 
     client.set_cookie("uuid", "no-such-user-uuid", domain="localhost.test")
     resp = client.post(

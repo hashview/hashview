@@ -128,10 +128,12 @@ def test_rules_download_compresses_with_pure_python_gzip(monkeypatch):
             captured["dst"] = dst
             captured["level"] = level
 
-        import hashview.api.routes as api_routes
+        # The rule routes live in hashview.api.rules since the #441 split, so
+        # that is the namespace the handler resolves compress_to_gz from.
+        import hashview.api.rules as rules_mod
         import hashview.utils.utils as utils_mod
 
-        monkeypatch.setattr(api_routes, "compress_to_gz", fake_compress_to_gz)
+        monkeypatch.setattr(rules_mod, "compress_to_gz", fake_compress_to_gz)
         # The response is built by send_generated_file(), which lives in utils
         # and therefore resolves send_from_directory from that module.
         monkeypatch.setattr(

@@ -14,13 +14,14 @@ from flask import (
 from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
-from hashview.models import Hashes, JobTasks, Rules, Tasks, Users, Wordlists, db
+from hashview.models import Hashes, Jobs, JobTasks, Rules, Tasks, Users, Wordlists, db
 from hashview.rules.forms import RulesForm
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
     apply_name_filter,
     get_filehash,
     get_linecount,
+    missing_rule_ids,
     remove_rule_file,
     resolve_control_file,
     save_file,
@@ -86,6 +87,20 @@ def rules_list():
     # --- per-rule info-modal data, for the rules on this page only ---
     # Scoped to pagination.items so the cost is bounded by page size rather
     # than by the size of the rules table.
+    # Catalog health (#383). The missing set is global -- unfiltered and
+    # unpaginated -- so the page header can report the whole table, not just
+    # this page; it is a handful of stats either way. rule_bytes stays scoped
+    # to the rendered rows, since it is only read by their info modals.
+    missing_rules = missing_rule_ids()
+    rule_bytes = {}
+    for r in rules:
+        src_path = resolve_control_file(r.path, 'rules')
+        if src_path:
+            try:
+                rule_bytes[r.id] = os.path.getsize(src_path)
+            except OSError:
+                pass
+
     rule_ids = [r.id for r in rules]
     tasks = (Tasks.query.filter(Tasks.rule_id.in_(rule_ids)).all()
              if rule_ids else [])
@@ -109,7 +124,12 @@ def rules_list():
         for jt in JobTasks.query.filter(JobTasks.task_id.in_(task_ids)).all():
             jobs_by_task.setdefault(jt.task_id, set()).add(jt.job_id)
 
-    rule_used_tasks = {}   # rule.id -> [{name, wordlist, type, hits}]
+    # Jobs referenced by those tasks, for the delete dialog's blocker list: an
+    # operator needs the job to unpick before the task can be edited or deleted.
+    job_ids = {jid for ids in jobs_by_task.values() for jid in ids}
+    jobs_by_id = {j.id: j for j in Jobs.query.filter(Jobs.id.in_(job_ids)).all()} if job_ids else {}
+
+    rule_used_tasks = {}   # rule.id -> [{id, name, wordlist, type, hits, jobs}]
     rule_hits = {}         # rule.id -> summed historical hits
     rule_task_count = {}   # rule.id -> number of tasks using it
     rule_job_count = {}    # rule.id -> number of distinct jobs using those tasks
@@ -122,10 +142,14 @@ def rules_list():
             total += hits
             job_ids |= jobs_by_task.get(t.id, set())
             rows.append({
+                'id': t.id,
                 'name': t.name,
                 'wordlist': wl_names.get(t.wl_id),
                 'type': _rule_ttype(t),
                 'hits': hits,
+                'jobs': [{'id': j.id, 'name': j.name, 'status': j.status}
+                         for j in (jobs_by_id.get(jid) for jid in sorted(jobs_by_task.get(t.id, set())))
+                         if j is not None],
             })
         rule_used_tasks[rule.id] = rows
         rule_hits[rule.id] = total
@@ -139,6 +163,7 @@ def rules_list():
                            rule_job_count=rule_job_count, rule_owner=rule_owner, rulesForm=RulesForm(),
                            pagination=pagination, sort_by=sort_by, sort_order=sort_order,
                            name_filter=name_filter,
+                           missing_rule_ids=missing_rules, rule_bytes=rule_bytes,
                            form_err=session.pop('rules_form_err', None))
 
 @rules.route("/rules/add", methods=['GET', 'POST'])

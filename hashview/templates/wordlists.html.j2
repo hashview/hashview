@@ -65,7 +65,7 @@
 <div class="card">
     <div class="card-head">
         <h3>Static Wordlists</h3>
-        <span class="field-hint" style="margin-top:0;">Plaintext, newline-delimited files you upload and assign to a task.</span>
+        <span class="field-hint" style="margin-top:0;">Plaintext, newline-delimited files you upload and assign to a task.{% if missing_wl_ids %}<span style="color:var(--red);"> · {{ missing_wl_ids|length }} missing on disk</span>{% endif %}</span>
         <span style="margin-left:auto; display:inline-flex; align-items:center; gap:9px; color:var(--text-mute);">{{ icon('search', size=16) }}<input type="text" id="wl-filter" class="input" style="width:240px; flex:none;" placeholder="filter wordlists…" autocomplete="off" oninput="hvFilterWordlists(this.value)"></span>
     </div>
     {% if static_wordlists %}
@@ -82,14 +82,17 @@
         </thead>
         <tbody id="wl-static-tbody">
             {% for wordlist in static_wordlists %}
+            {% set gone = wordlist.id in missing_wl_ids %}
             <tr data-name="{{ wordlist.name|lower }}">
                 <td style="font-weight:500;">
                     <span style="display:inline-flex; align-items:center; gap:9px;">
                         <span style="color:var(--text-mute); display:inline-flex;">{{ icon('book', size=16) }}</span>
                         {{ wordlist.name }}
+                        {%- if gone %} <span class="badge red" title="The database row survives but its file is gone from control/wordlists.">FILE MISSING</span>{% endif %}
                     </span>
                 </td>
-                <td class="mono num" style="color:var(--primary);">{{ "{:,}".format(wordlist.size) }}</td>
+                {# a missing file makes the stored line count a claim about something that isn't there #}
+                <td class="mono num" style="color:{{ 'var(--text-mute)' if gone else 'var(--primary)' }};"{% if gone %} title="Line count from the last time the file was seen"{% endif %}>{{ "{:,}".format(wordlist.size) }}</td>
                 <td style="color:var(--text-dim);">
                     {% for user in users %}
                         {% if user.id == wordlist.owner_id %}
@@ -100,7 +103,11 @@
                 <td class="mono" style="color:var(--text-mute);font-size:11.5px;">{{ wordlist.last_updated }}</td>
                 <td class="center">
                     <div style="display:flex; gap:4px; justify-content:center;">
+                        {% if gone %}
+                        <span class="icon-btn" style="opacity:.4; cursor:not-allowed;" title="File is missing on disk — nothing to download">{{ icon('download', size=15) }}</span>
+                        {% else %}
                         <a class="icon-btn" href="{{ url_for('wordlists.wordlists_download', wordlist_id=wordlist.id) }}" title="Download">{{ icon('download', size=15) }}</a>
+                        {% endif %}
                         <button type="button" class="icon-btn" title="Info" onclick="document.getElementById('info-{{ wordlist.id }}').showModal()">{{ icon('info', size=15) }}</button>
                         <button type="button" class="icon-btn act-del" title="Delete" onclick="document.getElementById('del-{{ wordlist.id }}').showModal()">{{ icon('trash', size=15) }}</button>
                     </div>
@@ -431,8 +438,11 @@
     {% set hits = wl_hits.get(wordlist.id, 0) if wl_hits is defined else 0 %}
     {% set tcount = wl_task_count.get(wordlist.id, 0) if wl_task_count is defined else 0 %}
     {% set jcount = wl_job_count.get(wordlist.id, 0) if wl_job_count is defined else 0 %}
-    {# on-disk size of the stored file (compressed .gz for static wordlists) #}
-    {% set size_on_disk = (wordlist.byte_size | filesizeformat) if wordlist.byte_size else '—' %}
+    {% set gone = wordlist.id in missing_wl_ids %}
+    {# on-disk size of the stored file (compressed .gz for static wordlists).
+       When the file is gone, the stored byte_size describes something that
+       isn't there, so don't report it as a size. #}
+    {% set size_on_disk = 'file missing' if gone else ((wl_bytes.get(wordlist.id) or wordlist.byte_size) | filesizeformat if (wl_bytes.get(wordlist.id) or wordlist.byte_size) else '—') %}
     <div class="hv-dialog-head">
         {{ icon('info', size=16) }}
         <div style="line-height:1.2;">
@@ -463,7 +473,15 @@
             <div>{{ kv_label('Size on disk') }}<div class="mono" style="color:var(--text);">{{ size_on_disk }}</div></div>
             <div>{{ kv_label('Historical hits') }}<div><span class="mono" style="color:{{ 'var(--primary)' if hits else 'var(--text-mute)' }};{% if hits %}text-shadow:var(--glow-text);{% endif %}">{{ "{:,}".format(hits|int) }}</span> <span style="color:var(--text-dim);">passwords recovered</span></div></div>
             <div>{{ kv_label('Used by') }}<div style="color:var(--text);">{{ tcount | commafy }} task{{ '' if tcount == 1 else 's' }} · {{ jcount | commafy }} job{{ '' if jcount == 1 else 's' }}</div></div>
+            <div style="grid-column:1 / -1;">{{ kv_label('File on disk') }}<div>{% if gone %}<span class="badge red">MISSING</span>{% elif wordlist.type == 'dynamic' %}<span class="badge dim">regenerated per download</span>{% else %}<span class="badge dim">present</span>{% endif %} <span class="mono" style="color:var(--text-mute); font-size:11px; word-break:break-all;">{{ wordlist.path }}</span></div></div>
         </div>
+
+        {% if gone and tcount %}
+        <div class="flash flash-danger" style="margin-top:22px;">
+            This file is gone from disk. The {{ tcount | commafy }} task{{ '' if tcount == 1 else 's' }} below reference it and cannot run until it is restored.
+            Re-upload it and every reference keeps working.
+        </div>
+        {% endif %}
 
         {# used-by tasks #}
         <div style="margin-top:24px;">

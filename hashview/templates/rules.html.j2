@@ -11,7 +11,7 @@
 <div class="page-head">
     <div>
         <h1 class="page-title">Rules</h1>
-        <div class="page-sub">// {{ pagination.total | commafy }} ruleset{{ '' if pagination.total == 1 else 's' }} applied as mutations over wordlists · page {{ pagination.page }}/{{ pagination.pages or 1 }}</div>
+        <div class="page-sub">// {{ pagination.total | commafy }} ruleset{{ '' if pagination.total == 1 else 's' }} applied as mutations over wordlists · page {{ pagination.page }}/{{ pagination.pages or 1 }}{% if missing_rule_ids %}<span style="color:var(--red);"> · {{ missing_rule_ids|length }} missing on disk</span>{% endif %}</div>
     </div>
     <button type="button" class="btn btn-primary" onclick="document.getElementById('upload-rule-modal').showModal()">{{ icon('upload', size=15) }} Upload rules</button>
 </div>
@@ -63,20 +63,28 @@
         </thead>
         <tbody id="rule-tbody">
             {% for rule in rules %}
+            {% set gone = rule.id in missing_rule_ids %}
             <tr data-name="{{ rule.name|lower }}">
                 <td style="font-weight:500;">
                     <span style="display:inline-flex; align-items:center; gap:9px;">
                         <span style="color:var(--text-mute); display:inline-flex;">{{ icon('rule', size=16) }}</span>
                         {{ rule.name }}
+                        {%- if gone %} <span class="badge red" title="The database row survives but its file is gone from control/rules.">FILE MISSING</span>{% endif %}
                     </span>
                 </td>
-                <td class="mono num"><span style="color:{{ 'var(--primary)' if rule.size else 'var(--text-mute)' }};{% if rule.size %}text-shadow:var(--glow-text);{% endif %}">{{ "{:,}".format(rule.size|int) }}</span></td>
+                {# a missing file makes the stored line count a claim about something that isn't there #}
+                <td class="mono num"><span style="color:{{ 'var(--text-mute)' if gone or not rule.size else 'var(--primary)' }};{% if rule.size and not gone %}text-shadow:var(--glow-text);{% endif %}"{% if gone %} title="Line count from the last time the file was seen"{% endif %}>{{ "{:,}".format(rule.size|int) }}</span></td>
                 <td class="mono" style="color:var(--text-dim);">{% for user in users %}{% if user.id == rule.owner_id %}{{ user.first_name }} {{ user.last_name }}{% endif %}{% endfor %}</td>
                 <td class="mono" style="color:var(--text-mute);font-size:11.5px;">{{ rule.last_updated }}</td>
                 <td class="center">
                     <div style="display:flex; gap:4px; justify-content:center;">
+                        {% if gone %}
+                        <span class="icon-btn" style="opacity:.4; cursor:not-allowed;" title="File is missing on disk — nothing to download">{{ icon('download', size=15) }}</span>
+                        {% else %}
                         <a class="icon-btn" href="{{ url_for('rules.rules_download', rule_id=rule.id) }}" title="Download">{{ icon('download', size=15) }}</a>
-                        <a class="icon-btn" href="{{ url_for('rules.rules_view', rule_id=rule.id) }}" title="View/Edit">{{ icon('edit', size=15) }}</a>
+                        {% endif %}
+                        {# View/Edit stays enabled when the file is gone: it is the in-place restore path #}
+                        <a class="icon-btn" href="{{ url_for('rules.rules_view', rule_id=rule.id) }}" title="{{ 'Restore — retype or paste the rule contents' if gone else 'View/Edit' }}">{{ icon('edit', size=15) }}</a>
                         <button type="button" class="icon-btn" title="Info" onclick="document.getElementById('info-{{ rule.id }}').showModal()">{{ icon('info', size=15) }}</button>
                         <button type="button" class="icon-btn act-del" title="Delete" onclick="document.getElementById('del-{{ rule.id }}').showModal()">{{ icon('trash', size=15) }}</button>
                     </div>
@@ -184,8 +192,8 @@
     {% set hits = rule_hits.get(rule.id, 0) if rule_hits is defined else 0 %}
     {% set tcount = rule_task_count.get(rule.id, 0) if rule_task_count is defined else 0 %}
     {% set jcount = rule_job_count.get(rule.id, 0) if rule_job_count is defined else 0 %}
-    {# size on disk is not tracked yet — placeholder until it's wired up #}
-    {% set size_on_disk = '—' %}
+    {% set gone = rule.id in missing_rule_ids %}
+    {% set size_on_disk = ('file missing' if gone else (rule_bytes.get(rule.id) | filesizeformat if rule_bytes.get(rule.id) is not none else '—')) %}
     <div class="hv-dialog-head">
         {{ icon('info', size=16) }}
         <div style="line-height:1.2;">
@@ -215,7 +223,15 @@
             <div>{{ kv_label('Rules') }}<div class="mono" style="color:var(--text);">{{ "{:,}".format(rule.size|int) }}</div></div>
             <div>{{ kv_label('Historical hits') }}<div><span class="mono" style="color:{{ 'var(--primary)' if hits else 'var(--text-mute)' }};{% if hits %}text-shadow:var(--glow-text);{% endif %}">{{ "{:,}".format(hits|int) }}</span> <span style="color:var(--text-dim);">passwords recovered</span></div></div>
             <div>{{ kv_label('Used by') }}<div style="color:var(--text);">{{ tcount | commafy }} task{{ '' if tcount == 1 else 's' }} · {{ jcount | commafy }} job{{ '' if jcount == 1 else 's' }}</div></div>
+            <div style="grid-column:1 / -1;">{{ kv_label('File on disk') }}<div>{% if gone %}<span class="badge red">MISSING</span>{% else %}<span class="badge dim">present</span>{% endif %} <span class="mono" style="color:var(--text-mute); font-size:11px; word-break:break-all;">{{ rule.path }}</span></div></div>
         </div>
+
+        {% if gone and tcount %}
+        <div class="flash flash-danger" style="margin-top:22px;">
+            This file is gone from disk. The {{ tcount | commafy }} task{{ '' if tcount == 1 else 's' }} below reference it and cannot run until it is restored.
+            Re-upload it and every reference keeps working.
+        </div>
+        {% endif %}
 
         {# used-by tasks #}
         <div style="margin-top:24px;">

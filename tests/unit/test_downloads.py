@@ -339,12 +339,22 @@ def test_dynamic_wordlist_download_names_the_attachment_after_the_wordlist(app, 
 def test_wordlists_page_renders_download_links(app, client, tmp_path):
     user = _admin()
     _login(client, user)
-    wl = Wordlists(name="Rockyou", owner_id=user.id, type="static",
+    wl = make_wordlist_with_file(user.id, name="Rockyou")
+    html = client.get("/wordlists").get_data(as_text=True)
+    assert f"/wordlists/download/{wl.id}" in html
+
+
+def test_wordlists_page_disables_download_for_a_missing_file(app, client, tmp_path):
+    """A row whose file is gone gets a badge instead of a dead link (#383)."""
+    user = _admin()
+    _login(client, user)
+    wl = Wordlists(name="Stranded", owner_id=user.id, type="static",
                    path=str(tmp_path / "abc.gz"), checksum="0" * 64, size=2)
     db.session.add(wl)
     db.session.commit()
     html = client.get("/wordlists").get_data(as_text=True)
-    assert f"/wordlists/download/{wl.id}" in html
+    assert f"/wordlists/download/{wl.id}" not in html
+    assert "FILE MISSING" in html
 
 
 # ---------------------------------------------------------------------------

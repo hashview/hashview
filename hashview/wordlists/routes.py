@@ -17,10 +17,11 @@ from flask import (
 from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
-from hashview.models import Hashes, JobTasks, Rules, Tasks, Users, Wordlists, db
+from hashview.models import Hashes, Jobs, JobTasks, Rules, Tasks, Users, Wordlists, db
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
     ingest_static_wordlist_file,
+    missing_wordlist_ids,
     resolve_control_file,
     send_generated_file,
     try_commit,
@@ -71,8 +72,24 @@ def wordlists_list():
     jobs_by_task = {}
     for jt in JobTasks.query.all():
         jobs_by_task.setdefault(jt.task_id, set()).add(jt.job_id)
+    # Jobs referenced by those tasks, for the delete dialog's blocker list: an
+    # operator needs the job to unpick before the task can be edited or deleted.
+    job_ids = {jid for ids in jobs_by_task.values() for jid in ids}
+    jobs_by_id = {j.id: j for j in Jobs.query.filter(Jobs.id.in_(job_ids)).all()} if job_ids else {}
 
-    wl_used_tasks = {}   # wordlist.id -> [{name, rule, type, hits}]
+    # Catalog health (#383): static rows whose file is gone. Dynamic rows never
+    # qualify -- their file is regenerated from the DB on every download.
+    missing_wl = missing_wordlist_ids(wordlists)
+    wl_bytes = {}
+    for wl in wordlists:
+        src_path = resolve_control_file(wl.path, 'wordlists')
+        if src_path:
+            try:
+                wl_bytes[wl.id] = os.path.getsize(src_path)
+            except OSError:
+                pass
+
+    wl_used_tasks = {}   # wordlist.id -> [{id, name, rule, type, hits, jobs}]
     wl_hits = {}         # wordlist.id -> summed historical hits
     wl_task_count = {}   # wordlist.id -> number of tasks using it
     wl_job_count = {}    # wordlist.id -> number of distinct jobs using those tasks
@@ -85,10 +102,14 @@ def wordlists_list():
             total += hits
             job_ids |= jobs_by_task.get(t.id, set())
             rows.append({
+                'id': t.id,
                 'name': t.name,
                 'rule': rule_names.get(t.rule_id) if t.rule_id else None,
                 'type': _wl_ttype(t),
                 'hits': hits,
+                'jobs': [{'id': j.id, 'name': j.name, 'status': j.status}
+                         for j in (jobs_by_id.get(jid) for jid in sorted(jobs_by_task.get(t.id, set())))
+                         if j is not None],
             })
         wl_used_tasks[wl.id] = rows
         wl_hits[wl.id] = total
@@ -102,6 +123,7 @@ def wordlists_list():
                            wl_used_tasks=wl_used_tasks, wl_hits=wl_hits,
                            wl_task_count=wl_task_count, wl_job_count=wl_job_count,
                            wl_owner=wl_owner, wordlistsForm=WordlistsForm(),
+                           missing_wl_ids=missing_wl, wl_bytes=wl_bytes,
                            import_files=list_importable(current_app))
 
 

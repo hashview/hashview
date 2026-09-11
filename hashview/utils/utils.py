@@ -1254,6 +1254,48 @@ def update_dynamic_wordlist(wordlist_id, dest_path=None):
 
     return target_path
 
+def remove_rule_file(stored_path):
+    """Best-effort removal of a rule's file from ``control/rules``.
+
+    Call this AFTER the row has been committed away. The order is deliberate and
+    matches wordlists_delete: a failed unlink then merely orphans a file, where
+    the reverse would leave a row pointing at a file that is gone.
+
+    The stored path is resolved to ``control/rules/<basename>`` -- the same
+    normalization the rule download routes already apply. That is what makes
+    this correct for the seeded 'Best64 Rule', whose row carries a path relative
+    to the package (see hashview/setup/__init__.py), and what keeps a crafted or
+    legacy path from reaching outside the rules directory.
+
+    The unlink is skipped when another rule row still points at the same file:
+    POST /v1/rules/add does not dedupe names, so two rows can legitimately exist,
+    and on a hand-built row they could share one file. Deleting one must not
+    break the other.
+
+    Returns True when the file is absent afterwards, False when it survived --
+    either because another row needs it or because the unlink failed.
+    """
+    if not stored_path:
+        return True
+
+    rules_dir = os.path.join(current_app.root_path, 'control/rules')
+    target = os.path.join(rules_dir, os.path.basename(stored_path))
+    if not os.path.exists(target):
+        return True
+
+    basename = os.path.basename(stored_path)
+    for other in db.session.query(Rules.path).all():
+        if other[0] and os.path.basename(other[0]) == basename:
+            current_app.logger.info(
+                'Keeping rule file %s: still referenced by another rule row.', target)
+            return False
+
+    try:
+        os.remove(target)
+    except OSError:
+        current_app.logger.exception('Failed to remove rule file from disk: %s', target)
+        return False
+    return True
 def top_effective_task_ids(hash_type, limit=10):
     """Task ids that have recovered the most hashes of ``hash_type``, best first.
 

@@ -14,7 +14,9 @@ from unittest import mock
 
 import pytest
 
-from hashview.api import routes as api_routes
+# Task-group handlers live in hashview.api.task_groups since the #441 split,
+# so that is the namespace they resolve is_authorized from.
+from hashview.api import task_groups as task_groups_mod
 from hashview.models import Agents, TaskGroups, Tasks, Users
 from hashview.models import db as _db
 from hashview.utils.utils import MAX_TASKS_PER_GROUP
@@ -189,7 +191,7 @@ def test_add_cookie_no_user_returns_403(client):
     # ...) in practice (it runs the identical Users.query.filter_by(api_key=...)
     # lookup), so this downstream 403 branch is only reachable by isolating it
     # from the auth gate — patch is_authorized to simulate the gate passing.
-    with mock.patch.object(api_routes, "is_authorized", return_value=True):
+    with mock.patch.object(task_groups_mod, "is_authorized", return_value=True):
         client.set_cookie("uuid", "not-a-real-key", domain="localhost.test")
         resp = client.post(
             "/v1/task_groups/add",
@@ -381,7 +383,7 @@ def test_set_tasks_agent_cookie_rejected(client, owner_user, authorized_agent):
 @pytest.mark.security
 def test_set_tasks_cookie_no_user_returns_403(client, owner_user):
     tg = _group(owner_user, [], name="G")
-    with mock.patch.object(api_routes, "is_authorized", return_value=True):
+    with mock.patch.object(task_groups_mod, "is_authorized", return_value=True):
         client.set_cookie("uuid", "not-a-real-key", domain="localhost.test")
         resp = client.post(
             f"/v1/task_groups/{tg.id}/tasks",
@@ -610,7 +612,7 @@ def test_delete_agent_cookie_rejected(client, owner_user, authorized_agent):
 @pytest.mark.security
 def test_delete_cookie_no_user_returns_403(client, owner_user):
     tg = _group(owner_user, [], name="G")
-    with mock.patch.object(api_routes, "is_authorized", return_value=True):
+    with mock.patch.object(task_groups_mod, "is_authorized", return_value=True):
         client.set_cookie("uuid", "not-a-real-key", domain="localhost.test")
         resp = client.delete(f"/v1/task_groups/{tg.id}")
     body = _json_body(resp)

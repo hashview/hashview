@@ -402,7 +402,7 @@ def test_jobs_start_success_queues_tasks(client, admin_user, monkeypatch):
             task_row.command = f"hashcat -j{job.id} -t{task_row.task_id}"
 
     monkeypatch.setattr(
-        "hashview.api.routes.build_job_task_commands",
+        "hashview.api.jobs.build_job_task_commands",
         _fake_build_job_task_commands,
     )
     job, jt = _seed_startable_job(admin_user, status="Ready")

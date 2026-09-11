@@ -57,13 +57,13 @@ def test_rules_download_command_injection_poc(monkeypatch):
         db.session.add(rule)
         db.session.commit()
 
-        import hashview.api.routes as api_routes
+        import hashview.api.rules as rules_mod
 
         def _shell_tripwire(*args, **kwargs):
             pytest.fail("shell invocation attempted")
 
         # Tripwires: any route through os.system or subprocess fails the test.
-        monkeypatch.setattr(api_routes.os, "system", _shell_tripwire)
+        monkeypatch.setattr(rules_mod.os, "system", _shell_tripwire)
         monkeypatch.setattr(subprocess, "run", _shell_tripwire)
         monkeypatch.setattr(subprocess, "Popen", _shell_tripwire)
 

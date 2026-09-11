@@ -217,6 +217,25 @@ def test_split_preserves_a_leading_space_in_the_mask():
     assert index == 0
 
 
+def test_split_strips_the_whole_separator_run_not_one_space():
+    """A double space (or a tab) before a custom charset is an ordinary typo.
+
+    ' '.join(field.split()) used to normalise it away. Slicing by offset to keep
+    a LEADING space must not also keep the trailing separator run, or every
+    candidate gains a trailing space -- which cracks nothing and errors on
+    nothing, so the operator never finds out.
+    """
+    assert split_mask_field('?u?l?d  -1 ?u?l?d')[0] == ['?u?l?d', '-1', '?u?l?d']
+    assert split_mask_field('?u?l?d\t-1 ?u?l?d')[0] == ['?u?l?d', '-1', '?u?l?d']
+    assert split_mask_field('?u?l?d \t -1 ?u?l?d')[0] == ['?u?l?d', '-1', '?u?l?d']
+    # Single space unchanged, and a LEADING space still survives.
+    assert split_mask_field('?u?l?d -1 ?u?l?d')[0] == ['?u?l?d', '-1', '?u?l?d']
+    # LEADING whitespace is mask content and is kept verbatim, however much
+    # of it there is; only the run that separates mask from option is dropped.
+    assert split_mask_field('  -?d?d -1 abc')[0][0] == '  -?d?d'
+    assert split_mask_field('  -?d?d  -1 abc')[0][0] == '  -?d?d'
+
+
 def test_first_token_is_mask_overrides_the_option_heuristic():
     """A chunk of '?aabc' is '-abc' -- second character is a letter, so the
     free-form heuristic reads it as an option. The chunker knows better."""

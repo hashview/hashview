@@ -1560,9 +1560,12 @@ def split_mask_field(field, first_token_is_mask=False):
             # Slice the head out of the ORIGINAL string by offset rather than
             # ' '.join(tokens): a mask may legitimately begin with a space (the
             # ?s/?a expansion emits one), and joining would silently eat it.
-            head = field[:start]
-            if head.endswith(' '):
-                head = head[:-1]          # exactly one separator space, no more
+            # Strip the whole separator RUN, not a single space. The run is
+            # delimiter, not mask: ' '.join(field.split()) used to normalise it
+            # away, and leaving it turns a double-space typo into a mask whose
+            # every candidate ends in a space. A LEADING space is still
+            # preserved, which is why this slices by offset at all.
+            head = re.sub(r'[ \t]+$', '', field[:start])
             return [head] + [tok for _, tok in tokens[index:]], 0
 
     return [field], 0

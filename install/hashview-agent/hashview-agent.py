@@ -479,14 +479,22 @@ def append_status_json(argv):
     Everything after '--' is a POSITIONAL, so appending there does not enable
     status JSON at all -- and worse, it shifts the positionals: in -a 6 hashcat
     then opens the mask as a wordlist ("No such file or directory") and in -a 7 it
-    opens --status-json as one. So insert before the sentinel when there is one.
+    opens --status-json as one. So the flag must never land after a sentinel.
 
-    A server new enough to emit the sentinel emits the flag with it, so this is a
-    no-op there; the check also keeps us from passing it twice.
+    A server new enough to emit the sentinel emits the flag WITH it -- they are
+    produced as one pair in mask_attack_argv, and that is the only place the
+    server emits --status-json at all. So the presence of the flag is exactly the
+    signal that a sentinel is already handled, and we return untouched.
+
+    Which means that by the time we get past that check there is no sentinel, and
+    any '--' still in the argv came from operator data, not from the server: a
+    mask field of '?d?d -- ?d' makes even a current server emit a bare '--' as an
+    ordinary positional. Seeking to it and inserting there would put --status-json
+    in front of a mask token and leave hashcat with no mask at all. Append.
     """
     if STATUS_JSON in argv:
         return argv
-    argv.insert(argv.index('--') if '--' in argv else len(argv), STATUS_JSON)
+    argv.append(STATUS_JSON)
     return argv
 
 def run_hashcat(argv, output_file):

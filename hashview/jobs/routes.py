@@ -47,6 +47,7 @@ from hashview.utils.utils import (
     dynamic_wordlist_ids,
     import_hashfilehashes,
     save_file,
+    top_effective_task_ids,
     try_commit,
     validate_hash_only_hashfile,
     validate_hex_salt,
@@ -565,6 +566,18 @@ def jobs_list_tasks(job_id):
 
     return render_template('jobs_assigned_tasks.html.j2', title='Jobs Assigned Tasks', job=job, tasks=tasks, job_tasks=job_tasks, assigned=assigned, assignable_tasks=assignable_tasks, task_meta=task_meta, task_groups=task_groups, wordlists=wordlists, alert_hashes=alert_hashes)
 
+def _dynamic_wordlist_for(task):
+    """The task's wordlist, or None when it has none.
+
+    Guarded because Query.get(None) emits "fully NULL primary key identity cannot
+    load any object" and SQLAlchemy warns that may become an error. A task with no
+    wordlist simply isn't a dynamic one.
+    """
+    if task.wl_id is None:
+        return None
+    return Wordlists.query.get(task.wl_id)
+
+
 @jobs.route("/jobs/<int:job_id>/assign_task/<int:task_id>", methods=['POST'])
 @login_required
 def jobs_assign_task(job_id, task_id):
@@ -581,7 +594,12 @@ def jobs_assign_task(job_id, task_id):
     # a missing wordlist or odd `type` casing can't slip a duplicate through — this
     # matches the Add-Task dropdown's dynamic_wordlist_ids() filter.
     task = Tasks.query.get(task_id)
-    wordlist = Wordlists.query.get(task.wl_id) if task else None
+    if task is None:
+        # A JobTasks row pointing at no task is unrunnable and shows up as
+        # "deleted" everywhere it is listed, so never create one.
+        flash('That task no longer exists and was not assigned.', 'danger')
+        return redirect("/jobs/" + str(job_id) + "/tasks")
+    wordlist = _dynamic_wordlist_for(task)
     is_dynamic = wordlist is not None and wordlist.type == 'dynamic'
     jobtask_exists = JobTasks.query.filter_by(job_id=job_id, task_id=task_id).first()
 
@@ -604,11 +622,19 @@ def jobs_assign_task_group(job_id, task_group_id):
 
     task_group = TaskGroups.query.get(task_group_id)
 
+    missing = 0
     for task_group_entry in json.loads(task_group.tasks):
         # As in jobs_assign_task: only a dynamic-wordlist task may be added again;
         # an already-assigned non-dynamic task in the group is skipped.
         task = Tasks.query.get(task_group_entry)
-        wordlist = Wordlists.query.get(task.wl_id) if task else None
+        if task is None:
+            # task_groups.tasks is a JSON id list with no foreign key. Deleting a
+            # task that a group still lists is refused, so this should not happen
+            # -- but an id that slips through must not become an unrunnable
+            # JobTasks row.
+            missing += 1
+            continue
+        wordlist = _dynamic_wordlist_for(task)
         is_dynamic = wordlist is not None and wordlist.type == 'dynamic'
         jobtask_exists = JobTasks.query.filter_by(job_id=job_id, task_id=task_group_entry).first()
 
@@ -616,6 +642,9 @@ def jobs_assign_task_group(job_id, task_group_id):
             continue
         db.session.add(JobTasks(job_id=job_id, task_id=task_group_entry, status='Not Started'))
         db.session.commit()
+
+    if missing:
+        flash(f'Skipped {missing} task(s) in that group that no longer exist.', 'warning')
 
     return redirect("/jobs/" + str(job_id) + "/tasks")
 
@@ -633,27 +662,24 @@ def jobs_assign_lucky_task_group(job_id):
     hash = Hashes.query.get(hashfile_hashes.hash_id)
 
 
-    # Get top 10 effective tasks
-    most_effective_tasks_raw = db.session.query(func.count(Hashes.id).label("row_count"), Hashes.task_id, Tasks.name,).join(Tasks, Hashes.task_id == Tasks.id) \
-        .filter(Hashes.cracked == '1') \
-        .filter(Hashes.task_id is not None) \
-        .filter(Hashes.task_id != '0') \
-        .filter(Hashes.hash_type == hash.hash_type) \
-        .group_by(Hashes.task_id) \
-        .order_by(func.count(Hashes.id).desc()) \
-        .limit(10) \
-        .all()
+    # Top 10 effective tasks. Deleted tasks are excluded by the helper -- see
+    # top_effective_task_ids for why that is not incidental. The old inline copy
+    # of this query also passed `Hashes.task_id is not None`, which is a Python
+    # identity test on the column object, always True, and so filtered nothing;
+    # the helper uses isnot(None).
+    effective_task_ids = top_effective_task_ids(hash.hash_type)
 
-    if len(most_effective_tasks_raw) == 0:
+    if not effective_task_ids:
         flash('Not enough data to generate top tasks.', 'danger')
     else:
-    # for each effective task 
-        for entry in most_effective_tasks_raw:
-            job_tasks = JobTasks.query.filter_by(job_id=job_id).all()
-            if entry.task_id not in {job_task.task_id for job_task in job_tasks}:
-                job_task = JobTasks(job_id=job_id, task_id=entry.task_id, status='Not Started')
-                db.session.add(job_task)
-                db.session.commit()
+        assigned = {job_task.task_id for job_task
+                    in JobTasks.query.filter_by(job_id=job_id).all()}
+        for task_id in effective_task_ids:
+            if task_id in assigned:
+                continue
+            db.session.add(JobTasks(job_id=job_id, task_id=task_id, status='Not Started'))
+            assigned.add(task_id)
+        db.session.commit()
 
         flash('Successfully Added Top 10 Tasks', 'success')
     return redirect("/jobs/" + str(job_id) + "/tasks")

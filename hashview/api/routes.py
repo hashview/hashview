@@ -60,6 +60,7 @@ from hashview.utils.utils import (
     send_generated_file,
     slowest_benchmark,
     text_from_field,
+    top_effective_task_ids,
     update_dynamic_wordlist,
     update_job_task_status,
     validate_hash_only_hashfile,
@@ -1115,31 +1116,27 @@ def v1_api_post_add_job():
         hashfile_hashes = HashfileHashes.query.filter_by(hashfile_id=hashfile.id).first()
         hash = Hashes.query.get(hashfile_hashes.hash_id)
 
-        # Get top 10 effective tasks
-        most_effective_tasks_raw = db.session.query(func.count(Hashes.id).label("row_count"), Hashes.task_id, Tasks.name,).join(Tasks, Hashes.task_id == Tasks.id) \
-            .filter(Hashes.cracked == '1') \
-            .filter(Hashes.task_id.isnot(None)) \
-            .filter(Hashes.task_id != '0') \
-            .filter(Hashes.hash_type == hash.hash_type) \
-            .group_by(Hashes.task_id) \
-            .order_by(func.count(Hashes.id).desc()) \
-            .limit(10) \
-            .all()
+        # Top 10 effective tasks, sharing the web UI's helper so the two cannot
+        # drift -- they already had: this copy filtered isnot(None) while the web
+        # copy passed `is not None`, a Python identity test that filtered nothing.
+        # Deleted tasks are excluded there; see top_effective_task_ids.
+        effective_task_ids = top_effective_task_ids(hash.hash_type)
 
-        if len(most_effective_tasks_raw) == 0:
+        if not effective_task_ids:
             return jsonify({
                 'status': 500,
                 'type': 'Error',
                 'msg': 'Not enough data to determine effective tasks for this hash type. Please add more cracked hashes of this type before creating a job.'
             })
         else:
-        # for each effective task 
-            for entry in most_effective_tasks_raw:
-                job_tasks = JobTasks.query.filter_by(job_id=job_entry.id).all()
-                if entry.task_id not in {job_task.task_id for job_task in job_tasks}:
-                    job_task = JobTasks(job_id=job_entry.id, task_id=entry.task_id, status='Not Started')
-                    db.session.add(job_task)
-                    db.session.commit()      
+            assigned = {job_task.task_id for job_task
+                        in JobTasks.query.filter_by(job_id=job_entry.id).all()}
+            for task_id in effective_task_ids:
+                if task_id in assigned:
+                    continue
+                db.session.add(JobTasks(job_id=job_entry.id, task_id=task_id, status='Not Started'))
+                assigned.add(task_id)
+            db.session.commit()
 
         # Job notifications: one row per (job, owner, channel), using the same
         # method tokens as the web UI ('email'/'push'/'slack'), de-duped the

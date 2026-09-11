@@ -605,7 +605,7 @@ def test_wordlist_download_dynamic_regenerates_and_serves(
 
     # The download regenerates via update_dynamic_wordlist into the caller-
     # supplied per-request temp path; stub it to write known content there.
-    import hashview.api.routes as routes_mod
+    import hashview.api.wordlists as wordlists_mod
 
     def fake_update(wl_id, dest_path=None):
         assert dest_path is not None and dest_path.endswith(".txt")
@@ -613,7 +613,7 @@ def test_wordlist_download_dynamic_regenerates_and_serves(
             f.write(content)
         return dest_path
 
-    monkeypatch.setattr(routes_mod, "update_dynamic_wordlist", fake_update)
+    monkeypatch.setattr(wordlists_mod, "update_dynamic_wordlist", fake_update)
 
     wl = Wordlists(
         name="dynamic-wl",
@@ -807,8 +807,8 @@ def _seed_queued_job(owner):
 @pytest.mark.security
 def test_jobs_start_admin_queued_job_returns_200(client, admin_user, monkeypatch):
     """POST /v1/jobs/start/<id> for an owner+Ready job succeeds."""
-    import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "build_job_task_commands", lambda job: None)
+    import hashview.api.jobs as jobs_mod
+    monkeypatch.setattr(jobs_mod, "build_job_task_commands", lambda job: None)
 
     job = _seed_queued_job(admin_user)
 
@@ -822,8 +822,8 @@ def test_jobs_start_admin_queued_job_returns_200(client, admin_user, monkeypatch
 @pytest.mark.security
 def test_jobs_start_non_owner_non_admin_returns_403(client, admin_user, regular_user, monkeypatch):
     """POST /v1/jobs/start/<id> by a non-owner non-admin returns 403."""
-    import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "build_job_task_commands", lambda job: None)
+    import hashview.api.jobs as jobs_mod
+    monkeypatch.setattr(jobs_mod, "build_job_task_commands", lambda job: None)
 
     job = _seed_queued_job(admin_user)
 
@@ -1682,9 +1682,9 @@ def test_hashfile_upload_hash_only_no_valid_hashes_returns_500(
     """
     _upload_dirs(app, tmp_path, monkeypatch)
 
-    import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "validate_hash_only_hashfile", lambda p, ht: None)
-    monkeypatch.setattr(routes_mod, "import_hashfilehashes",
+    import hashview.api.hashfiles as hashfiles_mod
+    monkeypatch.setattr(hashfiles_mod, "validate_hash_only_hashfile", lambda p, ht: None)
+    monkeypatch.setattr(hashfiles_mod, "import_hashfilehashes",
                         lambda **kw: True)  # claims success but adds nothing
 
     cust = Customers(name="NoHashCo")
@@ -1710,9 +1710,9 @@ def test_hashfile_upload_import_returns_false_returns_500(
     returns 500 'Something went wrong' (line 1079)."""
     _upload_dirs(app, tmp_path, monkeypatch)
 
-    import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "validate_hash_only_hashfile", lambda p, ht: None)
-    monkeypatch.setattr(routes_mod, "import_hashfilehashes", lambda **kw: False)
+    import hashview.api.hashfiles as hashfiles_mod
+    monkeypatch.setattr(hashfiles_mod, "validate_hash_only_hashfile", lambda p, ht: None)
+    monkeypatch.setattr(hashfiles_mod, "import_hashfilehashes", lambda **kw: False)
 
     cust = Customers(name="FalseCo")
     _db.session.add(cust)
@@ -1982,9 +1982,11 @@ def test_rules_add_user_not_found_returns_403(client, monkeypatch):
     returns 403 'User not found' (line 435).
 
     We monkeypatch is_authorized to True but use a uuid with no matching user.
+    Patched on hashview.api.rules, which is where the handler now lives and so
+    where it resolves the name from (issue #441 split routes.py per resource).
     """
-    import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "is_authorized", lambda user, agent, request: True)
+    import hashview.api.rules as rules_mod
+    monkeypatch.setattr(rules_mod, "is_authorized", lambda user, agent, request: True)
 
     client.set_cookie("uuid", "no-such-user-uuid", domain="localhost.test")
     resp = client.post(
@@ -2001,8 +2003,8 @@ def test_rules_add_user_not_found_returns_403(client, monkeypatch):
 def test_wordlist_add_user_not_found_returns_403(client, monkeypatch):
     """POST /v1/wordlists/add/<name> where is_authorized passes but user lookup fails
     returns 403 'User not found' (line 582)."""
-    import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "is_authorized", lambda user, agent, request: True)
+    import hashview.api.wordlists as wordlists_mod
+    monkeypatch.setattr(wordlists_mod, "is_authorized", lambda user, agent, request: True)
 
     client.set_cookie("uuid", "no-such-user-uuid", domain="localhost.test")
     resp = client.post(
@@ -2019,8 +2021,8 @@ def test_wordlist_add_user_not_found_returns_403(client, monkeypatch):
 def test_jobs_delete_user_not_found_returns_403(client, monkeypatch):
     """DELETE /v1/jobs/<id> where is_authorized passes but user lookup fails
     returns 403 (line 662)."""
-    import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "is_authorized", lambda user, agent, request: True)
+    import hashview.api.jobs as jobs_mod
+    monkeypatch.setattr(jobs_mod, "is_authorized", lambda user, agent, request: True)
 
     client.set_cookie("uuid", "no-such-user-uuid", domain="localhost.test")
     resp = client.delete("/v1/jobs/1")
@@ -2053,8 +2055,8 @@ def test_jobs_delete_exception_returns_500(client, admin_user, monkeypatch):
 def test_jobs_add_user_not_found_returns_403(client, monkeypatch):
     """POST /v1/jobs/add where is_authorized passes but user lookup fails
     returns 403 (line 713)."""
-    import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "is_authorized", lambda user, agent, request: True)
+    import hashview.api.jobs as jobs_mod
+    monkeypatch.setattr(jobs_mod, "is_authorized", lambda user, agent, request: True)
 
     client.set_cookie("uuid", "no-such-user-uuid", domain="localhost.test")
     resp = client.post(
@@ -2084,8 +2086,8 @@ def test_jobs_add_null_json_body_returns_400(client, admin_user):
 def test_tasks_add_user_not_found_returns_403(client, monkeypatch):
     """POST /v1/tasks/add where is_authorized passes but user lookup fails
     returns 403 (line 876)."""
-    import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "is_authorized", lambda user, agent, request: True)
+    import hashview.api.tasks as tasks_mod
+    monkeypatch.setattr(tasks_mod, "is_authorized", lambda user, agent, request: True)
 
     client.set_cookie("uuid", "no-such-user-uuid", domain="localhost.test")
     resp = client.post(
@@ -2155,8 +2157,8 @@ def test_tasks_add_exception_returns_500(client, admin_user, monkeypatch):
 def test_hashfile_upload_user_not_found_returns_403(client, monkeypatch):
     """POST /v1/hashfiles/upload where is_authorized passes but user lookup fails
     returns 403 (line 1008)."""
-    import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "is_authorized", lambda user, agent, request: True)
+    import hashview.api.hashfiles as hashfiles_mod
+    monkeypatch.setattr(hashfiles_mod, "is_authorized", lambda user, agent, request: True)
 
     cust = Customers(name="HfUserNotFound")
     _db.session.add(cust)
@@ -2180,13 +2182,13 @@ def test_hashfile_upload_all_valid_format_strings(
     (lines 1062-1073) by patching validate_* to return no error and
     import_hashfilehashes to succeed, with a real hash in the hashfile."""
     _upload_dirs(app, tmp_path, monkeypatch)
-    import hashview.api.routes as routes_mod
+    import hashview.api.hashfiles as hashfiles_mod
 
     # Each format validator monkeypatched to return no problem
     for name in ["validate_pwdump_hashfile", "validate_netntlm_hashfile",
                  "validate_kerberos_hashfile", "validate_shadow_hashfile",
                  "validate_user_hash_hashfile", "validate_hash_only_hashfile"]:
-        monkeypatch.setattr(routes_mod, name, lambda p, ht: None)
+        monkeypatch.setattr(hashfiles_mod, name, lambda p, ht: None)
 
     cust = Customers(name="FmtStrCo")
     _db.session.add(cust)
@@ -2211,7 +2213,7 @@ def test_hashfile_upload_all_valid_format_strings(
                 return True
             return fake_import
 
-        monkeypatch.setattr(routes_mod, "import_hashfilehashes",
+        monkeypatch.setattr(hashfiles_mod, "import_hashfilehashes",
                             _make_import(h.id, None))
 
         resp = client.post(
@@ -2230,8 +2232,8 @@ def test_hashfile_upload_exception_in_validation_returns_500(
     """POST /v1/hashfiles/upload where the validation call raises returns 500
     (lines 1110-1111)."""
     _upload_dirs(app, tmp_path, monkeypatch)
-    import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "validate_hash_only_hashfile",
+    import hashview.api.hashfiles as hashfiles_mod
+    monkeypatch.setattr(hashfiles_mod, "validate_hash_only_hashfile",
                         lambda p, ht: (_ for _ in ()).throw(RuntimeError("boom")))
 
     cust = Customers(name="ValExcCo")
@@ -2252,8 +2254,8 @@ def test_hashfile_upload_exception_in_validation_returns_500(
 def test_hashfiles_by_hash_type_user_not_found_returns_403(client, monkeypatch):
     """GET /v1/hashfiles/hash_type/<n> where is_authorized passes but user lookup
     fails returns 403 (line 1146)."""
-    import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "is_authorized", lambda user, agent, request: True)
+    import hashview.api.hashfiles as hashfiles_mod
+    monkeypatch.setattr(hashfiles_mod, "is_authorized", lambda user, agent, request: True)
 
     client.set_cookie("uuid", "no-such-user-uuid", domain="localhost.test")
     resp = client.get("/v1/hashfiles/hash_type/1000")
@@ -2354,8 +2356,8 @@ def test_uploadcrackfile_new_route_exception_during_commit(
 def test_hashes_import_1000_user_not_found_returns_403(client, monkeypatch):
     """POST /v1/hashes/import/1000 where is_authorized passes but user lookup fails
     returns 403 (line 1480)."""
-    import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "is_authorized", lambda user, agent, request: True)
+    import hashview.api.hashes as hashes_mod
+    monkeypatch.setattr(hashes_mod, "is_authorized", lambda user, agent, request: True)
 
     client.set_cookie("uuid", "no-such-user-uuid", domain="localhost.test")
     resp = client.post(

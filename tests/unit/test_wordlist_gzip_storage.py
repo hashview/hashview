@@ -453,11 +453,11 @@ def test_download_dynamic_compressed_on_the_fly(app, client, monkeypatch):
     # bytes so we still verify on-the-fly gzip and the untouched DB checksum.
     import shutil
 
-    import hashview.api.routes as routes_mod
+    import hashview.api.wordlists as wordlists_mod
     def _regen(wl_id, dest_path=None):
         shutil.copyfile(Wordlists.query.get(wl_id).path, dest_path)
         return dest_path
-    monkeypatch.setattr(routes_mod, "update_dynamic_wordlist", _regen)
+    monkeypatch.setattr(wordlists_mod, "update_dynamic_wordlist", _regen)
 
     resp = client.get(f"/v1/wordlists/{wl.id}")
     assert resp.status_code == 200

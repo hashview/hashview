@@ -57,13 +57,13 @@ def test_rules_download_command_injection_poc(monkeypatch):
         db.session.add(rule)
         db.session.commit()
 
-        import hashview.api.routes as api_routes
+        import hashview.api.rules as rules_mod
 
         def _shell_tripwire(*args, **kwargs):
             pytest.fail("shell invocation attempted")
 
         # Tripwires: any route through os.system or subprocess fails the test.
-        monkeypatch.setattr(api_routes.os, "system", _shell_tripwire)
+        monkeypatch.setattr(rules_mod.os, "system", _shell_tripwire)
         monkeypatch.setattr(subprocess, "run", _shell_tripwire)
         monkeypatch.setattr(subprocess, "Popen", _shell_tripwire)
 
@@ -128,10 +128,12 @@ def test_rules_download_compresses_with_pure_python_gzip(monkeypatch):
             captured["dst"] = dst
             captured["level"] = level
 
-        import hashview.api.routes as api_routes
+        # The rule routes live in hashview.api.rules since the #441 split, so
+        # that is the namespace the handler resolves compress_to_gz from.
+        import hashview.api.rules as rules_mod
         import hashview.utils.utils as utils_mod
 
-        monkeypatch.setattr(api_routes, "compress_to_gz", fake_compress_to_gz)
+        monkeypatch.setattr(rules_mod, "compress_to_gz", fake_compress_to_gz)
         # The response is built by send_generated_file(), which lives in utils
         # and therefore resolves send_from_directory from that module.
         monkeypatch.setattr(

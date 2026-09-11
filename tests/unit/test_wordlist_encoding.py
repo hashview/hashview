@@ -595,7 +595,9 @@ def test_api_upload_gzip_of_multibyte_roundtrips(app, client):
 # dynamic wordlist download per encoding (stored .txt; gz'd on the fly)
 # ---------------------------------------------------------------------------
 
-def _regen_download_from_stored(monkeypatch, module_name="hashview.api.routes"):
+# Default is the API module that owns /v1/wordlists/<id> since the #441 split;
+# the web-UI caller passes hashview.wordlists.routes explicitly.
+def _regen_download_from_stored(monkeypatch, module_name="hashview.api.wordlists"):
     """Both dynamic downloads regenerate into a per-request temp file instead of
     serving the stored .txt. For these encoding round-trip tests, make
     regeneration reproduce the stored bytes so the assertion still verifies that

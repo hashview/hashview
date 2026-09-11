@@ -402,7 +402,7 @@ def test_jobs_start_success_queues_tasks(client, admin_user, monkeypatch):
             task_row.command = f"hashcat -j{job.id} -t{task_row.task_id}"
 
     monkeypatch.setattr(
-        "hashview.api.routes.build_job_task_commands",
+        "hashview.api.jobs.build_job_task_commands",
         _fake_build_job_task_commands,
     )
     job, jt = _seed_startable_job(admin_user, status="Ready")
@@ -547,11 +547,11 @@ def test_wordlist_download_dynamic_compresses_on_the_fly(
     # so we still verify the on-the-fly gzip.
     import shutil
 
-    import hashview.api.routes as routes_mod
+    import hashview.api.wordlists as wordlists_mod
     def _regen(wl_id, dest_path=None):
         shutil.copyfile(Wordlists.query.get(wl_id).path, dest_path)
         return dest_path
-    monkeypatch.setattr(routes_mod, "update_dynamic_wordlist", _regen)
+    monkeypatch.setattr(wordlists_mod, "update_dynamic_wordlist", _regen)
 
     _auth(client, admin_user.api_key)
     resp = client.get(f"/v1/wordlists/{wl.id}")

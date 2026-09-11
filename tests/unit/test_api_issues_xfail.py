@@ -30,7 +30,6 @@ import os
 import pytest
 
 import hashview
-import hashview.api.routes as api_routes
 from hashview.models import (
     Agents,
     Customers,
@@ -223,7 +222,9 @@ def test_219_jobs_add_uses_proper_null_filter():
     assert "Hashes.task_id is not None" not in src
     assert "Hashes.task_id.isnot(None)" in src
 
-    for caller in (api_routes.v1_api_post_add_job,
+    # /v1/jobs/add moved to hashview.api.jobs in the #441 split.
+    import hashview.api.jobs as api_jobs
+    for caller in (api_jobs.v1_api_post_add_job,
                    jobs_routes.jobs_assign_lucky_task_group):
         assert "Hashes.task_id is not None" not in code_only(caller)
 

@@ -547,11 +547,11 @@ def test_wordlist_download_dynamic_compresses_on_the_fly(
     # so we still verify the on-the-fly gzip.
     import shutil
 
-    import hashview.api.routes as routes_mod
+    import hashview.api.wordlists as wordlists_mod
     def _regen(wl_id, dest_path=None):
         shutil.copyfile(Wordlists.query.get(wl_id).path, dest_path)
         return dest_path
-    monkeypatch.setattr(routes_mod, "update_dynamic_wordlist", _regen)
+    monkeypatch.setattr(wordlists_mod, "update_dynamic_wordlist", _regen)
 
     _auth(client, admin_user.api_key)
     resp = client.get(f"/v1/wordlists/{wl.id}")

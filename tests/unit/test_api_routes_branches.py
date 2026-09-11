@@ -605,7 +605,7 @@ def test_wordlist_download_dynamic_regenerates_and_serves(
 
     # The download regenerates via update_dynamic_wordlist into the caller-
     # supplied per-request temp path; stub it to write known content there.
-    import hashview.api.routes as routes_mod
+    import hashview.api.wordlists as wordlists_mod
 
     def fake_update(wl_id, dest_path=None):
         assert dest_path is not None and dest_path.endswith(".txt")
@@ -613,7 +613,7 @@ def test_wordlist_download_dynamic_regenerates_and_serves(
             f.write(content)
         return dest_path
 
-    monkeypatch.setattr(routes_mod, "update_dynamic_wordlist", fake_update)
+    monkeypatch.setattr(wordlists_mod, "update_dynamic_wordlist", fake_update)
 
     wl = Wordlists(
         name="dynamic-wl",
@@ -2003,8 +2003,8 @@ def test_rules_add_user_not_found_returns_403(client, monkeypatch):
 def test_wordlist_add_user_not_found_returns_403(client, monkeypatch):
     """POST /v1/wordlists/add/<name> where is_authorized passes but user lookup fails
     returns 403 'User not found' (line 582)."""
-    import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "is_authorized", lambda user, agent, request: True)
+    import hashview.api.wordlists as wordlists_mod
+    monkeypatch.setattr(wordlists_mod, "is_authorized", lambda user, agent, request: True)
 
     client.set_cookie("uuid", "no-such-user-uuid", domain="localhost.test")
     resp = client.post(
@@ -2086,8 +2086,8 @@ def test_jobs_add_null_json_body_returns_400(client, admin_user):
 def test_tasks_add_user_not_found_returns_403(client, monkeypatch):
     """POST /v1/tasks/add where is_authorized passes but user lookup fails
     returns 403 (line 876)."""
-    import hashview.api.routes as routes_mod
-    monkeypatch.setattr(routes_mod, "is_authorized", lambda user, agent, request: True)
+    import hashview.api.tasks as tasks_mod
+    monkeypatch.setattr(tasks_mod, "is_authorized", lambda user, agent, request: True)
 
     client.set_cookie("uuid", "no-such-user-uuid", domain="localhost.test")
     resp = client.post(

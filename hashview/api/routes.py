@@ -8,7 +8,6 @@ from flask import (
     jsonify,
     redirect,
     request,
-    send_from_directory,
 )
 from sqlalchemy import case, exists, func
 from sqlalchemy.exc import IntegrityError
@@ -40,12 +39,10 @@ from hashview.models import (
     JobNotifications,
     Jobs,
     JobTasks,
-    Rules,
     Settings,
     TaskGroups,
     Tasks,
     Users,
-    Wordlists,
     db,
 )
 from hashview.utils.audit import log_event
@@ -53,7 +50,6 @@ from hashview.utils.utils import (
     MAX_TASKS_PER_GROUP,
     _job_hash_type,
     build_job_task_commands,
-    compress_to_gz,
     dynamic_wordlist_ids,
     get_cracked_hash_verifier,
     get_md5_hash,
@@ -61,7 +57,6 @@ from hashview.utils.utils import (
     hashtypes_in_use,
     hexplain_to_text,
     import_hashfilehashes,
-    ingest_static_wordlist_file,
     notify_admins,
     process_recovered_hash_notifications,
     rechunk_queued_tasks_for_hashtype,
@@ -71,7 +66,6 @@ from hashview.utils.utils import (
     task_uses_dynamic_wordlist,
     text_from_field,
     top_effective_task_ids,
-    update_dynamic_wordlist,
     update_job_task_status,
     validate_hash_only_hashfile,
     validate_kerberos_hashfile,
@@ -515,184 +509,14 @@ def v1_api_get_agent_benchmarks():
     return jsonify({'status': 200,
                     'performance': {str(ht): spd for ht, spd in rows}})
 
-@api.route('/v1/customers', methods=['GET'])
-def v1_api_get_customers():
-    if not is_authorized(user=True, agent=True, request=request):
-        return redirect("/v1/not_authorized")
-
-    update_heartbeat(request.cookies.get('uuid'))
-    customers = Customers.query.all()
-    message = {
-        'status': 200,
-        'users': alchemy_to_native(customers)
-    }
-    return jsonify(message)
-
-@api.route('/v1/customers/add', methods=['POST'])
-def v1_api_add_customer():
-    # Authorization check
-    if not is_authorized(user=True, agent=False, request=request):
-        return redirect("/v1/not_authorized")
-
-    # Expect JSON body (silent=True so an empty/invalid body returns None
-    # instead of raising a 400 HTML page that callers can't parse as JSON)
-    customer_data = request.get_json(silent=True)
-    if not customer_data:
-        return jsonify({
-            'status': 400,
-            'type': 'Error',
-            'msg': 'Missing customer data in request body'
-        })
-
-    try:
-        # Create DB entry (Customers only has id + name)
-        customer_entry = Customers(
-            name=customer_data.get('name')
-        )
-        db.session.add(customer_entry)
-        db.session.commit()
-
-        log_event('customer.create', target=f'customer:{customer_entry.id} {customer_entry.name!r}')
-        message = {
-            'status': 200,
-            'type': 'message',
-            'msg': 'Customer added',
-            'customer_id': customer_entry.id
-        }
-        return jsonify(message)
-    except Exception:
-        current_app.logger.exception('API /v1/customers: failed to add customer')
-        return jsonify({
-            'status': 500,
-            'type': 'Error',
-            'msg': 'Failed to add customer.'
-        })
 
 
 
 
 
-# Provide wordlist info (really should be plural)
-@api.route('/v1/wordlists', methods=['GET'])
-def v1_api_get_wordlist():
-    if not is_authorized(user=True, agent=True, request=request):
-        return redirect("/v1/not_authorized")
 
-    update_heartbeat(request.cookies.get('uuid'))
-    wordlists = Wordlists.query.all()
-    message = {
-        'status': 200,
-        'wordlists': alchemy_to_native(wordlists)
-    }
-    return jsonify(message)
 
-# serve a wordlist
-@api.route('/v1/wordlists/<int:wordlist_id>', methods=['GET'])
-def v1_api_get_wordlist_download(wordlist_id):
-    if not is_authorized(user=True, agent=True, request=request):
-        return redirect("/v1/not_authorized")
 
-    update_heartbeat(request.cookies.get('uuid'))
-    wordlist = Wordlists.query.get(wordlist_id)
-    if wordlist is None:
-        return jsonify({'status': 404, 'type': 'Error', 'msg': 'Wordlist not found'}), 404
-
-    wordlists_dir = os.path.join(current_app.root_path, 'control/wordlists')
-    tmp_dir = os.path.join(current_app.root_path, 'control/tmp')
-
-    if wordlist.type == 'static':
-        # Static lists are stored compressed at rest: serve the .gz directly. The
-        # stored bytes are stable, so the agent's sha256(.gz) matches the DB
-        # checksum. Resolve by basename against the wordlists dir rather than
-        # trusting a possibly-relative wordlist.path against the CWD (legacy rows
-        # can hold a relative path). When the row outlives its file -- e.g. a
-        # wordlist stranded by an upgrade -- return a clear JSON 404 instead of
-        # send_from_directory's bare HTML page, so the agent logs an actionable
-        # body and the operator knows to re-upload. (Mirrors /v1/rules/<id>.)
-        wordlist_name = os.path.basename(wordlist.path or '')
-        src_path = os.path.join(wordlists_dir, wordlist_name)
-        if not wordlist_name or not os.path.exists(src_path):
-            return jsonify({'status': 404, 'type': 'Error',
-                            'msg': 'Wordlist file missing on disk: ' + (wordlist_name or '(no path)')}), 404
-        return send_from_directory(wordlists_dir, wordlist_name, mimetype='application/octet-stream')
-
-    # Dynamic lists are regenerated from the DB on demand and served gzipped.
-    # Generate into a per-request unique temp file (never the shared
-    # wordlist.path); the DB row metadata is deliberately left untouched
-    # (dest_path is set).
-    tmp_txt = os.path.join(tmp_dir, secrets.token_hex(8) + '.txt')
-    update_dynamic_wordlist(wordlist_id, dest_path=tmp_txt)
-
-    # Compress the plaintext into control/tmp and serve that. No shell; pure-
-    # Python streamed gzip -9. Both temp files live under control/tmp and are
-    # cleaned up: the .txt now, the .gz after the response is streamed.
-    tmp_gz = os.path.join(tmp_dir, secrets.token_hex(8) + '.gz')
-    compress_to_gz(tmp_txt, tmp_gz, 9)
-    remove_file(tmp_txt)
-    return send_generated_file(
-        tmp_dir, os.path.basename(tmp_gz), mimetype='application/octet-stream')
-
-# Create new wordlist
-@api.route('/v1/wordlists/add/<wordlist_name>', methods=['POST'])
-def v1_api_add_wordlist(wordlist_name):
-    # Authorization check. This is a user-upload action — it resolves the
-    # caller to a Users row by api_key — so it's user-only. The agent never
-    # POSTs here (it only GETs wordlists), so requiring a user
-    # credential refuses agent uuids cleanly instead of letting them through to
-    # a "User not found" 403.
-    if not is_authorized(user=True, agent=False, request=request):
-        return redirect("/v1/not_authorized")
-
-    # Read the body as BYTES (not as_text) so an uploaded gzip wordlist isn't
-    # corrupted by text decoding. The body may be plain text or a gzip file.
-    raw_content = request.get_data()
-    if not raw_content:
-        return jsonify({
-            'status': 400,
-            'type': 'Error',
-            'msg': 'Missing wordlist content in request body'
-        })
-
-    # Resolve user from api_key cookie
-    user_uuid = request.cookies.get('uuid')
-    user = Users.query.filter_by(api_key=user_uuid).first()
-    if not user:
-        return jsonify({
-            'status': 403,
-            'type': 'Error',
-            'msg': 'User not found'
-        })
-
-    # Write the raw body to a control/tmp temp, then ingest it into
-    # compressed-at-rest storage (handles plain text or gzip; validates gzip).
-    tmp_path = os.path.abspath(os.path.join(current_app.root_path, 'control/tmp', secrets.token_hex(8)))
-    try:
-        with open(tmp_path, 'wb') as f:
-            f.write(raw_content)
-        wordlist_entry = ingest_static_wordlist_file(tmp_path, user.id, wordlist_name)
-    except Exception:
-        current_app.logger.exception('API /v1/wordlists: failed to process wordlist')
-        return jsonify({
-            'status': 400,
-            'type': 'Error',
-            'msg': 'Failed to process wordlist (not valid text or gzip?).'
-        })
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-
-    db.session.add(wordlist_entry)
-    db.session.commit()
-
-    log_event('wordlist.create', actor=(user.email_address, user.id),
-              target=f'wordlist:{wordlist_entry.id} {wordlist_entry.name!r}')
-    message = {
-        'status': 200,
-        'type': 'message',
-        'msg': 'Wordlist added',
-        'wordlist_id': wordlist_entry.id
-    }
-    return jsonify(message)
 
 # force or restart a queue item
 # used when agent goes offline and comes back online
@@ -1181,133 +1005,8 @@ def v1_api_post_start_job(job_id):
             'msg': 'Invalid job ID'
         })
 
-# List all tasks
-@api.route('/v1/tasks', methods=['GET'])
-def v1_api_get_tasks():
-    if not is_authorized(user=True, agent=True, request=request):
-        return redirect("/v1/not_authorized")
 
-    update_heartbeat(request.cookies.get('uuid'))
-    tasks = Tasks.query.all()
-    message = {
-        'status': 200,
-        'tasks': alchemy_to_native(tasks)
-    }
-    return jsonify(message)
 
-# Provide task info
-@api.route('/v1/tasks/<int:task_id>', methods=['GET'])
-def v1_api_get_task(task_id):
-    if not is_authorized(user=True, agent=True, request=request):
-        return redirect("/v1/not_authorized")
-
-    update_heartbeat(request.cookies.get('uuid'))
-    task = Tasks.query.get(task_id)
-    message = {
-        'status': 200,
-        'task': alchemy_to_native(task)
-    }
-    return jsonify(message)
-
-# Create a new task (Wordlist + optional rule, i.e. hashcat attack mode 0)
-@api.route('/v1/tasks/add', methods=['POST'])
-def v1_api_add_task():
-    if not is_authorized(user=True, agent=False, request=request):
-        return redirect("/v1/not_authorized")
-
-    uuid = request.cookies.get('uuid')
-    user = Users.query.filter_by(api_key=uuid).first()
-    if not user:
-        return jsonify({
-            'status': 403,
-            'type': 'Error',
-            'msg': 'User not found'
-        })
-
-    # Expect JSON body: {"name": ..., "wl_id": ..., "rule_id": <optional>}
-    task_data = request.get_json(silent=True)
-    if not task_data:
-        return jsonify({
-            'status': 400,
-            'type': 'Error',
-            'msg': 'Missing task data in request body'
-        })
-
-    name = str(task_data.get('name') or '').strip()
-    if not name:
-        return jsonify({
-            'status': 400,
-            'type': 'Error',
-            'msg': 'Task name is required'
-        })
-    if Tasks.query.filter_by(name=name).first():
-        return jsonify({
-            'status': 400,
-            'type': 'Error',
-            'msg': 'A task with that name already exists'
-        })
-
-    wl_id = task_data.get('wl_id')
-    if wl_id is None or not str(wl_id).isdigit():
-        return jsonify({
-            'status': 400,
-            'type': 'Error',
-            'msg': 'wl_id is required and must be a wordlist id'
-        })
-    if not Wordlists.query.get(int(wl_id)):
-        return jsonify({
-            'status': 400,
-            'type': 'Error',
-            'msg': 'Invalid wl_id'
-        })
-
-    # rule_id is optional: absent/'None'/'' means a plain dictionary attack
-    # (same as the web UI's 'None' rule choice).
-    rule_id = task_data.get('rule_id')
-    if rule_id in (None, 'None', ''):
-        rule_id = None
-    else:
-        if not str(rule_id).isdigit():
-            return jsonify({
-                'status': 400,
-                'type': 'Error',
-                'msg': 'rule_id must be a rule id'
-            })
-        rule_id = int(rule_id)
-        if not Rules.query.get(rule_id):
-            return jsonify({
-                'status': 400,
-                'type': 'Error',
-                'msg': 'Invalid rule_id'
-            })
-
-    try:
-        task = Tasks(
-            name=name,
-            owner_id=user.id,
-            wl_id=int(wl_id),
-            rule_id=rule_id,
-            hc_attackmode=0
-        )
-        db.session.add(task)
-        db.session.commit()
-    except Exception:
-        current_app.logger.exception('API /v1/tasks: failed to add task')
-        return jsonify({
-            'status': 500,
-            'type': 'Error',
-            'msg': 'Failed to add task.'
-        })
-
-    log_event('task.create', actor=(user.email_address, user.id),
-              target=f'task:{task.id} {task.name!r}')
-    message = {
-        'status': 200,
-        'type': 'message',
-        'msg': 'Task added',
-        'task_id': task.id
-    }
-    return jsonify(message)
 
 def _validate_ordered_task_ids(task_ids):
     """Validate a list of task ids against the Tasks table, dedupe preserving
@@ -1902,51 +1601,6 @@ def v1_api_get_hashfiles_by_hash_type(hash_type):
     }
     return jsonify(message)
 
-# List every hashfile belonging to a customer (issue #346). Nested under the
-# customer to mirror the web UI's per-customer view; unlike the by-hash-type
-# route above, counts are NOT scoped to a single type -- total/cracked cover all
-# hashes in the file and hash_type is the file's representative mode (min type,
-# matching hashfiles_list()). An unknown customer is a valid empty result
-# (status 200, hashfiles: []), not a 404 -- same contract as the by-hash-type
-# route.
-@api.route('/v1/customers/<int:customer_id>/hashfiles', methods=['GET'])
-def v1_api_get_customer_hashfiles(customer_id):
-    if not is_authorized(user=True, agent=False, request=request):
-        return redirect("/v1/not_authorized")
-
-    uuid = request.cookies.get('uuid')
-    user = Users.query.filter_by(api_key=uuid).first()
-    if not user:
-        return jsonify({
-            'status': 403,
-            'type': 'Error',
-            'msg': 'User not found'
-        })
-
-    results = []
-    for hashfile in Hashfiles.query.filter_by(customer_id=customer_id).all():
-        agg = db.session.query(
-            func.count(Hashes.id),
-            func.coalesce(func.sum(case((Hashes.cracked == True, 1), else_=0)), 0),
-            func.min(Hashes.hash_type),
-        ).join(HashfileHashes, Hashes.id == HashfileHashes.hash_id) \
-         .filter(HashfileHashes.hashfile_id == hashfile.id).first()
-        results.append({
-            'id': hashfile.id,
-            'name': hashfile.name,
-            'customer_id': hashfile.customer_id,
-            'owner_id': hashfile.owner_id,
-            'uploaded_at': hashfile.uploaded_at.isoformat() if hashfile.uploaded_at else None,
-            'hash_type': agg[2],
-            'total_hashes': int(agg[0] or 0),
-            'cracked_hashes': int(agg[1] or 0),
-        })
-
-    return jsonify({
-        'status': 200,
-        'type': 'message',
-        'hashfiles': results
-    })
 
 # Upload Cracked Hashes
 @api.route('/v1/uploadCrackFile/<int:job_task_id>', methods=['POST'])
@@ -2360,5 +2014,11 @@ def v1_api_hashes_import(hash_type):
 # At the bottom of the file so the imports above are already bound, and noqa'd
 # because that placement is exactly what E402 flags.
 # ---------------------------------------------------------------------------
-from hashview.api import rules  # noqa: E402,F401
+# Dotted form on purpose: `from hashview.api import customers` would bind the
+# name `customers` at module level, which collides with a local of the same name
+# in v1_api_post_hashfile_upload (ruff F811). This binds only `hashview`.
+import hashview.api.customers  # noqa: E402,F401
+import hashview.api.rules  # noqa: E402,F401
+import hashview.api.tasks  # noqa: E402,F401
+import hashview.api.wordlists  # noqa: E402,F401
 

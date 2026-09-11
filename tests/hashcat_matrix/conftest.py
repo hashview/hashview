@@ -9,6 +9,7 @@ into a no-op that always reports success. tests/agent_unit/conftest.py does the
 same thing for the same reason.
 """
 import importlib.util
+import os
 
 import pytest
 
@@ -22,7 +23,13 @@ import pytest
 # regardless of the marker. hashcat-matrix.yml installs requirements.txt, so
 # the guard is inert in the job that actually runs these. Mirrors
 # tests/agent_unit/conftest.py and tests/unit/conftest.py.
-if importlib.util.find_spec("flask") is None:
+# Gated on HASHCAT_BIN being unset: hashcat-matrix.yml sets it for both runs and
+# then greps the output for "skipped" to prove the gate was not a no-op. A
+# collect_ignore is invisible to that grep -- it produces no output at all -- so
+# an unconditional guard would let this file vanish silently and still report
+# green. Inside the gate, a missing runtime dep must surface as a collection
+# ERROR. Outside it, this keeps a stray `pytest tests/` on a thin env working.
+if os.environ.get("HASHCAT_BIN") is None and importlib.util.find_spec("flask") is None:
     collect_ignore = ["test_mask_chunk_coverage.py"]
 
 

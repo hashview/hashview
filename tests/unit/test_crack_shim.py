@@ -248,3 +248,21 @@ def test_parse_args_sentinel_does_not_swallow_earlier_options():
 
     assert mode == 1000
     assert positionals == ["h.txt", "-?1?1", "w.gz"]
+
+
+def test_parse_args_consumes_long_form_charsets_and_device_flags():
+    """Same class as --skip: a value-taking flag that the catch-all drops while
+    its bare VALUE falls into positionals and shifts hashfile/wordlist/mask.
+
+    --custom-charset1..4 are exercised by the unit tests for mask_argv, and an
+    agent configured with HC_EXTRA_ARGS='-d 3,4' prepends a device selector to
+    every command it runs.
+    """
+    hcshim = _load()
+    argv = ["-m", "1000", "-a", "3", "-d", "3,4",
+            "--custom-charset1", "?u?l?d", "--opencl-device-types", "1,2",
+            "control/hashes/h.txt", "?1?1?1"]
+    mode, _outfile, _fmt, _rules, positionals = hcshim.parse_args(argv)
+
+    assert mode == 1000
+    assert positionals == ["control/hashes/h.txt", "?1?1?1"]

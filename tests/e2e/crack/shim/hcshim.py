@@ -161,9 +161,17 @@ def _emit_status(total, recovered):
 # and ignored (the shim does not expand masks), but they MUST be consumed: their
 # value is a bare token that otherwise lands in positionals and shifts the
 # hashfile/wordlist/mask order.
+# The long forms of the custom charsets take a value exactly as -1..-4 do, and
+# the unit tests exercise them (tests/unit/test_mask_argv.py). The device
+# selectors are here for the same reason: an agent configured with
+# HC_EXTRA_ARGS='-d 3,4' prepends one, and its bare value would shift the
+# positionals in precisely the way --skip once did.
 VALUE_FLAGS = {"-m", "-w", "--session", "--potfile-path", "--outfile",
                "--outfile-format", "-a", "-r", "-j", "-k", "--skip", "--limit",
-               "-1", "-2", "-3", "-4"}
+               "-1", "-2", "-3", "-4",
+               "--custom-charset1", "--custom-charset2",
+               "--custom-charset3", "--custom-charset4",
+               "-d", "--backend-devices", "--opencl-device-types"}
 FLAG_ONLY = {"-O", "--status", "--status-json", "--loopback", "--force"}
 
 

@@ -286,3 +286,29 @@ def test_a_submask_is_never_longer_than_the_mask_it_came_from():
         longest = max(len(m) for m in submasks)
         assert longest <= len(mask), (
             f"{mask!r} produced a longer sub-mask ({longest} > {len(mask)})")
+
+
+def test_a_mask_field_carrying_options_is_never_chunked():
+    """A custom charset makes the field something other than a bare mask.
+
+    parse_mask happily reads '-1 ?u?l?d ?d?d?d' as literals-and-sets, so the
+    expander would treat the charset DEFINITION as the leading mask position and
+    expand that, emitting '-1 A?l?d ?d?d?d'. build_hashcat_command then ships the
+    whole string as ONE positional behind the '--' sentinel, and hashcat accepts
+    it as a 15-character literal mask -- no error, wrong keyspace, chunk coverage
+    silently lost. The un-chunked task is correct, so decline to split.
+    """
+    for field in ('-1 ?u?l?d ?d?d?d',        # options first (issue #491's form)
+                  '?d?d?d -1 ?u?l?d',        # charset trailing
+                  '--custom-charset1 ?u?l ?1?1?1'):
+        assert _expand_mask(field, 95, 1000) is None, field
+        assert len(plan_chunks(3, mask=field, slowest_speed=1e-3,
+                               target_seconds=3600)) == 1, field
+
+
+def test_a_bare_mask_still_chunks_and_still_gets_the_sentinel():
+    """Negative control for the guard above: it must not disarm the actual fix."""
+    specs = plan_chunks(3, mask='?s?d?d?d?d', slowest_speed=1e-3, target_seconds=3600)
+    assert len(specs) == 330
+    dash = [s['mask'] for s in specs if s['mask'].startswith('-')]
+    assert dash == ['-%s?d?d?d' % d for d in '0123456789']

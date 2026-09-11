@@ -559,9 +559,20 @@ def _catalog_health_check_inner(db :SQLAlchemy, logger :Logger):
             'while a task still references it.',
         ]
         logger.info('CatalogHealthCheck: %d catalog file(s) missing; notifying admins.', total)
-        notify_admins(
-            'Hashview: %d catalog file%s missing on disk' % (total, '' if total == 1 else 's'),
-            '\n'.join(body))
+        # notify_admins fans out to email, Pushover and Slack, and only send_email
+        # swallows its own errors: send_pushover does a bare requests.post +
+        # .json(). A timeout on one transport would otherwise propagate AFTER the
+        # emails were already delivered, skipping the latch below and the single
+        # commit at the end -- so the identical aggregated alert would re-send
+        # every hour until that transport recovered. Treat a delivery failure as
+        # "told": a duplicate-free log line beats an hourly pager storm.
+        try:
+            notify_admins(
+                'Hashview: %d catalog file%s missing on disk' % (total, '' if total == 1 else 's'),
+                '\n'.join(body))
+        except Exception:
+            logger.exception(
+                'CatalogHealthCheck: admin notification partially failed; latching anyway.')
         for rule in missing_rules:
             log_event('rule.file_missing', target=f'rule:{rule.id} {rule.name!r}',
                       detail=f'path={rule.path} tasks={len(by_rule.get(rule.id, ()))}',
@@ -582,9 +593,13 @@ def _catalog_health_check_inner(db :SQLAlchemy, logger :Logger):
         body += _catalog_alert_lines(restored_rules, {}, 'rule')
         body += _catalog_alert_lines(restored_wordlists, {}, 'wordlist')
         logger.info('CatalogHealthCheck: %d catalog file(s) restored; notifying admins.', total)
-        notify_admins(
-            'Hashview: %d catalog file%s restored' % (total, '' if total == 1 else 's'),
-            '\n'.join(body))
+        try:
+            notify_admins(
+                'Hashview: %d catalog file%s restored' % (total, '' if total == 1 else 's'),
+                '\n'.join(body))
+        except Exception:
+            logger.exception(
+                'CatalogHealthCheck: restored-notification partially failed; un-latching anyway.')
         for rule in restored_rules:
             log_event('rule.file_restored', target=f'rule:{rule.id} {rule.name!r}',
                       detail=f'path={rule.path}', actor=('system', None))

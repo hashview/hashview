@@ -229,3 +229,42 @@ def test_register_default_jobs_includes_catalog_health(app):
     register_default_jobs(app)
     ids = {j.id for j in scheduler.get_jobs()}
     assert {"DATA_RETENTION", "AGENT_HEALTH", "CATALOG_HEALTH"} <= ids
+
+
+@pytest.mark.security
+def test_a_failing_transport_still_latches(app, monkeypatch, tmp_path):
+    """notify_admins fans out to email, Pushover and Slack, and only send_email
+    swallows its own errors. If a raise skipped the latch and the commit, the
+    admins who DID get the email would be re-alerted every hour until the broken
+    transport came back."""
+    admin = make_admin()
+    wl = _gone_wordlist(admin.id, tmp_path)
+
+    def _boom(_subject, _message):
+        raise ConnectionError("pushover unreachable")
+
+    monkeypatch.setattr(utils_mod, "notify_admins", _boom)
+    _catalog_health_check_inner(db, _LOG)          # must not propagate
+
+    assert Wordlists.query.get(wl.id).file_missing_notified is True
+
+    # and the next sweep stays quiet rather than re-alerting
+    calls = _capture(monkeypatch)
+    _catalog_health_check_inner(db, _LOG)
+    assert calls == []
+
+
+@pytest.mark.security
+def test_a_failing_transport_still_unlatches_on_recovery(app, monkeypatch):
+    admin = make_admin()
+    wl = make_wordlist_with_file(admin.id, name="back-again.gz")
+    wl.file_missing_notified = True
+    db.session.commit()
+
+    def _boom(_subject, _message):
+        raise ConnectionError("slack unreachable")
+
+    monkeypatch.setattr(utils_mod, "notify_admins", _boom)
+    _catalog_health_check_inner(db, _LOG)
+
+    assert Wordlists.query.get(wl.id).file_missing_notified is False

@@ -1608,28 +1608,40 @@ def test_rules_download_missing_file_on_disk_returns_404(
 
 @pytest.mark.security
 def test_jobs_add_exception_path_returns_500(client, admin_user, monkeypatch):
-    """POST /v1/jobs/add where the inner try raises an exception returns 500
-    (lines 800-801). We trigger it by seeding a hashfile with a HashfileHashes
-    row that points to a nonexistent hash, so Hashes.query.get() returns None
-    and attribute access on None raises AttributeError inside the try block."""
+    """POST /v1/jobs/add where the write raises returns 500 and creates nothing.
+
+    This used to be triggered by a HashfileHashes row pointing at a nonexistent
+    hash, which raised AttributeError inside the try. That case is now validated
+    up front and answers with a specific message (see
+    test_jobs_add_unresolvable_hash_type_returns_500 in
+    tests/unit/test_api_jobs_add_modes.py), so the generic handler needs a real
+    database failure to reach it -- same approach as
+    test_jobs_delete_exception_returns_500 above.
+    """
     cust = Customers(name="ExcCo")
     _db.session.add(cust)
     _db.session.commit()
     hf = Hashfiles(name="exc-hf", customer_id=cust.id, owner_id=admin_user.id)
     _db.session.add(hf)
     _db.session.commit()
-    # Point HashfileHashes at a nonexistent hash_id
-    _db.session.add(HashfileHashes(hash_id=999999, hashfile_id=hf.id))
+    task = Tasks(name="exc-task", hc_attackmode=0, owner_id=admin_user.id)
+    _db.session.add(task)
     _db.session.commit()
 
+    def raise_on_commit():
+        raise RuntimeError("simulated add error")
+
+    monkeypatch.setattr(_db.session, "commit", raise_on_commit)
     client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
     resp = client.post(
         "/v1/jobs/add",
-        data=json.dumps({"name": "exc-job", "hashfile_id": hf.id, "customer_id": cust.id}),
+        data=json.dumps({"name": "exc-job", "hashfile_id": hf.id, "customer_id": cust.id,
+                         "mode": "tasks", "task_ids": [task.id]}),
         content_type="application/json",
     )
     body = _json(resp)
     assert body["status"] == 500
+    assert "Failed to add job" in body["msg"]
 
 
 @pytest.mark.security

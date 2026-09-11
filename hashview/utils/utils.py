@@ -1310,6 +1310,38 @@ def hashtypes_in_use():
     return {row[0] for row in rows if row[0] is not None}
 
 
+def task_uses_dynamic_wordlist(task, dynamic_ids=None):
+    """True when ``task`` may be assigned to the same job more than once.
+
+    The rule in one place: a task is repeatable iff its wordlist is dynamic,
+    because a dynamic list's contents change between runs so repeating it is
+    meaningful. Everything that assigns tasks to a job has to agree on this, and
+    it already had three spellings in the jobs blueprint alone -- a fourth in the
+    API is how they drift.
+
+    Asked as "is this wordlist dynamic", never as "is it not static": a task with
+    no wordlist (wl_id NULL -- mask/brute-force attacks), a task whose wordlist
+    row has been deleted, and an odd ``type`` casing must all answer False. That
+    positive, case-sensitive form is deliberate -- see the comment at
+    jobs_assign_task.
+
+    ``wl_id_2`` is deliberately NOT consulted: the second wordlist of a
+    combination attack has never made a task repeatable, and widening it here
+    would quietly change which tasks can be double-assigned.
+
+    Pass ``dynamic_ids`` (a pre-computed dynamic_wordlist_ids() set) when testing
+    many tasks, so the wordlists table is read once rather than once per task.
+    """
+    if task is None or task.wl_id is None:
+        # Wordlists.query.get(None) emits "fully NULL primary key identity cannot
+        # load any object", which SQLAlchemy warns may become an error.
+        return False
+    if dynamic_ids is not None:
+        return task.wl_id in dynamic_ids
+    wordlist = Wordlists.query.get(task.wl_id)
+    return wordlist is not None and wordlist.type == 'dynamic'
+
+
 def dynamic_wordlist_ids():
     """Set of Wordlists.id whose type is 'dynamic' (stored lower-case)."""
     rows = db.session.query(Wordlists.id).filter(Wordlists.type == 'dynamic').all()
@@ -1576,13 +1608,27 @@ def _chunk_spec_from_row(job_task):
     return {}
 
 
-def _job_hash_type(job):
-    """Derive the job's hash type the same way build_hashcat_command does."""
-    hfh = HashfileHashes.query.filter_by(hashfile_id=job.hashfile_id).first()
+def hashfile_hash_type(hashfile_id):
+    """A hashfile's representative hash type: the type of its first linked hash.
+
+    Returns None when the hashfile has no hashes, or its first link points at a
+    hash row that is gone. Callers that walk this chain inline reach both cases
+    as an AttributeError -- /v1/jobs/add used to, and swallowed it into a generic
+    "Failed to add job." 500.
+
+    filter_by(hashfile_id=None) is a harmless ``WHERE ... IS NULL`` returning no
+    row, so a missing id needs no separate guard (unlike Query.get(None)).
+    """
+    hfh = HashfileHashes.query.filter_by(hashfile_id=hashfile_id).first()
     if not hfh:
         return None
     h = Hashes.query.get(hfh.hash_id)
     return h.hash_type if h else None
+
+
+def _job_hash_type(job):
+    """Derive the job's hash type the same way build_hashcat_command does."""
+    return hashfile_hash_type(job.hashfile_id)
 
 
 def _set_job_task_command(job, row, spec, chunk_no=None, chunk_total=None):

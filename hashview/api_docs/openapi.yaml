@@ -630,11 +630,17 @@ paths:
       tags: [Jobs]
       summary: Create a job
       description: >-
-        Creates the job in status `Ready` and auto-assigns up to the 10
-        historically most effective tasks for the hashfile's hash type
-        (ranked by cracks). Fails (body status 500) when no cracked material
-        of that hash type exists yet to rank tasks by. One job-notification
-        row is created per requested channel (`email` / `push` / `slack`).
+        Creates the job in status `Ready` and assigns its tasks by one of three
+        modes — see `mode` on the request schema. The default, `lucky`, picks up
+        to the 10 historically most effective tasks for the hashfile's hash type
+        and fails (body status 500) when no cracked material of that type exists
+        yet to rank by; `tasks` and `task_group` assign explicitly and need no
+        crack history. One job-notification row is created per requested channel
+        (`email` / `push` / `slack`).
+
+
+        The whole create is one transaction and every input is validated before
+        any of it is written, so a rejected request leaves no job behind.
       operationId: addJob
       x-audience: user
       security:
@@ -649,8 +655,10 @@ paths:
         '200':
           description: >-
             HTTP 200 always; body status 200 with `job_id`, 400 on a missing
-            body, 403 if the key resolves to no user, 500 when effective
-            tasks can't be determined or on a database error.
+            body, an invalid or disabled `priority`, an unknown `mode`, a
+            companion field under the wrong mode, or an invalid task id /
+            task group id; 403 if the key resolves to no user; 500 when
+            effective tasks can't be determined or on a database error.
           content:
             application/json:
               schema:
@@ -703,6 +711,50 @@ paths:
               examples:
                 started: {value: {status: 200, type: message, msg: Job started, job_id: 12}}
                 alreadyActive: {value: {status: 400, type: Error, msg: Job is already running or queued}}
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
+
+  /v1/jobs/stop/{job_id}:
+    post:
+      tags: [Jobs]
+      summary: Stop a running or queued job
+      description: >-
+        Owner or admin only. Cancels the job and every task under it, clearing
+        each task's agent so the work is not dispatched again. Only jobs in
+        status `Running` or `Queued` can be stopped; anything else is rejected
+        with body status 400. Mirrors the web UI's stop action.
+      operationId: stopJob
+      x-audience: user
+      security:
+        - userApiKey: []
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: {type: integer}
+      responses:
+        '200':
+          description: >-
+            HTTP 200; body status 200 on success, 400 when the job is not
+            actively running, 403 when not owner or admin, 500 on a database
+            error.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/JobStoppedResponse'
+                  - $ref: '#/components/schemas/ApiError'
+              examples:
+                stopped: {value: {status: 200, type: message, msg: Job stopped, job_id: 12}}
+                notActive: {value: {status: 400, type: Error, msg: "Job is not actively running (status 'Ready')"}}
+                forbidden: {value: {status: 403, type: Error, msg: You do not have rights to stop this job}}
+        '404':
+          description: Real HTTP 404 — unknown job id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example: {status: 404, type: Error, msg: Job not found}
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
 
@@ -1775,11 +1827,51 @@ components:
 
     JobCreate:
       type: object
+      description: >-
+        `mode` selects how the new job's tasks are chosen and defaults to
+        `lucky`, so a body that omits it behaves exactly as before this field
+        existed. Each non-default mode owns exactly one companion field
+        (`tasks` -> `task_ids`, `task_group` -> `task_group_id`); supplying a
+        companion field under a different mode is rejected rather than ignored.
       required: [name, hashfile_id, customer_id]
       properties:
         name: {type: string}
         hashfile_id: {type: integer}
         customer_id: {type: integer}
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 5
+          default: 3
+          description: >-
+            Job weight, 5 highest to 1 lowest; agents take higher-priority work
+            first. Rejected with body status 400 unless an administrator has
+            enabled job priority weighting in Settings — omit it otherwise.
+        mode:
+          type: string
+          enum: [lucky, tasks, task_group]
+          default: lucky
+          description: >-
+            `lucky` (default) assigns up to the 10 historically most effective
+            tasks for the hashfile's hash type, and fails with body status 500
+            when no cracked material of that type exists yet to rank by.
+            `tasks` assigns exactly the ids in `task_ids`. `task_group` assigns
+            the members of `task_group_id`. Only `lucky` needs crack history.
+        task_ids:
+          type: array
+          items: {type: integer}
+          description: >-
+            Required when `mode` is `tasks`. Assigned in the order given — that
+            order is the queue order. Every id must exist, and a task may repeat
+            only if it uses a dynamic wordlist; an unknown id or an illegal
+            repeat is rejected and no job is created.
+        task_group_id:
+          type: integer
+          description: >-
+            Required when `mode` is `task_group`. Members are assigned in the
+            group's stored order; members whose task no longer exists are
+            skipped and counted in `tasks_skipped`. A group with no assignable
+            members is rejected rather than creating a taskless job.
         limit_recovered:
           type: boolean
           default: false
@@ -2124,8 +2216,25 @@ components:
           required: [job_id]
           properties:
             job_id: {type: integer}
+            tasks_assigned:
+              type: integer
+              description: Number of job-task rows created.
+            tasks_skipped:
+              type: integer
+              description: >-
+                Members skipped because their task no longer exists. Only
+                `task_group` mode can be non-zero; the other modes refuse
+                rather than skip.
 
     JobStartedResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMessage'
+        - type: object
+          required: [job_id]
+          properties:
+            job_id: {type: integer}
+
+    JobStoppedResponse:
       allOf:
         - $ref: '#/components/schemas/ApiMessage'
         - type: object

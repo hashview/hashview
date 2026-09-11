@@ -47,6 +47,7 @@ from hashview.utils.utils import (
     dynamic_wordlist_ids,
     import_hashfilehashes,
     save_file,
+    task_uses_dynamic_wordlist,
     top_effective_task_ids,
     try_commit,
     validate_hash_only_hashfile,
@@ -538,7 +539,8 @@ def jobs_list_tasks(job_id):
     dynamic_wl_ids = dynamic_wordlist_ids()
     assigned_task_ids = {jt.task_id for jt in job_tasks}
     assignable_tasks = [t for t in tasks
-                        if t.id not in assigned_task_ids or t.wl_id in dynamic_wl_ids]
+                        if t.id not in assigned_task_ids
+                        or task_uses_dynamic_wordlist(t, dynamic_wl_ids)]
 
     # Per-task display metadata for the queue cards (keyed by task id; duplicate
     # dynamic-task rows share the same task id, so one entry serves all its rows).
@@ -566,18 +568,6 @@ def jobs_list_tasks(job_id):
 
     return render_template('jobs_assigned_tasks.html.j2', title='Jobs Assigned Tasks', job=job, tasks=tasks, job_tasks=job_tasks, assigned=assigned, assignable_tasks=assignable_tasks, task_meta=task_meta, task_groups=task_groups, wordlists=wordlists, alert_hashes=alert_hashes)
 
-def _dynamic_wordlist_for(task):
-    """The task's wordlist, or None when it has none.
-
-    Guarded because Query.get(None) emits "fully NULL primary key identity cannot
-    load any object" and SQLAlchemy warns that may become an error. A task with no
-    wordlist simply isn't a dynamic one.
-    """
-    if task.wl_id is None:
-        return None
-    return Wordlists.query.get(task.wl_id)
-
-
 @jobs.route("/jobs/<int:job_id>/assign_task/<int:task_id>", methods=['POST'])
 @login_required
 def jobs_assign_task(job_id, task_id):
@@ -599,8 +589,7 @@ def jobs_assign_task(job_id, task_id):
         # "deleted" everywhere it is listed, so never create one.
         flash('That task no longer exists and was not assigned.', 'danger')
         return redirect("/jobs/" + str(job_id) + "/tasks")
-    wordlist = _dynamic_wordlist_for(task)
-    is_dynamic = wordlist is not None and wordlist.type == 'dynamic'
+    is_dynamic = task_uses_dynamic_wordlist(task)
     jobtask_exists = JobTasks.query.filter_by(job_id=job_id, task_id=task_id).first()
 
     if jobtask_exists and not is_dynamic:
@@ -623,6 +612,8 @@ def jobs_assign_task_group(job_id, task_group_id):
     task_group = TaskGroups.query.get(task_group_id)
 
     missing = 0
+    # Read the dynamic wordlist ids once rather than querying per member.
+    dynamic_wl_ids = dynamic_wordlist_ids()
     for task_group_entry in json.loads(task_group.tasks):
         # As in jobs_assign_task: only a dynamic-wordlist task may be added again;
         # an already-assigned non-dynamic task in the group is skipped.
@@ -634,8 +625,7 @@ def jobs_assign_task_group(job_id, task_group_id):
             # JobTasks row.
             missing += 1
             continue
-        wordlist = _dynamic_wordlist_for(task)
-        is_dynamic = wordlist is not None and wordlist.type == 'dynamic'
+        is_dynamic = task_uses_dynamic_wordlist(task, dynamic_wl_ids)
         jobtask_exists = JobTasks.query.filter_by(job_id=job_id, task_id=task_group_entry).first()
 
         if jobtask_exists and not is_dynamic:

@@ -247,3 +247,23 @@ def test_expand_mask_returns_none_for_all_literal_mask():
 def test_expand_mask_returns_none_for_unparseable_mask():
     # A custom-charset mask (?1) doesn't parse -> can't be expanded.
     assert _expand_mask('?1?l', desired_chunks=4, max_chunks=100) is None
+
+
+def test_expand_mask_documents_its_three_hazardous_prefixes():
+    """?a expands over all 95 printable ASCII, so three chunks carry a prefix
+    that is not a plain literal character:
+
+      '-'  hashcat's OPTION parser rejects the argv element (the reason
+           build_hashcat_command emits an end-of-options '--' for it)
+      ' '  a valid literal, but only while the mask stays ONE argv element
+      '?'  escaped to '??', so the chunk is '???a...' -- correct, and verified
+           against hashcat: '???a?a' generates 9025 candidates
+
+    Pinned here so the set cannot grow silently.
+    """
+    submasks = _expand_mask('?a' * 8, 95, 1000)
+    assert len(submasks) == 95
+    assert [m for m in submasks if m.startswith('-')] == ['-' + '?a' * 7]
+    assert [m for m in submasks if m.startswith(' ')] == [' ' + '?a' * 7]
+    assert [m for m in submasks if m.startswith('??')] == ['??' + '?a' * 7]
+    assert all(parse_mask(m) is not None for m in submasks)

@@ -267,3 +267,22 @@ def test_expand_mask_documents_its_three_hazardous_prefixes():
     assert [m for m in submasks if m.startswith(' ')] == [' ' + '?a' * 7]
     assert [m for m in submasks if m.startswith('??')] == ['??' + '?a' * 7]
     assert all(parse_mask(m) is not None for m in submasks)
+
+
+def test_a_submask_is_never_longer_than_the_mask_it_came_from():
+    """The invariant JobTasks.chunk_mask's column width depends on.
+
+    _expand_mask replaces a '?x' charset position (2 chars) with a literal of 1
+    char, or 2 for the '?' escape -- so a sub-mask can never grow. That is what
+    makes chunk_mask wide enough for any mask Tasks.hc_mask can hold. Pinned
+    because a truncated sub-mask is still a VALID mask: it would crack the wrong
+    keyspace silently instead of erroring.
+    """
+    for mask in ('?a?a?a?a?a?a?a?a', '?s?d?d', '?l?u?d?s', '?d' * 25,
+                 'prefix?a?a?a', '?a' * 25):
+        submasks = _expand_mask(mask, 95, 1000)
+        if submasks is None:
+            continue
+        longest = max(len(m) for m in submasks)
+        assert longest <= len(mask), (
+            f"{mask!r} produced a longer sub-mask ({longest} > {len(mask)})")

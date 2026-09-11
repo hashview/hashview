@@ -207,7 +207,12 @@ class JobTasks(db.Model):
     # whole, un-chunked task.
     chunk_skip = db.Column(db.BigInteger, nullable=True)
     chunk_limit = db.Column(db.BigInteger, nullable=True)
-    chunk_mask = db.Column(db.String(64), nullable=True)
+    # 255, not 64: a sub-mask is never longer than the task mask it came from
+    # (_expand_mask swaps a '?x' position for a 1-2 char literal) and hc_mask is
+    # String(50), so 64 is enough TODAY -- but that is an undocumented coupling
+    # between two tables, and a truncated mask is still a valid mask, so it would
+    # crack the wrong keyspace silently rather than erroring. See #-mask widening.
+    chunk_mask = db.Column(db.String(255), nullable=True)
 
 class Customers(db.Model):
     """Class object to represent Customers"""

@@ -69,3 +69,35 @@ def test_build_hashcat_argv_splits_hc_extra_args_into_tokens():
 
     # binary, then each HC_EXTRA_ARGS token separately, then the rest.
     assert argv[:4] == ["/usr/bin/hashcat", "-d", "3,4", "-m"]
+
+
+# --------------------------------------------------- --status-json placement
+
+def test_append_status_json_appends_when_there_is_no_sentinel():
+    """Today's shape: no '--' in the command, so the flag goes on the end."""
+    argv = ["/usr/bin/hashcat", "-a", "3", "hf.txt", "?d?d"]
+    assert agent_main.append_status_json(argv) == [
+        "/usr/bin/hashcat", "-a", "3", "hf.txt", "?d?d", "--status-json"]
+
+
+def test_append_status_json_inserts_before_the_sentinel():
+    """After '--' every token is a POSITIONAL, so the flag would not be honoured
+    and would shift the positionals (mode 6 opens the mask as a wordlist)."""
+    argv = ["/usr/bin/hashcat", "-a", "3", "--", "hf.txt", "-?d?d"]
+    assert agent_main.append_status_json(argv) == [
+        "/usr/bin/hashcat", "-a", "3", "--status-json", "--", "hf.txt", "-?d?d"]
+
+
+def test_append_status_json_never_lands_after_a_positional_in_mode_6():
+    """The regression this helper exists for: appending here made hashcat read
+    '?d' as the wordlist and '--status-json' as the mask."""
+    argv = ["/usr/bin/hashcat", "-a", "6", "--", "hf.txt", "wl.gz", "-?d"]
+    out = agent_main.append_status_json(argv)
+    assert out.index("--status-json") < out.index("--")
+    assert out[-3:] == ["hf.txt", "wl.gz", "-?d"]
+
+
+def test_append_status_json_is_a_noop_when_the_server_already_sent_it():
+    """A server new enough to emit '--' emits the flag with it; don't duplicate."""
+    argv = ["/usr/bin/hashcat", "-a", "3", "--status-json", "--", "hf.txt", "-?d"]
+    assert agent_main.append_status_json(list(argv)) == argv

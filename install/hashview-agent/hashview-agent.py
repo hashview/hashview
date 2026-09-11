@@ -468,6 +468,27 @@ def build_hashcat_argv(command):
             argv.append(str(token))
     return argv
 
+STATUS_JSON = '--status-json'   # hashcat streams status objects to stdout
+
+
+def append_status_json(argv):
+    """Add --status-json where hashcat still parses it as an OPTION.
+
+    The server emits hashcat's '--' end-of-options sentinel when a task or chunk
+    mask starts with '-' (hashcat would otherwise read the mask as an option).
+    Everything after '--' is a POSITIONAL, so appending there does not enable
+    status JSON at all -- and worse, it shifts the positionals: in -a 6 hashcat
+    then opens the mask as a wordlist ("No such file or directory") and in -a 7 it
+    opens --status-json as one. So insert before the sentinel when there is one.
+
+    A server new enough to emit the sentinel emits the flag with it, so this is a
+    no-op there; the check also keeps us from passing it twice.
+    """
+    if STATUS_JSON in argv:
+        return argv
+    argv.insert(argv.index('--') if '--' in argv else len(argv), STATUS_JSON)
+    return argv
+
 def run_hashcat(argv, output_file):
     """Run hashcat directly, no shell, so task fields can't inject shell commands
     (issue #297). hashcat's --status-json stream is redirected to output_file,
@@ -737,8 +758,9 @@ def run_assigned_task(job_task_id):
 
     output_file = ('control/outfiles/hcoutput_'
                    + str(job['id']) + '_' + str(job_task['id']) + '.txt')
-    argv = build_hashcat_argv(job_task['command'])
-    argv.append('--status-json')      # hashcat writes status JSON to stdout -> output_file
+    # hashcat writes status JSON to stdout -> output_file. Inserted rather than
+    # appended so it lands ahead of any end-of-options '--' (see the helper).
+    argv = append_status_json(build_hashcat_argv(job_task['command']))
     LOG.debug('hashcat argv: %s', argv)
 
     LOG.info('Running hashcat for job task %s...', job_task['id'])

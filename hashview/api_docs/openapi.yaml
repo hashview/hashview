@@ -482,6 +482,73 @@ paths:
               example: {status: 404, type: Error, msg: Rule not found}
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
+    delete:
+      tags: [Rules]
+      summary: Delete a rule
+      description: >-
+        Owner or admin only. Refuses (409) while any task still references the
+        rule, matching the web UI: `tasks.rule_id` has no foreign key, so an
+        orphaned reference would leave those tasks unrunnable. Only
+        `tasks.rule_id` is checked — `j_rule`/`k_rule` are hashcat's inline
+        -j/-k rule strings, not rows in this table.
+
+
+        Removes the row and the rule's file under `control/rules`, via the same
+        helper the web UI uses so the two cannot drift (#397). The stored path
+        is resolved to `control/rules/<basename>`, which keeps the unlink inside
+        that directory and handles the seeded rule whose row carries a relative
+        path. The file is kept if another rule row still points at it, and the
+        row is removed first — a failed unlink orphans a file rather than
+        leaving a row pointing at nothing.
+      operationId: deleteRule
+      x-audience: user
+      security:
+        - userApiKey: []
+      parameters:
+        - name: rules_id
+          in: path
+          required: true
+          schema: {type: integer}
+      responses:
+        '200':
+          description: HTTP 200 on success; body status 500 on a database error.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RuleDeletedResponse'
+                  - $ref: '#/components/schemas/ApiError'
+              examples:
+                deleted: {value: {status: 200, type: message, msg: Rule deleted, rule_id: 4}}
+        '403':
+          description: >-
+            Real HTTP 403 — not the rule's owner and not an admin, or the api
+            key resolves to no user. Note this differs from the sibling deletes
+            (jobs, hashfiles, task groups), which answer HTTP 200 and report 403
+            in the body only; the envelope here carries 403 either way.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example: {status: 403, type: Error, msg: You do not have rights to delete this rule}
+        '404':
+          description: Real HTTP 404 — unknown rule id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example: {status: 404, type: Error, msg: Rule not found}
+        '409':
+          description: >-
+            Real HTTP 409 — the rule is still used by a task and cannot be
+            deleted until that task is removed or points elsewhere.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example: {status: 409, type: Error, msg: Rule is currently used in a task and can not be deleted}
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
 
   /v1/rules/add/{rule_name}:
     post:
@@ -2188,6 +2255,14 @@ components:
               type: array
               description: The resulting ordered list of member task ids after the update.
               items: {type: integer}
+
+    RuleDeletedResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMessage'
+        - type: object
+          required: [rule_id]
+          properties:
+            rule_id: {type: integer}
 
     TaskGroupDeletedResponse:
       allOf:

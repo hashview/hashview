@@ -1,12 +1,16 @@
-"""xfail spec for issue #397 — no DELETE endpoint for /v1/rules/<id>.
+"""Regression guards for issue #397 — DELETE /v1/rules/<id>.
 
-The v1 API can create rules (``POST /v1/rules/add/<name>``) but has no way to
-delete one, so a duplicate or unwanted upload can never be removed by an
-API-only client (see hashview/rules/routes.py:186 ``rules_delete`` for the
-web-UI equivalent this endpoint should mirror). These tests assert the
-*desired* behavior and are marked ``xfail(strict=False)`` so the suite stays
-green whether the endpoint is still missing (XFAIL) or has since been added
-(XPASS) — that XPASS is the signal to drop the marker.
+These started life as ``xfail(strict=False)`` documentation for the missing
+endpoint: the v1 API could create rules (``POST /v1/rules/add/<name>``) but
+never delete one, so a duplicate or unwanted upload could not be removed by an
+API-only client. The endpoint now exists and mirrors the web UI's
+``rules_delete``, so all four assertions pass and the markers are dropped —
+which is what the original spec said XPASS should trigger.
+
+They are kept as the issue's acceptance record. The endpoint's fuller coverage
+(authorization matrix, the task guard including inline j/k rules, duplicate
+rows, auditing, and the file-on-disk behaviour) lives in
+tests/unit/test_api_delete_rule.py.
 
 Auth/cookie model mirrors tests/unit/test_api_issues_xfail.py: the ``uuid``
 cookie is matched against ``Users.api_key``.
@@ -65,7 +69,6 @@ def _rule(owner, name="corp.rule", path="/tmp/does-not-matter.rule"):
     return rule
 
 
-@pytest.mark.xfail(strict=False, reason="issue #397: no DELETE /v1/rules/<id> endpoint yet")
 def test_owner_can_delete_their_rule(app, client, admin_user):
     rule = _rule(admin_user)
     rule_id = rule.id
@@ -79,7 +82,6 @@ def test_owner_can_delete_their_rule(app, client, admin_user):
     assert Rules.query.get(rule_id) is None
 
 
-@pytest.mark.xfail(strict=False, reason="issue #397: no DELETE /v1/rules/<id> endpoint yet")
 def test_delete_unowned_rule_is_forbidden(app, client, admin_user, other_user):
     rule = _rule(admin_user)
     rule_id = rule.id
@@ -91,7 +93,6 @@ def test_delete_unowned_rule_is_forbidden(app, client, admin_user, other_user):
     assert Rules.query.get(rule_id) is not None
 
 
-@pytest.mark.xfail(strict=False, reason="issue #397: no DELETE /v1/rules/<id> endpoint yet")
 def test_delete_rule_used_by_task_is_refused(app, client, admin_user):
     rule = _rule(admin_user)
     rule_id = rule.id
@@ -106,7 +107,6 @@ def test_delete_rule_used_by_task_is_refused(app, client, admin_user):
     assert Rules.query.get(rule_id) is not None
 
 
-@pytest.mark.xfail(strict=False, reason="issue #397: no DELETE /v1/rules/<id> endpoint yet")
 def test_delete_missing_rule_is_404(app, client, admin_user):
     _auth(client, admin_user.api_key)
 

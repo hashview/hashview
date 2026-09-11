@@ -10,8 +10,16 @@
 
 {# Shared body for the Add-task and Edit-task modals. `p` is the element-id prefix
    ('atk' or 'etk') so the two modals stay independent; the name= attributes are fixed
-   so both post the same fields. The edit modal fills the values client-side on open. #}
-{% macro task_modal_body(p, wordlists, rules) %}
+   so both post the same fields. The edit modal fills the values client-side on open.
+
+   keep_missing: render rules/wordlists whose file is gone from disk (#383),
+   marked data-missing so hvEditTask can warn. True only for the EDIT modal, so
+   an existing task keeps its reference and stays saveable; the add modal never
+   offers one. An explicit flag, not a `p == 'etk'` sniff -- the prefix is an
+   element-id namespace, not a policy. Because the modal is shared and filled
+   client-side, it cannot know at render time which task will open, so it emits
+   every missing entry; the set is small by definition. #}
+{% macro task_modal_body(p, wordlists, rules, missing_wl_ids, missing_rule_ids, keep_missing=False) %}
 <input type="hidden" name="hc_attackmode" id="{{ p }}-mode" value="0">
 <div class="hv-dialog-body" style="max-height:72vh; overflow-y:auto;">
     <div class="field">
@@ -34,7 +42,7 @@
     <div class="field" id="{{ p }}-fld-wl">
         <label class="field-label">Wordlist <span class="req">*</span></label>
         <select class="select" name="wl_id" id="{{ p }}-wl">
-            {% for wl in wordlists %}<option value="{{ wl.id }}">{{ wl.name }} · {{ hcount(wl.size) }} words</option>{% endfor %}
+            {% for wl in wordlists %}{% set gone = wl.id in missing_wl_ids %}{% if keep_missing or not gone %}<option value="{{ wl.id }}"{% if gone %} data-missing="1"{% endif %}>{{ wl.name }} · {{ hcount(wl.size) }} words{% if gone %} · FILE MISSING{% endif %}</option>{% endif %}{% endfor %}
         </select>
     </div>
 
@@ -43,7 +51,7 @@
         <label class="field-label">Rule</label>
         <select class="select" name="rule_id" id="{{ p }}-rule">
             <option value="None">— none —</option>
-            {% for r in rules %}<option value="{{ r.id }}">{{ r.name }} · {{ hcount(r.size) }} rules</option>{% endfor %}
+            {% for r in rules %}{% set gone = r.id in missing_rule_ids %}{% if keep_missing or not gone %}<option value="{{ r.id }}"{% if gone %} data-missing="1"{% endif %}>{{ r.name }} · {{ hcount(r.size) }} rules{% if gone %} · FILE MISSING{% endif %}</option>{% endif %}{% endfor %}
         </select>
     </div>
 
@@ -62,7 +70,7 @@
     <div class="field" id="{{ p }}-fld-wl2" style="display:none;">
         <label class="field-label">Second wordlist <span class="req">*</span></label>
         <select class="select" name="wl_id_2" id="{{ p }}-wl2">
-            {% for wl in wordlists %}<option value="{{ wl.id }}">{{ wl.name }} · {{ hcount(wl.size) }} words</option>{% endfor %}
+            {% for wl in wordlists %}{% set gone = wl.id in missing_wl_ids %}{% if keep_missing or not gone %}<option value="{{ wl.id }}"{% if gone %} data-missing="1"{% endif %}>{{ wl.name }} · {{ hcount(wl.size) }} words{% if gone %} · FILE MISSING{% endif %}</option>{% endif %}{% endfor %}
         </select>
     </div>
 
@@ -167,7 +175,10 @@
                     <span class="task-lock" title="In a task group — remove it from the group before deleting">{{ icon('lock', size=15) }}</span>
                     {% endif %}
                 </td>
-                <td style="font-weight:500;">{{ task.name }}</td>
+                {# a task whose rule/wordlist file is gone cannot run; say so here
+                   rather than making the operator open every info modal (#383) #}
+                {% set task_file_gone = (task.wl_id in missing_wl_ids) or (task.wl_id_2 in missing_wl_ids) or (task.rule_id in missing_rule_ids) %}
+                <td style="font-weight:500;">{{ task.name }}{% if task_file_gone %} <span class="badge red" title="A rule or wordlist this task uses is missing from disk — it cannot run.">FILE MISSING</span>{% endif %}</td>
                 <td style="color:var(--text-dim);">
                     {% for user in users %}
                         {% if user.id == task.owner_id %}
@@ -273,7 +284,7 @@
         {{ tasksForm.hidden_tag() }}
         <input type="hidden" name="from_modal" value="1">
         {{ modal_errors(form_err, 'add-task-modal') }}
-        {{ task_modal_body('atk', wordlists, rules) }}
+        {{ task_modal_body('atk', wordlists, rules, missing_wl_ids, missing_rule_ids) }}
         <div class="hv-dialog-foot">
             <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
             <button type="submit" class="btn btn-primary">{{ icon('plus', size=15) }} Create task</button>
@@ -293,7 +304,8 @@
     </div>
     <form method="POST" action="{{ url_for('tasks.tasks_list') }}" id="etk-form">
         {{ tasksForm.hidden_tag() }}
-        {{ task_modal_body('etk', wordlists, rules) }}
+        <div class="flash flash-danger" id="etk-missing-warn" style="margin:0 var(--gap);" hidden></div>
+        {{ task_modal_body('etk', wordlists, rules, missing_wl_ids, missing_rule_ids, keep_missing=True) }}
         <div class="hv-dialog-foot">
             <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
             <button type="submit" class="btn btn-primary">{{ icon('check', size=15) }} Save changes</button>
@@ -330,6 +342,25 @@
     window.hvAtkSet = function (p, mode) { if (registry[p]) registry[p].setMode(mode, true); };
     window.hvHybridOrder = function (p, m) { if (registry[p]) registry[p].setHybridOrder(m); };
     function setSel(id, val) { var s = document.getElementById(id); if (s) s.value = String(val); }
+    // After the selects are pre-filled: surface a stranded reference, and the
+    // row-deleted-since-render case, instead of a silently blank select (#383).
+    function hvEditMissingWarn(ids) {
+        var warn = document.getElementById('etk-missing-warn');
+        if (!warn) return;
+        var msgs = [];
+        ids.forEach(function (id) {
+            var sel = document.getElementById(id);
+            if (!sel || sel.offsetParent === null) return;   // hidden for this mode
+            if (sel.selectedIndex === -1) {
+                msgs.push('This task references an entry that no longer exists — pick a replacement before saving.');
+            } else if (sel.selectedOptions[0] && sel.selectedOptions[0].dataset.missing) {
+                msgs.push("This task's file is missing from disk. Save as-is to keep the reference, or pick a replacement.");
+            }
+        });
+        warn.textContent = msgs.length ? msgs[0] : '';
+        warn.hidden = !msgs.length;
+    }
+
     window.hvEditTask = function (d) {
         var R = registry['etk']; if (!R) return;
         var f = document.getElementById('etk-form'); if (f) f.action = '/tasks/edit/' + d.id;
@@ -344,6 +375,7 @@
         if (d.wl_id != null) setSel('etk-wl', d.wl_id);
         if (d.wl_id_2 != null) setSel('etk-wl2', d.wl_id_2);
         setSel('etk-rule', (d.rule_id != null) ? d.rule_id : 'None');
+        hvEditMissingWarn(['etk-wl', 'etk-wl2', 'etk-rule']);
         var mk = document.getElementById('etk-mask'); if (mk) mk.value = d.mask || '';
         var jr = document.getElementById('etk-jrule'); if (jr) jr.value = d.j_rule || '';
         var kr = document.getElementById('etk-krule'); if (kr) kr.value = d.k_rule || '';

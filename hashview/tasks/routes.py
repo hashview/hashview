@@ -20,6 +20,8 @@ from hashview.tasks.forms import TasksForm
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
     apply_name_filter,
+    missing_rule_ids,
+    missing_wordlist_ids,
     resolve_control_file,
     try_commit,
 )
@@ -157,7 +159,11 @@ def tasks_list():
         seen.add(job.id)
         jobs_by_task.setdefault(jt.task_id, []).append(job)
 
-    return render_template('tasks.html.j2', title='tasks', tasks=tasks, users=users, jobs=jobs, job_tasks=job_tasks, jobs_by_task=jobs_by_task, task_groups_by_task=task_groups_by_task, wordlists=wordlists, task_groups=task_groups, task_recovery_performance=task_recovery_performance, pagination=pagination, sort_by=sort_by, sort_order=sort_order, name_filter=name_filter, rules=Rules.query.all(), wl_filesize=wl_filesize, tasks_in_jobs=tasks_in_jobs, tasks_in_task_groups=tasks_in_task_groups, tasksForm=TasksForm(), form_err=session.pop('tasks_form_err', None))
+    # Missing-file sets for the badge and the pickers (issue #383). The full
+    # wordlists/rules lists are still passed unfiltered: the info modal resolves
+    # a task's wordlist name from them, and filtering would make it read "none".
+    all_rules = Rules.query.all()
+    return render_template('tasks.html.j2', title='tasks', tasks=tasks, users=users, jobs=jobs, job_tasks=job_tasks, jobs_by_task=jobs_by_task, task_groups_by_task=task_groups_by_task, wordlists=wordlists, task_groups=task_groups, task_recovery_performance=task_recovery_performance, pagination=pagination, sort_by=sort_by, sort_order=sort_order, name_filter=name_filter, rules=all_rules, wl_filesize=wl_filesize, tasks_in_jobs=tasks_in_jobs, tasks_in_task_groups=tasks_in_task_groups, tasksForm=TasksForm(), missing_wl_ids=missing_wordlist_ids(wordlists), missing_rule_ids=missing_rule_ids(all_rules), form_err=session.pop('tasks_form_err', None))
 
 @tasks.route("/tasks/add", methods=['GET', 'POST'])
 @login_required
@@ -175,13 +181,30 @@ def tasks_add():
     wordlists = Wordlists.query.all()
     rules = Rules.query.all()
 
+    # A rule/wordlist whose file is gone cannot be downloaded by an agent, so a
+    # task built on it can never run. Drop it from the choices (issue #383).
+    # Filtering HERE and not just in the template is the actual enforcement: a
+    # hand-crafted POST now fails choice validation.
+    missing_wl = missing_wordlist_ids(wordlists)
+    missing_rl = missing_rule_ids(rules)
+
     for wordlist in wordlists:
+        if wordlist.id in missing_wl:
+            continue
         tasksForm.wl_id.choices += [(wordlist.id, wordlist.name)]
         tasksForm.wl_id_2.choices += [(wordlist.id, wordlist.name)]
 
     tasksForm.rule_id.choices = [('None', 'None')]
     for rule in rules:
+        if rule.id in missing_rl:
+            continue
         tasksForm.rule_id.choices += [(rule.id, rule.name)]
+
+    if not tasksForm.wl_id.choices and wordlists:
+        # Every wordlist is stranded: say so rather than letting WTForms answer
+        # a submit with a bare "Not a valid choice".
+        flash('Every wordlist is missing its file on disk. Restore one from the '
+              'Wordlists page before creating a task.', 'danger')
 
     if tasksForm.validate_on_submit():
 
@@ -303,28 +326,60 @@ def task_edit(task_id):
         tasksForm.wl_id_2.choices = []
 
         wordlists = Wordlists.query.all()
-        # Add the current value for wordlist.
-        if task.hc_attackmode == 0:
+        rules = Rules.query.all()
+
+        # Missing-file rows are dropped from the choices (issue #383) -- but the
+        # task's CURRENT value is always kept, labelled, so a task that already
+        # references a stranded file stays editable. Without that the select
+        # would land on selectedIndex -1 and the task could never be saved
+        # again, which is strictly worse than the bug being fixed.
+        missing_wl = missing_wordlist_ids(wordlists)
+        missing_rl = missing_rule_ids(rules)
+        MISSING_SUFFIX = ' — FILE MISSING'
+
+        def _label(row, missing_ids):
+            return row.name + (MISSING_SUFFIX if row.id in missing_ids else '')
+
+        # Add the current value(s) for wordlist. Every attack mode that carries a
+        # wordlist, not just 0 -- and wl_id_2 for the combinator -- or those
+        # tasks become un-saveable once missing rows are excluded below.
+        seen_wl, seen_wl_2 = set(), set()
+        if task.hc_attackmode in (0, 1, 6, 7):
             edit_task_wl = Wordlists.query.get(task.wl_id)
             if edit_task_wl:
-                tasksForm.wl_id.choices.append((edit_task_wl.id, edit_task_wl.name))
-        rules = Rules.query.all()
+                tasksForm.wl_id.choices.append((edit_task_wl.id, _label(edit_task_wl, missing_wl)))
+                seen_wl.add(edit_task_wl.id)
+        if task.hc_attackmode == 1:
+            edit_task_wl_2 = Wordlists.query.get(task.wl_id_2)
+            if edit_task_wl_2:
+                tasksForm.wl_id_2.choices.append((edit_task_wl_2.id, _label(edit_task_wl_2, missing_wl)))
+                seen_wl_2.add(edit_task_wl_2.id)
+
+        seen_rule = set()
         # Check if the current value for rule is an integer.
         if isinstance(task.rule_id, int):
             edit_task_rl = Rules.query.get(task.rule_id)
             if edit_task_rl:
-                tasksForm.rule_id.choices.append((edit_task_rl.id, edit_task_rl.name))
+                tasksForm.rule_id.choices.append((edit_task_rl.id, _label(edit_task_rl, missing_rl)))
                 tasksForm.rule_id.choices.append(('None', 'None'))
+                seen_rule.add(edit_task_rl.id)
         else:
             # If it's not an integer, set rule_id and rule_name to 'None'.
             tasksForm.rule_id.choices.append(('None', 'None'))
 
-        # Populate the choices for wordlists excluding the current value.
+        # Populate the choices for wordlists excluding the current value (the
+        # `seen` sets) and anything whose file is gone.
         for wordlist in wordlists:
-            tasksForm.wl_id.choices += [(wordlist.id, wordlist.name)]
-            tasksForm.wl_id_2.choices += [(wordlist.id, wordlist.name)]
+            if wordlist.id in missing_wl:
+                continue
+            if wordlist.id not in seen_wl:
+                tasksForm.wl_id.choices += [(wordlist.id, wordlist.name)]
+            if wordlist.id not in seen_wl_2:
+                tasksForm.wl_id_2.choices += [(wordlist.id, wordlist.name)]
 
         for rule in rules:
+            if rule.id in missing_rl or rule.id in seen_rule:
+                continue
             tasksForm.rule_id.choices += [(rule.id, rule.name)]
         
         tasksForm.submit.label.text = 'Update'

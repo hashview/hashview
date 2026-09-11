@@ -293,8 +293,38 @@
 </dialog>
 {% endif %}
 
-<dialog class="hv-dialog" id="del-{{ rule.id }}">
+<dialog class="hv-dialog" id="del-{{ rule.id }}" style="max-width:620px; width:94vw;">
+    {% set blockers = rule_used_tasks.get(rule.id, []) if rule_used_tasks is defined else [] %}
     <div class="hv-dialog-head"><h3>Delete {{ rule.name }}?</h3><button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close">{{ icon('x', size=15) }}</button></div>
+    {% if blockers %}
+    {# The delete route refuses while a task references the rule. Say WHICH tasks
+       (and which jobs hold them), so "can not be deleted" is a procedure rather
+       than a dead end. #}
+    <div class="hv-dialog-body">
+        <div class="flash flash-danger" style="margin-bottom:var(--gap);">
+            Blocked — {{ blockers|length | commafy }} task{{ '' if blockers|length == 1 else 's' }} still use this rule.
+        </div>
+        {% for b in blockers %}
+        <div class="card" style="margin-bottom:8px; padding:10px 13px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <span style="color:var(--text-mute); display:inline-flex;">{{ icon('task', size=15) }}</span>
+            <a href="{{ url_for('tasks.tasks_list', q=b.name) }}" style="font-weight:500;">{{ b.name }}</a>
+            <span style="margin-left:auto; display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                {% for j in b.jobs %}<a class="mono" style="font-size:11px;" href="{{ url_for('jobs.jobs_summary', job_id=j.id) }}">#{{ j.id }} {{ j.name }}</a>{% else %}<span class="mono" style="font-size:11px; color:var(--text-mute);">not in a job</span>{% endfor %}
+            </span>
+        </div>
+        {% endfor %}
+        <div class="field-hint" style="margin-top:var(--gap);">
+            Remove these tasks from their jobs and delete the tasks, then delete this rule
+            {%- if rule.id in missing_rule_ids %} — or restore the file instead, and every reference keeps working{% endif %}.
+        </div>
+    </div>
+    <div class="hv-dialog-foot">
+        <button class="btn" onclick="this.closest('dialog').close()">Back</button>
+        {% if rule.id in missing_rule_ids %}
+        <button class="btn btn-primary" type="button" onclick="this.closest('dialog').close(); document.getElementById('restore-{{ rule.id }}').showModal();">{{ icon('upload', size=15) }} Restore file</button>
+        {% endif %}
+    </div>
+    {% else %}
     <div class="hv-dialog-body">This will permanently delete the rules file. Are you sure you want to continue?</div>
     <div class="hv-dialog-foot">
         <button class="btn" onclick="this.closest('dialog').close()">Back</button>
@@ -302,6 +332,7 @@
             <button class="btn btn-danger" type="submit">Delete</button>
         </form>
     </div>
+    {% endif %}
 </dialog>
 {% endfor %}
 

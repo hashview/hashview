@@ -27,6 +27,7 @@ from hashview.utils.utils import (
     send_generated_file,
     try_commit,
     update_dynamic_wordlist,
+    wordlist_file_missing,
 )
 from hashview.utils.wordlist_import import list_importable, run_import_async
 from hashview.wordlists.forms import WordlistRestoreForm, WordlistsForm
@@ -223,12 +224,15 @@ def wordlists_delete(wordlist_id):
             flash('Dynamic Wordlists can not be deleted.', 'danger')
             return redirect(url_for('wordlists.wordlists_list'))
 
-        # Check if associated with a Task
-        tasks = Tasks.query.all()
-        for task in tasks:
-            if task.wl_id == wordlist_id:
-                flash('Failed. Wordlist is associated to one or more tasks', 'danger')
-                return redirect(url_for('wordlists.wordlists_list'))
+        # Check if associated with a Task. One indexed query rather than loading
+        # every task into Python (mirrors rules_delete's form), and wl_id_2
+        # counts: a combinator task's SECOND wordlist is a real reference --
+        # wordlists_list's usage rollup and build_hashcat_command both treat it
+        # as one, so this guard used to let it be deleted out from under them.
+        if Tasks.query.filter(db.or_(Tasks.wl_id == wordlist.id,
+                                     Tasks.wl_id_2 == wordlist.id)).first():
+            flash('Failed. Wordlist is associated to one or more tasks', 'danger')
+            return redirect(url_for('wordlists.wordlists_list'))
 
         # Capture the on-disk path before the row is gone, remove the DB row,
         # then delete the stored (compressed) file from disk. Order is
@@ -236,6 +240,7 @@ def wordlists_delete(wordlist_id):
         # a row that points at a missing file; the unlink is best-effort.
         wordlist_path = wordlist.path
         wordlist_target = f'wordlist:{wordlist.id} {wordlist.name!r}'
+        file_was_missing = wordlist_file_missing(wordlist)
         db.session.delete(wordlist)
         if not try_commit(f'delete wordlist {wordlist_id}'):
             flash('Wordlist could not be deleted — it may have already been removed.', 'danger')
@@ -248,7 +253,10 @@ def wordlists_delete(wordlist_id):
             except OSError:
                 current_app.logger.exception('Failed to remove wordlist file from disk: %s', wordlist_path)
 
-        flash('Wordlist has been deleted!', 'success')
+        if file_was_missing:
+            flash('Wordlist deleted (its file was already gone from disk).', 'success')
+        else:
+            flash('Wordlist has been deleted!', 'success')
     else:
         flash('Unauthorized Action!', 'danger')
     return redirect(url_for('wordlists.wordlists_list'))

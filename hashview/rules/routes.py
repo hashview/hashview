@@ -26,6 +26,7 @@ from hashview.utils.utils import (
     missing_rule_ids,
     remove_rule_file,
     resolve_control_file,
+    rule_file_missing,
     save_file,
     try_commit,
 )
@@ -346,7 +347,11 @@ def rules_download(rule_id):
                                download_name=download_name)
 
 
-@rules.route("/rules/delete/<int:rule_id>", methods=['GET', 'POST'])
+# POST only. This used to accept GET as well, which -- with no global
+# CSRFProtect -- made a single <img src="/rules/delete/1"> on any page a
+# cross-site delete. Every caller already POSTs, so dropping GET is a no-op for
+# legitimate use.
+@rules.route("/rules/delete/<int:rule_id>", methods=['POST'])
 @login_required
 def rules_delete(rule_id):
     rule = Rules.query.get(rule_id)
@@ -355,22 +360,29 @@ def rules_delete(rule_id):
         return redirect(url_for('rules.rules_list'))
     if current_user.admin or rule.owner_id == current_user.id:
         # Check if part of a task
-        tasks = Tasks.query.filter_by(rule_id=rule.id).first()
-        if tasks:
-            flash('Rule is currently used in a task and can not be deleted.', 'danger')
+        task_count = Tasks.query.filter_by(rule_id=rule.id).count()
+        if task_count:
+            # Name the count: "can not be deleted" on its own is a dead end, and
+            # the delete dialog now lists which tasks (and their jobs) block it.
+            flash(f'Rule is used by {task_count} task'
+                  f'{"" if task_count == 1 else "s"} and can not be deleted.', 'danger')
             return redirect(url_for('rules.rules_list'))
         # Capture the path before the row goes: the row is removed first so a
         # failed unlink only orphans a file, rather than leaving a row that
         # points at nothing (same order as wordlists_delete).
         rule_path = rule.path
         rule_target = f'rule:{rule.id} {rule.name!r}'
+        file_was_missing = rule_file_missing(rule)
         db.session.delete(rule)
         if not try_commit(f'delete rule {rule_id}'):
             flash('Rule could not be deleted — it may have already been removed.', 'danger')
             return redirect(url_for('rules.rules_list'))
         log_event('rule.delete', target=rule_target)
         remove_rule_file(rule_path)
-        flash('Rule file has been deleted!', 'success')
+        if file_was_missing:
+            flash('Rule deleted (its file was already gone from disk).', 'success')
+        else:
+            flash('Rule file has been deleted!', 'success')
     else:
         flash('Unauthorized action!', 'danger')
     return redirect(url_for('rules.rules_list'))

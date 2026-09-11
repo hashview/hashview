@@ -6,6 +6,7 @@ Login helper mirrors the pattern in test_tasks_routes_guards.py.
 """
 
 import io
+import os
 from unittest.mock import patch
 
 import pytest
@@ -207,20 +208,35 @@ class TestRulesView:
         assert resp.status_code in (301, 302)
 
     def test_view_get_file_not_readable_redirects(self, app, client, tmp_path):
-        """Cover the except branch when the file cannot be opened."""
+        """Cover the except branch when the file cannot be opened.
+
+        A file that is ABSENT now opens the empty restore editor (#383); only a
+        file that is present but unreadable still bails out here.
+        """
         admin = _admin()
         _login(client, admin)
-        # Point to a non-existent file so open() raises
-        rule = _make_rule(admin.id, "/tmp/does_not_exist_hashview_test.rule")
+        rule = make_rule_with_file(admin.id)
+        os.chmod(rule.path, 0)
+        try:
+            resp = client.get(f"/rules/edit/{rule.id}", follow_redirects=False)
+            assert resp.status_code in (301, 302)
+        finally:
+            os.chmod(rule.path, 0o644)
 
-        resp = client.get(f"/rules/edit/{rule.id}", follow_redirects=False)
-        assert resp.status_code in (301, 302)
+    def test_view_get_of_a_missing_file_opens_the_restore_editor(self, app, client, tmp_path):
+        """It used to redirect, which made the write branch unreachable (#383)."""
+        admin = _admin()
+        _login(client, admin)
+        rule = _make_rule(admin.id, str(tmp_path / "gone.rule"), name="gone-rule")
+
+        resp = client.get(f"/rules/edit/{rule.id}")
+        assert resp.status_code == 200
+        assert b"file missing on disk" in resp.data
 
     def test_view_get_shows_content(self, app, client, tmp_path):
         admin = _admin()
         _login(client, admin)
-        path = _make_rule_file(tmp_path, content="$1\n$2\n")
-        rule = _make_rule(admin.id, path)
+        rule = make_rule_with_file(admin.id, content=b"$1\n$2\n")
 
         resp = client.get(f"/rules/edit/{rule.id}")
         assert resp.status_code == 200
@@ -229,14 +245,13 @@ class TestRulesView:
     def test_view_post_owner_updates_file(self, app, client, tmp_path):
         admin = _admin()
         _login(client, admin)
-        path = _make_rule_file(tmp_path, content="old\n")
-        rule = _make_rule(admin.id, path)
+        rule = make_rule_with_file(admin.id, content=b"old\n")
 
         resp = client.post(f"/rules/edit/{rule.id}",
                            data={"content": "new\ncontent\n"},
                            follow_redirects=False)
         assert resp.status_code in (301, 302)
-        assert open(path).read() == "new\ncontent\n"
+        assert open(rule.path).read() == "new\ncontent\n"
 
     def test_view_post_non_owner_denied(self, app, client, tmp_path):
         """Non-owner non-admin POSTing to edit is blocked (can_edit=False)."""
@@ -338,7 +353,7 @@ class TestRulesDelete:
         _make_task_using_rule(admin.id, rule.id)
 
         resp = client.post(f"/rules/delete/{rule.id}", follow_redirects=True)
-        assert b"currently used in a task" in resp.data
+        assert b"is used by 1 task and can not be deleted" in resp.data
         assert Rules.query.get(rule.id) is not None
 
     def test_delete_non_owner_denied(self, app, client, tmp_path):
@@ -962,3 +977,29 @@ class TestNotificationsHashDelete:
                               follow_redirects=True)
 
         assert b"could not be deleted" in resp.data
+
+
+def test_rules_delete_of_an_unreferenced_missing_row_succeeds(app, client, tmp_path):
+    """A stranded row nothing references is just housekeeping: let it go, and
+    say that the file was already gone so the operator isn't left wondering."""
+    admin = _admin()
+    _login(client, admin)
+    rule = _make_rule(admin.id, str(tmp_path / "gone.rule"), name="stranded-rule")
+    rule_id = rule.id
+
+    resp = client.post(f"/rules/delete/{rule_id}", follow_redirects=True)
+    assert b"already gone from disk" in resp.data
+    assert Rules.query.get(rule_id) is None
+
+
+@pytest.mark.security
+def test_rules_delete_rejects_get(app, client):
+    """GET used to be accepted, which with no global CSRFProtect made a single
+    <img src="/rules/delete/1"> a cross-site delete."""
+    admin = _admin()
+    _login(client, admin)
+    rule = make_rule_with_file(admin.id, name="csrf-rule")
+
+    resp = client.get(f"/rules/delete/{rule.id}")
+    assert resp.status_code == 405
+    assert Rules.query.get(rule.id) is not None

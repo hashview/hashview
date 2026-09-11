@@ -1443,7 +1443,14 @@ paths:
         failing line aborts the whole request with body status 500 and rolls
         back, so no lines are committed unless every line verifies. Matching
         uncracked hashes are marked cracked and credited to the calling user,
-        and per-hash recovery notifications fire.
+        and per-hash recovery notifications fire. A plaintext wrapped in
+        hashcat's `$HEX[...]` form is decoded to its raw bytes before
+        verification, so passwords with leading/trailing whitespace,
+        delimiters, or non-UTF-8 bytes verify. On success the body reports
+        import counts: `verified` (lines whose plaintext verified), `updated`
+        (uncracked records newly marked cracked), `unmatched` (verified lines
+        with no uncracked record to update — not present, or already cracked),
+        and `count` (alias of `updated`).
       operationId: importCrackedHashes
       x-audience: user
       security:
@@ -1475,7 +1482,7 @@ paths:
                   - $ref: '#/components/schemas/ApiMessage'
                   - $ref: '#/components/schemas/ApiError'
               examples:
-                ok: {value: {status: 200, type: message, msg: OK}}
+                ok: {value: {status: 200, type: message, msg: OK, count: 2, verified: 2, updated: 2, unmatched: 0}}
                 unsupported: {value: {status: 403, type: message, msg: Unsupported Hashtype}}
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'

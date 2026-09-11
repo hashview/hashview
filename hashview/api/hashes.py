@@ -159,6 +159,13 @@ def v1_api_hashes_import(hash_type):
     # import contents from file. The import is atomic: all verified records are
     # mutated in the session and committed ONCE after the loop completes. Any
     # verification failure rolls back so nothing from this request persists.
+    # Counts reported back so the client can tell what actually landed:
+    #   verified  - lines whose plaintext verified against the hash
+    #   updated   - uncracked records this request newly marked cracked
+    #   unmatched - verified lines with no uncracked record to update
+    #               (not in this instance, or already cracked)
+    verified = 0
+    updated = 0
     try:
         try:
             with open(file_path, encoding='utf-8', errors='surrogateescape') as f:
@@ -175,6 +182,7 @@ def v1_api_hashes_import(hash_type):
                     # embedded in the ciphertext) and compare case-insensitively.
                     # Never trust unverified plaintext.
                     if verifier(plaintext, ciphertext):
+                        verified += 1
                         # valid hash:plaintext. Hashfile imports store hex hashes
                         # lowercased and key sub_ciphertext off the lowercased value,
                         # so look up on ciphertext.lower() to actually hit the record.
@@ -185,6 +193,7 @@ def v1_api_hashes_import(hash_type):
                             record.cracked = 1
                             record.recovered_at = datetime.today()
                             record.recovered_by = user.id
+                            updated += 1
                     else:
                         # A single bad line invalidates the whole request; roll back
                         # any pending changes so nothing persists.
@@ -223,6 +232,12 @@ def v1_api_hashes_import(hash_type):
     message = {
         'status': 200,
         'type': 'message',
-        'msg': 'OK'
+        'msg': 'OK',
+        # 'count' mirrors 'updated' for clients that display a single import
+        # total; the richer breakdown is alongside it.
+        'count': updated,
+        'verified': verified,
+        'updated': updated,
+        'unmatched': verified - updated,
     }
     return jsonify(message)

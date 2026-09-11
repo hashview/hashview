@@ -544,11 +544,12 @@ def ntlm_hash_hex(plaintext):
     """Uppercase hex NTLM hash (MD4 over UTF-16LE) of a plaintext string.
 
     Tries hashlib first (fast, available when OpenSSL still provides md4);
-    falls back to the pure-Python MD4 above. surrogatepass mirrors the
-    surrogateescape file read in the import endpoint so undecodable bytes
-    round-trip.
+    falls back to the pure-Python MD4 above. Decodes hashcat's ``$HEX[...]``
+    wrapper when present so recovered passwords with whitespace or binary bytes
+    verify; surrogatepass otherwise mirrors the surrogateescape file read in
+    the import endpoint so undecodable bytes round-trip.
     """
-    pw_bytes = plaintext.encode('utf-16le', 'surrogatepass')
+    pw_bytes = _utf16le_candidate_bytes(plaintext)
     try:
         # MD4 here IS the NTLM algorithm being verified, not a security control.
         digest = hashlib.new('md4', pw_bytes).digest()  # nosec B324
@@ -563,11 +564,47 @@ def _u8(plaintext):
     losslessly. NTLM/MSSQL use UTF-16LE instead (see their helpers)."""
     return plaintext.encode('utf-8', 'surrogateescape')
 
+def _hashcat_hex_bytes(plaintext):
+    """If ``plaintext`` is hashcat's ``$HEX[<hex>]`` wrapper, return the raw
+    candidate bytes it encodes; otherwise return None.
+
+    hashcat emits $HEX[...] whenever a recovered password contains bytes that
+    would be ambiguous in the plain outfile (leading/trailing whitespace, the
+    ':' delimiter, or non-UTF-8 bytes). The crack-import verifiers must
+    recompute the digest over those exact bytes, not over the literal string
+    "$HEX[..]". A malformed wrapper returns None so the value is hashed
+    literally rather than dropped.
+    """
+    if plaintext and plaintext.startswith('$HEX[') and plaintext.endswith(']'):
+        try:
+            return bytes.fromhex(plaintext[5:-1])
+        except ValueError:
+            return None
+    return None
+
+def _raw_candidate_bytes(plaintext):
+    """Bytes fed to the raw-byte hash families (MD5/SHA*/MD4-900/MySQL): the
+    decoded $HEX bytes when present, else the UTF-8 (surrogateescape) encoding
+    of the plaintext string."""
+    raw = _hashcat_hex_bytes(plaintext)
+    return raw if raw is not None else _u8(plaintext)
+
+def _utf16le_candidate_bytes(plaintext):
+    """Bytes fed to the UTF-16LE families (NTLM/MSSQL2012). hashcat builds the
+    candidate by zero-extending each raw byte, which equals
+    ``latin-1(bytes).encode('utf-16le')``; a plaintext without the $HEX wrapper
+    keeps the prior surrogatepass UTF-16LE encoding."""
+    raw = _hashcat_hex_bytes(plaintext)
+    if raw is not None:
+        return raw.decode('latin-1').encode('utf-16le')
+    return plaintext.encode('utf-16le', 'surrogatepass')
+
 def md4_hex(plaintext):
     """Lowercase hex MD4 over the UTF-8 bytes of a plaintext string (hashcat mode
     900 -- raw MD4, NOT the UTF-16LE NTLM variant). Mirrors ntlm_hash_hex's
-    hashlib-then-pure-Python fallback, since OpenSSL 3.x may drop md4."""
-    pw_bytes = _u8(plaintext)
+    hashlib-then-pure-Python fallback, since OpenSSL 3.x may drop md4. Decodes
+    hashcat's ``$HEX[...]`` wrapper when present."""
+    pw_bytes = _raw_candidate_bytes(plaintext)
     try:
         # MD4 here IS the algorithm being verified, not a security control.
         digest = hashlib.new('md4', pw_bytes).digest()  # nosec B324
@@ -577,9 +614,10 @@ def md4_hex(plaintext):
 
 def mssql2012_hash_hex(plaintext, salt_bytes):
     """Lowercase hex SHA-512 of UTF-16LE(plaintext) + salt (hashcat mode 1731,
-    MSSQL 2012/2014). surrogatepass mirrors ntlm_hash_hex so undecodable bytes
+    MSSQL 2012/2014). Decodes hashcat's ``$HEX[...]`` wrapper when present and
+    otherwise mirrors ntlm_hash_hex's surrogatepass so undecodable bytes
     round-trip; salt_bytes is the raw 4-byte salt extracted from the ciphertext."""
-    return hashlib.sha512(plaintext.encode('utf-16le', 'surrogatepass') + salt_bytes).hexdigest()
+    return hashlib.sha512(_utf16le_candidate_bytes(plaintext) + salt_bytes).hexdigest()
 
 def _verify_ntlm(pt, ct):
     """Case-insensitive verify of a plaintext against an NTLM (mode 1000) hash."""
@@ -592,21 +630,21 @@ def _verify_md4(pt, ct):
 def _verify_md5(pt, ct):
     """Case-insensitive verify of a plaintext against an MD5 (mode 0) hash. md5
     here is the algorithm being verified, not a security control."""
-    return hashlib.md5(_u8(pt)).hexdigest() == ct.lower()  # nosec B324
+    return hashlib.md5(_raw_candidate_bytes(pt)).hexdigest() == ct.lower()  # nosec B324
 
 def _verify_sha1(pt, ct):
     """Case-insensitive verify of a plaintext against a SHA1 (mode 100) hash. sha1
     here is the algorithm being verified, not a security control."""
-    return hashlib.sha1(_u8(pt)).hexdigest() == ct.lower()  # nosec B324
+    return hashlib.sha1(_raw_candidate_bytes(pt)).hexdigest() == ct.lower()  # nosec B324
 
 def _verify_sha256(pt, ct):
     """Case-insensitive verify of a plaintext against a SHA2-256 (mode 1400) hash."""
-    return hashlib.sha256(_u8(pt)).hexdigest() == ct.lower()
+    return hashlib.sha256(_raw_candidate_bytes(pt)).hexdigest() == ct.lower()
 
 def _verify_mysql41(pt, ct):
     """Case-insensitive verify against a MySQL4.1/5 (mode 300) hash:
     SHA1(SHA1(pw)). sha1 here is the algorithm being verified, not a control."""
-    return hashlib.sha1(hashlib.sha1(_u8(pt)).digest()).hexdigest() == ct.lower()  # nosec B324
+    return hashlib.sha1(hashlib.sha1(_raw_candidate_bytes(pt)).digest()).hexdigest() == ct.lower()  # nosec B324
 
 def _verify_mssql2012(pt, ct):
     """Case-insensitive verify against an MSSQL 2012/2014 (mode 1731) hash. The

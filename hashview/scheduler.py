@@ -418,6 +418,209 @@ def _agent_health_check_inner(db :SQLAlchemy, logger :Logger):
             db.session.commit()
 
 
+# Caps on the aggregated alert body: notify_admins fans out to email, a Pushover
+# PHONE PUSH and Slack, so a catalog-wide failure must not produce a 50 KB push.
+_ALERT_MAX_ROWS = 20
+_ALERT_MAX_TASK_IDS = 10
+
+
+def _catalog_alert_lines(rows, task_ids_by_id, kind):
+    """Plain-text body lines for one kind ('rule'/'wordlist') of missing row."""
+    import os
+
+    lines = []
+    for row in rows[:_ALERT_MAX_ROWS]:
+        # Basename, not the raw stored path: the stored value is server-internal
+        # and often relative, and the basename is what the operator sees on disk.
+        lines.append('  - %s %s "%s"  (path: %s)'
+                     % (kind, row.id, row.name, os.path.basename(row.path or '') or '(no path)'))
+        task_ids = sorted(task_ids_by_id.get(row.id, ()))
+        if not task_ids:
+            lines.append('      not referenced by any task')
+            continue
+        shown = ', '.join(str(t) for t in task_ids[:_ALERT_MAX_TASK_IDS])
+        extra = len(task_ids) - _ALERT_MAX_TASK_IDS
+        lines.append('      used by %d task(s): %s%s'
+                     % (len(task_ids), shown, f' (+{extra} more)' if extra > 0 else ''))
+    if len(rows) > _ALERT_MAX_ROWS:
+        lines.append('  ... and %d more.' % (len(rows) - _ALERT_MAX_ROWS))
+    return lines
+
+
+def _catalog_task_references(rule_ids, wordlist_ids):
+    """(rule_id -> {task ids}, wordlist_id -> {task ids}) in two batched queries.
+
+    Which tasks reference a row is the field that decides the admin's next move:
+    an unreferenced stale row is housekeeping, one behind a queued job is an
+    incident. wl_id_2 counts -- a combinator task's second wordlist is a real
+    reference (see build_hashcat_command)."""
+    from sqlalchemy import or_
+
+    from hashview.models import Tasks
+
+    by_rule, by_wordlist = {}, {}
+    if rule_ids:
+        for task_id, rule_id in Tasks.query.with_entities(
+                Tasks.id, Tasks.rule_id).filter(Tasks.rule_id.in_(rule_ids)).all():
+            by_rule.setdefault(rule_id, set()).add(task_id)
+    if wordlist_ids:
+        for task_id, wl_id, wl_id_2 in Tasks.query.with_entities(
+                Tasks.id, Tasks.wl_id, Tasks.wl_id_2).filter(
+                    or_(Tasks.wl_id.in_(wordlist_ids),
+                        Tasks.wl_id_2.in_(wordlist_ids))).all():
+            for candidate in (wl_id, wl_id_2):
+                if candidate in wordlist_ids:
+                    by_wordlist.setdefault(candidate, set()).add(task_id)
+    return by_rule, by_wordlist
+
+
+def _catalog_health_check_inner(db :SQLAlchemy, logger :Logger):
+    """Alert admins when a rule/wordlist row outlives its file, and on recovery.
+
+    The per-row ``file_missing_notified`` flag makes this a ONE-shot alert per
+    episode (no repeats while the file stays gone) and lets us fire a single
+    "restored" alert when it comes back -- the same shape as
+    _agent_health_check_inner's offline_notified.
+
+    Unlike that one, the notification is AGGREGATED: one message per sweep per
+    direction, not one per row. notify_admins fans out to email, a Pushover
+    phone push and Slack, and these failures are almost always correlated (a
+    volume move, a botched restore, a manual rm), so N separate pushes for one
+    incident is a pager storm with no extra information. The audit log still
+    gets one event per row, because that is the durable per-entity record and
+    the Logs viewer parses `target` into entity/id/name.
+
+    Issue #383."""
+    import os
+
+    from flask import current_app
+
+    # Function-local, and load-bearing: tests monkeypatch
+    # hashview.utils.utils.notify_admins, which only takes effect because the
+    # name is resolved at call time. Do not hoist these to module scope.
+    from hashview.models import Rules, Wordlists
+    from hashview.utils.audit import log_event
+    from hashview.utils.utils import notify_admins, rule_file_missing, wordlist_file_missing
+
+    # Circuit breaker: an unmounted or renamed control volume would otherwise
+    # flag the ENTIRE catalog, send one huge alert, latch every row, and fire an
+    # equally huge "restored" alert on remount. Skipping is the only safe answer;
+    # the error log is the operator's signal.
+    for subdir in ('rules', 'wordlists'):
+        path = os.path.join(current_app.root_path, 'control', subdir)
+        if not os.path.isdir(path):
+            logger.error('CatalogHealthCheck: %s is not a directory; skipping the sweep '
+                         'so an unreadable volume is not reported as a missing catalog.',
+                         path)
+            return
+
+    missing_rules, restored_rules = [], []
+    for rule in Rules.query.all():
+        if rule_file_missing(rule):
+            if not rule.file_missing_notified:
+                missing_rules.append(rule)
+        elif rule.file_missing_notified:
+            restored_rules.append(rule)
+
+    missing_wordlists, restored_wordlists = [], []
+    # Dynamic rows are filtered out by wordlist_file_missing (their file is a
+    # regenerable cache), so they can never enter either list.
+    for wordlist in Wordlists.query.all():
+        if wordlist_file_missing(wordlist):
+            if not wordlist.file_missing_notified:
+                missing_wordlists.append(wordlist)
+        elif wordlist.file_missing_notified:
+            restored_wordlists.append(wordlist)
+
+    if not (missing_rules or missing_wordlists or restored_rules or restored_wordlists):
+        logger.info('CatalogHealthCheck: no catalog file changes to report.')
+        return
+
+    if missing_rules or missing_wordlists:
+        by_rule, by_wordlist = _catalog_task_references(
+            {r.id for r in missing_rules}, {w.id for w in missing_wordlists})
+        total = len(missing_rules) + len(missing_wordlists)
+        body = [
+            'These Hashview rule/wordlist entries have a database row but no file on disk.',
+            'Agents cannot download them, and any task that uses one will fail at run time.',
+            '',
+        ]
+        if missing_rules:
+            body.append('Rules:')
+            body += _catalog_alert_lines(missing_rules, by_rule, 'rule')
+            body.append('')
+        if missing_wordlists:
+            body.append('Wordlists:')
+            body += _catalog_alert_lines(missing_wordlists, by_wordlist, 'wordlist')
+            body.append('')
+        body += [
+            'Fix: re-upload the file from the Rules / Wordlists page (it restores in',
+            'place, so tasks keep working), or delete the entry. Deleting is refused',
+            'while a task still references it.',
+        ]
+        logger.info('CatalogHealthCheck: %d catalog file(s) missing; notifying admins.', total)
+        # notify_admins fans out to email, Pushover and Slack, and only send_email
+        # swallows its own errors: send_pushover does a bare requests.post +
+        # .json(). A timeout on one transport would otherwise propagate AFTER the
+        # emails were already delivered, skipping the latch below and the single
+        # commit at the end -- so the identical aggregated alert would re-send
+        # every hour until that transport recovered. Treat a delivery failure as
+        # "told": a duplicate-free log line beats an hourly pager storm.
+        try:
+            notify_admins(
+                'Hashview: %d catalog file%s missing on disk' % (total, '' if total == 1 else 's'),
+                '\n'.join(body))
+        except Exception:
+            logger.exception(
+                'CatalogHealthCheck: admin notification partially failed; latching anyway.')
+        for rule in missing_rules:
+            log_event('rule.file_missing', target=f'rule:{rule.id} {rule.name!r}',
+                      detail=f'path={rule.path} tasks={len(by_rule.get(rule.id, ()))}',
+                      actor=('system', None))
+            rule.file_missing_notified = True
+        for wordlist in missing_wordlists:
+            log_event('wordlist.file_missing', target=f'wordlist:{wordlist.id} {wordlist.name!r}',
+                      detail=f'path={wordlist.path} tasks={len(by_wordlist.get(wordlist.id, ()))}',
+                      actor=('system', None))
+            wordlist.file_missing_notified = True
+
+    if restored_rules or restored_wordlists:
+        # Sent as its own message rather than folded into the one above: a
+        # "3 missing, 2 restored" Pushover title reads badly, and the two
+        # directions call for different operator action (none, vs. go fix it).
+        total = len(restored_rules) + len(restored_wordlists)
+        # Real task references, not {}: _catalog_alert_lines prints "not
+        # referenced by any task" whenever the map has no entry, so an empty one
+        # told the admins that every recovered row was unused. The task list is
+        # the line that decides whether anything still needed fixing.
+        re_by_rule, re_by_wordlist = _catalog_task_references(
+            {r.id for r in restored_rules}, {w.id for w in restored_wordlists})
+        body = ['These Hashview rule/wordlist files are back on disk:', '']
+        body += _catalog_alert_lines(restored_rules, re_by_rule, 'rule')
+        body += _catalog_alert_lines(restored_wordlists, re_by_wordlist, 'wordlist')
+        logger.info('CatalogHealthCheck: %d catalog file(s) restored; notifying admins.', total)
+        try:
+            notify_admins(
+                'Hashview: %d catalog file%s restored' % (total, '' if total == 1 else 's'),
+                '\n'.join(body))
+        except Exception:
+            logger.exception(
+                'CatalogHealthCheck: restored-notification partially failed; un-latching anyway.')
+        for rule in restored_rules:
+            log_event('rule.file_restored', target=f'rule:{rule.id} {rule.name!r}',
+                      detail=f'path={rule.path}', actor=('system', None))
+            rule.file_missing_notified = False
+        for wordlist in restored_wordlists:
+            log_event('wordlist.file_restored', target=f'wordlist:{wordlist.id} {wordlist.name!r}',
+                      detail=f'path={wordlist.path}', actor=('system', None))
+            wordlist.file_missing_notified = False
+
+    # One commit for the whole batch: the alert is aggregated, so the batch is
+    # the unit of work. Committing before the send would risk latching rows the
+    # admins were never told about; this order retries the whole set next sweep.
+    db.session.commit()
+
+
 def register_default_jobs(app :Flask):
     """Register Hashview's default scheduled jobs on the shared scheduler.
 
@@ -440,6 +643,17 @@ def register_default_jobs(app :Flask):
         func=partial(agent_health_check, app),
         trigger='interval',
         minutes=5,
+    )
+    # Rule/wordlist rows whose file vanished (issue #383). Hourly, not the
+    # 5-minute cadence above: an offline agent is a transient condition worth
+    # catching early, while a missing file is a step condition created only by
+    # explicit user action, and the fix is a human re-uploading. Sub-hour
+    # latency buys nothing and costs 12x the scheduler log volume.
+    scheduler.add_job(
+        id='CATALOG_HEALTH',
+        func=partial(catalog_health_check, app),
+        trigger='cron',
+        hour='*',
     )
 
 
@@ -491,3 +705,18 @@ def data_retention_cleanup(app :Flask):
             snapshot = pool_snapshot()
             if snapshot:
                 app.logger.info('DataRetentionCleanup pool state: %s', snapshot)
+
+
+def catalog_health_check(app :Flask):
+    """Scheduled job: alert admins on catalog file missing / restored (see inner)."""
+    with app.app_context():
+        try:
+            app.logger.info('CatalogHealthCheck ScheduledJob Progressing.')
+            from hashview.models import db
+            _catalog_health_check_inner(db, app.logger)
+        except Exception:
+            app.logger.exception(
+                'CatalogHealthCheck ScheduledJob is Complete with Result(Failure).')
+        else:
+            app.logger.info(
+                'CatalogHealthCheck ScheduledJob is Complete with Result(Success).')

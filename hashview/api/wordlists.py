@@ -38,7 +38,9 @@ from hashview.utils.audit import log_event
 from hashview.utils.utils import (
     compress_to_gz,
     ingest_static_wordlist_file,
+    missing_wordlist_ids,
     remove_file,
+    resolve_control_file,
     send_generated_file,
     update_dynamic_wordlist,
 )
@@ -52,11 +54,15 @@ def v1_api_get_wordlist():
 
     update_heartbeat(request.cookies.get('uuid'))
     wordlists = Wordlists.query.all()
-    message = {
-        'status': 200,
-        'wordlists': alchemy_to_native(wordlists)
-    }
-    return jsonify(message)
+    rows = alchemy_to_native(wordlists)
+    missing_ids = missing_wordlist_ids(wordlists)
+    for row in rows:
+        # Grafted AFTER serialization; see the identical note in api/rules.py.
+        # Always false for a dynamic list: its file is regenerated from the
+        # database on every download, so `missing` says nothing about whether
+        # anything exists at `path` (issue #383).
+        row['missing'] = row.get('id') in missing_ids
+    return jsonify({'status': 200, 'wordlists': rows})
 
 
 # serve a wordlist
@@ -83,8 +89,14 @@ def v1_api_get_wordlist_download(wordlist_id):
         # send_from_directory's bare HTML page, so the agent logs an actionable
         # body and the operator knows to re-upload. (Mirrors /v1/rules/<id>.)
         wordlist_name = os.path.basename(wordlist.path or '')
-        src_path = os.path.join(wordlists_dir, wordlist_name)
-        if not wordlist_name or not os.path.exists(src_path):
+        if resolve_control_file(wordlist.path, 'wordlists') is None:
+            # Log it here too: without this the only evidence an agent is
+            # re-asking for a dead file every sync lives in that agent's log,
+            # on another host.
+            current_app.logger.warning(
+                'Wordlist %s has no file on disk (path=%s); serving 404 to the '
+                'caller. Restore or delete it from the Wordlists page (#383).',
+                wordlist.id, wordlist.path)
             return jsonify({'status': 404, 'type': 'Error',
                             'msg': 'Wordlist file missing on disk: ' + (wordlist_name or '(no path)')}), 404
         return send_from_directory(wordlists_dir, wordlist_name, mimetype='application/octet-stream')

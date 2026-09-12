@@ -37,6 +37,7 @@ from hashview.models import (
 )
 from hashview.models import db as _db
 from hashview.utils.utils import get_md5_hash
+from tests.unit.helpers import make_rule_with_file, make_wordlist_with_file
 
 # ---------------------------------------------------------------------------
 # Local fixtures
@@ -1179,30 +1180,13 @@ def test_remove_file_logs_warning_on_oserror(app, tmp_path, monkeypatch):
 
 
 def _seed_wordlist(owner):
-    wl = Wordlists(
-        name="api-wl",
-        owner_id=owner.id,
-        type="static",
-        path="/nonexistent/api-wl.gz",
-        size=1,
-        checksum="0" * 64,
-    )
-    _db.session.add(wl)
-    _db.session.commit()
-    return wl
+    # File-backed: POST /v1/tasks/add refuses a wordlist whose file is gone from
+    # disk, since a task built on it can never run (#383).
+    return make_wordlist_with_file(owner.id, name="api-wl")
 
 
 def _seed_rule(owner):
-    rule = Rules(
-        name="api-rule",
-        owner_id=owner.id,
-        path="/nonexistent/api-rule.txt",
-        size=1,
-        checksum="0" * 64,
-    )
-    _db.session.add(rule)
-    _db.session.commit()
-    return rule
+    return make_rule_with_file(owner.id, name="api-rule")
 
 
 def _post_task(client, payload):

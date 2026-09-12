@@ -1,23 +1,24 @@
-"""xfail spec for issue #383 — catalog rows survive when their file is gone.
+"""Issue #383 — catalog rows survive when their file is gone.
 
 When a Rules/Wordlists row's file disappears from disk but the row survives,
-nothing on the server notices: the row stays listed, agents retry the
-download forever, and a task can still reference a file that can never be
-fetched. The issue's primary suggested fix ("Surface it") is a ``missing``
-flag on the catalog listing so a stale row is visible and excludable from
-task pickers, rather than only failing at download time.
+nothing on the server used to notice: the row stayed listed, agents retried
+the download forever, and a task could still reference a file that can never
+be fetched. The issue's primary fix ("Surface it") is a ``missing`` flag on
+the catalog listings so a stale row is visible and excludable from task
+pickers, rather than only failing at download time.
 
-These tests assert that desired behavior and are marked
-``xfail(strict=False)`` so the suite stays green whether it's still missing
-(XFAIL) or has since been implemented (XPASS) — that XPASS is the signal to
-drop the marker. The issue explicitly says the same reasoning applies to
-wordlists as to rules, so both are covered here.
+These tests were the ``xfail(strict=False)`` spec for that behavior. It is
+now implemented (utils.missing_rule_ids / missing_wordlist_ids, grafted onto
+the /v1 list payloads), so the markers are gone and these are live regression
+tests. The issue explicitly says the same reasoning applies to wordlists as
+to rules, so both are covered here.
 """
 
 import pytest
 
 from hashview.models import Rules, Users, Wordlists
 from hashview.models import db as _db
+from tests.unit.helpers import make_rule_with_file, make_wordlist_with_file
 
 
 @pytest.fixture()
@@ -39,7 +40,6 @@ def _auth(client, value):
     client.set_cookie("uuid", value, domain="localhost.test")
 
 
-@pytest.mark.xfail(strict=False, reason="issue #383: no missing-file flag on GET /v1/rules yet")
 def test_rule_with_missing_file_is_flagged_in_listing(app, client, admin_user, tmp_path):
     rule = Rules(
         name="gone.rule",
@@ -60,7 +60,6 @@ def test_rule_with_missing_file_is_flagged_in_listing(app, client, admin_user, t
     assert matches[0].get("missing") is True
 
 
-@pytest.mark.xfail(strict=False, reason="issue #383: no missing-file flag on GET /v1/wordlists yet")
 def test_wordlist_with_missing_file_is_flagged_in_listing(app, client, admin_user, tmp_path):
     wl = Wordlists(
         name="gone.txt",
@@ -81,3 +80,41 @@ def test_wordlist_with_missing_file_is_flagged_in_listing(app, client, admin_use
     matches = [w for w in body["wordlists"] if w["id"] == wl.id]
     assert len(matches) == 1
     assert matches[0].get("missing") is True
+
+
+def test_present_rule_is_flagged_missing_false(app, client, admin_user):
+    """The key is always emitted, so an absent key means "server predates the
+    flag" rather than "this row is fine"."""
+    rule = make_rule_with_file(admin_user.id, name="present.rule")
+    _auth(client, admin_user.api_key)
+
+    body = client.get("/v1/rules").get_json()
+    assert [r for r in body["rules"] if r["id"] == rule.id][0]["missing"] is False
+
+
+def test_present_wordlist_is_flagged_missing_false(app, client, admin_user):
+    wl = make_wordlist_with_file(admin_user.id, name="present.txt")
+    _auth(client, admin_user.api_key)
+
+    body = client.get("/v1/wordlists").get_json()
+    assert [w for w in body["wordlists"] if w["id"] == wl.id][0]["missing"] is False
+
+
+def test_dynamic_wordlist_is_never_flagged_missing(app, client, admin_user, tmp_path):
+    """A dynamic list's file is regenerated per download, so its absence is not
+    a fault -- flagging it would false-alarm on every install."""
+    wl = Wordlists(
+        name="(DYNAMIC) All Recovered Passwords",
+        owner_id=admin_user.id,
+        type="dynamic",
+        path=str(tmp_path / "never-created.txt"),
+        size=0,
+        byte_size=0,
+        checksum="x",
+    )
+    _db.session.add(wl)
+    _db.session.commit()
+    _auth(client, admin_user.api_key)
+
+    body = client.get("/v1/wordlists").get_json()
+    assert [w for w in body["wordlists"] if w["id"] == wl.id][0]["missing"] is False

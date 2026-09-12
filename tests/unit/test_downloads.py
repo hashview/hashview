@@ -25,6 +25,7 @@ from hashview.models import (
     db,
 )
 from hashview.utils.utils import get_md5_hash
+from tests.unit.helpers import make_rule_with_file, make_wordlist_with_file
 
 
 def _admin():
@@ -172,13 +173,10 @@ def test_hashfiles_page_renders_download_modal(app, client):
 def test_wordlist_download_static_gz(app, client, tmp_path):
     user = _admin()
     _login(client, user)
-    gz = tmp_path / "abc.gz"
-    with gzip.open(str(gz), "wb") as f:
-        f.write(b"word1\nword2\n")
-    wl = Wordlists(name="Rockyou", owner_id=user.id, type="static",
-                   path=str(gz), checksum="0" * 64, size=2)
-    db.session.add(wl)
-    db.session.commit()
+    # The file has to live in control/<subdir>: that is the only place the
+    # download routes resolve a row's file from (#383).
+    wl = make_wordlist_with_file(user.id, name="Rockyou",
+                                 content=b"word1\nword2\n")
 
     resp = client.get(f"/wordlists/download/{wl.id}")
     assert resp.status_code == 200
@@ -341,12 +339,22 @@ def test_dynamic_wordlist_download_names_the_attachment_after_the_wordlist(app, 
 def test_wordlists_page_renders_download_links(app, client, tmp_path):
     user = _admin()
     _login(client, user)
-    wl = Wordlists(name="Rockyou", owner_id=user.id, type="static",
+    wl = make_wordlist_with_file(user.id, name="Rockyou")
+    html = client.get("/wordlists").get_data(as_text=True)
+    assert f"/wordlists/download/{wl.id}" in html
+
+
+def test_wordlists_page_disables_download_for_a_missing_file(app, client, tmp_path):
+    """A row whose file is gone gets a badge instead of a dead link (#383)."""
+    user = _admin()
+    _login(client, user)
+    wl = Wordlists(name="Stranded", owner_id=user.id, type="static",
                    path=str(tmp_path / "abc.gz"), checksum="0" * 64, size=2)
     db.session.add(wl)
     db.session.commit()
     html = client.get("/wordlists").get_data(as_text=True)
-    assert f"/wordlists/download/{wl.id}" in html
+    assert f"/wordlists/download/{wl.id}" not in html
+    assert "FILE MISSING" in html
 
 
 # ---------------------------------------------------------------------------
@@ -356,12 +364,9 @@ def test_wordlists_page_renders_download_links(app, client, tmp_path):
 def test_rule_download(app, client, tmp_path):
     user = _admin()
     _login(client, user)
-    rule_file = tmp_path / "best64.rule"
-    rule_file.write_text(":\nl\nu\n")
-    rule = Rules(name="Best64", owner_id=user.id, path=str(rule_file),
-                 checksum="0" * 64, size=3)
-    db.session.add(rule)
-    db.session.commit()
+    # The file has to live in control/<subdir>: that is the only place the
+    # download routes resolve a row's file from (#383).
+    rule = make_rule_with_file(user.id, name="Best64", content=b":\nl\nu\n")
 
     resp = client.get(f"/rules/download/{rule.id}")
     assert resp.status_code == 200

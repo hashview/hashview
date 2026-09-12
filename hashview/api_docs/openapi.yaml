@@ -439,6 +439,10 @@ paths:
     get:
       tags: [Rules]
       summary: List rules (metadata)
+      description: >-
+        `missing` flags a row whose file is gone from the server's
+        control/rules directory: it cannot be downloaded and should not be
+        offered when building new tasks.
       operationId: listRules
       x-audience: both
       responses:
@@ -601,7 +605,9 @@ paths:
       description: >-
         `size` is the line count; `byte_size` the on-disk bytes of the file at
         `path` (gzip-compressed for static lists); `checksum` the sha256 of
-        that on-disk file.
+        that on-disk file. `missing` flags a static row whose file is gone from
+        the server's control/wordlists directory — it is always false for
+        dynamic lists, which are regenerated per request.
       operationId: listWordlists
       x-audience: both
       responses:
@@ -640,7 +646,10 @@ paths:
             application/octet-stream:
               schema: {type: string, format: binary}
         '404':
-          description: Real HTTP 404 — unknown wordlist id.
+          description: >-
+            Real HTTP 404 — unknown wordlist id, or the row outlived its file on
+            disk (`msg` then names the file). The catalog listing flags the
+            latter with `missing: true`.
           content:
             application/json:
               schema:
@@ -1700,6 +1709,15 @@ components:
         path: {type: string, description: Server-side storage path.}
         size: {type: integer, description: Line count.}
         checksum: {type: string, description: sha256 of the plaintext file.}
+        missing:
+          type: boolean
+          description: >-
+            True when the row's file is absent from the server's control/rules
+            directory (resolved by basename, so a relative stored `path` still
+            resolves). Such a rule cannot be downloaded — GET
+            /v1/rules/{rules_id} answers 404 — and any task referencing it
+            fails at run time. Always present; a server that omits the key
+            predates the flag (issue #383).
 
     Wordlist:
       type: object
@@ -1722,6 +1740,18 @@ components:
           nullable: true
           description: On-disk bytes of the stored (compressed) file.
         checksum: {type: string, description: sha256 of the stored on-disk file.}
+        missing:
+          type: boolean
+          description: >-
+            True when the row's file is absent from the server's
+            control/wordlists directory (resolved by basename). Such a wordlist
+            cannot be downloaded — GET /v1/wordlists/{wordlist_id} answers 404 —
+            and any task referencing it fails at run time. ALWAYS false for type
+            `dynamic`: dynamic lists are regenerated from the database on every
+            request, so the file at `path` is a stale placeholder by design and
+            its absence is not a fault — never read this key as "a file exists
+            at `path`". Always present; a server that omits it predates the flag
+            (issue #383).
 
     Job:
       type: object

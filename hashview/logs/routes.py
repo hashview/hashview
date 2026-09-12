@@ -36,6 +36,14 @@ _ACTION_BADGE = {
     'password_reset_request': ('RESET', 'amber'),
     'admin_reset': ('RESET', 'amber'),
     'clear': ('CLEAR', 'dim'),
+    # System-generated health events (scheduler). offline/recovered have been
+    # emitted since agent_health_check landed but were never mapped, so they
+    # rendered grey via the fallback.
+    'offline': ('OFFLINE', 'red'),
+    'recovered': ('RECOVERED', 'green'),
+    'file_missing': ('MISSING', 'red'),
+    'file_restored': ('RESTORED', 'green'),
+    'restore': ('RESTORE', 'amber'),
 }
 
 # Entity (event noun) -> sidebar icon name (icons.html.j2)

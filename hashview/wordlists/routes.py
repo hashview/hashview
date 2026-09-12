@@ -17,16 +17,20 @@ from flask import (
 from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
-from hashview.models import Hashes, JobTasks, Rules, Tasks, Users, Wordlists, db
+from hashview.models import Hashes, Jobs, JobTasks, Rules, Tasks, Users, Wordlists, db
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
     ingest_static_wordlist_file,
+    missing_wordlist_ids,
+    resolve_control_file,
+    restore_static_wordlist_file,
     send_generated_file,
     try_commit,
     update_dynamic_wordlist,
+    wordlist_file_missing,
 )
 from hashview.utils.wordlist_import import list_importable, run_import_async
-from hashview.wordlists.forms import WordlistsForm
+from hashview.wordlists.forms import WordlistRestoreForm, WordlistsForm
 
 wordlists = Blueprint('wordlists', __name__)
 
@@ -70,8 +74,24 @@ def wordlists_list():
     jobs_by_task = {}
     for jt in JobTasks.query.all():
         jobs_by_task.setdefault(jt.task_id, set()).add(jt.job_id)
+    # Jobs referenced by those tasks, for the delete dialog's blocker list: an
+    # operator needs the job to unpick before the task can be edited or deleted.
+    job_ids = {jid for ids in jobs_by_task.values() for jid in ids}
+    jobs_by_id = {j.id: j for j in Jobs.query.filter(Jobs.id.in_(job_ids)).all()} if job_ids else {}
 
-    wl_used_tasks = {}   # wordlist.id -> [{name, rule, type, hits}]
+    # Catalog health (#383): static rows whose file is gone. Dynamic rows never
+    # qualify -- their file is regenerated from the DB on every download.
+    missing_wl = missing_wordlist_ids(wordlists)
+    wl_bytes = {}
+    for wl in wordlists:
+        src_path = resolve_control_file(wl.path, 'wordlists')
+        if src_path:
+            try:
+                wl_bytes[wl.id] = os.path.getsize(src_path)
+            except OSError:
+                pass
+
+    wl_used_tasks = {}   # wordlist.id -> [{id, name, rule, type, hits, jobs}]
     wl_hits = {}         # wordlist.id -> summed historical hits
     wl_task_count = {}   # wordlist.id -> number of tasks using it
     wl_job_count = {}    # wordlist.id -> number of distinct jobs using those tasks
@@ -84,10 +104,14 @@ def wordlists_list():
             total += hits
             job_ids |= jobs_by_task.get(t.id, set())
             rows.append({
+                'id': t.id,
                 'name': t.name,
                 'rule': rule_names.get(t.rule_id) if t.rule_id else None,
                 'type': _wl_ttype(t),
                 'hits': hits,
+                'jobs': [{'id': j.id, 'name': j.name, 'status': j.status}
+                         for j in (jobs_by_id.get(jid) for jid in sorted(jobs_by_task.get(t.id, set())))
+                         if j is not None],
             })
         wl_used_tasks[wl.id] = rows
         wl_hits[wl.id] = total
@@ -101,6 +125,8 @@ def wordlists_list():
                            wl_used_tasks=wl_used_tasks, wl_hits=wl_hits,
                            wl_task_count=wl_task_count, wl_job_count=wl_job_count,
                            wl_owner=wl_owner, wordlistsForm=WordlistsForm(),
+                           missing_wl_ids=missing_wl, wl_bytes=wl_bytes,
+                           wordlistRestoreForm=WordlistRestoreForm(),
                            import_files=list_importable(current_app))
 
 
@@ -198,12 +224,15 @@ def wordlists_delete(wordlist_id):
             flash('Dynamic Wordlists can not be deleted.', 'danger')
             return redirect(url_for('wordlists.wordlists_list'))
 
-        # Check if associated with a Task
-        tasks = Tasks.query.all()
-        for task in tasks:
-            if task.wl_id == wordlist_id:
-                flash('Failed. Wordlist is associated to one or more tasks', 'danger')
-                return redirect(url_for('wordlists.wordlists_list'))
+        # Check if associated with a Task. One indexed query rather than loading
+        # every task into Python (mirrors rules_delete's form), and wl_id_2
+        # counts: a combinator task's SECOND wordlist is a real reference --
+        # wordlists_list's usage rollup and build_hashcat_command both treat it
+        # as one, so this guard used to let it be deleted out from under them.
+        if Tasks.query.filter(db.or_(Tasks.wl_id == wordlist.id,
+                                     Tasks.wl_id_2 == wordlist.id)).first():
+            flash('Failed. Wordlist is associated to one or more tasks', 'danger')
+            return redirect(url_for('wordlists.wordlists_list'))
 
         # Capture the on-disk path before the row is gone, remove the DB row,
         # then delete the stored (compressed) file from disk. Order is
@@ -211,6 +240,7 @@ def wordlists_delete(wordlist_id):
         # a row that points at a missing file; the unlink is best-effort.
         wordlist_path = wordlist.path
         wordlist_target = f'wordlist:{wordlist.id} {wordlist.name!r}'
+        file_was_missing = wordlist_file_missing(wordlist)
         db.session.delete(wordlist)
         if not try_commit(f'delete wordlist {wordlist_id}'):
             flash('Wordlist could not be deleted — it may have already been removed.', 'danger')
@@ -223,9 +253,71 @@ def wordlists_delete(wordlist_id):
             except OSError:
                 current_app.logger.exception('Failed to remove wordlist file from disk: %s', wordlist_path)
 
-        flash('Wordlist has been deleted!', 'success')
+        if file_was_missing:
+            flash('Wordlist deleted (its file was already gone from disk).', 'success')
+        else:
+            flash('Wordlist has been deleted!', 'success')
     else:
         flash('Unauthorized Action!', 'danger')
+    return redirect(url_for('wordlists.wordlists_list'))
+
+
+@wordlists.route("/wordlists/<int:wordlist_id>/restore", methods=['POST'])
+@login_required
+def wordlists_restore(wordlist_id):
+    """Replace a wordlist's file IN PLACE, keeping the row's id and path (#383).
+
+    The remedy for a row that outlived its file while tasks still reference it.
+    Re-uploading through wordlists_add cannot fix that case -- ingest always
+    mints a new row and a new path, so the stale Tasks.wl_id is orphaned
+    further. Scp'ing into control/wordlists_import/ has the same problem: the
+    importer calls the same ingest.
+
+    This is also the only way to update a static wordlist's contents at all --
+    there is no wordlist edit route.
+
+    Owner-or-admin, deliberately not admin-only: restoring a file is strictly
+    less destructive than the delete the owner can already do.
+    """
+    wordlist = Wordlists.query.get(wordlist_id)
+    if wordlist is None:
+        flash('Wordlist not found — it may have already been deleted.', 'warning')
+        return redirect(url_for('wordlists.wordlists_list'))
+    if not (current_user.admin or wordlist.owner_id == current_user.id):
+        flash('Unauthorized Action!', 'danger')
+        return redirect(url_for('wordlists.wordlists_list'))
+    if wordlist.type == 'dynamic':
+        # A dynamic list has nothing to restore: its content is generated from
+        # the database on every download. The Update button is its refresh.
+        flash('Dynamic Wordlists are generated from the database and can not be restored.', 'danger')
+        return redirect(url_for('wordlists.wordlists_list'))
+
+    form = WordlistRestoreForm()
+    if not form.validate_on_submit() or not form.wordlist.data:
+        flash('Please choose a wordlist file to restore from.', 'danger')
+        return redirect(url_for('wordlists.wordlists_list'))
+
+    tmp_path = os.path.join(current_app.root_path, 'control/tmp', secrets.token_hex(8))
+    try:
+        form.wordlist.data.save(tmp_path)
+        # Compresses into control/tmp and os.replace()s onto the stored path, so
+        # an invalid gzip leaves a still-good file untouched.
+        restore_static_wordlist_file(tmp_path, wordlist)
+    except Exception:
+        current_app.logger.exception('Failed to restore wordlist file for wordlist %s', wordlist_id)
+        db.session.rollback()
+        flash('Wordlist could not be restored — the upload was not a valid wordlist or gzip file.', 'danger')
+        return redirect(url_for('wordlists.wordlists_list'))
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+    if not try_commit(f'restore wordlist {wordlist_id}'):
+        flash('Wordlist could not be restored.', 'danger')
+        return redirect(url_for('wordlists.wordlists_list'))
+    log_event('wordlist.restore', target=f'wordlist:{wordlist.id} {wordlist.name!r}',
+              detail=f'path={wordlist.path}')
+    flash('Wordlist file restored. Every task that uses it works again.', 'success')
     return redirect(url_for('wordlists.wordlists_list'))
 
 
@@ -252,12 +344,17 @@ def wordlists_download(wordlist_id):
         return send_generated_file(tmp_dir, os.path.basename(tmp_txt),
                                    as_attachment=True, download_name=download_name)
 
-    if not wordlist.path or not os.path.exists(wordlist.path):
+    # Resolve through the shared helper rather than stat'ing wordlist.path
+    # directly: the stored path can be relative (legacy/seeded rows) and only
+    # control/wordlists is ever served from, so this agrees with
+    # GET /v1/wordlists/<id> and the missing badge on the listing (issue #383).
+    src_path = resolve_control_file(wordlist.path, 'wordlists')
+    if src_path is None:
         flash('Wordlist file not found on disk.', 'danger')
         return redirect(url_for('wordlists.wordlists_list'))
 
-    directory = os.path.dirname(os.path.abspath(wordlist.path))
-    filename = os.path.basename(wordlist.path)
+    directory = os.path.dirname(src_path)
+    filename = os.path.basename(src_path)
     ext = '.gz' if wordlist.path.endswith('.gz') else '.txt'
     download_name = (secure_filename(wordlist.name) or 'wordlist') + ext
     return send_from_directory(directory, filename, as_attachment=True,

@@ -29,10 +29,10 @@ BASE_REV = "8027c2d2b40a"      # what the drifted field DB was stamped at
 def _dev_head():
     """The chain's single head, read from the scripts rather than hardcoded.
 
-    Pinning the hash meant every new revision broke these two tests for a reason
-    unrelated to what they assert (that `upgrade head` survives a drifted schema
-    and lands on head, whatever head is). test_migration_smoke.py already
-    guarantees there is exactly one.
+    Pinning the hash meant every new revision broke these two tests for a
+    reason that has nothing to do with what they assert (that `upgrade head`
+    survives a drifted schema and lands on head, whatever head is).
+    test_migration_smoke.py already guarantees there is exactly one.
     """
     from alembic.config import Config as AlembicConfig
     from alembic.script import ScriptDirectory

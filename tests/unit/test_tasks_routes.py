@@ -3,17 +3,15 @@
 import pytest
 from wtforms.validators import ValidationError
 
-from hashview.models import Tasks, Wordlists, db
+from hashview.models import Tasks, db
 from hashview.tasks.forms import TasksForm
-from tests.unit.helpers import login, make_admin
+from tests.unit.helpers import login, make_admin, make_wordlist_with_file
 
 
 def _wordlist(owner, name="wl"):
-    wl = Wordlists(name=name, owner_id=owner.id, type="static",
-                   path="/nonexistent/wl.gz", size=1, checksum="0" * 64)
-    db.session.add(wl)
-    db.session.commit()
-    return wl
+    # File-backed: the task pickers exclude a rule/wordlist whose file is
+    # gone from disk (#383), so these rows must really exist on disk.
+    return make_wordlist_with_file(owner.id, name=name)
 
 
 def test_human_size_formats():

@@ -47,6 +47,21 @@ def control_dirs():
 
 
 @pytest.fixture(autouse=True)
+def cleanup_control_files():
+    """Unlink files that helpers.make_*_with_file wrote into control/.
+
+    Those helpers write into the app's REAL control/{rules,wordlists} dirs,
+    because utils.resolve_control_file is basename-confined and only looks
+    there. Autouse teardown keeps a test run from accumulating orphans -- past
+    runs are why those directories hold hundreds of files against a handful of
+    rows.
+    """
+    yield
+    from tests.unit.helpers import cleanup_control_files as _cleanup
+    _cleanup()
+
+
+@pytest.fixture(autouse=True)
 def ensure_setup():
     """Override parent autouse so live_server isn't requested for unit tests."""
     return

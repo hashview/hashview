@@ -256,6 +256,76 @@ def gz_linecount(filepath):
     return count
 
 
+def _compress_wordlist_to(src_path, dest_gz):
+    """Compress an uploaded wordlist (plain text OR gzip) to ``dest_gz`` at -9.
+
+    Shared core of ingest_static_wordlist_file (new row) and
+    restore_static_wordlist_file (existing row). For an already-gzipped upload
+    we decompress it first -- which validates the gzip -- count lines from the
+    plaintext, then RE-compress at -9, since the user may have uploaded a
+    weakly-compressed .gz.
+
+    Returns the line count. Raises on an invalid gzip; always cleans up its own
+    temp file.
+    """
+    tmp_dir = os.path.join(current_app.root_path, 'control/tmp')
+    if is_gzip(src_path):
+        tmp_plain = os.path.join(tmp_dir, secrets.token_hex(8))
+        try:
+            decompress_gz(src_path, tmp_plain)      # raises on bad gzip
+            size = get_linecount(tmp_plain)
+            compress_to_gz(tmp_plain, dest_gz, 9)
+        finally:
+            if os.path.exists(tmp_plain):
+                os.remove(tmp_plain)
+    else:
+        size = get_linecount(src_path)
+        compress_to_gz(src_path, dest_gz, 9)
+    return size
+
+def restore_static_wordlist_file(src_path, wordlist):
+    """Replace a static wordlist's file IN PLACE, keeping its row and path.
+
+    The point of the exercise (issue #383): a stranded row is repaired without
+    minting a new id or a new filename, so every Tasks.wl_id / wl_id_2, every
+    already-materialized JobTasks.command, and every Hashes.task_id attribution
+    stays valid. Re-uploading through wordlists_add cannot do this -- it always
+    mints a fresh path -- which is why a re-upload orphans the reference
+    further instead of fixing it.
+
+    Deliberately a sibling of ingest_static_wordlist_file rather than a mode
+    flag on it: that function's contract is "returns an unsaved Wordlists row"
+    and it has three callers who would all have to read a branch they don't use.
+
+    Compresses into control/tmp first and os.replace()s onto the stored path, so
+    a rejected upload can never destroy a file that is still good. The basename
+    is preserved, which is what keeps build_hashcat_command emitting the
+    identical agent-side path. Mutates size/checksum/byte_size/last_updated on
+    the row; the CALLER commits.
+    """
+    wordlists_dir = os.path.join(current_app.root_path, 'control/wordlists')
+    tmp_dir = os.path.join(current_app.root_path, 'control/tmp')
+    # Normalize into control/wordlists: the row's stored path may be relative,
+    # and only this directory is ever served from.
+    dest_gz = os.path.join(wordlists_dir, os.path.basename(wordlist.path or ''))
+    if not os.path.basename(dest_gz):
+        dest_gz = os.path.join(wordlists_dir, secrets.token_hex(8) + '.gz')
+
+    staged = os.path.join(tmp_dir, secrets.token_hex(8) + '.gz')
+    try:
+        size = _compress_wordlist_to(src_path, staged)   # raises on bad gzip
+        os.replace(staged, dest_gz)
+    finally:
+        if os.path.exists(staged):
+            os.remove(staged)
+
+    wordlist.path = dest_gz
+    wordlist.size = size
+    wordlist.checksum = get_filehash(dest_gz)     # checksum of the COMPRESSED file
+    wordlist.byte_size = get_filesize(dest_gz)
+    wordlist.last_updated = datetime.today()
+    return wordlist
+
 def ingest_static_wordlist_file(src_path, owner_id, name):
     """Ingest an uploaded wordlist (plain text OR gzip) into compressed storage.
 
@@ -273,23 +343,8 @@ def ingest_static_wordlist_file(src_path, owner_id, name):
     Raises on an invalid gzip upload; always cleans up its own temp files.
     """
     wordlists_dir = os.path.join(current_app.root_path, 'control/wordlists')
-    tmp_dir = os.path.join(current_app.root_path, 'control/tmp')
     final_gz = os.path.join(wordlists_dir, secrets.token_hex(8) + '.gz')
-
-    if is_gzip(src_path):
-        # Decompress to a temp file so we can hash the plaintext-equivalent and
-        # re-compress at -9. gz_linecount also validates the gzip stream.
-        tmp_plain = os.path.join(tmp_dir, secrets.token_hex(8))
-        try:
-            decompress_gz(src_path, tmp_plain)      # raises on bad gzip
-            size = get_linecount(tmp_plain)
-            compress_to_gz(tmp_plain, final_gz, 9)
-        finally:
-            if os.path.exists(tmp_plain):
-                os.remove(tmp_plain)
-    else:
-        size = get_linecount(src_path)
-        compress_to_gz(src_path, final_gz, 9)
+    size = _compress_wordlist_to(src_path, final_gz)
 
     return Wordlists(
         name=name,
@@ -1253,6 +1308,83 @@ def update_dynamic_wordlist(wordlist_id, dest_path=None):
         db.session.commit()
 
     return target_path
+
+def resolve_control_file(stored_path, subdir):
+    """Absolute path to a catalog row's file under ``control/<subdir>``, or None.
+
+    ``subdir`` is 'rules' or 'wordlists'. The stored path is reduced to its
+    BASENAME and joined to ``<app.root_path>/control/<subdir>`` -- the one
+    directory the download routes serve from and the upload routes write to.
+
+    Single candidate, deliberately: no fallback to the raw stored path. That is
+    what remove_rule_file, GET /v1/rules/<id> and GET /v1/wordlists/<id> already
+    do, so detection, serving and deletion can never disagree about which file a
+    row owns. It also resolves the seeded rows -- 'Best64 Rule' and the original
+    Rockyou.txt carry a path relative to the package -- correctly no matter what
+    the process CWD is, which a raw os.path.exists(row.path) does not, and it
+    keeps a crafted or legacy path from reaching outside the control directory.
+
+    hashview/setup/__init__.py has a sibling _resolve() that DOES fall back to
+    the stored path; that one's job is relocation (finding a stray file so it can
+    be normalized into the canonical dir), not detection. Leave it be.
+
+    Returns None for an empty/NULL path or when the file is absent.
+    """
+    if not stored_path:
+        return None
+    target = os.path.join(current_app.root_path, 'control', subdir,
+                          os.path.basename(stored_path))
+    # isfile, not exists: os.path.basename('/x/..') is '..' and basename('a/b/')
+    # is '', so a path of that shape resolves to control/<subdir>/.. or to the
+    # directory itself -- both of which exist. The row would read as healthy and
+    # then fail later in getsize() or os.replace(). Traversal is already
+    # neutralised by the basename call above ('../../etc/passwd' -> 'passwd').
+    return target if os.path.isfile(target) else None
+
+def rule_file_missing(rule):
+    """True when this rule's row has outlived its file on disk (issue #383)."""
+    return resolve_control_file(getattr(rule, 'path', None), 'rules') is None
+
+def wordlist_file_missing(wordlist):
+    """True when this wordlist's row has outlived its file on disk (issue #383).
+
+    A DYNAMIC wordlist is never missing. Its file is a regenerable cache, not
+    the source of truth: every download goes through
+    update_dynamic_wordlist(id, dest_path=<tmp>), which rebuilds the content
+    from the database into a per-request temp file and never reads
+    wordlist.path. The canonical file is a zero-byte placeholder written once at
+    seed time and only ever refreshed by the manual Update button -- so both its
+    absence AND its zero length are the expected state, and reporting either
+    would be a permanent false alarm on every install.
+    """
+    if (getattr(wordlist, 'type', None) or '').lower() == 'dynamic':
+        return False
+    return resolve_control_file(getattr(wordlist, 'path', None), 'wordlists') is None
+
+def missing_rule_ids(rules=None):
+    """Ids of Rules rows whose file is gone. Pass already-loaded rows to reuse them.
+
+    One os.path.exists per row rather than a cached listdir of the directory:
+    these tables hold single-digit-to-tens of rows while control/rules and
+    control/wordlists accumulate orphaned files from deleted rows and test runs,
+    so a directory set costs far more allocations than the handful of stats it
+    would save. If either table ever reaches ~1,000 rows, swap the probe in these
+    bulk helpers (only) for a memoized os.scandir set.
+    """
+    if rules is None:
+        rules = db.session.query(Rules.id, Rules.path).all()
+    return {r.id for r in rules if resolve_control_file(r.path, 'rules') is None}
+
+def missing_wordlist_ids(wordlists=None):
+    """Ids of static Wordlists rows whose file is gone. Dynamic rows never qualify.
+
+    See missing_rule_ids for why this stats per row, and wordlist_file_missing
+    for why dynamic lists are excluded.
+    """
+    if wordlists is None:
+        wordlists = db.session.query(
+            Wordlists.id, Wordlists.path, Wordlists.type).all()
+    return {w.id for w in wordlists if wordlist_file_missing(w)}
 
 def remove_rule_file(stored_path):
     """Best-effort removal of a rule's file from ``control/rules``.

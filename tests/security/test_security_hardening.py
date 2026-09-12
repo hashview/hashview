@@ -406,3 +406,53 @@ def test_owner_can_delete_own_hashfile(nocsrf_app):
     assert resp.status_code in (302, 200)
     db.session.expire_all()
     assert Hashfiles.query.get(hf_id) is None, "owner should be able to delete own hashfile"
+
+
+def test_rule_file_edit_requires_a_csrf_token(csrf_app):
+    """rules_view WRITES a file under control/rules -- and since the #383 work it
+    can CREATE one for a row whose file is gone. It read request.form directly,
+    so with no global CSRFProtect a single cross-site POST from any page an owner
+    or admin visited rewrote a rule file.
+
+    Same invariant as the customers test: no state change without a token.
+    """
+    import os
+    import re
+
+    app = csrf_app
+    user = _seed_user(email="ruleowner@example.com", admin=True)
+    client = app.test_client()
+    _login(client, user)
+
+    rules_dir = os.path.join(app.root_path, 'control/rules')
+    os.makedirs(rules_dir, exist_ok=True)
+    name = f"csrf-{os.urandom(4).hex()}.rule"
+    path = os.path.join(rules_dir, name)
+    with open(path, 'w') as fh:
+        fh.write("original\n")
+    try:
+        rule = Rules(name="CsrfRule", owner_id=user.id, path=path,
+                     checksum="0" * 64, size=1)
+        db.session.add(rule)
+        db.session.commit()
+
+        # --- token-less POST: must not touch the file ---
+        resp = client.post(f"/rules/edit/{rule.id}", data={"content": "pwned\n"})
+        assert resp.status_code in (200, 302, 400)
+        with open(path) as fh:
+            assert fh.read() == "original\n", "CSRF gate failed: rule file was rewritten"
+
+        # --- POST with a valid token: must succeed ---
+        page = client.get(f"/rules/edit/{rule.id}")
+        assert page.status_code == 200
+        m = re.search(r'name="csrf_token"[^>]*value="([^"]+)"',
+                      page.get_data(as_text=True))
+        assert m, "expected a csrf_token field in the rendered rule editor"
+        resp = client.post(f"/rules/edit/{rule.id}",
+                           data={"content": "legit\n", "csrf_token": m.group(1)})
+        assert resp.status_code in (200, 302)
+        with open(path) as fh:
+            assert fh.read() == "legit\n", "a token-bearing edit should have saved"
+    finally:
+        if os.path.exists(path):
+            os.remove(path)

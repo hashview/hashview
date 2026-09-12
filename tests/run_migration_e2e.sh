@@ -20,7 +20,7 @@ export DOCKER_PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
 COMPOSE="${COMPOSE_BIN:-docker compose} -f docker-compose.migration.yml"
 KEEP="${HASHVIEW_MIGRATION_KEEP:-0}"
 MAIN_REF="${HASHVIEW_MAIN_REF:-origin/main}"
-DEV_HEAD="a4c9e7b21f60"
+DEV_HEAD="e5d1c7b3a904"   # bump alongside any new alembic revision
 
 TMP_ROOT="$(mktemp -d)"
 MAIN_WT="$TMP_ROOT/hv-main"

@@ -903,3 +903,46 @@ def test_agent_sync_no_redownload_when_checksum_matches(tmp_path, monkeypatch):
 
     assert api_obj.download_calls == []                 # no download
     assert manifest.data["1"] == {"checksum": "C", "filename": "abc.gz"}
+
+
+def test_delete_blocked_when_only_wl_id_2_references_it(app, client, tmp_path):
+    """A combinator task's SECOND wordlist is a real reference.
+
+    The guard used to check only Tasks.wl_id, so this wordlist could be deleted
+    out from under a running combinator task -- even though wordlists_list's
+    usage rollup and build_hashcat_command both count wl_id_2. Fails on main.
+    """
+    user = _make_user()
+    _login(client, user)
+    src = tmp_path / "second.txt"
+    src.write_bytes(b"a\nb\n")
+    wl = ingest_static_wordlist_file(str(src), user.id, "SecondWL")
+    db.session.add(wl)
+    db.session.commit()
+    wl_id, path = wl.id, wl.path
+    db.session.add(Tasks(name="combi", hc_attackmode=1, owner_id=user.id,
+                         wl_id=None, wl_id_2=wl_id))
+    db.session.commit()
+
+    resp = client.post(f"/wordlists/delete/{wl_id}")
+    assert resp.status_code in (302, 200)
+    assert Wordlists.query.get(wl_id) is not None   # blocked
+    assert os.path.exists(path)                     # file kept
+    os.remove(path)
+
+
+def test_delete_of_an_unreferenced_missing_row_succeeds(app, client, tmp_path):
+    """A stranded row nothing references is just housekeeping: let it go, and
+    say that the file was already gone so the operator isn't left wondering."""
+    user = _make_user()
+    _login(client, user)
+    wl = Wordlists(name="Stranded", owner_id=user.id, type="static",
+                   path=str(tmp_path / "gone.gz"), size=1, byte_size=1,
+                   checksum="c" * 64)
+    db.session.add(wl)
+    db.session.commit()
+    wl_id = wl.id
+
+    resp = client.post(f"/wordlists/delete/{wl_id}", follow_redirects=True)
+    assert b"already gone from disk" in resp.data
+    assert Wordlists.query.get(wl_id) is None

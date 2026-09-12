@@ -13,7 +13,8 @@ a 1-tuple instead of the submitted string, 500ing the edit POST) is fixed here;
 
 import pytest
 
-from hashview.models import Rules, Tasks, Users, Wordlists, db
+from hashview.models import Tasks, Users, db
+from tests.unit.helpers import make_rule_with_file, make_wordlist_with_file
 
 
 def _user(admin=False, email="owner@example.com"):
@@ -31,20 +32,13 @@ def _login(client, user):
 
 
 def _wordlist(owner_id, name):
-    wl = Wordlists(name=name, owner_id=owner_id, type="static",
-                   path=f"control/wordlists/{name}.gz", size=10,
-                   checksum="0" * 64)
-    db.session.add(wl)
-    db.session.commit()
-    return wl
+    # File-backed: the task pickers exclude a rule/wordlist whose file is gone
+    # from disk (#383), so these rows must really exist on disk.
+    return make_wordlist_with_file(owner_id, name=name)
 
 
 def _rule(owner_id, name="rule-edit"):
-    r = Rules(name=name, owner_id=owner_id, path="control/rules/r.rule",
-              checksum="1" * 64, size=1)
-    db.session.add(r)
-    db.session.commit()
-    return r
+    return make_rule_with_file(owner_id, name=name)
 
 
 def _task(owner_id, **kw):

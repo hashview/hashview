@@ -11,7 +11,7 @@
 <div class="page-head">
     <div>
         <h1 class="page-title">Rules</h1>
-        <div class="page-sub">// {{ pagination.total | commafy }} ruleset{{ '' if pagination.total == 1 else 's' }} applied as mutations over wordlists · page {{ pagination.page }}/{{ pagination.pages or 1 }}</div>
+        <div class="page-sub">// {{ pagination.total | commafy }} ruleset{{ '' if pagination.total == 1 else 's' }} applied as mutations over wordlists · page {{ pagination.page }}/{{ pagination.pages or 1 }}{% if missing_rule_ids %}<span style="color:var(--red);"> · {{ missing_rule_ids|length }} missing on disk</span>{% endif %}</div>
     </div>
     <button type="button" class="btn btn-primary" onclick="document.getElementById('upload-rule-modal').showModal()">{{ icon('upload', size=15) }} Upload rules</button>
 </div>
@@ -63,20 +63,29 @@
         </thead>
         <tbody id="rule-tbody">
             {% for rule in rules %}
+            {% set gone = rule.id in missing_rule_ids %}
             <tr data-name="{{ rule.name|lower }}">
                 <td style="font-weight:500;">
                     <span style="display:inline-flex; align-items:center; gap:9px;">
                         <span style="color:var(--text-mute); display:inline-flex;">{{ icon('rule', size=16) }}</span>
                         {{ rule.name }}
+                        {%- if gone %} <span class="badge red" title="The database row survives but its file is gone from control/rules.">FILE MISSING</span>{% endif %}
                     </span>
                 </td>
-                <td class="mono num"><span style="color:{{ 'var(--primary)' if rule.size else 'var(--text-mute)' }};{% if rule.size %}text-shadow:var(--glow-text);{% endif %}">{{ "{:,}".format(rule.size|int) }}</span></td>
+                {# a missing file makes the stored line count a claim about something that isn't there #}
+                <td class="mono num"><span style="color:{{ 'var(--text-mute)' if gone or not rule.size else 'var(--primary)' }};{% if rule.size and not gone %}text-shadow:var(--glow-text);{% endif %}"{% if gone %} title="Line count from the last time the file was seen"{% endif %}>{{ "{:,}".format(rule.size|int) }}</span></td>
                 <td class="mono" style="color:var(--text-dim);">{% for user in users %}{% if user.id == rule.owner_id %}{{ user.first_name }} {{ user.last_name }}{% endif %}{% endfor %}</td>
                 <td class="mono" style="color:var(--text-mute);font-size:11.5px;">{{ rule.last_updated }}</td>
                 <td class="center">
                     <div style="display:flex; gap:4px; justify-content:center;">
+                        {% if gone %}
+                        <span class="icon-btn" style="opacity:.4; cursor:not-allowed;" title="File is missing on disk — nothing to download">{{ icon('download', size=15) }}</span>
+                        <button type="button" class="icon-btn" title="Restore from file" onclick="document.getElementById('restore-{{ rule.id }}').showModal()">{{ icon('upload', size=15) }}</button>
+                        {% else %}
                         <a class="icon-btn" href="{{ url_for('rules.rules_download', rule_id=rule.id) }}" title="Download">{{ icon('download', size=15) }}</a>
-                        <a class="icon-btn" href="{{ url_for('rules.rules_view', rule_id=rule.id) }}" title="View/Edit">{{ icon('edit', size=15) }}</a>
+                        {% endif %}
+                        {# View/Edit stays enabled when the file is gone: it is the in-place restore path #}
+                        <a class="icon-btn" href="{{ url_for('rules.rules_view', rule_id=rule.id) }}" title="{{ 'Restore — retype or paste the rule contents' if gone else 'View/Edit' }}">{{ icon('edit', size=15) }}</a>
                         <button type="button" class="icon-btn" title="Info" onclick="document.getElementById('info-{{ rule.id }}').showModal()">{{ icon('info', size=15) }}</button>
                         <button type="button" class="icon-btn act-del" title="Delete" onclick="document.getElementById('del-{{ rule.id }}').showModal()">{{ icon('trash', size=15) }}</button>
                     </div>
@@ -184,8 +193,8 @@
     {% set hits = rule_hits.get(rule.id, 0) if rule_hits is defined else 0 %}
     {% set tcount = rule_task_count.get(rule.id, 0) if rule_task_count is defined else 0 %}
     {% set jcount = rule_job_count.get(rule.id, 0) if rule_job_count is defined else 0 %}
-    {# size on disk is not tracked yet — placeholder until it's wired up #}
-    {% set size_on_disk = '—' %}
+    {% set gone = rule.id in missing_rule_ids %}
+    {% set size_on_disk = ('file missing' if gone else (rule_bytes.get(rule.id) | filesizeformat if rule_bytes.get(rule.id) is not none else '—')) %}
     <div class="hv-dialog-head">
         {{ icon('info', size=16) }}
         <div style="line-height:1.2;">
@@ -215,7 +224,15 @@
             <div>{{ kv_label('Rules') }}<div class="mono" style="color:var(--text);">{{ "{:,}".format(rule.size|int) }}</div></div>
             <div>{{ kv_label('Historical hits') }}<div><span class="mono" style="color:{{ 'var(--primary)' if hits else 'var(--text-mute)' }};{% if hits %}text-shadow:var(--glow-text);{% endif %}">{{ "{:,}".format(hits|int) }}</span> <span style="color:var(--text-dim);">passwords recovered</span></div></div>
             <div>{{ kv_label('Used by') }}<div style="color:var(--text);">{{ tcount | commafy }} task{{ '' if tcount == 1 else 's' }} · {{ jcount | commafy }} job{{ '' if jcount == 1 else 's' }}</div></div>
+            <div style="grid-column:1 / -1;">{{ kv_label('File on disk') }}<div>{% if gone %}<span class="badge red">MISSING</span>{% else %}<span class="badge dim">present</span>{% endif %} <span class="mono" style="color:var(--text-mute); font-size:11px; word-break:break-all;">{{ rule.path }}</span></div></div>
         </div>
+
+        {% if gone and tcount %}
+        <div class="flash flash-danger" style="margin-top:22px;">
+            This file is gone from disk. The {{ tcount | commafy }} task{{ '' if tcount == 1 else 's' }} below reference it and cannot run until it is restored.
+            Re-upload it and every reference keeps working.
+        </div>
+        {% endif %}
 
         {# used-by tasks #}
         <div style="margin-top:24px;">
@@ -243,8 +260,71 @@
     </div>
 </dialog>
 
-<dialog class="hv-dialog" id="del-{{ rule.id }}">
+{% if rule.id in missing_rule_ids %}
+<dialog class="hv-dialog" id="restore-{{ rule.id }}" style="max-width:560px; width:94vw;">
+    <div class="hv-dialog-head">
+        {{ icon('upload', size=16) }}
+        <div style="line-height:1.2;">
+            <h3 style="margin:0;">Restore {{ rule.name }}</h3>
+            <div class="mono" style="font-size:10px; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-mute); margin-top:3px;">replace the missing file in place</div>
+        </div>
+        <button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close">{{ icon('x', size=15) }}</button>
+    </div>
+    <form method="POST" action="{{ url_for('rules.rules_restore', rule_id=rule.id) }}" enctype="multipart/form-data">
+        {{ ruleRestoreForm.hidden_tag() }}
+        <div class="hv-dialog-body">
+            <div class="field-hint" style="margin:0 0 var(--gap);">
+                Restores the file <strong>in place</strong> — entry <span class="mono">#{{ rule.id }}</span>,
+                path <span class="mono">{{ rule.path.split('/')|last }}</span> — so the
+                {{ rule_task_count.get(rule.id, 0) | commafy }} task{{ '' if rule_task_count.get(rule.id, 0) == 1 else 's' }}
+                using it keep working. This does <strong>not</strong> create a new entry.
+            </div>
+            <div class="dropzone" onclick="this.querySelector('input[type=file]').click()">
+                {{ icon('upload', size=34) }}
+                <div style="margin-top:12px; color:var(--text);">Drop the <span class="mono" style="color:var(--primary);">.rule</span> file here or <span style="color:var(--primary); text-decoration:underline;">browse</span></div>
+                {{ ruleRestoreForm.rules(style="display:none;") }}
+            </div>
+        </div>
+        <div class="hv-dialog-foot">
+            <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+            <button type="submit" class="btn btn-primary">{{ icon('upload', size=15) }} Restore rule file</button>
+        </div>
+    </form>
+</dialog>
+{% endif %}
+
+<dialog class="hv-dialog" id="del-{{ rule.id }}" style="max-width:620px; width:94vw;">
+    {% set blockers = rule_used_tasks.get(rule.id, []) if rule_used_tasks is defined else [] %}
     <div class="hv-dialog-head"><h3>Delete {{ rule.name }}?</h3><button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close">{{ icon('x', size=15) }}</button></div>
+    {% if blockers %}
+    {# The delete route refuses while a task references the rule. Say WHICH tasks
+       (and which jobs hold them), so "can not be deleted" is a procedure rather
+       than a dead end. #}
+    <div class="hv-dialog-body">
+        <div class="flash flash-danger" style="margin-bottom:var(--gap);">
+            Blocked — {{ blockers|length | commafy }} task{{ '' if blockers|length == 1 else 's' }} still use this rule.
+        </div>
+        {% for b in blockers %}
+        <div class="card" style="margin-bottom:8px; padding:10px 13px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <span style="color:var(--text-mute); display:inline-flex;">{{ icon('task', size=15) }}</span>
+            <a href="{{ url_for('tasks.tasks_list', q=b.name) }}" style="font-weight:500;">{{ b.name }}</a>
+            <span style="margin-left:auto; display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                {% for j in b.jobs %}<a class="mono" style="font-size:11px;" href="{{ url_for('jobs.jobs_summary', job_id=j.id) }}">#{{ j.id }} {{ j.name }}</a>{% else %}<span class="mono" style="font-size:11px; color:var(--text-mute);">not in a job</span>{% endfor %}
+            </span>
+        </div>
+        {% endfor %}
+        <div class="field-hint" style="margin-top:var(--gap);">
+            Remove these tasks from their jobs and delete the tasks, then delete this rule
+            {%- if rule.id in missing_rule_ids %} — or restore the file instead, and every reference keeps working{% endif %}.
+        </div>
+    </div>
+    <div class="hv-dialog-foot">
+        <button class="btn" onclick="this.closest('dialog').close()">Back</button>
+        {% if rule.id in missing_rule_ids %}
+        <button class="btn btn-primary" type="button" onclick="this.closest('dialog').close(); document.getElementById('restore-{{ rule.id }}').showModal();">{{ icon('upload', size=15) }} Restore file</button>
+        {% endif %}
+    </div>
+    {% else %}
     <div class="hv-dialog-body">This will permanently delete the rules file. Are you sure you want to continue?</div>
     <div class="hv-dialog-foot">
         <button class="btn" onclick="this.closest('dialog').close()">Back</button>
@@ -252,6 +332,7 @@
             <button class="btn btn-danger" type="submit">Delete</button>
         </form>
     </div>
+    {% endif %}
 </dialog>
 {% endfor %}
 

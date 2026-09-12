@@ -12,7 +12,9 @@ from sqlalchemy import create_engine, text
 
 from tests.migration.expected_hex import PLAINTEXT_CASES, USERNAME_CASES
 
-DEV_HEAD = "a4c9e7b21f60"
+# The alembic head this branch adds. Bump alongside any new revision; the
+# migration-e2e job asserts the upgraded database lands exactly here.
+DEV_HEAD = "e5d1c7b3a904"
 
 pytestmark = [pytest.mark.mysql, pytest.mark.migration]
 

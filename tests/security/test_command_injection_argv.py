@@ -208,3 +208,26 @@ def test_mask_chunk_submask_is_a_literal_argv_element(app):
     _assert_payload_is_one_literal_token(argv, payload)
     assert argv[-1] == payload
     assert "?d?d?d" not in argv          # the chunk mask replaced the task's
+
+
+@pytest.mark.security
+@pytest.mark.parametrize("attackmode", [3, 6, 7])
+def test_dash_leading_payload_stays_one_literal_token_behind_the_sentinel(app, attackmode):
+    """A mask that starts with '-' now travels behind an end-of-options '--'.
+
+    The sentinel must not become a way to smuggle the payload into OPTION
+    position: it has to sit ahead of the positionals, appear exactly once, and
+    leave the payload a single literal element.
+    """
+    from hashview.utils.utils import build_hashcat_command
+
+    payload = "-?d?d; whoami #`id`"
+    job, task = _seed_job_with_task(attackmode, hc_mask=payload)
+    argv = build_hashcat_command(job.id, task.id)
+
+    _assert_payload_is_one_literal_token(argv, payload)
+    assert argv.count("--") == 1
+    sentinel = argv.index("--")
+    target = next(i for i, t in enumerate(argv) if t and t.startswith("control/hashes/"))
+    assert sentinel < target, f"sentinel must precede the positionals: {argv}"
+    assert sentinel < argv.index(payload), f"payload must follow the sentinel: {argv}"

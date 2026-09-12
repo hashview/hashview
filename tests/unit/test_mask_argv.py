@@ -15,9 +15,11 @@ valid mask character -- `hashcat -a 3 --stdout '?d ?d'` emits "1 0", "0 0", ...
 the split is at option boundaries only, and these tests pin both halves of that.
 """
 
+import itertools
+
 import pytest
 
-from hashview.utils.utils import mask_argv
+from hashview.utils.utils import mask_argv, split_mask_field
 
 #############################################
 # The split itself
@@ -78,13 +80,17 @@ from hashview.models import (  # noqa: E402
 )
 from hashview.utils.utils import build_hashcat_command  # noqa: E402
 
+_SEQ = itertools.count()
+
 
 def _job_and_task(attackmode, mask, wl_id=None):
-    user = Users(first_name="A", last_name="D", email_address="m@e.com",
+    user = Users(first_name="A", last_name="D",
+                 email_address=f"m{next(_SEQ)}@e.com",
                  password="x" * 60, admin=True)
     db.session.add(user)
     db.session.commit()
-    hsh = Hashes(sub_ciphertext="0" * 8, ciphertext="abcd", hash_type=0, cracked=False)
+    hsh = Hashes(sub_ciphertext=f"{next(_SEQ):08d}", ciphertext="abcd",
+                 hash_type=0, cracked=False)
     db.session.add(hsh)
     db.session.commit()
     db.session.add(HashfileHashes(hash_id=hsh.id, hashfile_id=1))
@@ -95,6 +101,37 @@ def _job_and_task(attackmode, mask, wl_id=None):
     db.session.add(task)
     db.session.commit()
     return build_hashcat_command(job.id, task.id)
+
+
+def _chunked(attackmode, submask, wl_id=None):
+    """Same, but the mask arrives as a CHUNK sub-mask."""
+    user = Users(first_name="A", last_name="D",
+                 email_address=f"c{next(_SEQ)}@e.com",
+                 password="x" * 60, admin=True)
+    db.session.add(user)
+    db.session.commit()
+    hsh = Hashes(sub_ciphertext=f"{next(_SEQ):08d}", ciphertext="beef",
+                 hash_type=0, cracked=False)
+    db.session.add(hsh)
+    db.session.commit()
+    db.session.add(HashfileHashes(hash_id=hsh.id, hashfile_id=1))
+    job = Jobs(name="j2", status="Queued", hashfile_id=1, customer_id=1, owner_id=user.id)
+    db.session.add(job)
+    task = Tasks(name="t2", hc_attackmode=attackmode, owner_id=user.id,
+                 wl_id=wl_id, hc_mask='?a?a?a?a')
+    db.session.add(task)
+    db.session.commit()
+    return build_hashcat_command(job.id, task.id, chunk={'mask': submask},
+                                 job_task_id=99)
+
+
+def _wordlist():
+    """A real wordlist row, so ordering assertions have a token to look for."""
+    wl = Wordlists(name="wl-sent", owner_id=1, type="static",
+                   path="/x/control/wordlists/deadbeef.gz", size=1, checksum="c" * 64)
+    db.session.add(wl)
+    db.session.commit()
+    return wl
 
 
 def test_mask_mode_emits_the_charset_as_separate_arguments(app):
@@ -148,3 +185,128 @@ def test_literal_space_mask_survives_as_one_argument(app):
     digit-space-digit, and it only works while it stays a single argv element."""
     argv = _job_and_task(3, '?u?l?l?l ?d?d?d?d')
     assert '?u?l?l?l ?d?d?d?d' in argv
+
+
+# ---------------------------------------------------------- split_mask_field
+
+def test_split_identifies_a_dash_leading_mask_as_the_mask():
+    """The bug: '-?d?d?d' is a MASK that happens to start with '-', not an
+    option. hashcat has no option '-?'."""
+    assert split_mask_field('-?d?d?d') == (['-?d?d?d'], 0)
+
+
+def test_split_leaves_the_options_first_form_unidentifiable():
+    """'-1 ?u?l?d ?1?1' -- is '?u?l?d' the charset value or the mask? It is
+    ambiguous by construction, so no mask index and no sentinel."""
+    parts, index = split_mask_field('-1 ?u?l?d ?1?1?1?1?1')
+    assert parts == ['-1', '?u?l?d', '?1?1?1?1?1']
+    assert index == -1
+
+
+def test_split_hoists_a_charset_off_a_dash_leading_mask():
+    parts, index = split_mask_field('-?d?d -1 abc')
+    assert parts == ['-?d?d', '-1', 'abc']
+    assert index == 0          # so the caller can hoist parts[1:] ahead of '--'
+
+
+def test_split_preserves_a_leading_space_in_the_mask():
+    """?s (and so ?a) begins with a literal space, so a chunk sub-mask can start
+    with one. Joining the tokens back together would silently eat it."""
+    parts, index = split_mask_field(' -?d?d --increment')
+    assert parts[0] == ' -?d?d'
+    assert index == 0
+
+
+def test_split_strips_the_whole_separator_run_not_one_space():
+    """A double space (or a tab) before a custom charset is an ordinary typo.
+
+    ' '.join(field.split()) used to normalise it away. Slicing by offset to keep
+    a LEADING space must not also keep the trailing separator run, or every
+    candidate gains a trailing space -- which cracks nothing and errors on
+    nothing, so the operator never finds out.
+    """
+    assert split_mask_field('?u?l?d  -1 ?u?l?d')[0] == ['?u?l?d', '-1', '?u?l?d']
+    assert split_mask_field('?u?l?d\t-1 ?u?l?d')[0] == ['?u?l?d', '-1', '?u?l?d']
+    assert split_mask_field('?u?l?d \t -1 ?u?l?d')[0] == ['?u?l?d', '-1', '?u?l?d']
+    # Single space unchanged, and a LEADING space still survives.
+    assert split_mask_field('?u?l?d -1 ?u?l?d')[0] == ['?u?l?d', '-1', '?u?l?d']
+    # LEADING whitespace is mask content and is kept verbatim, however much
+    # of it there is; only the run that separates mask from option is dropped.
+    assert split_mask_field('  -?d?d -1 abc')[0][0] == '  -?d?d'
+    assert split_mask_field('  -?d?d  -1 abc')[0][0] == '  -?d?d'
+
+
+def test_first_token_is_mask_overrides_the_option_heuristic():
+    """A chunk of '?aabc' is '-abc' -- second character is a letter, so the
+    free-form heuristic reads it as an option. The chunker knows better."""
+    assert split_mask_field('-abc?d')[1] == -1                       # free-form
+    assert split_mask_field('-abc?d', first_token_is_mask=True) == (['-abc?d'], 0)
+
+
+@pytest.mark.parametrize("field", [
+    '?1?1?1?1?1 -1 ?u?l?d', '-1 ?u?l?d ?1?1?1?1?1', '?1?1 -1 ab -2 cd ?2?2',
+    '?1?1 --custom-charset1 abc', '?a?a?a?a', '?d ?d', '?u?l?l?l ?d?d?d?d',
+    '?l?l-?d?d', '', None,
+])
+def test_mask_argv_is_the_parts_half_of_split_mask_field(field):
+    """The wrapper must not drift from the function it wraps."""
+    assert mask_argv(field) == split_mask_field(field)[0]
+
+
+# ------------------------------------------------- the '--' sentinel in argv
+
+@pytest.mark.parametrize("mode", [3, 6, 7])
+def test_dash_leading_mask_emits_the_sentinel(app, mode):
+    wl = _wordlist() if mode in (6, 7) else None
+    argv = _job_and_task(mode, '-?d?d?d', wl_id=(wl.id if wl else None))
+
+    assert argv.count('--') == 1
+    sentinel = argv.index('--')
+    target = next(i for i, t in enumerate(argv) if t and t.startswith('control/hashes/'))
+    assert sentinel < target, f"sentinel must precede the positionals: {argv}"
+    # everything after the sentinel is a positional: the only '-'-leading token
+    # there is the mask itself, which is the entire point of the sentinel
+    after = argv[sentinel + 1:]
+    assert '-?d?d?d' in after
+    assert [t for t in after if t.startswith('-')] == ['-?d?d?d']
+
+
+def test_sentinel_is_paired_with_status_json(app):
+    """An un-upgraded agent appends --status-json AFTER the sentinel, where it is
+    not honoured; emitting it here keeps mode 3 reporting status on old agents."""
+    argv = _job_and_task(3, '-?d?d?d')
+    assert argv.index('--status-json') == argv.index('--') - 1
+
+
+def test_plain_mask_emits_no_sentinel(app):
+    """Conditional emission is the whole compatibility story: every command that
+    does not need '--' keeps a byte-identical argv."""
+    assert '--' not in _job_and_task(3, '?a?a?a?a?a?a?a?a')
+    assert '--' not in _job_and_task(3, '?1?1?1?1?1 -1 ?u?l?d')
+    assert '--' not in _job_and_task(3, '?u?l?l?l ?d?d?d?d')
+
+
+def test_space_leading_mask_emits_no_sentinel(app):
+    """A leading space is a valid literal and works today; do not disturb it."""
+    argv = _job_and_task(3, ' ?d?d?d')
+    assert '--' not in argv
+    assert ' ?d?d?d' in argv
+
+
+def test_dash_leading_chunk_submask_emits_the_sentinel(app):
+    """The reported case: chunking ?a expands the leading position over all 95
+    characters, one of which is '-'."""
+    argv = _chunked(3, '-?a?a?a')
+    assert argv.count('--') == 1
+    assert argv[-1] == '-?a?a?a'
+    assert '--skip' not in argv and '--limit' not in argv
+
+
+def test_mode_7_keeps_the_wordlist_after_the_mask(app):
+    """hashcat's mode 7 signature is <hashfile> <mask> <wordlist>; the sentinel
+    must not reorder it."""
+    wl = _wordlist()
+    argv = _job_and_task(7, '-?d?d', wl_id=wl.id)
+    wl_token = next(t for t in argv if t and 'deadbeef' in t)
+    assert argv.index('-?d?d') < argv.index(wl_token)
+    assert argv.index('--') < argv.index('-?d?d')

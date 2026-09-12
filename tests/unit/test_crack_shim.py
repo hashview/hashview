@@ -211,3 +211,58 @@ def test_crack_and_outfile_roundtrip_unicode(tmp_path):
     # hex_plain is the UTF-8 bytes of the plaintext -> decodes back exactly
     # (this is what the server's hexplain_to_text() reverses on upload).
     assert bytes.fromhex(hexplain).decode("utf-8") == plaintext
+
+
+# ---------------------------------------------------------------------------
+# Chunked commands: --skip/--limit and the end-of-options sentinel
+# ---------------------------------------------------------------------------
+
+def test_parse_args_consumes_skip_and_limit_values():
+    """Before this fix --skip fell through the startswith('-') catch-all but its
+    VALUE landed in positionals, so a chunked command parsed as hashfile='0'.
+    Already wrong for every wordlist chunk the server emits today."""
+    hcshim = _load()
+    argv = ["-m", "1000", "-a", "0", "--skip", "0", "--limit", "2",
+            "control/hashes/h.txt", "control/wordlists/w.gz"]
+    mode, _outfile, _fmt, _rules, positionals = hcshim.parse_args(argv)
+
+    assert mode == 1000
+    assert positionals == ["control/hashes/h.txt", "control/wordlists/w.gz"]
+
+
+def test_parse_args_treats_everything_after_the_sentinel_as_positional():
+    """A mask that starts with '-' travels behind '--'; the shim has to model
+    that or it cannot exercise the sentinel at all."""
+    hcshim = _load()
+    argv = ["-m", "1000", "-a", "3", "--status-json", "--",
+            "control/hashes/h.txt", "-?d?d"]
+    _mode, _outfile, _fmt, _rules, positionals = hcshim.parse_args(argv)
+
+    assert positionals == ["control/hashes/h.txt", "-?d?d"]
+
+
+def test_parse_args_sentinel_does_not_swallow_earlier_options():
+    hcshim = _load()
+    argv = ["-m", "1000", "-a", "7", "-1", "?u?l", "--", "h.txt", "-?1?1", "w.gz"]
+    mode, _outfile, _fmt, _rules, positionals = hcshim.parse_args(argv)
+
+    assert mode == 1000
+    assert positionals == ["h.txt", "-?1?1", "w.gz"]
+
+
+def test_parse_args_consumes_long_form_charsets_and_device_flags():
+    """Same class as --skip: a value-taking flag that the catch-all drops while
+    its bare VALUE falls into positionals and shifts hashfile/wordlist/mask.
+
+    --custom-charset1..4 are exercised by the unit tests for mask_argv, and an
+    agent configured with HC_EXTRA_ARGS='-d 3,4' prepends a device selector to
+    every command it runs.
+    """
+    hcshim = _load()
+    argv = ["-m", "1000", "-a", "3", "-d", "3,4",
+            "--custom-charset1", "?u?l?d", "--opencl-device-types", "1,2",
+            "control/hashes/h.txt", "?1?1?1"]
+    mode, _outfile, _fmt, _rules, positionals = hcshim.parse_args(argv)
+
+    assert mode == 1000
+    assert positionals == ["control/hashes/h.txt", "?1?1?1"]

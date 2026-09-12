@@ -69,3 +69,46 @@ def test_build_hashcat_argv_splits_hc_extra_args_into_tokens():
 
     # binary, then each HC_EXTRA_ARGS token separately, then the rest.
     assert argv[:4] == ["/usr/bin/hashcat", "-d", "3,4", "-m"]
+
+
+# --------------------------------------------------- --status-json placement
+
+def test_append_status_json_appends_when_there_is_no_sentinel():
+    """Today's shape: no '--' in the command, so the flag goes on the end."""
+    argv = ["/usr/bin/hashcat", "-a", "3", "hf.txt", "?d?d"]
+    assert agent_main.append_status_json(argv) == [
+        "/usr/bin/hashcat", "-a", "3", "hf.txt", "?d?d", "--status-json"]
+
+
+def test_append_status_json_leaves_a_server_sentinel_command_alone():
+    """The server emits '--status-json' and '--' as one pair in mask_attack_argv,
+    and that is the only place it emits the flag at all. So a real sentinel always
+    arrives with the flag already ahead of it, and there is nothing to do."""
+    argv = ["/usr/bin/hashcat", "-a", "3", "--status-json", "--", "hf.txt", "-?d?d"]
+    assert agent_main.append_status_json(list(argv)) == argv
+
+    argv6 = ["/usr/bin/hashcat", "-a", "6", "--status-json", "--", "hf.txt", "wl.gz", "-?d"]
+    out = agent_main.append_status_json(list(argv6))
+    assert out.index("--status-json") < out.index("--")
+    assert out[-3:] == ["hf.txt", "wl.gz", "-?d"]
+
+
+def test_append_status_json_does_not_treat_an_operator_dash_dash_as_a_sentinel():
+    """A mask field of '?d?d -- ?d' makes even a CURRENT server emit a bare '--'
+    as an ordinary positional, with no --status-json anywhere:
+
+        ['-a', '3', 'hf.txt', '?d?d', '--', '?d']
+
+    Seeking to that '--' and inserting before it put the flag in front of a mask
+    token and left hashcat with no mask, which it answers by running its own
+    default mask. Nothing errors; the wrong keyspace is cracked."""
+    argv = ["/usr/bin/hashcat", "-a", "3", "hf.txt", "?d?d", "--", "?d"]
+    out = agent_main.append_status_json(list(argv))
+    assert out == argv + ["--status-json"]
+    assert out.index("--") < out.index("--status-json")
+
+
+def test_append_status_json_is_a_noop_when_the_server_already_sent_it():
+    """A server new enough to emit '--' emits the flag with it; don't duplicate."""
+    argv = ["/usr/bin/hashcat", "-a", "3", "--status-json", "--", "hf.txt", "-?d"]
+    assert agent_main.append_status_json(list(argv)) == argv

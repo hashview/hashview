@@ -152,8 +152,26 @@ def _emit_status(total, recovered):
     print(json.dumps(status), flush=True)
 
 
+# --skip/--limit are consumed and IGNORED: the shim always cracks the whole
+# candidate set, which is what a chunk-coverage test wants. They have to be here
+# all the same -- without them the flag fell through to the startswith("-")
+# catch-all but its numeric VALUE landed in positionals, so a chunked command
+# was parsed as hashfile="0" (already wrong for every wordlist chunk today).
+# -1..-4 are hashcat's custom charsets. Like --skip/--limit they are consumed
+# and ignored (the shim does not expand masks), but they MUST be consumed: their
+# value is a bare token that otherwise lands in positionals and shifts the
+# hashfile/wordlist/mask order.
+# The long forms of the custom charsets take a value exactly as -1..-4 do, and
+# the unit tests exercise them (tests/unit/test_mask_argv.py). The device
+# selectors are here for the same reason: an agent configured with
+# HC_EXTRA_ARGS='-d 3,4' prepends one, and its bare value would shift the
+# positionals in precisely the way --skip once did.
 VALUE_FLAGS = {"-m", "-w", "--session", "--potfile-path", "--outfile",
-               "--outfile-format", "-a", "-r", "-j", "-k"}
+               "--outfile-format", "-a", "-r", "-j", "-k", "--skip", "--limit",
+               "-1", "-2", "-3", "-4",
+               "--custom-charset1", "--custom-charset2",
+               "--custom-charset3", "--custom-charset4",
+               "-d", "--backend-devices", "--opencl-device-types"}
 FLAG_ONLY = {"-O", "--status", "--status-json", "--loopback", "--force"}
 
 
@@ -180,6 +198,12 @@ def parse_args(argv):
                 rules.append(v)
             i += 2
             continue
+        if a == "--":
+            # End of options: every remaining token is a positional, even one
+            # that starts with '-' (a mask such as '-?d?d'). Model hashcat here
+            # or the shim cannot exercise the sentinel at all.
+            positionals.extend(argv[i + 1:])
+            break
         if a in FLAG_ONLY or a.startswith("-"):
             i += 1
             continue

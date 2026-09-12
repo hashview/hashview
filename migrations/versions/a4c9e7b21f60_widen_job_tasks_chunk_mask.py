@@ -1,7 +1,7 @@
 """widen job_tasks.chunk_mask to VARCHAR(255)
 
 Revision ID: a4c9e7b21f60
-Revises: f3b8c1a7d942
+Revises: e5d1c7b3a904
 Create Date: 2026-09-11 00:00:00.000000
 
 Widens job_tasks.chunk_mask from VARCHAR(64) to VARCHAR(255).
@@ -26,7 +26,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = 'a4c9e7b21f60'
-down_revision = 'f3b8c1a7d942'
+down_revision = 'e5d1c7b3a904'
 branch_labels = None
 depends_on = None
 

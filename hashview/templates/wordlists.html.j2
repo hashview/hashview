@@ -65,7 +65,7 @@
 <div class="card">
     <div class="card-head">
         <h3>Static Wordlists</h3>
-        <span class="field-hint" style="margin-top:0;">Plaintext, newline-delimited files you upload and assign to a task.</span>
+        <span class="field-hint" style="margin-top:0;">Plaintext, newline-delimited files you upload and assign to a task.{% if missing_wl_ids %}<span style="color:var(--red);"> · {{ missing_wl_ids|length }} missing on disk</span>{% endif %}</span>
         <span style="margin-left:auto; display:inline-flex; align-items:center; gap:9px; color:var(--text-mute);">{{ icon('search', size=16) }}<input type="text" id="wl-filter" class="input" style="width:240px; flex:none;" placeholder="filter wordlists…" autocomplete="off" oninput="hvFilterWordlists(this.value)"></span>
     </div>
     {% if static_wordlists %}
@@ -82,14 +82,17 @@
         </thead>
         <tbody id="wl-static-tbody">
             {% for wordlist in static_wordlists %}
+            {% set gone = wordlist.id in missing_wl_ids %}
             <tr data-name="{{ wordlist.name|lower }}">
                 <td style="font-weight:500;">
                     <span style="display:inline-flex; align-items:center; gap:9px;">
                         <span style="color:var(--text-mute); display:inline-flex;">{{ icon('book', size=16) }}</span>
                         {{ wordlist.name }}
+                        {%- if gone %} <span class="badge red" title="The database row survives but its file is gone from control/wordlists.">FILE MISSING</span>{% endif %}
                     </span>
                 </td>
-                <td class="mono num" style="color:var(--primary);">{{ "{:,}".format(wordlist.size) }}</td>
+                {# a missing file makes the stored line count a claim about something that isn't there #}
+                <td class="mono num" style="color:{{ 'var(--text-mute)' if gone else 'var(--primary)' }};"{% if gone %} title="Line count from the last time the file was seen"{% endif %}>{{ "{:,}".format(wordlist.size) }}</td>
                 <td style="color:var(--text-dim);">
                     {% for user in users %}
                         {% if user.id == wordlist.owner_id %}
@@ -100,7 +103,14 @@
                 <td class="mono" style="color:var(--text-mute);font-size:11.5px;">{{ wordlist.last_updated }}</td>
                 <td class="center">
                     <div style="display:flex; gap:4px; justify-content:center;">
+                        {% if gone %}
+                        <span class="icon-btn" style="opacity:.4; cursor:not-allowed;" title="File is missing on disk — nothing to download">{{ icon('download', size=15) }}</span>
+                        {% else %}
                         <a class="icon-btn" href="{{ url_for('wordlists.wordlists_download', wordlist_id=wordlist.id) }}" title="Download">{{ icon('download', size=15) }}</a>
+                        {% endif %}
+                        {# offered on every static row: there is no wordlist edit route, so
+                           this is also the only way to update one's contents in place #}
+                        <button type="button" class="icon-btn" title="{{ 'Restore missing file' if gone else 'Replace file' }}" onclick="document.getElementById('restore-{{ wordlist.id }}').showModal()">{{ icon('upload', size=15) }}</button>
                         <button type="button" class="icon-btn" title="Info" onclick="document.getElementById('info-{{ wordlist.id }}').showModal()">{{ icon('info', size=15) }}</button>
                         <button type="button" class="icon-btn act-del" title="Delete" onclick="document.getElementById('del-{{ wordlist.id }}').showModal()">{{ icon('trash', size=15) }}</button>
                     </div>
@@ -431,8 +441,11 @@
     {% set hits = wl_hits.get(wordlist.id, 0) if wl_hits is defined else 0 %}
     {% set tcount = wl_task_count.get(wordlist.id, 0) if wl_task_count is defined else 0 %}
     {% set jcount = wl_job_count.get(wordlist.id, 0) if wl_job_count is defined else 0 %}
-    {# on-disk size of the stored file (compressed .gz for static wordlists) #}
-    {% set size_on_disk = (wordlist.byte_size | filesizeformat) if wordlist.byte_size else '—' %}
+    {% set gone = wordlist.id in missing_wl_ids %}
+    {# on-disk size of the stored file (compressed .gz for static wordlists).
+       When the file is gone, the stored byte_size describes something that
+       isn't there, so don't report it as a size. #}
+    {% set size_on_disk = 'file missing' if gone else ((wl_bytes.get(wordlist.id) or wordlist.byte_size) | filesizeformat if (wl_bytes.get(wordlist.id) or wordlist.byte_size) else '—') %}
     <div class="hv-dialog-head">
         {{ icon('info', size=16) }}
         <div style="line-height:1.2;">
@@ -463,7 +476,15 @@
             <div>{{ kv_label('Size on disk') }}<div class="mono" style="color:var(--text);">{{ size_on_disk }}</div></div>
             <div>{{ kv_label('Historical hits') }}<div><span class="mono" style="color:{{ 'var(--primary)' if hits else 'var(--text-mute)' }};{% if hits %}text-shadow:var(--glow-text);{% endif %}">{{ "{:,}".format(hits|int) }}</span> <span style="color:var(--text-dim);">passwords recovered</span></div></div>
             <div>{{ kv_label('Used by') }}<div style="color:var(--text);">{{ tcount | commafy }} task{{ '' if tcount == 1 else 's' }} · {{ jcount | commafy }} job{{ '' if jcount == 1 else 's' }}</div></div>
+            <div style="grid-column:1 / -1;">{{ kv_label('File on disk') }}<div>{% if gone %}<span class="badge red">MISSING</span>{% elif wordlist.type == 'dynamic' %}<span class="badge dim">regenerated per download</span>{% else %}<span class="badge dim">present</span>{% endif %} <span class="mono" style="color:var(--text-mute); font-size:11px; word-break:break-all;">{{ wordlist.path }}</span></div></div>
         </div>
+
+        {% if gone and tcount %}
+        <div class="flash flash-danger" style="margin-top:22px;">
+            This file is gone from disk. The {{ tcount | commafy }} task{{ '' if tcount == 1 else 's' }} below reference it and cannot run until it is restored.
+            Re-upload it and every reference keeps working.
+        </div>
+        {% endif %}
 
         {# used-by tasks #}
         <div style="margin-top:24px;">
@@ -493,8 +514,76 @@
 {% endfor %}
 
 {% for wordlist in wordlists %}
-<dialog class="hv-dialog" id="del-{{ wordlist.id }}">
+{% if wordlist.type != 'dynamic' %}
+{% set gone = wordlist.id in missing_wl_ids %}
+<dialog class="hv-dialog" id="restore-{{ wordlist.id }}" style="max-width:560px; width:94vw;">
+    <div class="hv-dialog-head">
+        {{ icon('upload', size=16) }}
+        <div style="line-height:1.2;">
+            <h3 style="margin:0;">{{ 'Restore' if gone else 'Replace' }} {{ wordlist.name }}</h3>
+            <div class="mono" style="font-size:10px; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-mute); margin-top:3px;">replace the file in place</div>
+        </div>
+        <button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close">{{ icon('x', size=15) }}</button>
+    </div>
+    <form method="POST" action="{{ url_for('wordlists.wordlists_restore', wordlist_id=wordlist.id) }}" enctype="multipart/form-data">
+        {{ wordlistRestoreForm.hidden_tag() }}
+        <div class="hv-dialog-body">
+            <div class="field-hint" style="margin:0 0 var(--gap);">
+                {{ 'Restores' if gone else 'Replaces' }} the file <strong>in place</strong> — entry
+                <span class="mono">#{{ wordlist.id }}</span>, path <span class="mono">{{ wordlist.path.split('/')|last }}</span> —
+                so the {{ wl_task_count.get(wordlist.id, 0) | commafy }} task{{ '' if wl_task_count.get(wordlist.id, 0) == 1 else 's' }}
+                using it keep working. This does <strong>not</strong> create a new entry.
+            </div>
+            <div class="dropzone" onclick="this.querySelector('input[type=file]').click()">
+                {{ icon('upload', size=34) }}
+                <div style="margin-top:12px; color:var(--text);">Drop the wordlist (<span class="mono" style="color:var(--primary);">.txt</span> or <span class="mono" style="color:var(--primary);">.gz</span>) here or <span style="color:var(--primary); text-decoration:underline;">browse</span></div>
+                {{ wordlistRestoreForm.wordlist(style="display:none;") }}
+            </div>
+            <div class="field-hint" style="margin-top:var(--gap);">
+                {{ icon('info', size=13) }} Importing from <span class="mono">control/wordlists_import/</span> will
+                <strong>not</strong> restore this entry — it creates a new one, leaving this row's tasks still broken.
+            </div>
+        </div>
+        <div class="hv-dialog-foot">
+            <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+            <button type="submit" class="btn btn-primary">{{ icon('upload', size=15) }} {{ 'Restore' if gone else 'Replace' }} wordlist file</button>
+        </div>
+    </form>
+</dialog>
+{% endif %}
+
+<dialog class="hv-dialog" id="del-{{ wordlist.id }}" style="max-width:620px; width:94vw;">
+    {% set blockers = wl_used_tasks.get(wordlist.id, []) if wl_used_tasks is defined else [] %}
     <div class="hv-dialog-head"><h3>Delete {{ wordlist.name }}?</h3><button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close">{{ icon('x', size=15) }}</button></div>
+    {% if blockers %}
+    {# The delete route refuses while a task references the wordlist (wl_id OR
+       wl_id_2). Say WHICH tasks and which jobs hold them, so "can not be
+       deleted" is a procedure rather than a dead end. #}
+    <div class="hv-dialog-body">
+        <div class="flash flash-danger" style="margin-bottom:var(--gap);">
+            Blocked — {{ blockers|length | commafy }} task{{ '' if blockers|length == 1 else 's' }} still use this wordlist.
+        </div>
+        {% for b in blockers %}
+        <div class="card" style="margin-bottom:8px; padding:10px 13px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <span style="color:var(--text-mute); display:inline-flex;">{{ icon('task', size=15) }}</span>
+            <a href="{{ url_for('tasks.tasks_list', q=b.name) }}" style="font-weight:500;">{{ b.name }}</a>
+            <span style="margin-left:auto; display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                {% for j in b.jobs %}<a class="mono" style="font-size:11px;" href="{{ url_for('jobs.jobs_summary', job_id=j.id) }}">#{{ j.id }} {{ j.name }}</a>{% else %}<span class="mono" style="font-size:11px; color:var(--text-mute);">not in a job</span>{% endfor %}
+            </span>
+        </div>
+        {% endfor %}
+        <div class="field-hint" style="margin-top:var(--gap);">
+            Remove these tasks from their jobs and delete the tasks, then delete this wordlist
+            {%- if wordlist.id in missing_wl_ids %} — or restore the file instead, and every reference keeps working{% endif %}.
+        </div>
+    </div>
+    <div class="hv-dialog-foot">
+        <button class="btn" onclick="this.closest('dialog').close()">Back</button>
+        {% if wordlist.id in missing_wl_ids %}
+        <button class="btn btn-primary" type="button" onclick="this.closest('dialog').close(); document.getElementById('restore-{{ wordlist.id }}').showModal();">{{ icon('upload', size=15) }} Restore file</button>
+        {% endif %}
+    </div>
+    {% else %}
     <div class="hv-dialog-body">This will permanently delete the wordlist. Are you sure you want to continue?</div>
     <div class="hv-dialog-foot">
         <button class="btn" onclick="this.closest('dialog').close()">Back</button>
@@ -502,6 +591,7 @@
             <input class="btn btn-danger" type="submit" value="Delete">
         </form>
     </div>
+    {% endif %}
 </dialog>
 {% endfor %}
 

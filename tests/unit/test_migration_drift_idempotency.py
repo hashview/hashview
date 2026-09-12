@@ -24,7 +24,24 @@ from sqlalchemy import text
 
 MIGRATIONS_DIR = str(Path(__file__).resolve().parents[2] / "migrations")
 BASE_REV = "8027c2d2b40a"      # what the drifted field DB was stamped at
-DEV_HEAD = "f3b8c1a7d942"
+
+
+def _dev_head():
+    """The chain's single head, read from the scripts rather than hardcoded.
+
+    Pinning the hash meant every new revision broke these two tests for a
+    reason that has nothing to do with what they assert (that `upgrade head`
+    survives a drifted schema and lands on head, whatever head is).
+    test_migration_smoke.py already guarantees there is exactly one.
+    """
+    from alembic.config import Config as AlembicConfig
+    from alembic.script import ScriptDirectory
+
+    cfg = AlembicConfig()
+    cfg.set_main_option("script_location", MIGRATIONS_DIR)
+    heads = ScriptDirectory.from_config(cfg).get_heads()
+    assert len(heads) == 1, f"Expected exactly one migration head; found {heads}"
+    return heads[0]
 
 
 def _drifted_app(tmp_path, drop_columns=()):
@@ -76,7 +93,7 @@ def test_upgrade_head_idempotent_when_schema_already_ahead(tmp_path):
     with app.app_context():
         assert "recovered_at" in _columns(db, "hashes")   # the drift trigger
         upgrade(directory=MIGRATIONS_DIR)                  # must not raise
-        assert _current_rev(db) == DEV_HEAD
+        assert _current_rev(db) == _dev_head()
 
 
 def test_upgrade_head_adds_only_the_missing_columns(tmp_path):
@@ -92,6 +109,6 @@ def test_upgrade_head_adds_only_the_missing_columns(tmp_path):
         for table, col in missing:
             assert col not in _columns(db, table)
         upgrade(directory=MIGRATIONS_DIR)
-        assert _current_rev(db) == DEV_HEAD
+        assert _current_rev(db) == _dev_head()
         for table, col in missing:
             assert col in _columns(db, table), f"{table}.{col} was not re-created"

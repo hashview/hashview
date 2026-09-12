@@ -34,6 +34,7 @@ from hashview.models import (
     db,
 )
 from hashview.utils.audit import log_event
+from hashview.utils.utils import rule_file_missing, wordlist_file_missing
 
 
 # List all tasks
@@ -111,11 +112,21 @@ def v1_api_add_task():
             'type': 'Error',
             'msg': 'wl_id is required and must be a wordlist id'
         })
-    if not Wordlists.query.get(int(wl_id)):
+    wordlist = Wordlists.query.get(int(wl_id))
+    if not wordlist:
         return jsonify({
             'status': 400,
             'type': 'Error',
             'msg': 'Invalid wl_id'
+        })
+    # The row existing is not enough: a wordlist whose file is gone can never be
+    # downloaded by an agent, so a task built on it can never run (issue #383).
+    # This is the API's only warning -- there is no picker to grey out here.
+    if wordlist_file_missing(wordlist):
+        return jsonify({
+            'status': 400,
+            'type': 'Error',
+            'msg': 'Wordlist file is missing on disk and cannot be used in a task'
         })
 
     # rule_id is optional: absent/'None'/'' means a plain dictionary attack
@@ -131,11 +142,18 @@ def v1_api_add_task():
                 'msg': 'rule_id must be a rule id'
             })
         rule_id = int(rule_id)
-        if not Rules.query.get(rule_id):
+        rule = Rules.query.get(rule_id)
+        if not rule:
             return jsonify({
                 'status': 400,
                 'type': 'Error',
                 'msg': 'Invalid rule_id'
+            })
+        if rule_file_missing(rule):
+            return jsonify({
+                'status': 400,
+                'type': 'Error',
+                'msg': 'Rule file is missing on disk and cannot be used in a task'
             })
 
     try:

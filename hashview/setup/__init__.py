@@ -152,6 +152,11 @@ def compress_existing_wordlists_if_needed(db :SQLAlchemy):
 
     def _resolve(path):
         """Locate a wordlist file, tolerating a relative/legacy stored path.
+
+        Deliberately NOT utils.resolve_control_file: this one is for RELOCATION
+        (find a stray file so it can be normalized into the canonical dir), so
+        its fallback to the path as-stored is load-bearing. resolve_control_file
+        is the detection counterpart and is basename-confined on purpose.
         Prefer the canonical wordlists dir (where the download route serves
         from); fall back to the path as-stored. Returns an absolute path, or
         None when the file genuinely can't be found."""

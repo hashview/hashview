@@ -41,7 +41,9 @@ from hashview.utils.utils import (
     get_filehash,
     get_linecount,
     is_gzip,
+    missing_rule_ids,
     remove_rule_file,
+    resolve_control_file,
     send_generated_file,
 )
 
@@ -53,11 +55,17 @@ def v1_api_get_rules():
 
     update_heartbeat(request.cookies.get('uuid'))
     rules = Rules.query.all()
-    message = {
-        'status': 200,
-        'rules': alchemy_to_native(rules)
-    }
-    return jsonify(message)
+    rows = alchemy_to_native(rules)
+    missing_ids = missing_rule_ids(rules)
+    for row in rows:
+        # Grafted AFTER serialization: AlchemyEncoder emits declared columns
+        # only, and `missing` is computed, not stored (issue #383). Setting it
+        # on the ORM instance would also serialize -- the encoder walks dir(obj)
+        # -- but it would pollute the identity map with a non-column attribute.
+        # Always emitted, true or false, so a client can tell a healthy catalog
+        # from a server that predates the flag (key absent).
+        row['missing'] = row.get('id') in missing_ids
+    return jsonify({'status': 200, 'rules': rows})
 
 
 # serve a rules file
@@ -75,10 +83,15 @@ def v1_api_get_rules_download(rules_id):
     # that. No shell; pure-Python streamed gzip -9 (same pattern as the
     # dynamic-wordlist download above). The random tmp name avoids predictable
     # paths and collisions between concurrent downloads.
-    rules_dir = os.path.join(current_app.root_path, 'control/rules')
     tmp_dir = os.path.join(current_app.root_path, 'control/tmp')
-    src_path = os.path.join(rules_dir, os.path.basename(rules.path))
-    if not os.path.exists(src_path):
+    src_path = resolve_control_file(rules.path, 'rules')
+    if src_path is None:
+        # Log it here too: without this the only evidence an agent is re-asking
+        # for a dead file every sync lives in that agent's log, on another host.
+        current_app.logger.warning(
+            'Rule %s has no file on disk (path=%s); serving 404 to the caller. '
+            'Restore or delete it from the Rules page (issue #383).',
+            rules.id, rules.path)
         return jsonify({'status': 404, 'type': 'Error', 'msg': 'Rule file missing on disk'}), 404
 
     tmp_gz = os.path.join(tmp_dir, secrets.token_hex(8) + '.gz')

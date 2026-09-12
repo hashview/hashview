@@ -30,8 +30,9 @@ Known bugs noted (documented in prose, not asserted via xfail):
 
 from unittest.mock import patch
 
-from hashview.models import Rules, Tasks, Users, Wordlists, db
+from hashview.models import Tasks, Users, db
 from hashview.tasks.routes import _human_size
+from tests.unit.helpers import make_rule_with_file, make_wordlist_with_file
 
 # ---------------------------------------------------------------- helpers
 
@@ -58,20 +59,15 @@ def _login(client, user):
 
 
 def _make_wordlist(owner_id, name="wl-tadd"):
-    wl = Wordlists(name=name, owner_id=owner_id, type="static",
-                   path=f"control/wordlists/{name}.gz", size=10,
-                   checksum="0" * 64)
-    db.session.add(wl)
-    db.session.commit()
-    return wl
+    # File-backed: the task pickers exclude a rule/wordlist whose file is
+    # gone from disk (#383), so these rows must really exist on disk.
+    return make_wordlist_with_file(owner_id, name=name)
 
 
 def _make_rule(owner_id, name="rule-tadd"):
-    rule = Rules(name=name, owner_id=owner_id, path="control/rules/rt.rule",
-                 checksum="1" * 64, size=1)
-    db.session.add(rule)
-    db.session.commit()
-    return rule
+    # File-backed: the task pickers exclude a rule/wordlist whose file is
+    # gone from disk (#383), so these rows must really exist on disk.
+    return make_rule_with_file(owner_id, name=name)
 
 
 def _make_task(owner_id, name="task-tadd", wl_id=None, hc_attackmode=0):

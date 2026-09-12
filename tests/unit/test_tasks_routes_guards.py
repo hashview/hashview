@@ -5,7 +5,8 @@ happy path), task_edit (job-association block, ownership check, successful
 edit) and tasks_add (attack mode 0 with and without a rule).
 """
 
-from hashview.models import JobTasks, Rules, TaskGroups, Tasks, Users, Wordlists, db
+from hashview.models import JobTasks, TaskGroups, Tasks, Users, Wordlists, db
+from tests.unit.helpers import make_rule_with_file, make_wordlist_with_file
 
 
 def _admin():
@@ -31,20 +32,15 @@ def _login(client, user):
 
 
 def _make_wordlist(owner_id, name="wl-guards"):
-    wl = Wordlists(name=name, owner_id=owner_id, type="static",
-                   path="control/wordlists/wl-guards.gz", size=10,
-                   checksum="0" * 64)
-    db.session.add(wl)
-    db.session.commit()
-    return wl
+    # File-backed: the task pickers exclude a rule/wordlist whose file is
+    # gone from disk (#383), so these rows must really exist on disk.
+    return make_wordlist_with_file(owner_id, name=name)
 
 
 def _make_rule(owner_id, name="rule-guards"):
-    rule = Rules(name=name, owner_id=owner_id, path="control/rules/rg.rule",
-                 checksum="1" * 64, size=1)
-    db.session.add(rule)
-    db.session.commit()
-    return rule
+    # File-backed: the task pickers exclude a rule/wordlist whose file is
+    # gone from disk (#383), so these rows must really exist on disk.
+    return make_rule_with_file(owner_id, name=name)
 
 
 def _make_task(owner_id, name="task-guards", wl_id=None):
@@ -366,24 +362,29 @@ def test_tasks_list_sort_branches_render(app, client):
 
 
 def test_tasks_list_wordlist_filesize_best_effort(app, client, tmp_path):
-    # a wordlist whose file exists gets a human size; a missing file is skipped
+    # a wordlist whose file exists gets a human size; a missing file is skipped.
+    # The real one has to live in control/wordlists -- that is the only place
+    # the size lookup resolves a row's file (basename-confined, see #383).
+    import os
+
+    from hashview.tasks.routes import _human_size
+
     admin = _admin()
     _login(client, admin)
-    real = tmp_path / "real.gz"
-    real.write_bytes(b"x" * 2048)
-    wl_real = Wordlists(name="wl-real", owner_id=admin.id, type="static",
-                        path=str(real), size=10, checksum="2" * 64)
+    wl_real = make_wordlist_with_file(admin.id, name="wl-real",
+                                      content=os.urandom(4096))
     wl_gone = Wordlists(name="wl-gone", owner_id=admin.id, type="static",
                         path=str(tmp_path / "missing.gz"), size=10,
                         checksum="3" * 64)
-    db.session.add_all([wl_real, wl_gone])
+    db.session.add(wl_gone)
     db.session.commit()
     _make_task(admin.id, name="t-real", wl_id=wl_real.id)
     _make_task(admin.id, name="t-gone", wl_id=wl_gone.id)
 
     resp = client.get("/tasks")
     assert resp.status_code == 200
-    assert b"2 KB" in resp.data  # 2048 bytes -> human size for the real file
+    expected = _human_size(os.path.getsize(wl_real.path))
+    assert expected.encode() in resp.data
 
 
 # --------------------------------------------- tasks_add (other attack modes)

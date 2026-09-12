@@ -288,6 +288,12 @@ class Rules(db.Model):
     path = db.Column(db.String(256), nullable=False)
     size = db.Column(db.Integer, nullable=False, default=0)
     checksum = db.Column(db.String(64), nullable=False)
+    # True once a "file missing on disk" admin alert has been sent for this row;
+    # cleared when the file reappears (so we notify once per episode + on
+    # recovery). Written ONLY by scheduler.catalog_health_check -- it records
+    # whether we have TOLD the admins, not whether the file is currently there
+    # (that is computed; see utils.rule_file_missing / wordlist_file_missing).
+    file_missing_notified = db.Column(db.Boolean, nullable=False, default=False)
 
 class Wordlists(db.Model):
     """Class object to represent Wordlists"""
@@ -301,6 +307,12 @@ class Wordlists(db.Model):
     size = db.Column(db.BigInteger, nullable=False)         # line count
     byte_size = db.Column(db.BigInteger, nullable=True)     # on-disk bytes of the file at `path` (compressed for static)
     checksum = db.Column(db.String(64), nullable=False)
+    # True once a "file missing on disk" admin alert has been sent for this row;
+    # cleared when the file reappears (so we notify once per episode + on
+    # recovery). Written ONLY by scheduler.catalog_health_check -- it records
+    # whether we have TOLD the admins, not whether the file is currently there
+    # (that is computed; see utils.rule_file_missing / wordlist_file_missing).
+    file_missing_notified = db.Column(db.Boolean, nullable=False, default=False)
 
 class Tasks(db.Model):
     """Class object to represent Tasks"""

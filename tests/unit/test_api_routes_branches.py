@@ -49,6 +49,7 @@ from hashview.models import (
     db as _db,
 )
 from hashview.utils.utils import get_md5_hash
+from tests.unit.helpers import make_wordlist_with_file
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -2102,16 +2103,9 @@ def test_tasks_add_user_not_found_returns_403(client, monkeypatch):
 @pytest.mark.security
 def test_tasks_add_rule_id_str_not_digit_returns_400(client, admin_user):
     """POST /v1/tasks/add with a non-numeric string rule_id returns 400 (line 926)."""
-    wl = Wordlists(
-        name="rule-str-wl",
-        owner_id=admin_user.id,
-        type="static",
-        path="/nonexistent/rule-str-wl.gz",
-        size=1,
-        checksum="0" * 64,
-    )
-    _db.session.add(wl)
-    _db.session.commit()
+    # File-backed: the endpoint refuses a wordlist whose file is gone before it
+    # reaches the branch under test (#383).
+    wl = make_wordlist_with_file(admin_user.id, name="rule-str-wl")
 
     client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
     resp = client.post(
@@ -2127,16 +2121,9 @@ def test_tasks_add_rule_id_str_not_digit_returns_400(client, admin_user):
 @pytest.mark.security
 def test_tasks_add_exception_returns_500(client, admin_user, monkeypatch):
     """POST /v1/tasks/add where db.session.commit raises returns 500 (lines 949-950)."""
-    wl = Wordlists(
-        name="exc-tasks-wl",
-        owner_id=admin_user.id,
-        type="static",
-        path="/nonexistent/exc-tasks-wl.gz",
-        size=1,
-        checksum="0" * 64,
-    )
-    _db.session.add(wl)
-    _db.session.commit()
+    # File-backed: the endpoint refuses a wordlist whose file is gone before it
+    # reaches the branch under test (#383).
+    wl = make_wordlist_with_file(admin_user.id, name="exc-tasks-wl")
 
     def raise_on_commit():
         raise RuntimeError("simulated task add error")

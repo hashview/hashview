@@ -220,3 +220,84 @@ def test_a_reclaimed_slice_is_reissued_before_a_new_one_is_cut(app, client):
     assert again["job_task_id"] == first.id, "re-issued, not skipped over"
     assert JobTaskLedger.query.filter_by(job_id=job.id).one().keyspace_pos == \
         first.chunk_limit, "the cursor must not advance for a re-issue"
+
+
+# --- job editing against a live queue ----------------------------------------
+
+def _login_admin(client):
+    from tests.unit.helpers import login, make_admin
+    admin = make_admin(email="editor@example.com")
+    login(client, admin)
+    return admin
+
+
+def test_starting_an_already_running_job_is_refused(app, client):
+    """Re-queueing a live job flips its rows back to 'Queued' while their agent_id
+    still names an agent, so the agent keeps running a row dispatch is free to
+    hand to someone else -- the way an agent ends up owning two rows and one is
+    orphaned 'Running' forever. The API route always refused this; the web route
+    did not."""
+    job, _ = _seed()
+    _agent("a", speed=1000)
+    started = _beat(client, "a")
+    assert started["msg"] == "START"
+    job.status = "Running"
+    db.session.commit()
+
+    _login_admin(client)
+    resp = client.post(f"/jobs/start/{job.id}", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+
+    row = JobTasks.query.get(started["job_task_id"])
+    assert row.status == "Running", "the in-flight slice must be untouched"
+    assert row.agent_id is not None
+
+
+def test_reordering_a_running_job_leaves_in_flight_work_alone(app, client):
+    """This used to delete every row and re-create it -- on a running job that
+    silently destroyed rows an agent was actively cracking, with no cancel and no
+    agent_id cleanup."""
+    job, tasks = _seed(task_count=2)
+    _agent("a", speed=1000)
+    started = _beat(client, "a")
+    running = JobTasks.query.get(started["job_task_id"])
+    running_id, running_agent = running.id, running.agent_id
+
+    _login_admin(client)
+    from hashview.utils.utils import job_assignments
+    ids = {e["task_id"]: e["entry_id"] for e in job_assignments([job.id])[job.id]}
+    resp = client.post(f"/jobs/{job.id}/reorder_tasks",
+                       data={"order": f"{ids[tasks[1].id]},{ids[tasks[0].id]}"},
+                       follow_redirects=False)
+    assert resp.status_code in (301, 302)
+
+    survivor = JobTasks.query.get(running_id)
+    assert survivor is not None, "the running slice must not be deleted"
+    assert survivor.status == "Running"
+    assert survivor.agent_id == running_agent
+    order = [ledger.task_id for ledger in
+             JobTaskLedger.query.filter_by(job_id=job.id)
+             .order_by(JobTaskLedger.position).all()]
+    assert order == [tasks[1].id, tasks[0].id]
+
+
+def test_removing_an_attack_cancels_it_before_deleting_it(app, client):
+    job, tasks = _seed(task_count=2)
+    _agent("a", speed=1000)
+    started = _beat(client, "a")
+    running = JobTasks.query.get(started["job_task_id"])
+    agent_id = running.agent_id
+
+    _login_admin(client)
+    resp = client.post(f"/jobs/{job.id}/remove_task/{running.task_id}",
+                       follow_redirects=False)
+    assert resp.status_code in (301, 302)
+
+    assert JobTasks.query.get(running.id) is None
+    assert JobTaskLedger.query.filter_by(job_id=job.id, task_id=tasks[0].id).count() == 0
+    # The agent is released, so it is not left looking assigned.
+    assert Agents.query.get(agent_id).hc_status == ""
+    # The other attack survives, and its position is compacted.
+    survivor = JobTaskLedger.query.filter_by(job_id=job.id).one()
+    assert survivor.task_id == tasks[1].id
+    assert survivor.position == 0

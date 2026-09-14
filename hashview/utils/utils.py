@@ -2116,6 +2116,34 @@ def _sync_job_ledger(job, assignments):
     return ledgers
 
 
+def renumber_ledger_positions(job_id, ordered_entry_ids=None):
+    """Renumber a job's attacks to 0..N-1, in two passes.
+
+    (job_id, position) is UNIQUE and the constraint is checked per row, not
+    deferred to commit -- so assigning the final numbers directly fails the moment
+    any two attacks swap places, because the first UPDATE collides with a position
+    the second has not vacated yet. Park everything on negative positions first,
+    which nothing else ever uses, then lay down the real ones.
+
+    ``ordered_entry_ids`` gives the new order; omit it to compact the existing one.
+    """
+    ledgers = {ledger.id: ledger
+               for ledger in JobTaskLedger.query.filter_by(job_id=job_id).all()}
+    if ordered_entry_ids is None:
+        order = [ledger.id for ledger in
+                 sorted(ledgers.values(), key=lambda entry: (entry.position, entry.id))]
+    else:
+        order = [entry_id for entry_id in ordered_entry_ids if entry_id in ledgers]
+        order += [ledger_id for ledger_id in ledgers if ledger_id not in order]
+
+    for index, ledger_id in enumerate(order):
+        ledgers[ledger_id].position = -(index + 1)
+    db.session.flush()
+    for index, ledger_id in enumerate(order):
+        ledgers[ledger_id].position = index
+    db.session.flush()
+
+
 def job_assignments(job_ids):
     """{job_id: [assignment, ...]} -- one entry per ATTACK, in queue order.
 

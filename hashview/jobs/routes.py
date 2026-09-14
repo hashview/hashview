@@ -51,10 +51,12 @@ from hashview.utils.utils import (
     is_chunk_row,
     job_assignments,
     queue_late_assignments,
+    renumber_ledger_positions,
     save_file,
     task_uses_dynamic_wordlist,
     top_effective_task_ids,
     try_commit,
+    update_job_task_status,
     validate_hash_only_hashfile,
     validate_hex_salt,
     validate_kerberos_hashfile,
@@ -704,23 +706,46 @@ def jobs_reorder_tasks(job_id):
     # is what the page renders and submits. Using the raw per-chunk rows here made
     # a split task's task_id appear N times, so a reorder recreated N whole rows
     # for it -- multiplying the task on the next queue. One entry per attack fixes that.
-    current = [e['task_id'] for e in _assigned_tasks(job_id)]
+    entries = _assigned_tasks(job_id)
+    current = [e['entry_id'] for e in entries]
     try:
         submitted = [int(x) for x in request.form.get('order', '').split(',') if x != '']
     except ValueError:
         submitted = []
 
+    # Compared on ENTRY ids, not task ids. A dynamic-wordlist task may be assigned
+    # to one job more than once, so a multiset of task ids cannot say WHICH
+    # assignment moved where -- the check was ambiguous exactly where duplicates
+    # are legal.
     if sorted(submitted) != sorted(current):
         flash('Task order was out of date; nothing changed. Please try again.', 'danger')
         return redirect("/jobs/" + str(job_id) + "/tasks")
 
-    JobTasks.query.filter_by(job_id=job_id).delete()
-    # Ledger rows describe a job's attacks; they must not outlive it.
-    JobTaskLedger.query.filter_by(job_id=job_id).delete()
-    db.session.commit()
-    for task_id in submitted:
-        db.session.add(JobTasks(job_id=job_id, task_id=task_id, status='Not Started'))
-    db.session.commit()
+    ledgers = {ledger.id: ledger
+               for ledger in JobTaskLedger.query.filter_by(job_id=job_id).all()}
+    if ledgers:
+        # Rewrite the order. Nothing is deleted: this used to drop every row and
+        # re-create it, which on a RUNNING job silently destroyed rows an agent
+        # was actively cracking -- no cancel, no agent_id cleanup, and the agent's
+        # eventual status report landing on a row that no longer existed.
+        # Reordering a running job now just reorders the work not yet issued.
+        renumber_ledger_positions(job_id, submitted)
+        db.session.commit()
+        if Jobs.query.get(job_id).status in ('Running', 'Queued'):
+            flash('Task order updated. Work already running will finish first.', 'info')
+    else:
+        # Never queued, so there is nothing in flight and no ledger yet: rebuild
+        # the rows in the new order (insertion order IS queue order until a job
+        # is queued). Entry ids are negated row ids here.
+        rows = {-e['entry_id']: e['task_id'] for e in entries}
+        JobTasks.query.filter_by(job_id=job_id).delete()
+        db.session.commit()
+        for entry_id in submitted:
+            task_id = rows.get(-entry_id)
+            if task_id is not None:
+                db.session.add(JobTasks(job_id=job_id, task_id=task_id,
+                                        status='Not Started'))
+        db.session.commit()
 
     return redirect("/jobs/" + str(job_id) + "/tasks")
 
@@ -741,7 +766,26 @@ def jobs_remove_task(job_id, task_id):
     # removes ALL of them (the old .first() left chunks 2..N orphaned). A
     # dynamic-wordlist task can be assigned more than once as separate whole rows;
     # there, drop a single instance so the others survive.
-    if any(is_chunk_row(jt) for jt in job_tasks):
+    # Resolve the attack, then remove it whole. Cancel anything still live first
+    # so the agent is told to stop on its next heartbeat and its hc_status is
+    # cleared -- deleting the rows out from under a running agent left it cracking
+    # work nobody was waiting for, and its eventual status report landing on a row
+    # that no longer existed.
+    ledgers = (JobTaskLedger.query
+               .filter_by(job_id=job_id, task_id=task_id)
+               .order_by(JobTaskLedger.position.desc()).all())
+    if ledgers:
+        target = ledgers[0]              # the LAST assignment of this task
+        for jt in JobTasks.query.filter_by(ledger_id=target.id).all():
+            if jt.status in ('Running', 'Queued', 'Not Started', 'Importing'):
+                update_job_task_status(jt.id, 'Canceled', finalize=False)
+            db.session.delete(jt)
+        db.session.delete(target)
+        db.session.flush()
+        renumber_ledger_positions(job_id)      # close the gap
+    elif any(is_chunk_row(jt) for jt in job_tasks):
+        # Pre-ledger rows: a split task is many rows sharing this task_id, so
+        # removing the attack removes ALL of them.
         for jt in job_tasks:
             db.session.delete(jt)
     else:
@@ -1042,6 +1086,15 @@ def jobs_start(job_id):
 
     if job_tasks:
         if current_user.admin or job.owner_id == current_user.id:
+            # Refuse a job that is already live. Re-queueing one flips its rows
+            # back to 'Queued' while their agent_id still names an agent, so the
+            # agent keeps running a row that dispatch is simultaneously free to
+            # hand to someone else -- the concrete way an agent ends up owning two
+            # rows, and the way one of them is orphaned 'Running' forever. The API
+            # route has always refused this (api/jobs.py); the web route did not.
+            if job.status in ('Running', 'Queued'):
+                flash('That job is already running or queued.', 'warning')
+                return redirect(url_for('jobs.jobs_list'))
             job.status = 'Queued'
             job.queued_at = datetime.now()
             build_job_task_commands(job)

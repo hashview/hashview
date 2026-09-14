@@ -20,7 +20,34 @@ export DOCKER_PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
 COMPOSE="${COMPOSE_BIN:-docker compose} -f docker-compose.migration.yml"
 KEEP="${HASHVIEW_MIGRATION_KEEP:-0}"
 MAIN_REF="${HASHVIEW_MAIN_REF:-origin/main}"
-DEV_HEAD="a4c9e7b21f60"   # bump alongside any new alembic revision
+# The dev head is DERIVED, never pinned. It used to be a hardcoded revision
+# carrying a "bump alongside any new alembic revision" comment -- and the bump
+# was duly forgotten, so the job failed reporting the correct NEW head as if the
+# migration had gone wrong. Scanning the revision files needs no alembic (the
+# venv below does not exist yet) and cannot go stale.
+# tests/unit/test_migration_smoke.py separately guarantees there is exactly one.
+dev_head() {
+  python3 - <<'PYEOF'
+import pathlib
+import re
+import sys
+
+revisions, parents = set(), set()
+for path in pathlib.Path("migrations/versions").glob("*.py"):
+    text = path.read_text(encoding="utf-8")
+    match = re.search(r"^revision\s*=\s*['\"]([^'\"]+)['\"]", text, re.M)
+    if match:
+        revisions.add(match.group(1))
+    for parent in re.finditer(r"^down_revision\s*=\s*['\"]([^'\"]+)['\"]", text, re.M):
+        parents.add(parent.group(1))
+heads = revisions - parents
+if len(heads) != 1:
+    sys.exit("expected exactly one alembic head, found: %s" % sorted(heads))
+print(heads.pop())
+PYEOF
+}
+
+DEV_HEAD="$(dev_head)"
 
 TMP_ROOT="$(mktemp -d)"
 MAIN_WT="$TMP_ROOT/hv-main"
@@ -135,6 +162,7 @@ HASHVIEW_TEST_DATABASE_URI="mysql+mysqlconnector://hashview:hashview@127.0.0.1:3
 
 echo "== Run verifier =="
 export HASHVIEW_MIGRATED_DB_URI="mysql+mysqlconnector://hashview:hashview@127.0.0.1:3306/hashview?charset=utf8mb4"
+export HASHVIEW_DEV_HEAD="$DEV_HEAD"
 export HASHVIEW_FRESH_DB_URI="mysql+mysqlconnector://hashview:hashview@127.0.0.1:3307/hashview?charset=utf8mb4"
 "$PYTHON" -m pytest tests/integration/test_migration_e2e.py -m migration -v
 

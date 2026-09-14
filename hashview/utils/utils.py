@@ -1918,6 +1918,30 @@ def build_hashcat_command(job_id, task_id, chunk=None, job_task_id=None):
 
     return argv
 
+# A JobTasks row whose temp files are keyed on its own id but which is NOT a
+# chunk (a whole task) stores this in chunk_total. It exists purely so the
+# agent's `job_task.get('chunk_total')` test stays truthy for every row we
+# stamp -- see is_chunk_row() for why chunk_total is no longer that test's
+# server-side counterpart. Non-zero because 0 is falsy in that expression, and
+# negative because every real chunk count is >= 1, so `chunk_total < 0` cleanly
+# identifies a row stamped by this server.
+CHUNK_TOTAL_WHOLE = -1
+
+
+def is_chunk_row(job_task):
+    """True if this JobTasks row carries a chunk slice rather than a whole task.
+
+    The slice IS the definition of a chunk, so this is derived from the slice
+    columns rather than from chunk_total. chunk_total used to answer this, but it
+    also had to answer 'how do I name this row's temp files?' -- a question the
+    agent answers independently, with no error when the two sides disagree. That
+    branch is gone (every row is now keyed on its own id), so chunk_total is a
+    count and nothing more. Deriving from the slice is also vintage-agnostic: it
+    is correct for rows queued by an older server as well as by this one.
+    """
+    return bool(_chunk_spec_from_row(job_task))
+
+
 def _chunk_spec_from_row(job_task):
     """Reconstruct a chunk spec dict from a JobTasks row's stored slice."""
     if job_task.chunk_skip is not None and job_task.chunk_limit is not None:
@@ -1955,14 +1979,24 @@ def _set_job_task_command(job, row, spec, chunk_no=None, chunk_total=None):
     row.status = 'Queued'
     row.priority = job.priority
     row.chunk_no = chunk_no
-    row.chunk_total = chunk_total
+    # Every stamped row carries a truthy chunk_total: the real count for a chunk,
+    # CHUNK_TOTAL_WHOLE for a whole task. The agent keys its temp files on
+    # job_task['id'] whenever this is truthy, which now matches the server
+    # unconditionally (below), so an un-upgraded agent stays correct.
+    row.chunk_total = chunk_total if chunk_total else CHUNK_TOTAL_WHOLE
     row.chunk_skip = spec.get('skip')
     row.chunk_limit = spec.get('limit')
     row.chunk_mask = spec.get('mask')
-    # Whole (un-chunked) tasks keep the legacy job+task temp-file naming so
-    # existing agents keep working without an upgrade; only chunks need the
-    # per-jobtask naming to avoid collisions between chunks of the same task.
-    job_task_id = row.id if chunk_total else None
+    # Key temp files on this row's own id, always. The old conditional ("chunks
+    # get per-jobtask names, whole tasks keep job+task names") had to be
+    # evaluated identically here and in the agent, and when the two disagreed
+    # nothing raised -- they just quietly shared a target hashfile, crack outfile
+    # and potfile. A shared potfile makes hashcat skip hashes an earlier run
+    # already potted, so the later run never re-emits them. Deleting the branch
+    # is the fix. It also separates two whole rows of the same (job, task), which
+    # jobs_assign_task legitimately creates for a dynamic wordlist and which
+    # collide under the old naming.
+    job_task_id = row.id
     # build_hashcat_command returns an argv list; persist it as JSON so the agent
     # can json.loads it back into a token list and run it with shell=False.
     row.command = json.dumps(build_hashcat_command(job.id, row.task_id, chunk=spec, job_task_id=job_task_id))
@@ -1984,7 +2018,7 @@ def build_job_task_commands(job):
     rows = JobTasks.query.filter_by(job_id=job.id).all()
 
     # Re-queue: already chunked once -> rebuild from each row's stored slice.
-    if any(row.chunk_total for row in rows):
+    if any(is_chunk_row(row) for row in rows):
         for row in rows:
             _set_job_task_command(job, row, _chunk_spec_from_row(row),
                                   chunk_no=row.chunk_no, chunk_total=row.chunk_total)
@@ -2053,13 +2087,14 @@ def rechunk_queued_tasks_for_hashtype(hash_type):
     candidates = (JobTasks.query
                   .filter(JobTasks.status == 'Queued',
                           JobTasks.agent_id.is_(None),
-                          JobTasks.chunk_total.is_(None))
+                          JobTasks.chunk_skip.is_(None),
+                          JobTasks.chunk_mask.is_(None))
                   .all())
     changed = False
     for jt in candidates:
         # Re-check the row is still safe to re-plan (an agent may have grabbed it
         # between the query and now); skip if it was taken.
-        if jt.status != 'Queued' or jt.agent_id is not None or jt.chunk_total is not None:
+        if jt.status != 'Queued' or jt.agent_id is not None or is_chunk_row(jt):
             continue
         job = Jobs.query.get(jt.job_id)
         if job is None or job.status not in ('Queued', 'Running'):

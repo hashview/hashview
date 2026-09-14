@@ -22,7 +22,12 @@ from hashview.models import (
     Wordlists,
     db,
 )
-from hashview.utils.utils import build_job_task_commands, rechunk_queued_tasks_for_hashtype
+from hashview.utils.utils import (
+    CHUNK_TOTAL_WHOLE,
+    build_job_task_commands,
+    is_chunk_row,
+    rechunk_queued_tasks_for_hashtype,
+)
 
 
 def _seed(attackmode=0, wl_type="static", wl_size=1_000_000, rule_size=100,
@@ -105,7 +110,10 @@ def test_dynamic_wordlist_task_stays_whole(app, db_session):
     db.session.commit()
     rows = JobTasks.query.filter_by(job_id=job.id).all()
     assert len(rows) == 1
-    assert rows[0].chunk_total is None
+    # Whole rows carry the CHUNK_TOTAL_WHOLE sentinel (truthy, so an un-upgraded
+    # agent still keys its temp files on the JobTask id) and no slice.
+    assert rows[0].chunk_total == CHUNK_TOTAL_WHOLE
+    assert not is_chunk_row(rows[0])
     assert "--skip" not in rows[0].command
 
 
@@ -116,7 +124,10 @@ def test_toggle_off_stays_whole(app, db_session):
     db.session.commit()
     rows = JobTasks.query.filter_by(job_id=job.id).all()
     assert len(rows) == 1
-    assert rows[0].chunk_total is None
+    # Whole rows carry the CHUNK_TOTAL_WHOLE sentinel (truthy, so an un-upgraded
+    # agent still keys its temp files on the JobTask id) and no slice.
+    assert rows[0].chunk_total == CHUNK_TOTAL_WHOLE
+    assert not is_chunk_row(rows[0])
 
 
 @pytest.mark.security
@@ -126,7 +137,10 @@ def test_no_benchmark_stays_whole(app, db_session):
     db.session.commit()
     rows = JobTasks.query.filter_by(job_id=job.id).all()
     assert len(rows) == 1
-    assert rows[0].chunk_total is None
+    # Whole rows carry the CHUNK_TOTAL_WHOLE sentinel (truthy, so an un-upgraded
+    # agent still keys its temp files on the JobTask id) and no slice.
+    assert rows[0].chunk_total == CHUNK_TOTAL_WHOLE
+    assert not is_chunk_row(rows[0])
 
 
 @pytest.mark.security

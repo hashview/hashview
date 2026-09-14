@@ -13,6 +13,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 import signal
 import socket
@@ -485,6 +486,41 @@ def download_hashfile(job_id, jobtask_id, hashfile_id):
         hashfile.write(hashfile_content)
     return True
 
+# The server writes --outfile control/outfiles/hc_cracked_<job>_<key>.txt into
+# the stored command, so the command itself states the temp-file key.
+_CRACK_FILE_RE = re.compile(r'hc_cracked_\d+_([^/\\"\']+?)\.txt')
+
+
+def job_task_file_key(job_task):
+    """The key naming this job task's target hashfile, crack outfile and potfile.
+
+    Three tiers, most authoritative first:
+
+      1. 'file_key' if the server sent it (0.8.4+).
+      2. Parsed out of the server's stored command. hashcat is given --outfile
+         and --potfile-path explicitly, so the command is a direct statement of
+         the key rather than something we re-derive and hope matches.
+      3. The pre-0.8.4 rule, for an older server: chunks keyed on the JobTask id,
+         whole tasks on the task id.
+
+    Tiers 1 and 2 exist because this used to be tier 3 alone, evaluated
+    independently here and on the server. When the two disagreed nothing raised
+    -- hashcat simply wrote its cracks somewhere we never looked, and two runs
+    quietly shared a potfile. Reading the key out of the command makes agreement
+    structural in both directions, including a newer agent against an older
+    server (versionCheck only rejects agents OLDER than the server).
+    """
+    key = job_task.get('file_key')
+    if key:
+        return key
+    command = job_task.get('command')
+    if command:
+        match = _CRACK_FILE_RE.search(command if isinstance(command, str) else str(command))
+        if match:
+            return match.group(1)
+    return job_task['id'] if job_task.get('chunk_total') else job_task['task_id']
+
+
 def build_hashcat_argv(command):
     """Decode the server's stored command (a JSON argv list) into a real argv.
 
@@ -720,9 +756,7 @@ def maybe_update_dynamic_wordlist(task):
 
 def upload_cracks(job, job_task):
     """Upload the hashcat crack file for this job task, if any cracks exist yet."""
-    # Chunked tasks name temp files by JobTask id (to avoid collisions between
-    # chunks of one task); whole tasks keep the legacy job+task id naming.
-    file_key = job_task['id'] if job_task.get('chunk_total') else job_task['task_id']
+    file_key = job_task_file_key(job_task)
     crack_file = 'control/outfiles/hc_cracked_' + str(job['id']) + '_' + str(file_key) + '.txt'
     if not os.path.exists(crack_file):
         LOG.debug('No results yet for job task %s; nothing to upload.', job_task['id'])
@@ -795,10 +829,8 @@ def run_assigned_task(job_task_id):
     updateJobTask(job_task['id'], 'Running')
     maybe_update_dynamic_wordlist(task)
 
-    # Name the hashfile to match the server-built command's target file: chunks
-    # are keyed by JobTask id (so chunks of one task never collide); whole tasks
-    # keep the legacy job+task id naming so existing agents stay compatible.
-    file_key = job_task['id'] if job_task.get('chunk_total') else job_task['task_id']
+    # Name the hashfile to match the server-built command's target file.
+    file_key = job_task_file_key(job_task)
     if not download_hashfile(job['id'], file_key, job['hashfile_id']):
         return
 

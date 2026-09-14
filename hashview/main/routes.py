@@ -21,6 +21,7 @@ from hashview.models import (
 )
 from hashview.utils.utils import (
     agent_telemetry,
+    is_chunk_row,
     update_job_task_status,
 )
 from hashview.utils.utils import (
@@ -278,7 +279,7 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
             else:
                 status = 'Queued'
 
-            is_chunked = total > 1 or any(c.chunk_total for c in chunks)
+            is_chunked = total > 1 or any(is_chunk_row(c) for c in chunks)
             active, rate_hps = [], 0.0
             for c in sorted((c for c in chunks if c.status == 'Running'),
                             key=lambda c: (c.chunk_no or 0)):

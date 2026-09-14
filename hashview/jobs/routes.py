@@ -46,6 +46,7 @@ from hashview.utils.utils import (
     build_job_task_commands,
     dynamic_wordlist_ids,
     import_hashfilehashes,
+    is_chunk_row,
     save_file,
     task_uses_dynamic_wordlist,
     top_effective_task_ids,
@@ -160,7 +161,7 @@ def jobs_list():
     # count once.
     job_task_count = {}
     for jt in job_tasks:
-        if jt.chunk_total and jt.chunk_no != 1:
+        if is_chunk_row(jt) and jt.chunk_no != 1:
             continue
         job_task_count[jt.job_id] = job_task_count.get(jt.job_id, 0) + 1
 
@@ -502,18 +503,18 @@ def _assigned_tasks(job_id):
     """A job's task assignments in queue order, with a split task's chunk rows
     collapsed into a single logical entry.
 
-    At queue time a chunkable task fans out into N JobTasks rows (each with
-    chunk_total set); those are ONE assignment and collapse to a single entry
-    that carries the chunk count. A dynamic-wordlist task may be assigned more
-    than once -- those are separate WHOLE rows (chunk_total is NULL) and each
-    stays its own entry. Ordered by JobTasks id, which matches both the
-    pre-chunk insertion order and the agent-dispatch order (min id per task).
+    At queue time a chunkable task fans out into N JobTasks rows (each carrying a
+    chunk slice); those are ONE assignment and collapse to a single entry that
+    carries the chunk count. A dynamic-wordlist task may be assigned more than
+    once -- those are separate WHOLE rows (no slice) and each stays its own
+    entry. Ordered by JobTasks id, which matches both the pre-chunk insertion
+    order and the agent-dispatch order (min id per task).
     Returns a list of {'task_id': int, 'chunks': int}.
     """
     entries, seen_chunked = [], set()
     for jt in (JobTasks.query.filter_by(job_id=job_id)
                .order_by(JobTasks.id.asc()).all()):
-        if jt.chunk_total:
+        if is_chunk_row(jt):
             if jt.task_id in seen_chunked:
                 continue
             seen_chunked.add(jt.task_id)
@@ -729,7 +730,7 @@ def jobs_remove_task(job_id, task_id):
     # removes ALL of them (the old .first() left chunks 2..N orphaned). A
     # dynamic-wordlist task can be assigned more than once as separate whole rows;
     # there, drop a single instance so the others survive.
-    if any(jt.chunk_total for jt in job_tasks):
+    if any(is_chunk_row(jt) for jt in job_tasks):
         for jt in job_tasks:
             db.session.delete(jt)
     else:

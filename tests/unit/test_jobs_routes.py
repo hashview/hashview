@@ -296,9 +296,15 @@ def test_jobs_reorder_tasks_bad_order_is_noop(app, client):
 # --- chunked tasks read as ONE attack in the editor ------------------------
 
 def _chunk(job, task, chunk_no, chunk_total, status="Queued"):
-    """A single chunk row of a split task (queue-time fan-out)."""
+    """A single chunk row of a split task (queue-time fan-out).
+
+    Carries a real slice: the slice is what MAKES a row a chunk (utils.is_chunk_row),
+    and the queue-time fan-out always writes one. A chunk_no/chunk_total pair with
+    no slice is not a shape build_job_task_commands can produce.
+    """
     jt = JobTasks(job_id=job.id, task_id=task.id, status=status, priority=3,
-                  chunk_no=chunk_no, chunk_total=chunk_total)
+                  chunk_no=chunk_no, chunk_total=chunk_total,
+                  chunk_skip=(chunk_no - 1) * 100, chunk_limit=100)
     db.session.add(jt)
     db.session.commit()
     return jt
@@ -364,7 +370,8 @@ def test_jobs_reorder_does_not_multiply_chunked_task(app, client):
     # t1 collapses to ONE whole row (the old code recreated 3 -> re-chunk x3)
     assert sum(1 for r in rows if r.task_id == t1.id) == 1
     assert [r.task_id for r in rows] == [t2.id, t1.id]     # order swapped
-    assert all(r.chunk_total is None for r in rows)        # de-chunked; re-chunks at next queue
+    # De-chunked: no row carries a slice any more, so the next queue re-plans.
+    assert not any(r.chunk_skip is not None or r.chunk_mask for r in rows)
 
 
 def test_jobs_dynamic_duplicate_tasks_stay_separate(app, client):

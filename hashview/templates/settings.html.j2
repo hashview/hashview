@@ -109,6 +109,14 @@
                             {% for e in HashviewForm.retention_period.errors %}<div class="invalid-feedback" style="display:block;">{{ e }}</div>{% endfor %}
                         </div>
 
+                        <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px;">
+                            <div style="flex:1; min-width:0;">
+                                <div style="color:var(--text);">Clean up stranded catalog entries</div>
+                                <div class="field-hint" style="margin-top:2px;">Remove rule/wordlist entries whose file is gone from disk and that no task references. Only entries already reported in an earlier hourly sweep are removed, so admins are always told first. Entries still used by a task are never touched.</div>
+                            </div>
+                            <label class="switch">{{ HashviewForm.catalog_prune_orphans(role="switch") }}<span class="track"></span></label>
+                        </div>
+
                         <div class="grid" style="grid-template-columns:1fr 1fr; gap:16px;">
                             <div class="field" style="margin-bottom:0;">
                                 <label class="field-label" for="set-jobrt">Max runtime per job <span class="mono" style="color:var(--text-mute); font-weight:400;">· hours</span></label>

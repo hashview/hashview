@@ -24,6 +24,8 @@ class HashviewSettingsForm(FlaskForm):
     agent_timeout_minutes = IntegerField('Agent timeout (minutes)',
                                          validators=[DataRequired(), NumberRange(min=1, max=525600)])
     enabled_job_weights = BooleanField('Allow users to set job priority during job creations.')
+    catalog_prune_orphans = BooleanField(
+        'Automatically remove rule/wordlist entries whose file is gone and that no task uses.')
     # Task chunking
     enabled_chunking = BooleanField('Split tasks into smaller chunks across agents (each sized from that agent\'s own benchmark).')
     chunk_target_duration = IntegerField('Target chunk runtime in seconds.',

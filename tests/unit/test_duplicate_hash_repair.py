@@ -27,6 +27,7 @@ from hashview.utils.dedupe import (
     delete_orphaned_alerts,
     duplicate_summary,
     find_duplicate_groups,
+    group_hashfiles,
     group_rows,
     merge_group,
     orphan_summary,
@@ -499,3 +500,52 @@ def test_orphaned_links_are_reported_not_deleted(tmp_path):
         assert reported[0]["hash_id"] == 424242
         assert reported[0]["username"] == "ghost"
         assert reported[0]["hashfile_id"] == 900
+
+
+def test_group_hashfiles_reports_every_file_an_account_appears_in(tmp_path):
+    """group_hashfiles is the operator-facing context for a duplicate group.
+
+    Exercised here because the expanding bindparam replaced a hand-built
+    ':h0, :h1' placeholder list: if SQLAlchemy is not expanding the parameter the
+    query returns nothing rather than erroring, so a silent empty result is
+    exactly the failure mode this has to rule out. Two hashes across three links
+    prove the rows are grouped by hash_id rather than flattened.
+    """
+    app = _app_below_constraint(tmp_path)
+    with app.app_context():
+        _hash(1, "a" * 32, 1000)
+        _hash(2, "a" * 32, 1000)
+        _link(1, 1, 100, "alice")
+        _link(2, 1, 200, "alice")
+        _link(3, 2, 300, "bob")
+        db.session.commit()
+        conn = db.session.connection()
+
+        out = group_hashfiles(conn, [1, 2])
+
+        assert set(out) == {1, 2}
+        assert [(f, u) for f, _name, u in out[1]] == [(100, "alice"), (200, "alice")]
+        assert [(f, u) for f, _name, u in out[2]] == [(300, "bob")]
+
+
+def test_group_hashfiles_short_circuits_on_an_empty_id_list(tmp_path):
+    """The early return is load-bearing: an expanding bindparam rejects []."""
+    app = _app_below_constraint(tmp_path)
+    with app.app_context():
+        conn = db.session.connection()
+        assert group_hashfiles(conn, []) == {}
+
+
+def test_group_hashfiles_omits_a_hash_with_no_links(tmp_path):
+    """A hash nobody references contributes no key, rather than an empty list."""
+    app = _app_below_constraint(tmp_path)
+    with app.app_context():
+        _hash(1, "a" * 32, 1000)
+        _hash(2, "a" * 32, 1000)
+        _link(1, 1, 100, "alice")
+        db.session.commit()
+        conn = db.session.connection()
+
+        out = group_hashfiles(conn, [1, 2])
+
+        assert set(out) == {1}

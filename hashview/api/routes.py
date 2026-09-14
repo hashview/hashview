@@ -47,6 +47,7 @@ from hashview.utils.utils import (
     hexplain_to_text,
     is_chunk_row,
     issue_slice,
+    job_task_file_key,
     ledger_is_mintable,
     notify_admins,
     process_recovered_hash_notifications,
@@ -726,8 +727,14 @@ def v1_api_get_queue_assignment(job_task_id):
 
     job_task_data = alchemy_to_native(job_task)
     if job_task is not None:
-        # State the temp-file key outright rather than making the agent re-derive it.
-        job_task_data['file_key'] = job_task.id
+        # State the temp-file key outright rather than making the agent re-derive
+        # it -- but READ IT OUT OF THE COMMAND we are sending in the same payload,
+        # never recompute it from the row id. Recomputing made this field a second,
+        # independent opinion about the key, and when it disagreed with the command
+        # the agent believed the field: it downloaded the hashfile to a name hashcat
+        # was never told to open. Deriving it from the command makes the two halves
+        # of this payload incapable of contradicting each other.
+        job_task_data['file_key'] = job_task_file_key(job_task)
 
     message = {
         'status': 200,

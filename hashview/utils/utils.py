@@ -1926,6 +1926,58 @@ def build_hashcat_command(job_id, task_id, chunk=None, job_task_id=None):
 
     return argv
 
+# hashcat is handed --outfile control/outfiles/hc_cracked_<job>_<key>.txt, so the
+# stored command is a direct statement of the temp-file key. Kept as a fallback
+# for a command that is not a JSON argv list (an older row, or one hand-stamped
+# by a test).
+_CRACK_FILE_RE = re.compile(r'hc_cracked_\d+_([^/\\"\']+?)\.txt')
+_CRACK_BASENAME_RE = re.compile(r'hc_cracked_\d+_(.+)\.txt\Z')
+
+
+def file_key_from_command(command):
+    """Read the temp-file key back out of a stored JobTasks.command, or None.
+
+    Prefers indexing the argv list -- find '--outfile', take the token after it --
+    over scanning the whole command, because free-form task fields (the mask, the
+    j/k rules) are literal argv elements and a mask of 'hc_cracked_9_999.txt' would
+    otherwise be picked up by a plain search. Those fields all land AFTER --outfile
+    in build_hashcat_command today, so a search happens to be right, but it is
+    right by argv ordering rather than by construction. Indexing is neither
+    position- nor ordering-dependent.
+    """
+    if not command:
+        return None
+    try:
+        argv = json.loads(command)
+    except (TypeError, ValueError):
+        argv = None
+    if isinstance(argv, list):
+        for i, token in enumerate(argv):
+            if token == '--outfile' and i + 1 < len(argv):
+                match = _CRACK_BASENAME_RE.match(str(argv[i + 1]).rsplit('/', 1)[-1])
+                if match:
+                    return match.group(1)
+        return None
+    match = _CRACK_FILE_RE.search(command if isinstance(command, str) else str(command))
+    return match.group(1) if match else None
+
+
+def job_task_file_key(job_task):
+    """The key naming this row's target hashfile, crack outfile and potfile.
+
+    Read back out of the row's OWN stored command rather than recomputed from its
+    id. The command is what hashcat is actually handed, so it is the only
+    statement of the key that cannot drift; anything derived independently is a
+    second opinion, and when the two disagreed nothing raised. The agent simply
+    saved the hashfile where hashcat never looked (FileNotFoundError) and read
+    its cracks from a file hashcat never wrote -- silent, and permanent.
+
+    Falls back to the row id, which is what _set_job_task_command bakes in, for a
+    row whose command was never stamped or predates the --outfile convention.
+    """
+    return file_key_from_command(job_task.command) or job_task.id
+
+
 # A JobTasks row whose temp files are keyed on its own id but which is NOT a
 # chunk (a whole task) stores this in chunk_total. It exists purely so the
 # agent's `job_task.get('chunk_total')` test stays truthy for every row we

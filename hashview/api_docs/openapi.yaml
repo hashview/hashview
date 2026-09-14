@@ -1882,14 +1882,22 @@ components:
           description: Always null in API responses (encoder limitation).
         agent_id: {type: integer, nullable: true}
         file_key:
-          type: integer
+          oneOf:
+            - type: integer
+            - type: string
           description: >-
             The key naming this run's temp files —
             `control/hashes/hashfile_<job_id>_<file_key>.txt`,
             `control/outfiles/hc_cracked_<job_id>_<file_key>.txt` and
             `control/outfiles/hc_potfile_<job_id>_<file_key>.pot`.
-            AUTHORITATIVE: always equal to `id`. Agents older than 0.8.4 do not
-            see this field and derive the same value from `chunk_total`/`id`.
+            NOT authoritative: it is read back out of the `--outfile` path in
+            `command`, which is the only statement of the key hashcat itself acts
+            on. It restates that key so an agent need not parse the command; when
+            the two could ever differ, `command` wins. Equal to `id` for every row
+            this server queues (that is the key baked into the command), but a row
+            stamped by an older server can carry another key, which is why this is
+            derived rather than asserted. Agents older than 0.8.4 do not see this
+            field and derive the same value from `chunk_total`/`id`.
 
     Task:
       type: object

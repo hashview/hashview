@@ -519,7 +519,41 @@ def download_hashfile(job_id, jobtask_id, hashfile_id):
 
 # The server writes --outfile control/outfiles/hc_cracked_<job>_<key>.txt into
 # the stored command, so the command itself states the temp-file key.
+# _CRACK_FILE_RE is the fallback for a command that is not a JSON argv list.
 _CRACK_FILE_RE = re.compile(r'hc_cracked_\d+_([^/\\"\']+?)\.txt')
+_CRACK_BASENAME_RE = re.compile(r'hc_cracked_\d+_(.+)\.txt\Z')
+
+
+def _file_key_from_command(command):
+    """Read the temp-file key back out of the server's stored command, or None.
+
+    Indexes the argv list -- find '--outfile', take the token after it -- rather
+    than scanning the whole command, because free-form task fields (the mask, the
+    j/k rules) are literal argv elements: a mask of 'hc_cracked_9_999.txt' would
+    be picked up by a plain search. Those fields all land after --outfile in the
+    server's builder today, so a search happens to be right, but it is right by
+    argv ordering rather than by construction.
+
+    The server parses the same command with the same rule, so the two sides read
+    one shared artifact instead of each re-deriving a key. If the parsers ever do
+    disagree, one of them returns None and falls back -- the agent onto the
+    server's own answer on the wire -- rather than silently diverging.
+    """
+    if not command:
+        return None
+    try:
+        argv = json.loads(command)
+    except (TypeError, ValueError):
+        argv = None
+    if isinstance(argv, list):
+        for i, token in enumerate(argv):
+            if token == '--outfile' and i + 1 < len(argv):
+                match = _CRACK_BASENAME_RE.match(str(argv[i + 1]).rsplit('/', 1)[-1])
+                if match:
+                    return match.group(1)
+        return None
+    match = _CRACK_FILE_RE.search(command if isinstance(command, str) else str(command))
+    return match.group(1) if match else None
 
 
 def job_task_file_key(job_task):
@@ -527,28 +561,31 @@ def job_task_file_key(job_task):
 
     Three tiers, most authoritative first:
 
-      1. 'file_key' if the server sent it (0.8.4+).
-      2. Parsed out of the server's stored command. hashcat is given --outfile
-         and --potfile-path explicitly, so the command is a direct statement of
-         the key rather than something we re-derive and hope matches.
-      3. The pre-0.8.4 rule, for an older server: chunks keyed on the JobTask id,
-         whole tasks on the task id.
+      1. The key stated by the command itself. hashcat is given --outfile and
+         --potfile-path explicitly, so the command is not a hint about the key --
+         it IS the key, because it is the thing hashcat acts on. Whatever we name
+         our files, hashcat reads and writes the paths in here.
+      2. 'file_key' from the wire (0.8.4+ servers), for a command this agent
+         cannot parse. The server derives that field from the very same command,
+         so it agrees by construction; it is a second chance at the same answer,
+         not a competing one.
+      3. The pre-0.8.4 rule, for an older server that sends neither: chunks keyed
+         on the JobTask id, whole tasks on the task id.
 
-    Tiers 1 and 2 exist because this used to be tier 3 alone, evaluated
-    independently here and on the server. When the two disagreed nothing raised
-    -- hashcat simply wrote its cracks somewhere we never looked, and two runs
-    quietly shared a potfile. Reading the key out of the command makes agreement
-    structural in both directions, including a newer agent against an older
-    server (versionCheck only rejects agents OLDER than the server).
+    Tier 1 used to be tier 2, below the wire field -- and that inversion is what
+    broke CI: a command built without an explicit job_task_id is keyed on the
+    task id, the wire field said the row id, and the agent believed the field. It
+    wrote the hashfile to a name hashcat was never told to open. The hashfile case
+    is loud (FileNotFoundError); the outfile case is silent, and looks exactly
+    like a job that ran and cracked nothing. Believing the command cannot produce
+    either, because there is nothing left for it to disagree with.
     """
+    key = _file_key_from_command(job_task.get('command'))
+    if key:
+        return key
     key = job_task.get('file_key')
     if key:
         return key
-    command = job_task.get('command')
-    if command:
-        match = _CRACK_FILE_RE.search(command if isinstance(command, str) else str(command))
-        if match:
-            return match.group(1)
     return job_task['id'] if job_task.get('chunk_total') else job_task['task_id']
 
 

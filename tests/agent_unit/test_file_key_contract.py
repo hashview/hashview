@@ -7,11 +7,20 @@ server's conditional from memory -- and a disagreement was silent, because both
 sides just used their own path and neither checked the other's.
 
 ``job_task_file_key`` replaces that with three tiers, and these tests pin each
-one plus the precedence between them. The tier that matters most is tier 2:
-reading the key back out of the command makes agreement STRUCTURAL rather than a
-convention two repositories have to maintain in step, and it is what protects the
-newer-agent-against-older-server direction -- ``versionCheck`` only turns away
-agents OLDER than the server, so a fleet upgraded ahead of the server is allowed.
+one plus the precedence between them. Tier 1 is the command: hashcat is handed
+--outfile and --potfile-path explicitly, so the command does not hint at the key,
+it IS the key -- whatever the agent names its files, hashcat reads and writes the
+paths in there. That makes agreement STRUCTURAL rather than a convention two
+repositories maintain in step, and it protects the newer-agent-against-older-server
+direction -- ``versionCheck`` only turns away agents OLDER than the server, so a
+fleet upgraded ahead of the server is allowed.
+
+The wire ``file_key`` sits BELOW the command deliberately. It led briefly, and
+that inversion broke CI: a command built without an explicit job_task_id keys on
+the task id, the wire field said the row id, and the agent believed the field --
+saving the hashfile under a name hashcat was never told to open. The server now
+derives that field from this same command, so it is a second chance at one
+answer, never a competing one.
 """
 import importlib.util
 import json
@@ -66,20 +75,28 @@ def _command(job_id, key):
     ])
 
 
-def test_tier1_explicit_file_key_wins():
-    """A server that states the key outright is believed over everything else."""
+def test_the_command_outranks_a_disagreeing_file_key():
+    """THE regression: when the two disagree, the command wins.
+
+    This is the exact shape that broke the e2e-crack CI job. The command was built
+    without an explicit job_task_id, so it keyed on the task id (42 here stands in
+    for whichever key the command actually carries), while the wire field asserted
+    the row id. Believing the field made the agent download the hashfile to a path
+    hashcat was never told to open -- FileNotFoundError for the target, and for the
+    outfile, nothing at all: hashcat wrote its cracks where we never looked.
+    """
     job_task = {'id': 42, 'task_id': 9, 'chunk_total': 3,
                 'command': _command(7, 42), 'file_key': 99}
-    assert agent_main.job_task_file_key(job_task) == 99
+    assert str(agent_main.job_task_file_key(job_task)) == '42'
 
 
-def test_tier2_reads_the_key_out_of_the_command():
-    """With no file_key, the command itself is authoritative."""
+def test_tier1_reads_the_key_out_of_the_command():
+    """With no file_key at all, the command is still the answer."""
     job_task = {'id': 42, 'task_id': 9, 'chunk_total': -1, 'command': _command(7, 42)}
     assert str(agent_main.job_task_file_key(job_task)) == '42'
 
 
-def test_tier2_beats_a_disagreeing_chunk_total():
+def test_tier1_beats_a_disagreeing_chunk_total():
     """The command wins even when the legacy flag would say otherwise.
 
     This is the case that used to corrupt: chunk_total says "whole task, key on
@@ -91,8 +108,36 @@ def test_tier2_beats_a_disagreeing_chunk_total():
     assert str(agent_main.job_task_file_key(job_task)) == '42'
 
 
+def test_a_mask_literal_cannot_hijack_the_key():
+    """A task field that looks like a crack filename must not be mistaken for one.
+
+    The mask, and the j/k rules, are literal argv elements carrying operator text.
+    Scanning the whole command for the first hc_cracked_ match would read an
+    attacker- or accident-supplied mask as the key; indexing --outfile cannot.
+    Today every free-form field lands after --outfile so a scan is also correct,
+    but by argv ordering rather than by construction -- pin the stronger rule.
+    """
+    argv = json.loads(_command(7, 42))
+    argv.insert(1, 'hc_cracked_9_999.txt')      # ahead of --outfile
+    argv.append('?l?l?lhc_cracked_8_888.txt')   # and behind it
+    assert str(agent_main.job_task_file_key(
+        {'id': 42, 'task_id': 9, 'chunk_total': -1, 'command': json.dumps(argv)})) == '42'
+
+
+def test_tier2_uses_the_wire_key_when_the_command_cannot_be_parsed():
+    """No --outfile in the command: fall through to the server's stated key.
+
+    The server reads its file_key out of this same command, so when it HAS one and
+    we cannot parse one, its answer is strictly better than re-deriving ours.
+    """
+    job_task = {'id': 42, 'task_id': 9, 'chunk_total': None,
+                'command': json.dumps(['@HASHCATBINPATH@', '--version']),
+                'file_key': 99}
+    assert agent_main.job_task_file_key(job_task) == 99
+
+
 def test_tier3_falls_back_to_the_legacy_rule_for_an_older_server():
-    """No file_key and no parseable command: behave exactly as 0.8.3 did."""
+    """Neither a parseable command nor a file_key: behave exactly as 0.8.3 did."""
     whole = {'id': 42, 'task_id': 9, 'chunk_total': None, 'command': None}
     chunk = {'id': 42, 'task_id': 9, 'chunk_total': 5, 'command': None}
     assert agent_main.job_task_file_key(whole) == 9
@@ -100,10 +145,17 @@ def test_tier3_falls_back_to_the_legacy_rule_for_an_older_server():
 
 
 def test_tier3_survives_a_command_it_cannot_parse():
-    """A command with no crack file must not raise -- fall through to tier 3."""
+    """A command with no crack file and no file_key must not raise."""
     job_task = {'id': 42, 'task_id': 9, 'chunk_total': None,
                 'command': json.dumps(['@HASHCATBINPATH@', '--version'])}
     assert agent_main.job_task_file_key(job_task) == 9
+
+
+def test_a_non_json_command_still_yields_its_key():
+    """A row whose command is not a JSON argv list falls back to a plain scan."""
+    job_task = {'id': 42, 'task_id': 9, 'chunk_total': None,
+                'command': 'hashcat --outfile control/outfiles/hc_cracked_7_42.txt'}
+    assert str(agent_main.job_task_file_key(job_task)) == '42'
 
 
 def test_key_matches_every_path_in_the_command():

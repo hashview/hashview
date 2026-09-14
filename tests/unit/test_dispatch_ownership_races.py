@@ -219,6 +219,33 @@ def test_get_jobtask_states_the_file_key(client, app):
     assert body["job_task"]["file_key"] == rows[0].id
 
 
+def test_file_key_is_read_out_of_the_command_not_the_row_id(client, app):
+    """The wire field must restate the command, never second-guess it.
+
+    Deriving it from the row id made it an independent opinion, and the agent
+    believed the opinion over the command: it saved the target hashfile under a
+    name hashcat was never told to open. Any row whose command carries some other
+    key -- a row stamped by an older server, or built without an explicit
+    job_task_id, as the e2e-crack seeder did -- must be reported with THAT key, so
+    the two halves of this one payload cannot contradict each other.
+    """
+    _job, rows = _seed(rows=1, status="Running")
+    (a,) = _agents("agent-a")
+    rows[0].agent_id = a.id
+    rows[0].command = json.dumps([
+        "@HASHCATBINPATH@", "-m", "1000",
+        "--potfile-path", "control/outfiles/hc_potfile_1_777.pot",
+        "--outfile", "control/outfiles/hc_cracked_1_777.txt",
+        "control/hashes/hashfile_1_777.txt", "control/wordlists/a.gz",
+    ])
+    db.session.commit()
+    assert rows[0].id != 777                     # the point of the test
+
+    _cookies(client, a.uuid)
+    body = _body(client.get(f"/v1/jobTasks/{rows[0].id}"))
+    assert str(body["job_task"]["file_key"]) == "777"
+
+
 # --- POST /v1/jobtask/status ------------------------------------------------
 
 def _post_status(client, job_task_id, status):

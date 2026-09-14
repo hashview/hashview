@@ -198,7 +198,10 @@ jobs:
           version="${VERSION}"
           url="https://github.com/hashcat/hashcat/releases/download/v${version}/hashcat-${version}.7z"
           mkdir -p "${RUNNER_TEMP}/hc"
-          curl -fsSL --retry 3 -o "${RUNNER_TEMP}/hc/hashcat.7z" "$url"
+          # Same retry budget as tests/hashcat_matrix/fetch.sh -- this job
+          # fetches an unpinned tag, so it cannot share that script.
+          curl -fsSL --retry 6 --retry-max-time 300 --retry-all-errors \
+               --connect-timeout 20 -o "${RUNNER_TEMP}/hc/hashcat.7z" "$url"
           sha="$(sha256sum "${RUNNER_TEMP}/hc/hashcat.7z" | cut -d' ' -f1)"
           echo "sha256=${sha}" >> "$GITHUB_OUTPUT"
           7z x -y -o"${RUNNER_TEMP}/hc" "${RUNNER_TEMP}/hc/hashcat.7z" >/dev/null

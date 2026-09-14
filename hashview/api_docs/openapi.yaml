@@ -1842,6 +1842,16 @@ components:
             its absence is not a fault — never read this key as "a file exists
             at `path`". Always present; a server that omits it predates the flag
             (issue #383).
+        orphaned:
+          type: boolean
+          description: >-
+            True when the row is `missing` AND no task references it via either
+            `wl_id` or `wl_id_2` — a combinator task's second wordlist is a real
+            reference. Such a row is deleted by the hourly catalog sweep once the
+            admins have been told; see Settings → General → "Clean up stranded
+            catalog entries". Always false for type `dynamic`, which is never
+            `missing`. Always present; a server that omits the key predates the
+            flag (issue #494).
 
     Job:
       type: object

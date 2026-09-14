@@ -101,7 +101,7 @@ def rules_list():
     # The subset the scheduled sweep will delete on its own (#494), plus whether
     # it is actually armed -- the page must not promise a removal that is
     # switched off, and must not let a row vanish overnight unannounced.
-    orphan_rules = orphaned_rule_ids()
+    orphan_rules = orphaned_rule_ids(missing=missing_rules)
     prune_armed = catalog_prune_armed()
     rule_bytes = {}
     for r in rules:

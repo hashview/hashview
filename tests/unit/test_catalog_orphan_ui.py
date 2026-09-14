@@ -41,7 +41,7 @@ def _gone_wordlist(owner_id, tmp_path, name="orphan-wordlist"):
 
 
 def _task(**kwargs):
-    task = Tasks(name="t", hc_attackmode="dictionary", hc_mask="", owner_id=1, **kwargs)
+    task = Tasks(name="t", hc_attackmode=0, hc_mask="", owner_id=1, **kwargs)
     db.session.add(task)
     db.session.commit()
     return task
@@ -99,7 +99,8 @@ def test_the_page_says_it_will_be_removed_when_the_prune_is_armed(app, client, t
     _gone_rule(admin.id, tmp_path)
 
     html = client.get("/rules").get_data(as_text=True)
-    assert "removed automatically" in html
+    assert "removed automatically" in html                    # the row badge's tooltip
+    assert "will remove it automatically" in html             # the info modal
 
 
 def test_the_page_does_not_promise_removal_when_disarmed(app, client, tmp_path):
@@ -109,5 +110,34 @@ def test_the_page_does_not_promise_removal_when_disarmed(app, client, tmp_path):
     _gone_rule(admin.id, tmp_path)
 
     html = client.get("/rules").get_data(as_text=True)
-    assert "UNUSED" in html                     # still worth pointing at
-    assert "removed automatically" not in html  # nothing is going to remove it
+    assert "UNUSED" in html                          # still worth pointing at
+    assert "removed automatically" not in html       # nothing is going to remove it
+    assert "Nothing removes it automatically" in html
+
+
+def test_the_wordlists_page_wording_follows_the_switch_too(app, client, tmp_path):
+    """Asserted separately because the two pages carry their own copy of the
+    modal, and only one of them was updated the first time."""
+    _settings(prune=True)
+    admin = make_admin()
+    login(client, admin)
+    _gone_wordlist(admin.id, tmp_path)
+
+    html = client.get("/wordlists").get_data(as_text=True)
+    assert "will remove it automatically" in html
+
+    _settings(prune=False)
+    html = client.get("/wordlists").get_data(as_text=True)
+    assert "Nothing removes it automatically" in html
+    assert "removed automatically" not in html
+
+
+def test_the_modal_explains_why_the_entry_is_going(app, client, tmp_path):
+    """The badge is a label; the modal is where the reason lives."""
+    _settings()
+    admin = make_admin()
+    login(client, admin)
+    _gone_rule(admin.id, tmp_path)
+
+    html = client.get("/rules").get_data(as_text=True)
+    assert "no task uses this entry" in html

@@ -68,8 +68,19 @@ def _gone_wordlist(owner_id, tmp_path, name="orphan.gz", notified=True,
     return wl
 
 
+def _trustworthy_disk(owner_id):
+    """One healthy row of each kind.
+
+    The prune refuses to touch a kind with nothing on disk at all (that shape is
+    a lost mount, not a lost file), so every test that expects a deletion has to
+    put the catalog in the state where deleting is the right answer.
+    """
+    make_rule_with_file(owner_id, name="anchor-rule")
+    make_wordlist_with_file(owner_id, name="anchor.gz")
+
+
 def _task(**kwargs):
-    task = Tasks(name="t", hc_attackmode="dictionary", hc_mask="", owner_id=1, **kwargs)
+    task = Tasks(name="t", hc_attackmode=0, hc_mask="", owner_id=1, **kwargs)
     db.session.add(task)
     db.session.commit()
     return task
@@ -81,6 +92,7 @@ def _task(**kwargs):
 def test_previously_reported_unreferenced_rows_are_deleted(app, monkeypatch, tmp_path):
     _settings()
     admin = make_admin()
+    _trustworthy_disk(admin.id)
     rule = _gone_rule(admin.id, tmp_path)
     wl = _gone_wordlist(admin.id, tmp_path)
     calls = _capture(monkeypatch)
@@ -102,6 +114,7 @@ def test_prune_is_its_own_notification(app, monkeypatch, tmp_path):
     badly. Mirrors how the restored alert is already split out."""
     _settings()
     admin = make_admin()
+    _trustworthy_disk(admin.id)
     _gone_rule(admin.id, tmp_path, name="fresh.rule", notified=False)   # newly noticed
     _gone_rule(admin.id, tmp_path, name="old.rule")                     # already told
     calls = _capture(monkeypatch)
@@ -123,6 +136,7 @@ def test_never_prunes_on_the_sweep_that_first_notices(app, monkeypatch, tmp_path
     survives this sweep and is only eligible on the next one."""
     _settings()
     admin = make_admin()
+    _trustworthy_disk(admin.id)
     rule = _gone_rule(admin.id, tmp_path, notified=False)
     _capture(monkeypatch)
 
@@ -139,16 +153,21 @@ def test_never_prunes_on_the_sweep_that_first_notices(app, monkeypatch, tmp_path
 def test_a_referenced_row_is_never_pruned(app, monkeypatch, tmp_path):
     _settings()
     admin = make_admin()
+    _trustworthy_disk(admin.id)
     rule = _gone_rule(admin.id, tmp_path)
     wl = _gone_wordlist(admin.id, tmp_path)
     _task(rule_id=rule.id)
     _task(wl_id=wl.id)
-    _capture(monkeypatch)
+    calls = _capture(monkeypatch)
 
     _catalog_health_check_inner(db, _LOG)
 
     assert Rules.query.get(rule.id) is not None
     assert Wordlists.query.get(wl.id) is not None
+    # And it stays quiet about them: these rows were latched in an earlier sweep,
+    # so re-alerting every hour on a condition only a human can resolve would be
+    # the pager storm the one-shot latch exists to prevent.
+    assert calls == []
 
 
 @pytest.mark.security
@@ -157,6 +176,7 @@ def test_wl_id_2_counts_as_a_reference(app, monkeypatch, tmp_path):
     the delete guard had to be fixed for (663b6eb)."""
     _settings()
     admin = make_admin()
+    _trustworthy_disk(admin.id)
     wl = _gone_wordlist(admin.id, tmp_path)
     _task(wl_id=999, wl_id_2=wl.id)
     _capture(monkeypatch)
@@ -188,6 +208,7 @@ def test_dynamic_wordlists_are_never_pruned(app, monkeypatch, tmp_path):
     """Its file is a regenerable cache, so 'missing' says nothing about health."""
     _settings()
     admin = make_admin()
+    _trustworthy_disk(admin.id)
     wl = _gone_wordlist(admin.id, tmp_path, wl_type="dynamic")
     _capture(monkeypatch)
 
@@ -199,6 +220,7 @@ def test_dynamic_wordlists_are_never_pruned(app, monkeypatch, tmp_path):
 def test_the_switch_disarms_it(app, monkeypatch, tmp_path):
     _settings(prune=False)
     admin = make_admin()
+    _trustworthy_disk(admin.id)
     rule = _gone_rule(admin.id, tmp_path)
     calls = _capture(monkeypatch)
 
@@ -216,11 +238,79 @@ def test_no_settings_row_does_not_crash_the_sweep(app, monkeypatch, tmp_path):
         db.session.delete(row)
     db.session.commit()
     admin = make_admin()
+    _trustworthy_disk(admin.id)
     rule = _gone_rule(admin.id, tmp_path)
     _capture(monkeypatch)
 
     _catalog_health_check_inner(db, _LOG)
     assert Rules.query.get(rule.id) is not None      # no row == not armed
+
+
+@pytest.mark.security
+def test_a_wholesale_empty_control_dir_is_not_a_catalog_of_orphans(app, monkeypatch, tmp_path):
+    """The case the isdir breaker does NOT catch: the directory is there and
+    empty. A fresh named volume, a bind-mount typo, a restore that brought the
+    database back but not the files — all leave every row stranded at once.
+
+    Before the prune that was fully recoverable: alert, latch, un-latch on
+    remount. With a prune it would be one hour from "wrong volume attached" to
+    "the catalog is gone", and remounting the right volume brings back files
+    whose rows no longer exist. So: if not a single row of a kind resolves on
+    disk, distrust the disk rather than the catalog.
+    """
+    _settings()
+    admin = make_admin()
+    doomed = [_gone_rule(admin.id, tmp_path, name=f"r{i}.rule") for i in range(3)]
+    calls = _capture(monkeypatch)
+
+    _catalog_health_check_inner(db, _LOG)
+
+    for rule in doomed:
+        assert Rules.query.get(rule.id) is not None
+    assert calls == []
+
+
+@pytest.mark.security
+def test_one_healthy_row_is_enough_to_trust_the_disk(app, monkeypatch, tmp_path):
+    """The flip side: a genuinely deleted file sits beside files that are fine,
+    which is what a per-file deletion looks like."""
+    _settings()
+    admin = make_admin()
+    make_rule_with_file(admin.id, name="healthy")
+    rule = _gone_rule(admin.id, tmp_path)
+    _capture(monkeypatch)
+
+    _catalog_health_check_inner(db, _LOG)
+    assert Rules.query.get(rule.id) is None
+
+
+@pytest.mark.security
+def test_the_two_kinds_are_judged_separately(app, monkeypatch, tmp_path):
+    """control/rules and control/wordlists are separate mounts on plenty of
+    installs, so an empty one must not veto the prune on the healthy other."""
+    _settings()
+    admin = make_admin()
+    make_wordlist_with_file(admin.id, name="healthy.gz")
+    wl = _gone_wordlist(admin.id, tmp_path)
+    rule = _gone_rule(admin.id, tmp_path)          # no rule resolves at all
+    _capture(monkeypatch)
+
+    _catalog_health_check_inner(db, _LOG)
+    assert Wordlists.query.get(wl.id) is None      # wordlists are trustworthy
+    assert Rules.query.get(rule.id) is not None    # rules are not
+
+
+@pytest.mark.security
+def test_a_dynamic_wordlist_does_not_vouch_for_the_disk(app, monkeypatch, tmp_path):
+    """Its file is never read, so its 'presence' says nothing about the mount."""
+    _settings()
+    admin = make_admin()
+    _gone_wordlist(admin.id, tmp_path, name="dyn.gz", wl_type="dynamic")
+    wl = _gone_wordlist(admin.id, tmp_path)
+    _capture(monkeypatch)
+
+    _catalog_health_check_inner(db, _LOG)
+    assert Wordlists.query.get(wl.id) is not None
 
 
 @pytest.mark.security
@@ -249,6 +339,7 @@ def test_audit_event_per_pruned_row(app, monkeypatch, tmp_path):
     so it carries the task count that justified the deletion."""
     _settings()
     admin = make_admin()
+    _trustworthy_disk(admin.id)
     rule = _gone_rule(admin.id, tmp_path)
     _capture(monkeypatch)
     events = []
@@ -271,6 +362,7 @@ def test_a_failing_transport_does_not_leave_the_rows_half_deleted(app, monkeypat
     log, while a notified-but-not-deleted one repeats forever."""
     _settings()
     admin = make_admin()
+    _trustworthy_disk(admin.id)
     rule = _gone_rule(admin.id, tmp_path)
 
     def boom(subj, msg):

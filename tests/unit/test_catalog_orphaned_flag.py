@@ -36,7 +36,7 @@ def _gone_wordlist(owner_id, tmp_path, name="gone.gz", wl_type="static"):
 
 
 def _task(**kwargs):
-    task = Tasks(name="t", hc_attackmode="dictionary", hc_mask="", owner_id=1, **kwargs)
+    task = Tasks(name="t", hc_attackmode=0, hc_mask="", owner_id=1, **kwargs)
     _db.session.add(task)
     _db.session.commit()
     return task

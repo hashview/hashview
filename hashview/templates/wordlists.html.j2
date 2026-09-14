@@ -90,7 +90,7 @@
                         {{ wordlist.name }}
                         {%- if gone %} <span class="badge red" title="The database row survives but its file is gone from control/wordlists.">FILE MISSING</span>{% endif %}
                         {#- See rules.html.j2: the hourly sweep removes stranded, unreferenced rows (#494). #}
-                        {%- if orphan_wl_ids is defined and wordlist.id in orphan_wl_ids %} <span class="badge dim" title="{{ 'No task uses this entry and its file is gone, so it will be removed automatically by the next hourly catalog sweep. Restore the file to keep it.' if prune_armed else 'No task uses this entry and its file is gone. Safe to delete.' }}">UNUSED</span>{% endif %}
+                        {%- if wordlist.id in orphan_wl_ids %} <span class="badge dim" title="{{ 'No task uses this entry and its file is gone, so it will be removed automatically by a later hourly catalog sweep. Restore the file to keep it.' if prune_armed else 'No task uses this entry and its file is gone. Safe to delete.' }}">UNUSED</span>{% endif %}
                     </span>
                 </td>
                 {# a missing file makes the stored line count a claim about something that isn't there #}
@@ -492,7 +492,7 @@
         {% elif gone %}
         <div class="flash flash-warning" style="margin-top:22px;">
             This file is gone from disk and no task uses this entry.
-            {% if prune_armed %}The hourly catalog sweep will remove it automatically — restore the file if you want to keep it.{% else %}Nothing removes it automatically; delete it, or restore the file.{% endif %}
+            {% if prune_armed %}A later hourly catalog sweep will remove it automatically — restore the file if you want to keep it.{% else %}Nothing removes it automatically; delete it, or restore the file.{% endif %}
         </div>
         {% endif %}
 

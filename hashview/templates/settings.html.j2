@@ -459,6 +459,36 @@
                             <button type="submit" class="btn">{{ icon('trash', size=15) }} Clear logs</button>
                         </form>
                     </div>
+
+                    <div style="height:1px; background:var(--border-soft); margin:18px 0;"></div>
+
+                    {# Prune stranded wordlists #}
+                    <div style="display:flex; align-items:center; gap:14px;">
+                        <div style="flex:1; min-width:0;">
+                            <div style="color:var(--text); font-weight:500;">Prune stranded wordlists</div>
+                            <div class="field-hint" style="margin-top:2px;">Remove catalog entries whose file is gone and that no task references · currently {{ orphan_wordlist_count }}.</div>
+                        </div>
+                        <form method="POST" action="{{ url_for('settings.prune_catalog', kind='wordlists') }}" style="margin:0;"
+                              onsubmit="return confirm('Remove {{ orphan_wordlist_count }} stranded wordlist {{ 'entry' if orphan_wordlist_count == 1 else 'entries' }}? This cannot be undone.');">
+                            {{ prune_form.hidden_tag() }}
+                            <button type="submit" class="btn"{% if orphan_wordlist_count == 0 %} disabled{% endif %}>{{ icon('trash', size=15) }} Prune wordlists</button>
+                        </form>
+                    </div>
+
+                    <div style="height:1px; background:var(--border-soft); margin:18px 0;"></div>
+
+                    {# Prune stranded rules #}
+                    <div style="display:flex; align-items:center; gap:14px;">
+                        <div style="flex:1; min-width:0;">
+                            <div style="color:var(--text); font-weight:500;">Prune stranded rules</div>
+                            <div class="field-hint" style="margin-top:2px;">Remove catalog entries whose file is gone and that no task references · currently {{ orphan_rule_count }}.</div>
+                        </div>
+                        <form method="POST" action="{{ url_for('settings.prune_catalog', kind='rules') }}" style="margin:0;"
+                              onsubmit="return confirm('Remove {{ orphan_rule_count }} stranded rule {{ 'entry' if orphan_rule_count == 1 else 'entries' }}? This cannot be undone.');">
+                            {{ prune_form.hidden_tag() }}
+                            <button type="submit" class="btn"{% if orphan_rule_count == 0 %} disabled{% endif %}>{{ icon('trash', size=15) }} Prune rules</button>
+                        </form>
+                    </div>
                 </div>
             </div>
 

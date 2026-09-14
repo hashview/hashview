@@ -43,7 +43,13 @@ from hashview.utils.dedupe import (
     orphaned_links,
 )
 from hashview.utils.hashcat_modes import hash_type_names
-from hashview.utils.utils import prune_orphaned_catalog, send_slack_channel, try_commit
+from hashview.utils.utils import (
+    orphaned_rule_ids,
+    orphaned_wordlist_ids,
+    prune_orphaned_catalog,
+    send_slack_channel,
+    try_commit,
+)
 
 # control/tmp filename of a generated backup, e.g. '1a2b3c4d5e6f7a8b.sql.gz.enc'
 _BACKUP_TOKEN_RE = re.compile(r'^[0-9a-f]{16}\.sql\.gz\.enc$')
@@ -223,6 +229,12 @@ def settings_list():
         # one part of the page that costs a couple of grouped queries.
         hashes_rows, hashes_total, hashes_cracked = _hashes_rollup()
 
+        # Orphan counts for the manual catalog prune UI (#502). Queried only on
+        # the render path; a successful POST redirects, so this cost is paid once
+        # per page view, not per submit.
+        orphan_rule_count = len(orphaned_rule_ids())
+        orphan_wordlist_count = len(orphaned_wordlist_ids())
+
         try:
             database_version = db.session.execute('SELECT version_num FROM alembic_version LIMIT 1;').scalar()
         except Exception:
@@ -252,24 +264,27 @@ def settings_list():
 
         return render_template(
             'settings.html.j2',
-            title               = 'settings',
-            settings            = settings,
-            HashviewForm        = hashview_form,
-            backupForm          = DatabaseBackupForm(),
-            tmp_folder_size     = tmp_folder_size,
-            audit_logs_size     = audit_logs_size,
-            hashes_rows         = hashes_rows,
-            hashes_total        = hashes_total,
-            hashes_cracked      = hashes_cracked,
-            application_version = hashview.__version__,
-            database_version    = database_version,
-            default_azure_redirect = default_azure_redirect,
-            azure_secret_set    = bool(settings.azure_client_secret),
-            data_health_error   = data_health_error,
-            duplicate_groups    = duplicate_groups,
-            duplicate_rows      = duplicate_rows,
-            stale_links         = stale_links,
-            stale_alerts        = stale_alerts,
+            title                    = 'settings',
+            settings                 = settings,
+            HashviewForm             = hashview_form,
+            backupForm               = DatabaseBackupForm(),
+            prune_form               = CatalogPruneForm(),
+            orphan_rule_count        = orphan_rule_count,
+            orphan_wordlist_count    = orphan_wordlist_count,
+            tmp_folder_size          = tmp_folder_size,
+            audit_logs_size          = audit_logs_size,
+            hashes_rows              = hashes_rows,
+            hashes_total             = hashes_total,
+            hashes_cracked           = hashes_cracked,
+            application_version      = hashview.__version__,
+            database_version         = database_version,
+            default_azure_redirect   = default_azure_redirect,
+            azure_secret_set         = bool(settings.azure_client_secret),
+            data_health_error        = data_health_error,
+            duplicate_groups         = duplicate_groups,
+            duplicate_rows           = duplicate_rows,
+            stale_links              = stale_links,
+            stale_alerts             = stale_alerts,
         )
 
     abort(403)

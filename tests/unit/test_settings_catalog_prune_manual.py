@@ -17,6 +17,8 @@ Uses the in-memory SQLite app from tests/unit/conftest.py. Flash messages are
 read from the session. CSRF is validated via CatalogPruneForm.validate_on_submit().
 """
 
+import re
+
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -428,3 +430,107 @@ def test_unknown_kind_returns_404(app, client):
 
     resp = client.post("/settings/prune_catalog/masks")
     assert resp.status_code == 404
+
+
+# --------- 11. UI: settings page renders both buttons with correct counts ----
+
+def test_settings_page_renders_prune_buttons_with_counts(app, client, tmp_path):
+    """The settings page renders both prune buttons with the correct orphan counts tied to their rows."""
+    admin = make_admin()
+    login(client, admin)
+    _settings()  # Use helper to create Settings row.
+
+    # Populate: 2 stranded rules, 3 stranded wordlists, 1 healthy rule, 1 healthy wordlist.
+    _trustworthy_disk(admin.id)
+    _gone_rule(admin.id, tmp_path, name="orphan1.rule")
+    _gone_rule(admin.id, tmp_path, name="orphan2.rule")
+    _gone_wordlist(admin.id, tmp_path, name="orphan1.gz")
+    _gone_wordlist(admin.id, tmp_path, name="orphan2.gz")
+    _gone_wordlist(admin.id, tmp_path, name="orphan3.gz")
+
+    html = client.get("/settings").get_data(as_text=True)
+
+    # Extract wordlist section: from "Prune stranded wordlists" to next </form>.
+    wl_match = re.search(r'Prune stranded wordlists.*?</form>', html, re.DOTALL)
+    assert wl_match, "Wordlist prune section not found"
+    wl_section = wl_match.group(0)
+    # Verify count is in wordlist section and button is enabled.
+    assert "currently 3" in wl_section
+    assert "<button" in wl_section and "disabled" not in wl_section  # enabled
+
+    # Extract rules section: from "Prune stranded rules" to next </form>.
+    rules_match = re.search(r'Prune stranded rules.*?</form>', html, re.DOTALL)
+    assert rules_match, "Rules prune section not found"
+    rules_section = rules_match.group(0)
+    # Verify count is in rules section and button is enabled.
+    assert "currently 2" in rules_section
+    assert "<button" in rules_section and "disabled" not in rules_section  # enabled
+
+
+def test_settings_page_disables_prune_button_when_count_is_zero(app, client):
+    """The prune button is disabled when there are no stranded entries, and enabled when nonzero."""
+    admin = make_admin()
+    login(client, admin)
+    _settings()  # Use helper.
+
+    html = client.get("/settings").get_data(as_text=True)
+
+    # Extract wordlist section and assert it's disabled (count=0).
+    wl_match = re.search(r'Prune stranded wordlists.*?</form>', html, re.DOTALL)
+    assert wl_match
+    wl_section = wl_match.group(0)
+    assert "currently 0" in wl_section
+    assert re.search(r'<button[^>]*disabled', wl_section), "Wordlist button should be disabled"
+
+    # Extract rules section and assert it's disabled (count=0).
+    rules_match = re.search(r'Prune stranded rules.*?</form>', html, re.DOTALL)
+    assert rules_match
+    rules_section = rules_match.group(0)
+    assert "currently 0" in rules_section
+    assert re.search(r'<button[^>]*disabled', rules_section), "Rules button should be disabled"
+
+
+def test_settings_page_prune_form_carries_csrf_token(app, client):
+    """The rendered prune forms include CSRF tokens, validated end-to-end."""
+    admin = make_admin()
+    login(client, admin)
+    _settings()  # Use helper.
+
+    # Enable CSRF for this test.
+    app.config['WTF_CSRF_ENABLED'] = True
+
+    try:
+        html = client.get("/settings").get_data(as_text=True)
+
+        # Extract wordlist form and assert csrf_token is inside it.
+        wl_match = re.search(
+            r'action="/settings/prune_catalog/wordlists"[^>]*>.*?</form>',
+            html, re.DOTALL
+        )
+        assert wl_match, "Wordlist prune form not found"
+        wl_form = wl_match.group(0)
+        assert 'name="csrf_token"' in wl_form, "CSRF token not in wordlist form"
+
+        # Extract rules form and assert csrf_token is inside it.
+        rules_match = re.search(
+            r'action="/settings/prune_catalog/rules"[^>]*>.*?</form>',
+            html, re.DOTALL
+        )
+        assert rules_match, "Rules prune form not found"
+        rules_form = rules_match.group(0)
+        assert 'name="csrf_token"' in rules_form, "CSRF token not in rules form"
+
+        # Round-trip test: extract tokens, POST back, confirm 302 (valid CSRF).
+        # Extract csrf_token value from wordlist form.
+        csrf_match = re.search(r'<input[^>]*name="csrf_token"[^>]*value="([^"]*)"', wl_form)
+        assert csrf_match, "Could not extract CSRF token value"
+        csrf_token = csrf_match.group(1)
+
+        # POST with the extracted token; should redirect (302) if valid.
+        resp = client.post(
+            "/settings/prune_catalog/wordlists",
+            data={'csrf_token': csrf_token}
+        )
+        assert resp.status_code == 302, "CSRF validation failed; token rejected"
+    finally:
+        app.config['WTF_CSRF_ENABLED'] = False

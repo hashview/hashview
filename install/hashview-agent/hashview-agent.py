@@ -546,8 +546,11 @@ def _file_key_from_command(command):
     except (TypeError, ValueError):
         argv = None
     if isinstance(argv, list):
-        for i, token in enumerate(argv):
-            if token == '--outfile' and i + 1 < len(argv):
+        # 'arg', not 'token': bandit's B105 reads any name in its secret word
+        # list (token, secret, pass, pwd, ...) compared against a string literal
+        # as a hardcoded password and fails the build on it.
+        for i, arg in enumerate(argv):
+            if arg == '--outfile' and i + 1 < len(argv):
                 match = _CRACK_BASENAME_RE.match(str(argv[i + 1]).rsplit('/', 1)[-1])
                 if match:
                     return match.group(1)

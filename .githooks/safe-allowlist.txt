@@ -157,3 +157,9 @@ api_key="user-api-key-
 # Gate: pytest.mark.docker_analytics, skipped unless HASHVIEW_DOCKER_BASE_URL set.
 # Test creates prefixed rows (zz-analytics-bugtest*) for teardown. Not a real credential.
 LOGIN_PASSWORD = "bugtest-password-123"
+
+# Test-only fixture API keys for the catalog orphan-prune tests (#494):
+# a per-test random value and a literal dummy, neither a real credential.
+# (tests/unit/test_catalog_orphaned_flag.py, test_catalog_prune_setting.py)
+api_key = "api-key-"
+api_key="key-prune"

@@ -547,13 +547,22 @@ def run_hashcat(argv, output_file):
                                     stderr=subprocess.PIPE)
             _output, error = proc.communicate()
         if error:
-            LOG.error('Command stderr: %s', error.decode('utf-8', 'replace').strip())
-            if 'hashfile is empty or corrupt' not in str(error):
-                if 'Terminated' in str(error):
-                    sys.exit()
-                else:
-                    api.sendError(str(error))
-                    os.kill(os.getpid(), signal.SIGINT)
+            # communicate() hands back bytes; str() on those yields the repr, so
+            # matching and reporting it shipped admins b'No hashes loaded.\n\n'
+            # rather than the message hashcat wrote (issue #499). Decode once and
+            # use the text everywhere below.
+            stderr_text = error.decode('utf-8', 'replace').strip()
+            # `if error:` above tests the raw bytes, so a bare newline flush gets
+            # this far and strips to nothing. Reporting that sent admins an alert
+            # with an empty body and killed the agent over a blank line.
+            if stderr_text:
+                LOG.error('Command stderr: %s', stderr_text)
+                if 'hashfile is empty or corrupt' not in stderr_text:
+                    if 'Terminated' in stderr_text:
+                        sys.exit()
+                    else:
+                        api.sendError(stderr_text)
+                        os.kill(os.getpid(), signal.SIGINT)
     except OSError as e:
         LOG.error('Command failed to execute: %s', e)
         api.sendError(str(e))

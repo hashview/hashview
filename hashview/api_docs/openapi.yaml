@@ -445,7 +445,8 @@ paths:
       description: >-
         `missing` flags a row whose file is gone from the server's
         control/rules directory: it cannot be downloaded and should not be
-        offered when building new tasks.
+        offered when building new tasks. `orphaned` narrows that to the rows no
+        task references, which the scheduled catalog sweep removes on its own.
       operationId: listRules
       x-audience: both
       responses:
@@ -610,7 +611,9 @@ paths:
         `path` (gzip-compressed for static lists); `checksum` the sha256 of
         that on-disk file. `missing` flags a static row whose file is gone from
         the server's control/wordlists directory — it is always false for
-        dynamic lists, which are regenerated per request.
+        dynamic lists, which are regenerated per request. `orphaned` narrows
+        that to the rows no task references, which the scheduled catalog sweep
+        removes on its own.
       operationId: listWordlists
       x-audience: both
       responses:
@@ -1794,6 +1797,17 @@ components:
             /v1/rules/{rules_id} answers 404 — and any task referencing it
             fails at run time. Always present; a server that omits the key
             predates the flag (issue #383).
+        orphaned:
+          type: boolean
+          description: >-
+            True when the row is `missing` AND no task references it (via
+            `rule_id`). Such a row cannot be used or repaired without the
+            original file, so the hourly catalog sweep deletes it once the
+            admins have been told — see Settings → General → "Clean up stranded
+            catalog entries". A strict subset of `missing`: a referenced row is
+            never orphaned, because restoring vs deleting it decides the fate of
+            the task. Always present; a server that omits the key predates the
+            flag (issue #494).
 
     Wordlist:
       type: object

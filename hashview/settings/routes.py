@@ -23,7 +23,7 @@ from sqlalchemy import func, text
 
 import hashview
 from hashview.models import Hashes, Settings, db
-from hashview.settings.forms import DatabaseBackupForm, HashviewSettingsForm
+from hashview.settings.forms import CatalogPruneForm, DatabaseBackupForm, HashviewSettingsForm
 from hashview.utils.audit import clear_logs_on_disk, log_event, logs_dir
 from hashview.utils.backup import (
     BackupError,
@@ -43,7 +43,7 @@ from hashview.utils.dedupe import (
     orphaned_links,
 )
 from hashview.utils.hashcat_modes import hash_type_names
-from hashview.utils.utils import send_slack_channel, try_commit
+from hashview.utils.utils import prune_orphaned_catalog, send_slack_channel, try_commit
 
 # control/tmp filename of a generated backup, e.g. '1a2b3c4d5e6f7a8b.sql.gz.enc'
 _BACKUP_TOKEN_RE = re.compile(r'^[0-9a-f]{16}\.sql\.gz\.enc$')
@@ -525,6 +525,43 @@ def clear_logs():
     # Audited after the clear, so this is the first line in the freshly-emptied log.
     log_event('logs.clear', detail=f'removed_backups={removed_backups}')
     flash('Audit and error logs cleared.', 'success')
+    return redirect(url_for('settings.settings_list'))
+
+
+@settings.route('/settings/prune_catalog/<kind>', methods=['POST'])
+@login_required
+def prune_catalog(kind):
+    """Remove stranded catalog entries of a given kind on demand (#502).
+
+    ``kind`` is 'rules' or 'wordlists'; other values return 404. Admin-only.
+    The CSRF token is validated via CatalogPruneForm.validate_on_submit() -- the
+    form carries the token but no data fields, and this is the sole point where
+    CSRF protection happens (no global CSRFProtect in this app).
+
+    On success, a count flash names the removed entries. On refusal (the
+    empty-control-directory rail), a danger flash explains the situation.
+    """
+    if not current_user.admin:
+        abort(403)
+    if kind not in ('rules', 'wordlists'):
+        abort(404)
+
+    form = CatalogPruneForm()
+    if not form.validate_on_submit():
+        abort(400)
+
+    removed_count, refusal_reason = prune_orphaned_catalog(kind)
+
+    kind_label = 'rule' if kind == 'rules' else 'wordlist'
+
+    if refusal_reason is not None:
+        flash(refusal_reason, 'danger')
+    elif removed_count == 0:
+        flash(f'No stranded {kind_label} entries to remove.', 'info')
+    else:
+        entry_word = f'entr{"y" if removed_count == 1 else "ies"}'
+        flash(f'Removed {removed_count:,} stranded {kind_label} {entry_word} from the catalog.', 'success')
+
     return redirect(url_for('settings.settings_list'))
 
 

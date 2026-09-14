@@ -401,6 +401,13 @@ class JobNotifications(db.Model):
     owner_id = db.Column(db.Integer, nullable=False)
     job_id = db.Column(db.Integer, nullable=False)
     method = db.Column(db.String(6), nullable=False)    # email, push
+    # When this notification was last delivered. The row used to be DELETED on
+    # delivery, which made a job's notification setup a one-shot: a premature or
+    # mistaken completion destroyed it permanently, and a re-run of the job
+    # notified nobody. NULL means "not yet sent for the current run"; queueing a
+    # job clears it back to NULL. Delivery is gated on a conditional UPDATE of
+    # this column, so concurrent completions cannot double-send.
+    sent_at = db.Column(db.DateTime, nullable=True)
 
 class HashNotifications(db.Model):
     """Class object to represent HashNotification"""

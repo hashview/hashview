@@ -47,6 +47,7 @@ from hashview.utils.utils import (
     dynamic_wordlist_ids,
     import_hashfilehashes,
     is_chunk_row,
+    queue_late_assignments,
     save_file,
     task_uses_dynamic_wordlist,
     top_effective_task_ids,
@@ -598,6 +599,11 @@ def jobs_assign_task(job_id, task_id):
     else:
         db.session.add(JobTasks(job_id=job_id, task_id=task_id, status='Not Started'))
         db.session.commit()
+        # Assigning to a job that is already queued or running: queue the row now,
+        # or dispatch (which selects status == 'Queued') never sees it and the task
+        # silently never runs.
+        if queue_late_assignments(job_id):
+            db.session.commit()
 
     return redirect("/jobs/"+str(job_id)+"/tasks")
 
@@ -637,6 +643,11 @@ def jobs_assign_task_group(job_id, task_group_id):
     if missing:
         flash(f'Skipped {missing} task(s) in that group that no longer exist.', 'warning')
 
+    # See jobs_assign_task: a row added to an already-running job must be queued
+    # now or dispatch never sees it.
+    if queue_late_assignments(job_id):
+        db.session.commit()
+
     return redirect("/jobs/" + str(job_id) + "/tasks")
 
 @jobs.route("/jobs/<int:job_id>/assign_task/lucky", methods=['POST'])
@@ -672,6 +683,8 @@ def jobs_assign_lucky_task_group(job_id):
             assigned.add(task_id)
         db.session.commit()
 
+        if queue_late_assignments(job_id):
+            db.session.commit()
         flash('Successfully Added Top 10 Tasks', 'success')
     return redirect("/jobs/" + str(job_id) + "/tasks")
 

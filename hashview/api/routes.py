@@ -38,6 +38,7 @@ from hashview.models import (
 )
 from hashview.utils.utils import (
     _job_hash_type,
+    finalize_job_if_complete,
     get_md5_hash,
     hashtypes_in_use,
     hexplain_to_text,
@@ -129,13 +130,21 @@ def _hashfile_has_uncracked(hashfile_id):
 
 
 def _cancel_job_active_tasks(job_id):
-    """Cancel every still-active task/chunk of a job. Used when the whole hashfile
-    is recovered (nothing left to crack) or for one-and-done jobs -- running the
-    rest would just burn cycles on an already-solved hashfile. Cancelling the last
-    active task lets update_job_task_status roll the job up to Completed."""
+    """Cancel every still-active task/chunk of a job because the job SUCCEEDED.
+
+    Used when the whole hashfile is recovered (nothing left to crack) or for
+    one-and-done jobs -- running the rest would just burn cycles on an
+    already-solved hashfile.
+
+    The roll-up is suppressed per row and performed once at the end with
+    goal_met=True. Both parts matter: a cancelled row normally makes a job
+    Incomplete, and here the cancellation is the shape success takes (issue
+    #220); and rolling up once avoids re-evaluating the whole job on every row.
+    """
     for jt in JobTasks.query.filter_by(job_id=job_id).all():
         if jt.status in _ACTIVE_JOBTASK_STATUSES:
-            update_job_task_status(jt.id, 'Canceled')
+            update_job_task_status(jt.id, 'Canceled', finalize=False)
+    finalize_job_if_complete(job_id, goal_met=True)
 
 
 @api.route('/v1/agents/heartbeat', methods=['POST'])
@@ -662,8 +671,9 @@ def v1_api_post_jobtask_crackfile_upload(job_task_id):
     # Stop the job when there's nothing left to crack. One-and-done jobs stop after
     # the first recovery; ANY job stops once its hashfile is fully recovered --
     # continuing to run the remaining chunks/tasks would just burn cycles on a
-    # solved hashfile. Cancelling the still-active tasks lets update_job_task_status
-    # roll the job up to Completed. Gated on a fresh recovery so the (cheap)
+    # solved hashfile. _cancel_job_active_tasks rolls the job up to Completed
+    # itself, because these cancellations ARE the success. Gated on a fresh
+    # recovery so the (cheap)
     # "any uncracked left?" check only runs when the recovery state changed.
     if recovered_at_least_one_hash and (
             job.limit_recovered or not _hashfile_has_uncracked(job.hashfile_id)):

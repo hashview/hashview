@@ -2017,6 +2017,14 @@ def build_job_task_commands(job):
     """
     rows = JobTasks.query.filter_by(job_id=job.id).all()
 
+    # A fresh run gets a fresh set of notifications. Rows are no longer deleted on
+    # delivery, so without this a re-queued job would notify nobody -- which is
+    # what the delete-on-send behaviour did silently.
+    (db.session.query(JobNotifications)
+     .filter(JobNotifications.job_id == job.id,
+             JobNotifications.sent_at.isnot(None))
+     .update({'sent_at': None}, synchronize_session=False))
+
     # Re-queue: already chunked once -> rebuild from each row's stored slice.
     if any(is_chunk_row(row) for row in rows):
         for row in rows:
@@ -2135,8 +2143,183 @@ def rechunk_queued_tasks_for_hashtype(hash_type):
         db.session.commit()
 
 
-def update_job_task_status(jobtask_id, status):
-    """Function to update task status of a job"""
+# A JobTasks row in one of these states still owes compute. Everything else
+# (Completed, Canceled) is terminal. Kept in sync with api.routes'
+# _ACTIVE_JOBTASK_STATUSES, which gates cancellation over the same set.
+#
+# 'Not Started' is in here deliberately. jobs_assign_task can add a task to a
+# job that is ALREADY running, and such a row is invisible to the dispatch query
+# (which selects status == 'Queued'), so leaving it out of this set let a job
+# roll up to Completed with a task that never ran a single candidate.
+# finalize_job_if_complete queues those rows rather than hanging on them.
+#
+# 'Importing' is written nowhere in the server or the agent today, but an agent
+# can POST any status string to /v1/jobtask/status, so it stays honoured.
+JOBTASK_ACTIVE_STATUSES = ('Running', 'Queued', 'Not Started', 'Importing')
+
+
+def queue_late_assignments(job_id):
+    """Queue any 'Not Started' row on a job that is already queued or running.
+
+    A task can be assigned to a job that has already started. Such a row is
+    created 'Not Started', which the dispatch query (status == 'Queued') does not
+    see -- so it never ran, while also being absent from the old "is this job
+    done" check, which let the job roll up to Completed with an un-run task on it.
+
+    Each row is run WHOLE. A late assignment is a rare, explicitly-requested
+    action against a job already in flight, so the simple always-correct plan is
+    the right one: a whole run covers the task's keyspace by definition, whatever
+    the chunk planner would otherwise have decided.
+
+    Returns the number of rows queued. The caller owns the commit.
+    """
+    job = Jobs.query.get(job_id)
+    if job is None or job.status not in ('Queued', 'Running'):
+        return 0
+    rows = JobTasks.query.filter_by(job_id=job.id, status='Not Started').all()
+    for row in rows:
+        _set_job_task_command(job, row, {})
+    return len(rows)
+
+
+def _job_completion_outcome(rows, goal_met=False):
+    """Terminal status for a job whose rows are all terminal.
+
+    Completed means every row actually finished. A cancelled row is terminal but
+    it is NOT done -- the old predicate treated the two as the same thing, so a
+    job whose every chunk was cancelled by the runtime reaper reported itself
+    Completed, with an ended_at and a "your job has completed" notification.
+
+    ``goal_met`` is the exception, and it is passed by the caller rather than
+    re-derived here: the recovery short-circuit cancels a job's remaining tasks
+    precisely BECAUSE the job succeeded (a one-and-done job got its crack, or the
+    hashfile has nothing uncracked left). Those cancellations must not drag the
+    roll-up to Incomplete. Deriving it from hashfile state instead would
+    misreport a job the operator stopped on a hashfile that some OTHER job had
+    already finished off.
+    """
+    if goal_met or all(r.status == 'Completed' for r in rows):
+        return 'Completed'
+    return 'Incomplete'
+
+
+def finalize_job_if_complete(job_id, goal_met=False):
+    """Roll a job up to its terminal status once no task still owes compute.
+
+    Returns True only if THIS call performed the transition.
+
+    The transition is claimed with a conditional UPDATE rather than a read
+    followed by a write. Two agents finishing a job's last two chunks at the same
+    moment both used to observe "nothing is active" and both ran the completion
+    block: two ended_at stamps, the runtime added to the hashfile twice, and two
+    sets of notifications. Exactly one caller can win the UPDATE.
+
+    Split out of update_job_task_status so it is directly testable without an
+    agent round trip.
+    """
+    job = Jobs.query.get(job_id)
+    if job is None:
+        return False
+    rows = JobTasks.query.filter_by(job_id=job.id).all()
+    if not rows:
+        return False
+
+    # Heal a late assignment instead of hanging on it: queue it so dispatch can
+    # see it, and report "not done" -- because it genuinely is not. The assign
+    # routes already do this eagerly; this is the backstop for a row that reached
+    # a running job some other way.
+    if queue_late_assignments(job.id):
+        db.session.commit()
+        return False
+
+    if any(r.status in JOBTASK_ACTIVE_STATUSES for r in rows):
+        return False
+
+    outcome = _job_completion_outcome(rows, goal_met=goal_met)
+    ended_at = datetime.now()
+    # Only a Running/Queued job may be finalised. A job already Canceled (the
+    # operator stopped it) or already terminal must not be rewritten by a late
+    # status POST from an agent that was still finishing when the stop landed.
+    claimed = (db.session.query(Jobs)
+               .filter(Jobs.id == job.id, Jobs.status.in_(('Running', 'Queued')))
+               .update({'status': outcome, 'ended_at': ended_at},
+                       synchronize_session=False))
+    db.session.commit()
+    if not claimed:
+        return False
+
+    started_at = job.started_at
+    duration = abs(ended_at - started_at).seconds if (started_at and ended_at) else 0
+    hashfile = Hashfiles.query.get(job.hashfile_id)
+    if hashfile:
+        hashfile.runtime += duration
+        db.session.commit()
+
+    _deliver_job_notifications(job, outcome, duration)
+    return True
+
+
+def _deliver_job_notifications(job, outcome, duration):
+    """Send each of a job's notifications at most once per run.
+
+    Each row is claimed with a conditional UPDATE on sent_at before anything is
+    delivered, so a row can only be sent by whoever moves it from NULL. The rows
+    are NOT deleted: a job's notification configuration outlives its runs, and
+    build_job_task_commands clears sent_at when the job is queued again.
+    """
+    cracked_cnt = db.session.query(Hashes) \
+        .outerjoin(HashfileHashes, Hashes.id == HashfileHashes.hash_id) \
+        .filter(Hashes.cracked == '1') \
+        .filter(HashfileHashes.hashfile_id == job.hashfile_id).count()
+    uncracked_cnt = db.session.query(Hashes) \
+        .outerjoin(HashfileHashes, Hashes.id == HashfileHashes.hash_id) \
+        .filter(Hashes.cracked == '0') \
+        .filter(HashfileHashes.hashfile_id == job.hashfile_id).count()
+    total_cnt = cracked_cnt + uncracked_cnt
+    headline = ('Has Completed!' if outcome == 'Completed'
+                else 'Finished Incomplete (some tasks did not run)')
+    ran_for = ('It ran for ' + getTimeFormat(duration) + ' and recovered '
+               + str(cracked_cnt) + ' out of ' + str(total_cnt) + ' hashes.')
+
+    for job_notification in JobNotifications.query.filter_by(job_id=job.id).all():
+        claimed = (db.session.query(JobNotifications)
+                   .filter(JobNotifications.id == job_notification.id,
+                           JobNotifications.sent_at.is_(None))
+                   .update({'sent_at': datetime.now()}, synchronize_session=False))
+        db.session.commit()
+        if not claimed:
+            continue
+        user = Users.query.get(job_notification.owner_id)
+        if user is None:
+            continue
+        subject = 'Hashview Job: "' + job.name + '" ' + headline
+        plain = 'Your job "' + job.name + '" has finished. ' + ran_for
+        html = ('Your job has finished. ' + ran_for
+                + ' <br /><br /> <a href="'
+                + url_for('analytics.get_analytics', customer_id=job.customer_id,
+                          hashfile_id=job.hashfile_id, _external=True)
+                + '">View Analytics</a>')
+        # Claimed above, then delivered. Claim-first makes a double-send
+        # impossible, which is the failure being fixed; the cost is that a
+        # delivery that throws is not retried. Contain it rather than letting it
+        # escape: this runs inside POST /v1/jobtask/status, so an SMTP outage
+        # used to turn an agent's "task finished" report into a 500.
+        try:
+            deliver_user_notification(user, job_notification.method, subject, plain,
+                                      html_message=html)
+        except Exception:
+            current_app.logger.exception(
+                'Job %s completion notification (%s) failed to deliver.',
+                job.id, job_notification.method)
+
+
+def update_job_task_status(jobtask_id, status, finalize=True):
+    """Function to update task status of a job
+
+    ``finalize=False`` suppresses the job roll-up, for a caller that is changing
+    several rows at once and wants to roll the job up itself, once, afterwards
+    (see api.routes._cancel_job_active_tasks).
+    """
 
     jobtask = JobTasks.query.get(jobtask_id)
 
@@ -2157,58 +2340,18 @@ def update_job_task_status(jobtask_id, status):
         jobtask.agent_id = None
     db.session.commit()
 
-    # Update Jobs
-    # TODO
-    # Shouldn't we be changing the job stats to match the jobtask status?
-    # Add started at time
     job = Jobs.query.get(jobtask.job_id)
+    if job is None:
+        return True
     if job.status == 'Queued':
         job.status = 'Running'
         job.started_at = datetime.now()
         db.session.commit()
 
-    # TODO
-    # This is such a janky way of doing this. Instead of having the agent tell us its done, we're just assuming
-    # That if no other tasks are active we must be done
-    done = True
-    jobtasks = JobTasks.query.filter_by(job_id=job.id).all()
-    for jobtask in jobtasks:
-        if jobtask.status == 'Queued' or jobtask.status == 'Running' or jobtask.status == 'Importing':
-            done = False
-
-    if done:
-        job.status = 'Completed'
-        job.ended_at = datetime.now()
-        db.session.commit()
-
-        start_time = job.started_at          # DateTime columns are already datetime objects
-        end_time = job.ended_at
-        durration = abs(end_time - start_time).seconds if (start_time and end_time) else 0  # So dumb you cant conver this to minutes, only resolution is seconds or days :(
-
-        hashfile = Hashfiles.query.get(job.hashfile_id)
-        hashfile.runtime += durration
-        db.session.commit()
-
-        # TODO
-        # mark all jobtasks as completed
-        job_notifications = JobNotifications.query.filter_by(job_id = job.id)
-
-        # Send Notifications
-        for job_notification in job_notifications:
-            user = Users.query.get(job_notification.owner_id)
-            cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==job.hashfile_id).count()
-            uncracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '0').filter(HashfileHashes.hashfile_id==job.hashfile_id).count()
-            subject = 'Hashview Job: "' + job.name + '" Has Completed!'
-            plain = ('Your job "' + job.name + '" has completed. It ran for ' + getTimeFormat(durration)
-                     + ' and recovered ' + str(cracked_cnt) + ' out of ' + str(cracked_cnt + uncracked_cnt) + ' hashes.')
-            html = ('Your job has completed. It ran for ' + getTimeFormat(durration) + ' and resulted in a total of '
-                    + str(cracked_cnt) + ' out of ' + str(cracked_cnt + uncracked_cnt) + ' hashes being recovered!'
-                    + ' <br /><br /> <a href="' + url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id, _external=True) + '">View Analytics</a>')
-            deliver_user_notification(user, job_notification.method, subject, plain, html_message=html)
-            db.session.delete(job_notification)
-            db.session.commit()
-
+    if finalize:
+        finalize_job_if_complete(job.id)
     return True
+
 
 # ---------------------------------------------------------------------------
 # Hashfile validation

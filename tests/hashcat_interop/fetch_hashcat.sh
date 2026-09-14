@@ -30,7 +30,7 @@ echo "${sha256}  ${archive}" | sha256sum -c - >&2
 
 unpacked="${destdir}/hashcat-${version}"
 test -x "${unpacked}/hashcat.bin" || {
-  echo "fetch.sh: ${unpacked}/hashcat.bin missing or not executable" >&2
+  echo "fetch_hashcat.sh: ${unpacked}/hashcat.bin missing or not executable" >&2
   exit 1
 }
 echo "${unpacked}"

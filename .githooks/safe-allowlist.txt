@@ -171,3 +171,9 @@ LOGIN_PASSWORD = "bugtest-password-123"
 # Anchored on `image:` and the `@sha256:` form so it cannot cover a bare
 # high-entropy string appearing anywhere else.
 image:\s*\S+@sha256:[0-9a-f]{64}
+
+# Test-only fixture API keys for the catalog orphan-prune tests (#494):
+# a per-test random value and a literal dummy, neither a real credential.
+# (tests/unit/test_catalog_orphaned_flag.py, test_catalog_prune_setting.py)
+api_key = "api-key-"
+api_key="key-prune"

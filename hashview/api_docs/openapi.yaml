@@ -903,13 +903,15 @@ paths:
       tags: [Job Tasks, Agent Protocol]
       summary: Get the calling agent's job-task assignment
       description: >-
-        QUIRK — the `job_task_id` path parameter is currently **ignored**:
-        the route resolves the CALLING agent from the `uuid` cookie and
-        returns the first job task assigned to that agent (used by agents to
-        re-discover their assignment after a restart). Although the auth
-        guard accepts user keys, a user credential cannot be resolved to an
-        agent and produces an unhandled server error — call this with an
-        agent credential.
+        Returns the job task named by `job_task_id`, provided it is assigned to
+        the CALLING agent (resolved from the `uuid` cookie). A job task that
+        does not exist, or that belongs to a different agent, is reported the
+        same way as "you have no assignment": `200` with a null `job_task`, so
+        nothing about another agent's row — including its command — is
+        disclosed. That is also the answer when the row was reclaimed between
+        the `START` heartbeat and this call, which is what stops an agent
+        running a slice it no longer owns. Although the auth guard accepts user
+        keys, a user credential cannot be resolved to an agent and gets `404`.
       operationId: getJobTaskAssignment
       x-audience: agent
       security:
@@ -919,16 +921,19 @@ paths:
           in: path
           required: true
           schema: {type: integer}
-          description: Currently ignored (see operation description).
+          description: The job task to fetch. Must be assigned to the calling agent.
       responses:
         '200':
           description: >-
             Envelope with `job_task` as a native JSON object (null when the
-            agent has no assignment).
+            agent has no assignment, or when the requested job task is not
+            assigned to it).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/JobTaskResponse'
+        '404':
+          description: The `uuid` cookie does not resolve to an agent.
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
 
@@ -1812,6 +1817,15 @@ components:
           nullable: true
           description: Always null in API responses (encoder limitation).
         agent_id: {type: integer, nullable: true}
+        file_key:
+          type: integer
+          description: >-
+            The key naming this run's temp files —
+            `control/hashes/hashfile_<job_id>_<file_key>.txt`,
+            `control/outfiles/hc_cracked_<job_id>_<file_key>.txt` and
+            `control/outfiles/hc_potfile_<job_id>_<file_key>.pot`.
+            AUTHORITATIVE: always equal to `id`. Agents older than 0.8.4 do not
+            see this field and derive the same value from `chunk_total`/`id`.
 
     Task:
       type: object

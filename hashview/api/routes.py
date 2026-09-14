@@ -290,7 +290,17 @@ def v1_api_set_agent_heartbeat():
                 agent.status = "Idle"
                 agent.hc_status = ""
                 db.session.commit()
-                already_assigned_task = JobTasks.query.filter_by(agent_id = agent.id).first()
+                # Hand back a row this agent is already running -- the recovery
+                # path for an agent that restarted with the task still assigned.
+                # Filtered on 'Running': a Queued row that still names an agent is
+                # NOT an assignment in progress (a Start on an already-running job
+                # leaves rows in exactly that state), and handing one back here
+                # would run it while another agent was also being given it.
+                # Ordered so the choice is deterministic rather than whatever the
+                # database happens to return first.
+                already_assigned_task = (JobTasks.query
+                                         .filter_by(agent_id=agent.id, status='Running')
+                                         .order_by(JobTasks.id.asc()).first())
                 if already_assigned_task is not None:
                     message = {
                         'status': 200,
@@ -336,7 +346,6 @@ def v1_api_set_agent_heartbeat():
                 # waste the chunk slot. Walk the ordered candidates and skip those.
                 unsupported = {b.hash_type for b in
                                AgentBenchmarks.query.filter_by(agent_id=agent.id, speed=0).all()}
-                job_task_entry = None
                 for candidate in (db.session.query(JobTasks)
                                   .join(task_first,
                                         (JobTasks.job_id == task_first.c.job_id)
@@ -349,18 +358,14 @@ def v1_api_set_agent_heartbeat():
                     cand_job = Jobs.query.get(candidate.job_id)
                     if unsupported and cand_job is not None and _job_hash_type(cand_job) in unsupported:
                         continue
-                    job_task_entry = candidate
-                    break
-                if job_task_entry:
                     # Don't start a fresh chunk of a task that's already over its
                     # runtime cap. This closes the gap where, at the cap moment, no
                     # chunk happened to be running (all just completed, only queued
                     # left), so the Working-heartbeat check couldn't fire. Cancel the
                     # whole group and let the next beat pick a different task.
-                    if _task_runtime_exceeded(job_task_entry.job_id,
-                                              job_task_entry.task_id,
+                    if _task_runtime_exceeded(candidate.job_id, candidate.task_id,
                                               settings.max_runtime_tasks):
-                        _cancel_task_group(job_task_entry.job_id, job_task_entry.task_id)
+                        _cancel_task_group(candidate.job_id, candidate.task_id)
                         update_heartbeat(uuid)
                         message = {
                             'status': 200,
@@ -368,15 +373,36 @@ def v1_api_set_agent_heartbeat():
                             'msg': 'OK'
                         }
                         return jsonify(message)
-                    job_task_entry.agent_id = agent.id
-                    job_task_entry.status = 'Running'
-                    job_task_entry.started_at = datetime.now()
+                    # Claim the row with a conditional UPDATE instead of a plain
+                    # write. The SELECT above is a snapshot read -- under MySQL's
+                    # default REPEATABLE READ it cannot see another agent's
+                    # concurrent commit -- so two agents heartbeating together
+                    # both used to pick the same row and the second write simply
+                    # won. An UPDATE ... WHERE is a current read, so exactly one
+                    # agent can move the row out of Queued; rowcount 0 means we
+                    # lost the race and the next candidate is tried instead.
+                    # Keyed on status alone, deliberately. Moving the row out of
+                    # 'Queued' is what makes the claim exclusive, so adding
+                    # "agent_id IS NULL" buys no extra safety -- but it would make
+                    # a Queued row that still carries a stale agent_id
+                    # permanently unclaimable, which is precisely the stuck-work
+                    # failure this is meant to prevent. The claim overwrites the
+                    # stale value.
+                    claimed = (db.session.query(JobTasks)
+                               .filter(JobTasks.id == candidate.id,
+                                       JobTasks.status == 'Queued')
+                               .update({'agent_id': agent.id,
+                                        'status': 'Running',
+                                        'started_at': datetime.now()},
+                                       synchronize_session=False))
                     db.session.commit()
+                    if not claimed:
+                        continue
                     message = {
                         'status': 200,
                         'type': 'message',
                         'msg': 'START',
-                        'job_task_id': job_task_entry.id
+                        'job_task_id': candidate.id
                     }
                     return jsonify(message)
                 update_heartbeat(uuid)
@@ -518,11 +544,30 @@ def v1_api_get_queue_assignment(job_task_id):
             'type': 'Error',
             'msg': 'Agent not found'
         }), 404
-    job_task = JobTasks.query.filter_by(agent_id=agent.id).first()
+    # Honour the path parameter, AND check the caller owns the row. The two go
+    # together: this used to ignore job_task_id entirely and return
+    # filter_by(agent_id=...).first(), which was accidentally safe (an agent could
+    # only ever see its own row) but returned an arbitrary row when an agent held
+    # more than one, so the agent could run one command while naming a different
+    # row's files. Honouring the parameter without the ownership check would turn
+    # that accident into a cross-agent command disclosure.
+    job_task = JobTasks.query.get(job_task_id)
+    if job_task is not None and job_task.agent_id != agent.id:
+        # Answer exactly as "you have no assignment" does (issue #218's 200 with a
+        # null job_task), so the agent's existing `if not job_task: bail` path
+        # handles it and nothing about another agent's row is revealed. This is
+        # also the right answer when the row was reclaimed between START and this
+        # fetch: the agent skips instead of running a slice it no longer owns.
+        job_task = None
+
+    job_task_data = alchemy_to_native(job_task)
+    if job_task is not None:
+        # State the temp-file key outright rather than making the agent re-derive it.
+        job_task_data['file_key'] = job_task.id
 
     message = {
         'status': 200,
-        'job_task': alchemy_to_native(job_task)
+        'job_task': job_task_data
     }
     return jsonify(message)
 
@@ -706,6 +751,31 @@ def v1_api_set_queue_jobtask_status():
             'status': 400,
             'type': 'Error',
             'msg': 'Missing job task status data in request body'
+        })
+
+    # Only the agent the row is assigned to may change its status. There was no
+    # check at all: any authorized agent could set any job task to any string.
+    # It also makes a stale report harmless -- an agent whose slice was reclaimed
+    # while it was still running would otherwise mark Completed work that another
+    # agent is now part-way through, and the slice would never be re-run.
+    # An unknown id keeps falling through to update_job_task_status, which
+    # reports it as a 500 -- an existing, pinned contract, and not what this
+    # guard is about.
+    job_task = JobTasks.query.get(status_json['job_task_id'])
+    if job_task is not None and job_task.status == status_json['task_status']:
+        # Idempotent: a retried report of a status the row already has is a no-op,
+        # not a rejection. Covers the agent's defensive re-POST of 'Running'.
+        return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
+    agent = Agents.query.filter_by(uuid=request.cookies.get('uuid')).first()
+    if job_task is not None and (agent is None or job_task.agent_id != agent.id):
+        current_app.logger.warning(
+            'Rejected status %r for job task %s from agent %s: the row is assigned '
+            'to agent %s.', status_json['task_status'], job_task.id,
+            agent.id if agent else None, job_task.agent_id)
+        return jsonify({
+            'status': 409,
+            'type': 'Error',
+            'msg': 'That job task is not assigned to this agent.'
         })
 
     if (update_job_task_status(jobtask_id = status_json['job_task_id'], status = status_json['task_status'])):

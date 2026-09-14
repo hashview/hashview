@@ -40,6 +40,7 @@ from hashview.utils.chunking import (
     MASK_MODES,
     WORDLIST_MODES,
     is_chunkable,
+    mask_keyspace,
     wordlist_amplifier,
 )
 from hashview.utils.hashcat_modes import HASH_ONLY_AUTO_RULES
@@ -2190,6 +2191,135 @@ def _group_assignments(rows):
         if row.ledger_id is not None:
             by_task[row.ledger_id] = entry
     return assignments
+
+
+def task_total_candidates(task, wl, wl2, rule):
+    """Total candidate guesses a task will try, or None if not computable.
+
+    This the server CAN compute, for every mode -- it is just arithmetic over the
+    wordlist line counts, the rule count and the mask. What it cannot compute is
+    how hashcat splits that total between its base loop (what --skip/--limit
+    index) and its device loop. The ratio between the two is the amplifier, and
+    total / keyspace is always an exact integer -- which is what makes a reported
+    keyspace checkable rather than merely trusted.
+    """
+    if task is None:
+        return None
+    mode = task.hc_attackmode
+    if mode in WORDLIST_MODES:
+        size = wl.size if wl else None
+        if not size:
+            return None
+        return size * wordlist_amplifier(mode, wordlist2_size=(wl2.size if wl2 else None),
+                                         rule_count=(rule.size if rule else 0),
+                                         mask=task.hc_mask)
+    if mode in MASK_MODES:
+        mask_total = mask_keyspace(task.hc_mask) if task.hc_mask else None
+        if not mask_total:
+            return None
+        if mode == 7:
+            size = wl.size if wl else None
+            if not size:
+                return None
+            return mask_total * size
+        return mask_total
+    return None
+
+
+def build_keyspace_command(job_id, task_id):
+    """argv for `hashcat --keyspace` on a task, or None if it is not measurable.
+
+    Deliberately NOT the run command with flags stripped. `--keyspace` takes no
+    hashfile positional at all -- passing one is a usage error -- so the argv has
+    a different shape and is built directly.
+
+    It does carry -m and the attack's positionals, because the answer depends on
+    them: `?a?a?a?a?a?a` reports 95**4 under -m 0 and 95**5 under -m 1800.
+    (Measured: -O and -w make no difference, and -S would -- 95**6 -- but Hashview
+    never emits it.)
+    """
+    task = Tasks.query.get(task_id)
+    job = Jobs.query.get(job_id)
+    if task is None or job is None or task.hc_attackmode not in MASK_MODES:
+        return None
+    if not task.hc_mask:
+        return None
+    first_hash = HashfileHashes.query.filter_by(hashfile_id=job.hashfile_id).first()
+    if first_hash is None:
+        return None
+    hashes_entry = Hashes.query.get(first_hash.hash_id)
+    if hashes_entry is None:
+        return None
+
+    wordlist = Wordlists.query.get(task.wl_id) if task.wl_id else None
+    wordlist_path = ('control/wordlists/' + ensure_gz(wordlist.path.split('/')[-1])
+                     if wordlist else '')
+    mask_tokens = mask_argv(task.hc_mask)
+
+    argv = ['@HASHCATBINPATH@',  # nosec B105 - placeholder token, not a password
+            '-O', '-w', '3',
+            '-m', str(hashes_entry.hash_type),
+            '-a', str(task.hc_attackmode)]
+    argv += mask_tokens
+    if task.hc_attackmode == 7:
+        if not wordlist_path:
+            return None
+        argv.append(wordlist_path)
+    argv.append('--keyspace')
+    return argv
+
+
+def record_keyspace_measurement(ledger, keyspace, hc_major):
+    """Store an agent's measured keyspace, or mark the attack unmeasurable.
+
+    Every rejection lands on the same safe outcome: the attack runs WHOLE. A whole
+    run emits no --skip/--limit, so hashcat's unit of account is irrelevant to it
+    and coverage is total by definition. Never chunk on a number we could not
+    check.
+
+    The check that does the work is `total % keyspace == 0`. The server knows the
+    candidate total exactly, and hashcat's own split always divides it evenly, so
+    a keyspace that does not is not a keyspace -- a parse artefact, a truncated
+    read, or an agent reporting something else entirely.
+    """
+    task = Tasks.query.get(ledger.task_id)
+    wl = Wordlists.query.get(task.wl_id) if (task and task.wl_id) else None
+    wl2 = Wordlists.query.get(task.wl_id_2) if (task and task.wl_id_2) else None
+    rule = Rules.query.get(task.rule_id) if (task and task.rule_id) else None
+    total = task_total_candidates(task, wl, wl2, rule)
+
+    def _unmeasurable(reason):
+        ledger.state = 'Unmeasurable'
+        ledger.closed_reason = reason
+        ledger.rev = (ledger.rev or 0) + 1
+        ledger.updated_at = datetime.now()
+        db.session.commit()
+        return False
+
+    try:
+        keyspace = int(keyspace)
+    except (TypeError, ValueError):
+        return _unmeasurable('keyspace_not_an_integer')
+    if keyspace <= 0 or keyspace > 2 ** 63 - 1:
+        return _unmeasurable('keyspace_out_of_range')
+    if not total:
+        return _unmeasurable('total_unknown')
+    if keyspace > total or total % keyspace != 0:
+        # total / keyspace is the inner-loop amplifier and is always an exact
+        # integer. A remainder means the number is not a keyspace.
+        return _unmeasurable('keyspace_does_not_divide_total')
+
+    ledger.keyspace = keyspace
+    ledger.amp = total // keyspace
+    ledger.keyspace_source = 'measured'
+    ledger.hc_major = hc_major
+    ledger.min_slice = max(1, -(-keyspace // DEFAULT_MAX_CHUNKS))
+    ledger.state = 'Ready'
+    ledger.measure_expires = None
+    ledger.rev = (ledger.rev or 0) + 1
+    ledger.updated_at = datetime.now()
+    db.session.commit()
+    return True
 
 
 def benchmark_for(agent_id, hash_type):

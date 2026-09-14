@@ -39,6 +39,7 @@ from hashview.models import (
 )
 from hashview.utils.utils import (
     _job_hash_type,
+    build_keyspace_command,
     close_ledger,
     finalize_job_if_complete,
     get_md5_hash,
@@ -49,6 +50,7 @@ from hashview.utils.utils import (
     ledger_is_mintable,
     notify_admins,
     process_recovered_hash_notifications,
+    record_keyspace_measurement,
     slowest_benchmark,
     update_job_task_status,
 )
@@ -304,6 +306,15 @@ def v1_api_set_agent_heartbeat():
                 # Clear hc_status if we're idle
                 agent.status = "Idle"
                 agent.hc_status = ""
+                # Which hashcat this agent runs. Gates whether it may be given a
+                # slice measured under a different major (see the dispatch loop).
+                reported = agent_data.get('hc_version')
+                if reported and reported != agent.hc_version:
+                    agent.hc_version = str(reported)[:32]
+                    try:
+                        agent.hc_major = int(str(reported).lstrip('v').split('.')[0])
+                    except (TypeError, ValueError):
+                        agent.hc_major = None
                 db.session.commit()
                 # Hand back a row this agent is already running -- the recovery
                 # path for an agent that restarted with the task still assigned.
@@ -357,6 +368,17 @@ def v1_api_set_agent_heartbeat():
                 # first slice is issued an hour into a run gets a HIGHER min id
                 # than one that started at the beginning, which silently inverts
                 # the queue.
+                # A measuring lease that expired (the agent never came back)
+                # returns the attack to Pending so another agent can measure it.
+                (db.session.query(JobTaskLedger)
+                 .filter(JobTaskLedger.state == 'Measuring',
+                         JobTaskLedger.measure_expires.isnot(None),
+                         JobTaskLedger.measure_expires < datetime.now())
+                 .update({'state': 'Pending', 'measured_by': None,
+                          'measure_expires': None,
+                          'rev': JobTaskLedger.rev + 1}, synchronize_session=False))
+                db.session.commit()
+
                 for ledger in (db.session.query(JobTaskLedger)
                                .join(Jobs, Jobs.id == JobTaskLedger.job_id)
                                .filter(Jobs.status.in_(('Queued', 'Running')))
@@ -368,6 +390,15 @@ def v1_api_set_agent_heartbeat():
                     if cand_job is None:
                         continue
                     if unsupported and _job_hash_type(cand_job) in unsupported:
+                        continue
+                    # A keyspace measured under a different hashcat MAJOR is not
+                    # usable here: hashcat 7 redefines --keyspace and
+                    # --skip/--limit to whole-run units, so a slice computed from
+                    # a 6.x measurement addresses a different space entirely --
+                    # silently, with nothing to show for it but hashes that were
+                    # never tried. Skip the attack; another agent can take it.
+                    if (ledger.hc_major is not None
+                            and agent.hc_major != ledger.hc_major):
                         continue
                     # Don't start fresh work on an attack that is already over its
                     # runtime cap. Closing the ledger -- not just cancelling its
@@ -409,6 +440,35 @@ def v1_api_set_agent_heartbeat():
                                         target_seconds=target_seconds, row=waiting)
                         return jsonify({'status': 200, 'type': 'message',
                                         'msg': 'START', 'job_task_id': waiting.id})
+
+                    # Needs measuring first. Answered like BENCHMARK is -- ask
+                    # the agent a question instead of giving it work -- costing one
+                    # heartbeat before this attack can be split.
+                    if ledger.state == 'Pending' and agent.hc_major is not None:
+                        keyspace_argv = build_keyspace_command(ledger.job_id, ledger.task_id)
+                        if keyspace_argv is None:
+                            ledger.state = 'Unmeasurable'
+                            ledger.closed_reason = 'not_measurable'
+                            db.session.commit()
+                        else:
+                            claimed_measure = (db.session.query(JobTaskLedger)
+                                               .filter(JobTaskLedger.id == ledger.id,
+                                                       JobTaskLedger.state == 'Pending',
+                                                       JobTaskLedger.rev == ledger.rev)
+                                               .update({'state': 'Measuring',
+                                                        'measured_by': agent.id,
+                                                        'measure_expires': datetime.now()
+                                                        + timedelta(minutes=10),
+                                                        'rev': JobTaskLedger.rev + 1},
+                                                       synchronize_session=False))
+                            db.session.commit()
+                            if claimed_measure:
+                                update_heartbeat(uuid)
+                                return jsonify({'status': 200, 'type': 'message',
+                                                'msg': 'KEYSPACE',
+                                                'ledger_id': ledger.id,
+                                                'command': json.dumps(keyspace_argv)})
+                        continue
 
                     # Nothing waiting: cut a fresh slice off the cursor.
                     if ledger_is_mintable(ledger):
@@ -522,6 +582,56 @@ def v1_api_post_agent_benchmark():
     # agent's benchmark, so a benchmark arriving mid-run simply changes the size
     # of every slice issued after it -- no existing row is touched, and the race
     # the old rechunk pass worked around cannot arise.
+    return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
+
+
+@api.route('/v1/jobtask/keyspace', methods=['POST'])
+def v1_api_post_jobtask_keyspace():
+    """An agent reports what `hashcat --keyspace` said for one attack.
+
+    The server cannot compute this itself. hashcat splits a mask between its base
+    loop (what --skip/--limit index) and its own device-side loop based on the
+    hash mode and on -S, not on the mask alone: `?a?a?a?a?a?a` reports 95**4 for a
+    fast mode, 95**5 for a slow one and 95**6 under -S. Measuring it is the only
+    way to slice a mask attack by range instead of by expanding its leading
+    position, which was coarse (a ?a x8 attack split into exactly 95 pieces) and
+    produced sub-masks hashcat could misread as options.
+
+    Anything unusable -- a bad number, a lost lease, an attack whose candidate
+    total the server cannot pin down -- leaves the attack running WHOLE, which
+    emits no --skip/--limit and is correct whatever the unit turns out to be.
+    """
+    if not is_authorized(user=False, agent=True, request=request):
+        return redirect("/v1/not_authorized")
+
+    update_heartbeat(request.cookies.get('uuid'))
+    agent = Agents.query.filter_by(uuid=request.cookies.get('uuid')).first()
+    if agent is None:
+        return jsonify({'status': 404, 'type': 'Error', 'msg': 'Agent not found'}), 404
+
+    data = request.get_json(silent=True)
+    if not data or 'ledger_id' not in data or 'keyspace' not in data:
+        return jsonify({'status': 400, 'type': 'Error',
+                        'msg': 'Missing ledger_id or keyspace in request body'})
+
+    ledger = JobTaskLedger.query.get(data['ledger_id'])
+    if ledger is None:
+        return jsonify({'status': 404, 'type': 'Error', 'msg': 'Attack not found'}), 404
+    if ledger.state != 'Measuring' or ledger.measured_by != agent.id:
+        # The lease expired and someone else took it, or the attack was stopped.
+        # Not an error the agent can act on; it just moves on.
+        return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
+
+    hc_major = agent.hc_major
+    if hc_major is None:
+        record_keyspace_measurement(ledger, None, None)
+        return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
+
+    stored = record_keyspace_measurement(ledger, data['keyspace'], hc_major)
+    if not stored:
+        current_app.logger.warning(
+            'Agent %s reported an unusable keyspace %r for attack %s; it will run whole.',
+            agent.id, data['keyspace'], ledger.id)
     return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
 
 

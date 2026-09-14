@@ -129,8 +129,40 @@ from agent.status import convert_speed, time_difference  # noqa: E402,F401 - re-
 from agent.status import hashcat_status as hashcatParser  # noqa: E402
 
 
+_HC_VERSION = None
+
+
+def hashcat_version():
+    """This host's hashcat version string, probed once and cached.
+
+    Reported on every heartbeat so the server knows which major this agent runs.
+    hashcat 7 redefines both --keyspace and --skip/--limit to whole-run units --
+    self-consistent within a version, silently mis-covering across one -- so a
+    keyspace measured by one agent can only be sliced by agents on the same major.
+    None if the probe fails; the server then never sends this agent a measured
+    slice, and it runs whole attacks instead.
+    """
+    global _HC_VERSION
+    if _HC_VERSION is None:
+        from agent.bench import parse_hashcat_version
+        from agent.config import Config
+        try:
+            # nosec B603 - fixed argv (no shell); the binary is the operator-set
+            # Config.HC_BIN_PATH.
+            proc = subprocess.run([Config.HC_BIN_PATH, '--version'],  # nosec B603
+                                  capture_output=True, timeout=60)
+            output = ((proc.stdout or b'').decode('utf-8', 'replace')
+                      + (proc.stderr or b'').decode('utf-8', 'replace'))
+            raw, _major = parse_hashcat_version(output)
+        except Exception:
+            LOG.exception('Could not determine the hashcat version.')
+            raw = None
+        _HC_VERSION = raw or ''
+    return _HC_VERSION or None
+
+
 def send_heartbeat(agent_status, hc_status):
-    return api.heartbeat(agent_status, hc_status)
+    return api.heartbeat(agent_status, hc_status, hc_version=hashcat_version())
 
 def getHashcatPid():
     if sys.platform == 'win32':
@@ -653,6 +685,53 @@ def run_benchmark(hash_modes):
 
 def report_benchmark(results):
     return api.report_benchmark(results)
+
+
+KEYSPACE_TIMEOUT = 900  # seconds; --keyspace is arithmetic, not cracking
+
+
+def run_keyspace(ledger_id, command):
+    """Run `hashcat --keyspace` for one attack and report the integer back.
+
+    Triggered by a heartbeat reply of msg='KEYSPACE'. The server cannot work this
+    out for itself: hashcat splits a mask between its base loop -- which is what
+    --skip/--limit index -- and its own device-side loop, based on the hash mode
+    and on -S, not on the mask alone. Measuring it is what lets the server slice a
+    mask attack by range rather than by expanding its leading position.
+
+    Every failure path reports nothing and returns. The server leaves an attack it
+    has no usable measurement for running WHOLE, which emits no --skip/--limit and
+    is correct whatever the unit turns out to be -- so staying quiet is the safe
+    answer, and guessing would not be.
+    """
+    from agent.bench import parse_keyspace
+    if not ledger_id or not command:
+        LOG.warning('Keyspace request was missing its attack id or command; skipping.')
+        return
+    try:
+        argv = build_hashcat_argv(command)
+    except Exception:
+        LOG.exception('Could not decode the keyspace command for attack %s.', ledger_id)
+        return
+
+    LOG.info('Measuring the keyspace for attack %s...', ledger_id)
+    try:
+        # nosec B603 - fixed argv (no shell); built by the server from stored task
+        # fields and run with shell=False.
+        proc = subprocess.run(argv, capture_output=True,  # nosec B603
+                              timeout=KEYSPACE_TIMEOUT)
+    except Exception:
+        LOG.exception('hashcat --keyspace failed for attack %s.', ledger_id)
+        return
+    output = ((proc.stdout or b'').decode('utf-8', 'replace')
+              + (proc.stderr or b'').decode('utf-8', 'replace'))
+    keyspace = parse_keyspace(output)
+    if keyspace is None:
+        LOG.warning('Could not parse a keyspace for attack %s; it will run whole.',
+                    ledger_id)
+        return
+    LOG.info('Attack %s keyspace: %s', ledger_id, keyspace)
+    api.report_keyspace(ledger_id, keyspace)
     #os.system(cmd)
 
 def killHashcat(pid):
@@ -874,6 +953,8 @@ def handle_heartbeat():
         LOG.warning('This agent is not authorized on the server. Ask a Hashview admin to approve it.')
     elif response.get('msg') == 'BENCHMARK':
         run_benchmark(response.get('hash_modes', []))
+    elif response.get('msg') == 'KEYSPACE':
+        run_keyspace(response.get('ledger_id'), response.get('command'))
     elif response.get('msg') == 'START':
         run_assigned_task(response.get('job_task_id'))
 

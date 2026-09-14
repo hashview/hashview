@@ -937,6 +937,67 @@ paths:
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
 
+  /v1/jobtask/keyspace:
+    post:
+      tags: [Job Tasks, Agent Protocol]
+      summary: Report a measured hashcat keyspace for one attack
+      description: >-
+        Sent in response to a `KEYSPACE` heartbeat reply. The agent runs
+        `hashcat --keyspace` for the attack and posts the integer back.
+
+
+        The server cannot compute this itself. hashcat splits a mask between its
+        base loop — which is what `--skip`/`--limit` index — and its own
+        device-side loop, based on the hash mode and on `-S`, not on the mask
+        alone: `?a?a?a?a?a?a` reports 95^4 for a fast mode, 95^5 for a slow one
+        and 95^6 under `-S`. Measuring it is what allows a mask attack to be
+        sliced by range.
+
+
+        The report is accepted only from the agent currently holding the
+        measuring lease, and only if the number divides the candidate total
+        exactly (`total % keyspace == 0`, which hashcat's own split always
+        satisfies). Anything unusable leaves the attack running WHOLE — which
+        emits no `--skip`/`--limit` and is therefore correct whatever the unit
+        turns out to be — and still answers `200`, because there is nothing the
+        agent can do about it.
+      operationId: reportJobTaskKeyspace
+      x-audience: agent
+      security:
+        - agentUuid: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ledger_id, keyspace]
+              properties:
+                ledger_id:
+                  type: integer
+                  description: The attack this measurement is for, from the heartbeat reply.
+                keyspace:
+                  type: integer
+                  description: >-
+                    The integer `hashcat --keyspace` printed. Base-loop units, not
+                    the candidate count.
+              example: {ledger_id: 3, keyspace: 81450625}
+      responses:
+        '200':
+          description: >-
+            Recorded, or rejected as unusable (the attack then runs whole). The
+            envelope is the same either way.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiMessage'
+        '400':
+          description: Missing `ledger_id` or `keyspace`.
+        '404':
+          description: Unknown agent or unknown attack.
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
+
   /v1/jobtask/status:
     post:
       tags: [Job Tasks, Agent Protocol]

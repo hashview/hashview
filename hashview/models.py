@@ -271,6 +271,15 @@ class Agents(db.Model):
     # short label (e.g. 'RTX 4090'); gpu_temps is a comma-separated list of the
     # per-card temperatures in °C (e.g. '71,70,72').
     gpu_model = db.Column(db.String(128))
+    # Which hashcat this agent runs. hashcat 7 redefines both --keyspace and
+    # --skip/--limit to whole-run units -- self-consistent within a version,
+    # silently mis-covering across one -- so a measured keyspace is only usable by
+    # an agent on the same MAJOR as the one that measured it. hc_version is the
+    # raw string for diagnostics; hc_major is what is actually compared, because
+    # 6.2.6 and 6.2.7 are identical here and comparing full strings would stall a
+    # fleet over a patch bump. NULL until the agent reports it.
+    hc_version = db.Column(db.String(32), nullable=True)
+    hc_major = db.Column(db.SmallInteger, nullable=True)
     gpu_temps = db.Column(db.String(128))
 
 class AgentBenchmarks(db.Model):

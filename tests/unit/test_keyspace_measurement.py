@@ -16,9 +16,13 @@ emits no --skip/--limit and is correct under any unit.
 """
 
 
+import json
+
 import pytest
 
 from hashview.models import (
+    AgentBenchmarks,
+    Agents,
     Customers,
     Hashes,
     HashfileHashes,
@@ -162,3 +166,128 @@ def test_an_unparseable_mask_is_never_measured(app, db_session):
     assert task_total_candidates(task, None, None, None) is None
     assert record_keyspace_measurement(ledger, 1000, hc_major=6) is False
     assert JobTaskLedger.query.get(ledger.id).state == "Unmeasurable"
+
+
+# --- the measurement has to happen BEFORE the attack is handed out ------------
+
+DOMAIN = "localhost.test"
+
+
+def _cookies(client, uuid):
+    import hashview
+    client.set_cookie("uuid", uuid, domain=DOMAIN)
+    client.set_cookie("agent_version", hashview.__version__, domain=DOMAIN)
+
+
+def _beat(client, uuid):
+    resp = client.post("/v1/agents/heartbeat",
+                       data=json.dumps({"agent_status": "Idle", "hc_status": ""}),
+                       content_type="application/json")
+    return json.loads(resp.get_data(as_text=True))
+
+
+def _agent(uuid, hc_major=6, hash_type=0, speed=1000):
+    a = Agents(name=uuid, src_ip="1.1.1.1", uuid=uuid, status="Idle",
+               hc_version=(f"v{hc_major}.2.6" if hc_major else None), hc_major=hc_major)
+    db.session.add(a)
+    db.session.commit()
+    db.session.add(AgentBenchmarks(agent_id=a.id, hash_type=hash_type, speed=speed))
+    db.session.commit()
+    return a
+
+
+def _running(job):
+    job.status = "Running"
+    db.session.commit()
+
+
+def test_a_mask_attack_is_measured_before_any_of_it_is_handed_out(app, client):
+    """Otherwise the feature does nothing at all.
+
+    The seed row carries a WHOLE-run command. If it were dispatched first, one
+    agent would run the entire attack and the measurement would arrive with
+    nothing left to split -- so the keyspace ask has to come before the work.
+    """
+    job, task, ledger = _seed()
+    _running(job)
+    _agent("capable", hc_major=6)
+
+    _cookies(client, "capable")
+    body = _beat(client, "capable")
+
+    assert body["msg"] == "KEYSPACE", f"got {body['msg']} -- the attack was handed out unmeasured"
+    assert body["ledger_id"] == ledger.id
+    assert "--keyspace" in body["command"]
+    assert JobTaskLedger.query.get(ledger.id).state == "Measuring"
+    assert JobTasks.query.filter_by(ledger_id=ledger.id, status="Running").count() == 0
+
+
+def test_after_measuring_the_attack_is_dispatched_in_slices(app, client):
+    job, task, ledger = _seed()
+    _running(job)
+    _agent("capable", hc_major=6)
+
+    _cookies(client, "capable")
+    assert _beat(client, "capable")["msg"] == "KEYSPACE"
+
+    resp = client.post("/v1/jobtask/keyspace",
+                       data=json.dumps({"ledger_id": ledger.id, "keyspace": 95 ** 4}),
+                       content_type="application/json")
+    assert json.loads(resp.get_data(as_text=True))["status"] == 200
+    assert JobTaskLedger.query.get(ledger.id).state == "Ready"
+
+    body = _beat(client, "capable")
+    assert body["msg"] == "START"
+    row = JobTasks.query.get(body["job_task_id"])
+    assert row.chunk_skip == 0 and row.chunk_limit > 0
+    assert "--skip" in row.command, "now sliced, not whole"
+
+
+def test_an_agent_with_no_hashcat_version_runs_the_attack_whole(app, client):
+    """It cannot measure, so it must not be left idling -- it gets the work,
+    un-sliced, which is exactly what happened before any of this existed."""
+    job, task, ledger = _seed()
+    _running(job)
+    _agent("versionless", hc_major=None)
+
+    _cookies(client, "versionless")
+    body = _beat(client, "versionless")
+
+    assert body["msg"] == "START"
+    row = JobTasks.query.get(body["job_task_id"])
+    assert "--skip" not in row.command
+    assert "?a?a?a?a?a?a" in row.command
+
+
+def test_a_measurement_that_never_comes_back_falls_back_to_a_whole_run(app, client):
+    """A lease that expires must not stall the attack forever: Measuring blocks
+    dispatch, so retrying indefinitely would mean the work never runs."""
+    from datetime import datetime, timedelta
+
+    job, task, ledger = _seed()
+    _running(job)
+    _agent("capable", hc_major=6)
+
+    _cookies(client, "capable")
+    assert _beat(client, "capable")["msg"] == "KEYSPACE"
+
+    stale = JobTaskLedger.query.get(ledger.id)
+    stale.measure_expires = datetime.now() - timedelta(minutes=1)
+    db.session.commit()
+
+    body = _beat(client, "capable")
+    assert JobTaskLedger.query.get(ledger.id).state == "Unmeasurable"
+    assert body["msg"] == "START", "the attack must still run"
+    assert "--skip" not in JobTasks.query.get(body["job_task_id"]).command
+
+
+def test_a_measured_attack_is_withheld_from_a_different_hashcat_major(app, client):
+    """hashcat 7 redefines --keyspace and --skip/--limit to whole-run units, so a
+    slice measured under 6 addresses a different space entirely under 7."""
+    job, task, ledger = _seed()
+    _running(job)
+    record_keyspace_measurement(JobTaskLedger.query.get(ledger.id), 95 ** 4, hc_major=6)
+    _agent("hc7", hc_major=7)
+
+    _cookies(client, "hc7")
+    assert _beat(client, "hc7")["msg"] == "OK", "must not be given a slice measured under hc6"

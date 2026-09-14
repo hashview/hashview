@@ -2337,6 +2337,18 @@ def record_keyspace_measurement(ledger, keyspace, hc_major):
         # integer. A remainder means the number is not a keyspace.
         return _unmeasurable('keyspace_does_not_divide_total')
 
+    # A measurement establishes the UNIT, so anything counted before it was
+    # counted in a different one. An unmeasured attack parks its cursor at 1 (the
+    # "one unit = the whole attack" placeholder used when no keyspace is known);
+    # carrying that over would start the first real slice at 1 and unit 0 of the
+    # keyspace would never be issued by anyone. Nothing has actually been handed
+    # out at this point -- the attack is held back until it is measured -- so the
+    # cursor and the rows reset together, keeping sum(chunk_keyspace) == keyspace_pos.
+    ledger.keyspace_pos = 0
+    ledger.issued_count = 0
+    for row in JobTasks.query.filter_by(ledger_id=ledger.id).all():
+        row.chunk_keyspace = None
+
     ledger.keyspace = keyspace
     ledger.amp = total // keyspace
     ledger.keyspace_source = 'measured'
@@ -2394,7 +2406,15 @@ def ledger_is_mintable(ledger):
             and ledger.keyspace and ledger.keyspace_pos < ledger.keyspace)
 
 
-def close_ledger(job_id, reason, task_id=None, ledger_id=None, cancel_rows=True):
+# Distinguishes "the caller did not scope this call" from "the caller scoped it
+# to an attack that does not exist". Both used to arrive as None, so passing the
+# ledger_id of a row that has none silently widened a request to stop ONE attack
+# into stopping the whole job.
+_UNSCOPED = object()
+
+
+def close_ledger(job_id, reason, task_id=_UNSCOPED, ledger_id=_UNSCOPED,
+                 cancel_rows=True):
     """Stop issuing any more of an attack, and terminate what is still live.
 
     THE single gate for cancellation, and the one thing that must never be
@@ -2407,10 +2427,17 @@ def close_ledger(job_id, reason, task_id=None, ledger_id=None, cancel_rows=True)
 
     Returns the number of ledger rows closed.
     """
+    scoped = ledger_id is not _UNSCOPED or task_id is not _UNSCOPED
+    if scoped and (ledger_id is None or (ledger_id is _UNSCOPED and task_id is None)):
+        # Scoped at an attack that does not exist. Close nothing and cancel
+        # nothing: widening to the whole job here is how a single-chunk stop
+        # would take the entire job down with it.
+        return 0
+
     query = JobTaskLedger.query.filter_by(job_id=job_id)
-    if ledger_id is not None:
+    if ledger_id is not _UNSCOPED:
         query = query.filter(JobTaskLedger.id == ledger_id)
-    elif task_id is not None:
+    elif task_id is not _UNSCOPED:
         query = query.filter(JobTaskLedger.task_id == task_id)
     ledgers = query.all()
     for ledger in ledgers:
@@ -2422,9 +2449,9 @@ def close_ledger(job_id, reason, task_id=None, ledger_id=None, cancel_rows=True)
 
     if cancel_rows:
         rows = JobTasks.query.filter_by(job_id=job_id)
-        if ledger_id is not None:
+        if ledger_id is not _UNSCOPED:
             rows = rows.filter(JobTasks.ledger_id == ledger_id)
-        elif task_id is not None:
+        elif task_id is not _UNSCOPED:
             # Scoped by task even when no ledger matched. Falling back to "every
             # row of the job" here would let a request to stop ONE attack cancel
             # the whole job.
@@ -2443,10 +2470,11 @@ def ledger_coverage_gaps():
 
         sum(chunk_keyspace over an attack's rows) == ledger.keyspace_pos
 
-    It holds because minting is the ONLY operation that both creates a row and
-    advances the cursor, and it does both atomically, by the same amount. Nothing
-    else ever creates a sliced row or moves the cursor -- re-claiming and
-    reclaiming change agent_id and status, never the slice.
+    It holds because the two writers keep both sides in step: issue_slice adds one
+    row and advances the cursor by that row's own size, atomically; and the
+    queue-time rebuild rewrites the rows and resets the cursor to zero together.
+    Nothing else touches either -- re-claiming and reclaiming change agent_id and
+    status, never the slice.
 
     A row coming back from here means base-loop units were handed out that no row
     accounts for, i.e. compute that will never run. Returns a list of
@@ -2469,9 +2497,15 @@ def issue_slice(job, ledger, agent_id, hash_type, target_seconds, row=None):
     """Hand this agent the next slice of an attack. Returns the JobTasks row, or None.
 
     Creating the row and advancing the cursor happen in ONE transaction and by the
-    SAME amount. That is the whole coverage argument: every base-loop unit below
-    the cursor is accounted for by exactly one row, so nothing can be handed out
-    without a row to run it, and no row can exist for units never reserved.
+    SAME amount, so every base-loop unit below the cursor is accounted for by
+    exactly one row: nothing is handed out without a row to run it, and no row
+    exists for units never reserved.
+
+    This is the only path that issues work at DISPATCH time. The queue-time
+    rebuild (build_job_task_commands -> _sync_job_ledger) also writes slices and
+    the cursor, but it rewrites both sides together for a whole job and resets the
+    cursor to zero, so the identity holds across it too. Reclaim and re-dispatch
+    touch agent_id/status/started_at and never the slice.
 
     The cursor is moved with a compare-and-swap rather than a read-then-write. A
     plain SELECT inside an open transaction is a snapshot read -- under MySQL's

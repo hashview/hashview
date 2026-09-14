@@ -510,7 +510,8 @@ def stop_job_task(job_task_id):
             # coherent request: the attack would just issue the next slice, and
             # meanwhile the cancelled range is a permanent hole below the cursor
             # that nothing will ever re-run. Stop the whole attack.
-            if not close_ledger(job.id, 'canceled', ledger_id=job_task.ledger_id):
+            if job_task.ledger_id is None or not close_ledger(
+                    job.id, 'canceled', ledger_id=job_task.ledger_id):
                 update_job_task_status(job_task.id, 'Canceled')
         else:
             flash('You are unauthorized to stop this task', 'danger')

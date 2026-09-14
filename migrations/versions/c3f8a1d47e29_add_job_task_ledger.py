@@ -93,8 +93,13 @@ def upgrade():
             sa.PrimaryKeyConstraint('id'),
             sa.UniqueConstraint('job_id', 'position', name='uix_ledger_job_position'),
         )
-        op.create_index('ix_job_task_ledger_job_id', 'job_task_ledger', ['job_id'])
-        op.create_index('ix_job_task_ledger_task_id', 'job_task_ledger', ['task_id'])
+    # Guarded independently of the table: a database that already has the table
+    # but is missing an index would never get one if these sat inside the
+    # create_table branch, which is the drift case the guards exist for.
+    for _index, _column in (('ix_job_task_ledger_job_id', 'job_id'),
+                            ('ix_job_task_ledger_task_id', 'task_id')):
+        if not _has_index('job_task_ledger', _index):
+            op.create_index(_index, 'job_task_ledger', [_column])
 
     for name, column in _JOB_TASK_COLUMNS:
         if not _has_column('job_tasks', name):
@@ -110,4 +115,7 @@ def downgrade():
         if _has_column('job_tasks', name):
             op.drop_column('job_tasks', name)
     if _has_table('job_task_ledger'):
+        for _index in ('ix_job_task_ledger_task_id', 'ix_job_task_ledger_job_id'):
+            if _has_index('job_task_ledger', _index):
+                op.drop_index(_index, table_name='job_task_ledger')
         op.drop_table('job_task_ledger')

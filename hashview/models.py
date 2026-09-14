@@ -196,9 +196,16 @@ class JobTasks(db.Model):
     status = db.Column(db.String(50), nullable=False)
     started_at = db.Column(db.DateTime, nullable=True)      # These defaults should be changed
     agent_id = db.Column(db.Integer, db.ForeignKey('agents.id'))
-    # Chunking: when a task is split, each chunk is its own JobTasks row. chunk_no
-    # is 1-based within the (job, task); chunk_total is the chunk count. Both NULL
-    # for a whole, un-chunked task.
+    # Chunking: each dispatched slice is its own JobTasks row. chunk_no is a
+    # 1-based issue counter within the attack.
+    #
+    # chunk_total is NOT a plan size any more: slices are sized for the agent that
+    # asks for one, so the count is unknown until the attack finishes. Rows this
+    # server stamps carry CHUNK_TOTAL_WHOLE (-1); a value >= 1 is a pre-0.8.4 row
+    # still carrying the old chunk count. Both are truthy on purpose -- that is
+    # what an un-upgraded agent tests to decide it should key its temp files on
+    # the JobTask id. Read utils.is_chunk_row(), never this column, to ask whether
+    # a row is a slice.
     chunk_no = db.Column(db.Integer, nullable=True)
     chunk_total = db.Column(db.Integer, nullable=True)
     # The chunk's slice, stored so the command is re-derivable on re-queue without
@@ -446,7 +453,11 @@ class JobTaskLedger(db.Model):
     # ordering exactly -- which stops being usable once rows are minted lazily,
     # because a task whose first row appears an hour in gets a HIGHER min id.
     position = db.Column(db.Integer, nullable=False, default=0)
-    # Pending (needs measuring) | Ready (mintable) | Closed | Unmeasurable
+    # Pending (a mask attack awaiting an agent's --keyspace measurement)
+    # | Measuring (an agent holds the measuring lease until measure_expires)
+    # | Ready (mintable while keyspace_pos < keyspace)
+    # | Closed (no more slices will be issued; see closed_reason)
+    # | Unmeasurable (runs whole -- unsplittable, or no usable measurement)
     state = db.Column(db.String(16), nullable=False, default='Pending')
     keyspace = db.Column(db.BigInteger, nullable=True)
     # 'exact' (server-computed, wordlist modes) | 'measured' (agent-reported)
@@ -480,7 +491,10 @@ class JobTaskLedger(db.Model):
     # -- a compare-and-swap that could write identical values would report 0 and
     # be misread as "lost the race".
     rev = db.Column(db.Integer, nullable=False, default=0)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    # datetime.now(), not utcnow: every writer of this column uses naive LOCAL
+    # time, and mixing the two in one column is what produced the cross-process
+    # skew that made agents look offline (the last_checkin bug).
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
 
     __table_args__ = (
         db.UniqueConstraint('job_id', 'position', name='uix_ledger_job_position'),

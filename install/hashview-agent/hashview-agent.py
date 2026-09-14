@@ -714,6 +714,13 @@ def run_keyspace(ledger_id, command):
         LOG.exception('Could not decode the keyspace command for attack %s.', ledger_id)
         return
 
+    # -a 7 puts a wordlist in the probe, and hashcat needs the file to exist to
+    # answer at all. run_assigned_task syncs before every run for the same reason;
+    # without this, measuring a hybrid attack would always fail and it would
+    # silently fall back to running whole.
+    if any(str(token).startswith('control/wordlists/') for token in argv):
+        sync_wordlists()
+
     LOG.info('Measuring the keyspace for attack %s...', ledger_id)
     try:
         # nosec B603 - fixed argv (no shell); built by the server from stored task

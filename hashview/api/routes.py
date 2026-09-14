@@ -370,12 +370,19 @@ def v1_api_set_agent_heartbeat():
                 # the queue.
                 # A measuring lease that expired (the agent never came back)
                 # returns the attack to Pending so another agent can measure it.
+                # A measuring lease that expired (the agent never came back) drops
+                # the attack to Unmeasurable rather than back to Pending. It now
+                # blocks dispatch of that attack while it is Measuring, so
+                # retrying forever would stall the work; falling back to a whole
+                # run always terminates and is always correct. Re-queueing the job
+                # rebuilds the ledger and tries again.
                 (db.session.query(JobTaskLedger)
                  .filter(JobTaskLedger.state == 'Measuring',
                          JobTaskLedger.measure_expires.isnot(None),
                          JobTaskLedger.measure_expires < datetime.now())
-                 .update({'state': 'Pending', 'measured_by': None,
+                 .update({'state': 'Unmeasurable', 'measured_by': None,
                           'measure_expires': None,
+                          'closed_reason': 'measure_timed_out',
                           'rev': JobTaskLedger.rev + 1}, synchronize_session=False))
                 db.session.commit()
 
@@ -410,6 +417,42 @@ def v1_api_set_agent_heartbeat():
                         update_heartbeat(uuid)
                         return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
 
+                    # Measure BEFORE handing out any of this attack. The seed row
+                    # carries a whole-run command, so dispatching it first would
+                    # run the entire attack on one agent and the measurement would
+                    # arrive with nothing left to split -- the feature would never
+                    # do anything. Answered like BENCHMARK: ask the agent a
+                    # question instead of giving it work, costing one heartbeat.
+                    #
+                    # An agent that cannot measure (no reported hashcat version)
+                    # falls through to the dispatch below and runs the attack
+                    # whole, which is exactly what happened before any of this.
+                    if ledger.state == 'Pending' and agent.hc_major is not None:
+                        keyspace_argv = build_keyspace_command(ledger.job_id, ledger.task_id)
+                        if keyspace_argv is None:
+                            ledger.state = 'Unmeasurable'
+                            ledger.closed_reason = 'not_measurable'
+                            db.session.commit()
+                        else:
+                            claimed_measure = (db.session.query(JobTaskLedger)
+                                               .filter(JobTaskLedger.id == ledger.id,
+                                                       JobTaskLedger.state == 'Pending',
+                                                       JobTaskLedger.rev == ledger.rev)
+                                               .update({'state': 'Measuring',
+                                                        'measured_by': agent.id,
+                                                        'measure_expires': datetime.now()
+                                                        + timedelta(minutes=10),
+                                                        'rev': JobTaskLedger.rev + 1},
+                                                       synchronize_session=False))
+                            db.session.commit()
+                            if claimed_measure:
+                                update_heartbeat(uuid)
+                                return jsonify({'status': 200, 'type': 'message',
+                                                'msg': 'KEYSPACE',
+                                                'ledger_id': ledger.id,
+                                                'command': json.dumps(keyspace_argv)})
+                        continue
+
                     # Prefer a row that is already waiting: the attack's seed row,
                     # or a slice that came back from a reclaim. Re-issuing an
                     # outstanding slice matters more than starting a new one --
@@ -440,35 +483,6 @@ def v1_api_set_agent_heartbeat():
                                         target_seconds=target_seconds, row=waiting)
                         return jsonify({'status': 200, 'type': 'message',
                                         'msg': 'START', 'job_task_id': waiting.id})
-
-                    # Needs measuring first. Answered like BENCHMARK is -- ask
-                    # the agent a question instead of giving it work -- costing one
-                    # heartbeat before this attack can be split.
-                    if ledger.state == 'Pending' and agent.hc_major is not None:
-                        keyspace_argv = build_keyspace_command(ledger.job_id, ledger.task_id)
-                        if keyspace_argv is None:
-                            ledger.state = 'Unmeasurable'
-                            ledger.closed_reason = 'not_measurable'
-                            db.session.commit()
-                        else:
-                            claimed_measure = (db.session.query(JobTaskLedger)
-                                               .filter(JobTaskLedger.id == ledger.id,
-                                                       JobTaskLedger.state == 'Pending',
-                                                       JobTaskLedger.rev == ledger.rev)
-                                               .update({'state': 'Measuring',
-                                                        'measured_by': agent.id,
-                                                        'measure_expires': datetime.now()
-                                                        + timedelta(minutes=10),
-                                                        'rev': JobTaskLedger.rev + 1},
-                                                       synchronize_session=False))
-                            db.session.commit()
-                            if claimed_measure:
-                                update_heartbeat(uuid)
-                                return jsonify({'status': 200, 'type': 'message',
-                                                'msg': 'KEYSPACE',
-                                                'ledger_id': ledger.id,
-                                                'command': json.dumps(keyspace_argv)})
-                        continue
 
                     # Nothing waiting: cut a fresh slice off the cursor.
                     if ledger_is_mintable(ledger):

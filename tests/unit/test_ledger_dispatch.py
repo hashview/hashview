@@ -301,3 +301,43 @@ def test_removing_an_attack_cancels_it_before_deleting_it(app, client):
     survivor = JobTaskLedger.query.filter_by(job_id=job.id).one()
     assert survivor.task_id == tasks[1].id
     assert survivor.position == 0
+
+
+def test_stopping_one_unledgered_chunk_does_not_cancel_the_whole_job(app, client):
+    """close_ledger must never widen when it is scoped at an attack that is not there.
+
+    A row can legitimately carry no ledger_id -- queue_late_assignments creates
+    one when a task is added to an already-running job. Passing that NULL as a
+    scope used to fall through every filter and close EVERY ledger of the job,
+    cancelling every active row: a single-chunk stop button taking the whole job
+    down with it.
+    """
+    from hashview.utils.utils import close_ledger
+
+    job, tasks = _seed(task_count=2)
+    _agent("a", speed=1000)
+    started = _beat(client, "a")
+    running = JobTasks.query.get(started["job_task_id"])
+
+    stray = JobTasks(job_id=job.id, task_id=tasks[1].id, status="Queued",
+                     command='["@HASHCATBINPATH@"]')
+    db.session.add(stray)
+    db.session.commit()
+    assert stray.ledger_id is None
+
+    assert close_ledger(job.id, "canceled", ledger_id=stray.ledger_id) == 0
+
+    assert JobTasks.query.get(running.id).status == "Running", "untouched"
+    assert {ledger.state for ledger in JobTaskLedger.query.filter_by(job_id=job.id)} == {"Ready"}
+
+
+def test_an_unscoped_close_still_stops_the_whole_job(app, client):
+    """The job-wide form must keep working -- that is what jobs_stop relies on."""
+    from hashview.utils.utils import close_ledger
+
+    job, _ = _seed(task_count=2)
+    _agent("a", speed=1000)
+    _beat(client, "a")
+
+    assert close_ledger(job.id, "job_stopped") == 2
+    assert {ledger.state for ledger in JobTaskLedger.query.filter_by(job_id=job.id)} == {"Closed"}

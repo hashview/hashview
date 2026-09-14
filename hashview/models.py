@@ -196,9 +196,16 @@ class JobTasks(db.Model):
     status = db.Column(db.String(50), nullable=False)
     started_at = db.Column(db.DateTime, nullable=True)      # These defaults should be changed
     agent_id = db.Column(db.Integer, db.ForeignKey('agents.id'))
-    # Chunking: when a task is split, each chunk is its own JobTasks row. chunk_no
-    # is 1-based within the (job, task); chunk_total is the chunk count. Both NULL
-    # for a whole, un-chunked task.
+    # Chunking: each dispatched slice is its own JobTasks row. chunk_no is a
+    # 1-based issue counter within the attack.
+    #
+    # chunk_total is NOT a plan size any more: slices are sized for the agent that
+    # asks for one, so the count is unknown until the attack finishes. Rows this
+    # server stamps carry CHUNK_TOTAL_WHOLE (-1); a value >= 1 is a pre-0.8.4 row
+    # still carrying the old chunk count. Both are truthy on purpose -- that is
+    # what an un-upgraded agent tests to decide it should key its temp files on
+    # the JobTask id. Read utils.is_chunk_row(), never this column, to ask whether
+    # a row is a slice.
     chunk_no = db.Column(db.Integer, nullable=True)
     chunk_total = db.Column(db.Integer, nullable=True)
     # The chunk's slice, stored so the command is re-derivable on re-queue without
@@ -213,6 +220,12 @@ class JobTasks(db.Model):
     # between two tables, and a truncated mask is still a valid mask, so it would
     # crack the wrong keyspace silently rather than erroring.
     chunk_mask = db.Column(db.String(255), nullable=True)
+    # The attack (JobTaskLedger) this row is a dispatch receipt for. NULL for a
+    # row queued by a pre-ledger server; those keep dispatching the old way.
+    ledger_id = db.Column(db.Integer, nullable=True, index=True)
+    # Base-loop units this row covers, so progress can be summed without
+    # re-deriving it from chunk_skip/chunk_limit (a whole row has neither).
+    chunk_keyspace = db.Column(db.BigInteger, nullable=True)
 
 class Customers(db.Model):
     """Class object to represent Customers"""
@@ -265,6 +278,15 @@ class Agents(db.Model):
     # short label (e.g. 'RTX 4090'); gpu_temps is a comma-separated list of the
     # per-card temperatures in °C (e.g. '71,70,72').
     gpu_model = db.Column(db.String(128))
+    # Which hashcat this agent runs. hashcat 7 redefines both --keyspace and
+    # --skip/--limit to whole-run units -- self-consistent within a version,
+    # silently mis-covering across one -- so a measured keyspace is only usable by
+    # an agent on the same MAJOR as the one that measured it. hc_version is the
+    # raw string for diagnostics; hc_major is what is actually compared, because
+    # 6.2.6 and 6.2.7 are identical here and comparing full strings would stall a
+    # fleet over a patch bump. NULL until the agent reports it.
+    hc_version = db.Column(db.String(32), nullable=True)
+    hc_major = db.Column(db.SmallInteger, nullable=True)
     gpu_temps = db.Column(db.String(128))
 
 class AgentBenchmarks(db.Model):
@@ -272,8 +294,9 @@ class AgentBenchmarks(db.Model):
 
     `speed` is raw hashes/sec summed across the agent's devices, parsed from the
     per-device `Speed.#N..........: <n> H/s` lines of `hashcat -b -m <mode>`. The
-    chunk planner sizes chunks from the SLOWEST agent's speed for the job's
-    hash_type. One row per (agent, hash_type); re-running a benchmark upserts the row.
+    Each chunk is sized from the speed of the agent that ASKS for it, so a faster
+    rig takes a proportionally larger slice of the keyspace. One row per
+    (agent, hash_type); re-running a benchmark upserts the row.
     """
 
     id = db.Column(db.Integer, primary_key=True)
@@ -394,6 +417,90 @@ class Hashes(db.Model):
                             name='uq_hashes_sub_ciphertext_hash_type'),
     )
 
+class JobTaskLedger(db.Model):
+    """The durable record of one ATTACK on a job, and where its keyspace stands.
+
+    One row per assignment -- not per (job_id, task_id). A task using a dynamic
+    wordlist may legitimately be assigned to the same job more than once
+    (jobs_assign_task), so (job_id, task_id) is not unique over attacks;
+    (job_id, position) is.
+
+    Why a ledger exists at all: JobTasks rows are dispatch RECEIPTS, and once
+    chunks are issued on demand the set of them for a task changes over the life
+    of a run -- so every question answered by counting or scanning those rows
+    ("how many attacks does this job have", "what order are they in", "how far
+    along is it", "is the job finished") needs somewhere stable to live.
+
+    keyspace/keyspace_pos are in hashcat BASE-LOOP units, which is exactly what
+    --skip/--limit consume. That unit is NOT the candidate count: for
+    `-a 3 -m 0 ?d?d?d?d?d` hashcat reports a keyspace of 10,000 against 100,000
+    candidates. The ratio is `amp`, and it is always an exact integer -- which is
+    also the integrity check on a reported keyspace (total % keyspace == 0).
+
+    For wordlist base-loop modes (0 straight, 1 combinator, 6 hybrid) the keyspace
+    IS the left wordlist's line count, so the server knows it exactly. For mask
+    base-loop modes (3, 7) it depends on the hash mode and on -S as well as the
+    mask, so it cannot be computed here and must be measured by an agent; until
+    then the attack runs whole, which needs no --skip/--limit and is therefore
+    correct under any unit.
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    job_id = db.Column(db.Integer, nullable=False, index=True)
+    task_id = db.Column(db.Integer, nullable=False, index=True)
+    # Dispatch order within the job. Seeded from the ascending JobTasks.id order
+    # the job was built in, so it reproduces the previous min(JobTasks.id)
+    # ordering exactly -- which stops being usable once rows are minted lazily,
+    # because a task whose first row appears an hour in gets a HIGHER min id.
+    position = db.Column(db.Integer, nullable=False, default=0)
+    # Pending (a mask attack awaiting an agent's --keyspace measurement)
+    # | Measuring (an agent holds the measuring lease until measure_expires)
+    # | Ready (mintable while keyspace_pos < keyspace)
+    # | Closed (no more slices will be issued; see closed_reason)
+    # | Unmeasurable (runs whole -- unsplittable, or no usable measurement)
+    state = db.Column(db.String(16), nullable=False, default='Pending')
+    keyspace = db.Column(db.BigInteger, nullable=True)
+    # 'exact' (server-computed, wordlist modes) | 'measured' (agent-reported)
+    keyspace_source = db.Column(db.String(10), nullable=True)
+    # The cursor. Units in [0, keyspace_pos) have been issued at least once.
+    keyspace_pos = db.Column(db.BigInteger, nullable=False, default=0)
+    # total_candidates // keyspace. Stored rather than total_candidates because a
+    # ten-position ?a mask is 95**10 ~ 6e19, which overflows a signed BIGINT;
+    # amp never does.
+    amp = db.Column(db.BigInteger, nullable=False, default=1)
+    # Smallest slice we will issue, = ceil(keyspace / DEFAULT_MAX_CHUNKS), so the
+    # chunk-count cap keeps bounding rows per attack once sizing is per-agent.
+    min_slice = db.Column(db.BigInteger, nullable=False, default=1)
+    issued_count = db.Column(db.Integer, nullable=False, default=0)
+    # False for an attack that can never be split (dynamic wordlist, unparseable
+    # mask, no benchmark): it runs whole, and whole is always correct.
+    chunkable = db.Column(db.Boolean, nullable=False, default=False)
+    # hashcat MAJOR version of the agent that measured the keyspace. hashcat 7
+    # redefines both --keyspace and --skip/--limit to whole-run units, which is
+    # self-consistent within a version and silently mis-covering across one.
+    hc_major = db.Column(db.SmallInteger, nullable=True)
+    measured_by = db.Column(db.Integer, nullable=True)
+    measure_expires = db.Column(db.DateTime, nullable=True)
+    # Digest of the inputs the keyspace depends on. A wordlist re-uploaded under
+    # the same id changes Wordlists.size, which silently invalidates every stored
+    # offset; this detects that instead of cracking the wrong ranges.
+    fingerprint = db.Column(db.String(64), nullable=True)
+    closed_reason = db.Column(db.String(32), nullable=True)
+    # Bumped by every conditional UPDATE. Load-bearing: PyMySQL does not set
+    # CLIENT_FOUND_ROWS, so MySQL rowcount counts CHANGED rows, not matched ones
+    # -- a compare-and-swap that could write identical values would report 0 and
+    # be misread as "lost the race".
+    rev = db.Column(db.Integer, nullable=False, default=0)
+    # datetime.now(), not utcnow: every writer of this column uses naive LOCAL
+    # time, and mixing the two in one column is what produced the cross-process
+    # skew that made agents look offline (the last_checkin bug).
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
+
+    __table_args__ = (
+        db.UniqueConstraint('job_id', 'position', name='uix_ledger_job_position'),
+    )
+
+
 class JobNotifications(db.Model):
     """Class object to represent JobNotifications"""
 
@@ -401,6 +508,13 @@ class JobNotifications(db.Model):
     owner_id = db.Column(db.Integer, nullable=False)
     job_id = db.Column(db.Integer, nullable=False)
     method = db.Column(db.String(6), nullable=False)    # email, push
+    # When this notification was last delivered. The row used to be DELETED on
+    # delivery, which made a job's notification setup a one-shot: a premature or
+    # mistaken completion destroyed it permanently, and a re-run of the job
+    # notified nobody. NULL means "not yet sent for the current run"; queueing a
+    # job clears it back to NULL. Delivery is gated on a conditional UPDATE of
+    # this column, so concurrent completions cannot double-send.
+    sent_at = db.Column(db.DateTime, nullable=True)
 
 class HashNotifications(db.Model):
     """Class object to represent HashNotification"""

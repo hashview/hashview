@@ -22,8 +22,8 @@ class HashviewSettingsForm(FlaskForm):
                                          validators=[DataRequired(), NumberRange(min=1, max=525600)])
     enabled_job_weights = BooleanField('Allow users to set job priority during job creations.')
     # Task chunking
-    enabled_chunking = BooleanField('Split tasks into smaller chunks across agents (sized from agent benchmarks).')
-    chunk_target_duration = IntegerField('Target chunk runtime in seconds (on the slowest agent).',
+    enabled_chunking = BooleanField('Split tasks into smaller chunks across agents (each sized from that agent\'s own benchmark).')
+    chunk_target_duration = IntegerField('Target chunk runtime in seconds.',
                                          validators=[DataRequired(), NumberRange(min=1, max=2147483647)])
     # Notification channel master switches
     email_enabled = BooleanField('Enable Email notifications.')

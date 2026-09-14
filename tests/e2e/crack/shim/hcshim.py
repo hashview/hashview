@@ -212,7 +212,78 @@ def parse_args(argv):
     return mode, outfile, outfile_format, rules, positionals
 
 
+def _mask_keyspace(mask):
+    """Candidate count of a built-in-charset mask, or None.
+
+    Deliberately a plain product of the charset sizes: the shim is not hashcat
+    and does not model its base/device loop split. It reports the FULL mask
+    keyspace, so --skip/--limit here address candidates one-for-one, which is what
+    makes a chunk-coverage test over the shim meaningful.
+    """
+    sizes = {"l": 26, "u": 26, "d": 10, "s": 33, "h": 16, "H": 16, "a": 95, "b": 256}
+    total, i = 1, 0
+    while i < len(mask):
+        if mask[i] == "?":
+            if i + 1 >= len(mask):
+                return None
+            nxt = mask[i + 1]
+            if nxt == "?":
+                pass                      # a literal '?'
+            elif nxt in sizes:
+                total *= sizes[nxt]
+            else:
+                return None               # custom charset: not modelled
+            i += 2
+        else:
+            i += 1
+    return total
+
+
+def _keyspace(argv):
+    """Answer `--keyspace` with a bare integer on STDOUT, exit 0.
+
+    It has to be handled BEFORE the crack path. --keyspace passes no hashfile, so
+    it would fall through with too few positionals and write to STDERR -- and
+    run_hashcat treats any stderr as fatal and kills the agent, so an un-taught
+    shim does not merely fail the probe, it takes the container down.
+    """
+    _mode, _outfile, _fmt, _rules, positionals = parse_args(argv)
+    attack = 0
+    for i, a in enumerate(argv):
+        if a == "-a" and i + 1 < len(argv):
+            attack = int(argv[i + 1])
+    # -a 3 is the mask alone; -a 6 is wordlist then mask; -a 7 is mask then
+    # wordlist. No hashfile in any of them.
+    if attack == 3:
+        total = _mask_keyspace(positionals[0]) if positionals else None
+    elif attack == 6:
+        total = _linecount(positionals[0]) if positionals else None
+    elif attack == 7:
+        total = _mask_keyspace(positionals[0]) if positionals else None
+    else:
+        total = _linecount(positionals[0]) if positionals else None
+    if total is None:
+        sys.stderr.write("hcshim: cannot compute a keyspace for that attack\n")
+        return 1
+    print(total, flush=True)
+    return 0
+
+
+def _linecount(path):
+    try:
+        with open(path, "rb") as handle:
+            return sum(1 for line in handle if line.strip())
+    except OSError:
+        return None
+
+
 def main(argv):
+    if "--version" in argv:
+        # The agent probes this to report its hashcat major to the server.
+        print("hcshim v6.2.6", flush=True)
+        return 0
+    if "--keyspace" in argv:
+        return _keyspace(argv)
     if "-b" in argv or "--benchmark" in argv:
         # Benchmark mode: the real agent runs ``hashcat -b -m <mode>`` and feeds
         # the output to agent/bench.parse_benchmark_speed, which looks for a

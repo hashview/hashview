@@ -59,3 +59,45 @@ def parse_device_info(json_data):
     model = _short_gpu_name(gpus[0].get('device_name', '')) if gpus else ''
     temps = ','.join(str(d['temp']) for d in gpus if d.get('temp') is not None)
     return count, model, temps
+
+
+# `hashcat --keyspace` prints a single integer on stdout and nothing else.
+_KEYSPACE_RE = re.compile(r'^\s*(\d+)\s*$', re.MULTILINE)
+# `hashcat --version` prints e.g. 'v6.2.6' or 'v7.1.2-484-g64e1bff93'.
+_VERSION_RE = re.compile(r'v?(\d+)\.(\d+)\.(\d+)')
+
+
+def parse_keyspace(output):
+    """The integer `hashcat --keyspace` reports, or None.
+
+    That integer counts BASE-LOOP units, which is exactly what --skip/--limit
+    consume -- not the candidate count. For `-a 3 -m 0 ?d?d?d?d?d` hashcat reports
+    10,000 against 100,000 candidates, because it keeps the remaining mask
+    positions for its own device-side loop.
+
+    Scans for the LAST bare-integer line: some builds emit warnings (OpenCL,
+    deprecation) before the answer, and those never match a bare-integer line,
+    but taking the last one is the safer reading regardless. Returns None rather
+    than guessing when nothing matches, so the caller reports a failure instead of
+    the server storing a keyspace that is not one.
+    """
+    matches = _KEYSPACE_RE.findall(output or '')
+    if not matches:
+        return None
+    try:
+        return int(matches[-1])
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_hashcat_version(output):
+    """(raw, major) from `hashcat --version`, or (None, None).
+
+    The major is what the server compares: hashcat 7 redefines --keyspace and
+    --skip/--limit to whole-run units, so a keyspace measured under one major
+    cannot be sliced under another.
+    """
+    match = _VERSION_RE.search(output or '')
+    if not match:
+        return None, None
+    return 'v' + '.'.join(match.groups()), int(match.group(1))

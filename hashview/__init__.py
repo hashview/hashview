@@ -150,6 +150,27 @@ def jinja_hex_decode(text):
     return text
 
 
+def jinja_human_count(value):
+    """jinja2 filter: render a large quantity compactly -- 1234567890 -> '1.2B'.
+
+    For keyspaces, which routinely run to 10+ digits: a mask attack's candidate
+    count is not something anyone reads digit by digit, and the exact figure
+    belongs in the progress columns (use `commafy` there). Values under 1000 and
+    anything non-numeric pass through untouched.
+    """
+    if value is None or isinstance(value, bool):
+        return value
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return value
+    for limit, suffix in ((10 ** 18, 'E'), (10 ** 15, 'P'), (10 ** 12, 'T'),
+                          (10 ** 9, 'B'), (10 ** 6, 'M'), (10 ** 3, 'K')):
+        if number >= limit:
+            return f"{number / limit:.1f}".rstrip('0').rstrip('.') + suffix
+    return str(number)
+
+
 def jinja_commafy(value):
     """jinja2 filter: render a quantity with thousands separators.
 
@@ -307,6 +328,7 @@ def create_app(testing=False, config_overrides=None):
 
     app.add_template_filter(jinja_hex_decode)
     app.add_template_filter(jinja_commafy, 'commafy')
+    app.add_template_filter(jinja_human_count, 'human_count')
     app.add_template_global(get_application_version, get_application_version.__name__)
     # Expose a csrf_token() template global (no global CSRFProtect is installed) so the
     # account-settings modal in the layout can post to the CSRF-protected profile route.

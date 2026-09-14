@@ -140,7 +140,7 @@
                         <div style="display:flex; align-items:center; gap:12px; margin-top:20px;">
                             <div style="flex:1; min-width:0;">
                                 <div style="color:var(--text);">Task chunking</div>
-                                <div class="field-hint" style="margin-top:2px;">Split eligible tasks into smaller chunks distributed across agents, sized from per-hashtype agent benchmarks. Tasks using a dynamic wordlist are never chunked.</div>
+                                <div class="field-hint" style="margin-top:2px;">Split eligible tasks into chunks distributed across agents. Each chunk is sized when an agent asks for work, from that agent's own benchmark &mdash; so a faster rig takes a proportionally larger share. Tasks using a dynamic wordlist are never chunked, and a mask task is chunked only once an agent has measured its keyspace.</div>
                             </div>
                             <label class="switch">{{ HashviewForm.enabled_chunking(role="switch") }}<span class="track"></span></label>
                         </div>
@@ -148,7 +148,7 @@
                         <div class="field" style="margin-top:16px;">
                             <label class="field-label" for="set-chunk-dur">Target chunk runtime (seconds)</label>
                             {{ HashviewForm.chunk_target_duration(class="input", type="number", min="1", id="set-chunk-dur") }}
-                            <span class="field-hint">Roughly how long one chunk should take on the slowest agent. Keep it well under the per-task max runtime.</span>
+                            <span class="field-hint">Roughly how long one chunk should take on the agent that picks it up. Keep it well under the per-task max runtime.</span>
                             {% for e in HashviewForm.chunk_target_duration.errors %}<div class="invalid-feedback" style="display:block;">{{ e }}</div>{% endfor %}
                         </div>
                     </div>

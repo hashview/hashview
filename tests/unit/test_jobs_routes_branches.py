@@ -849,6 +849,13 @@ def test_jobs_notifications_hash_slack_redirects_to_hashes(app, client):
 # jobs_reorder_tasks — reorder a 3-task queue to an arbitrary permutation
 # ---------------------------------------------------------------------------
 
+
+def _entry_ids(job_id):
+    """The reorder form submits ENTRY ids, not task ids -- task ids cannot address
+    a dynamic-wordlist task assigned to one job twice."""
+    from hashview.utils.utils import job_assignments
+    return {e["task_id"]: e["entry_id"] for e in job_assignments([job_id])[job_id]}
+
 def test_jobs_reorder_tasks_three_tasks(app, client):
     """Reorder a 3-task queue to [t2, t1, t3] via the drag-drop reorder route."""
     user = _nonadmin()
@@ -864,8 +871,10 @@ def test_jobs_reorder_tasks_three_tasks(app, client):
     db.session.commit()
     _login(client, user)
 
+    ids = _entry_ids(job.id)
     resp = client.post(f"/jobs/{job.id}/reorder_tasks",
-                       data={"order": f"{t2.id},{t1.id},{t3.id}"}, follow_redirects=False)
+                       data={"order": f"{ids[t2.id]},{ids[t1.id]},{ids[t3.id]}"},
+                       follow_redirects=False)
     assert resp.status_code in (301, 302)
     order = [jt.task_id for jt in
              JobTasks.query.filter_by(job_id=job.id).order_by(JobTasks.id).all()]

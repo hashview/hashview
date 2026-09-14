@@ -19,11 +19,9 @@ from hashview.models import (
     Hashfiles,
     Jobs,
     JobTasks,
-    Rules,
     Settings,
     Tasks,
     Users,
-    Wordlists,
     db,
 )
 
@@ -561,53 +559,6 @@ def test_heartbeat_idle_with_benchmark_returns_start(app, client):
     assert body["msg"] == "START"
     assert body["job_task_id"] == jt.id
 
-
-def test_benchmark_report_rechunks_queued_whole_task(app, client):
-    """A benchmark report for a hash type that had none re-plans still-queued
-    whole tasks of that type into chunks (option 1: re-chunk on first benchmark)."""
-    db.session.add(Settings(retention_period=30, max_runtime_tasks=0, max_runtime_jobs=0,
-                            enabled_chunking=True, chunk_target_duration=60))
-    user = _user(api_key="rc-owner")
-    cust = Customers(name="C")
-    db.session.add(cust)
-    db.session.commit()
-    hf = Hashfiles(name="hf", customer_id=cust.id, owner_id=user.id)
-    db.session.add(hf)
-    db.session.commit()
-    h = Hashes(sub_ciphertext="0" * 32, ciphertext="AAA", hash_type=1000, cracked=False)
-    db.session.add(h)
-    db.session.commit()
-    db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=hf.id))
-    wl = Wordlists(name="wl", owner_id=user.id, type="static",
-                   path="control/wordlists/wl.gz", size=1_000_000, checksum="0" * 64)
-    db.session.add(wl)
-    db.session.commit()
-    rule = Rules(name="r", owner_id=user.id, path="control/rules/r.rule",
-                 checksum="0" * 64, size=100)
-    db.session.add(rule)
-    db.session.commit()
-    task = Tasks(name="t", owner_id=user.id, hc_attackmode=0, wl_id=wl.id,
-                 rule_id=rule.id, loopback=False)
-    db.session.add(task)
-    db.session.commit()
-    job = Jobs(name="j", owner_id=user.id, customer_id=cust.id, hashfile_id=hf.id,
-               status="Queued", priority=3)
-    db.session.add(job)
-    db.session.commit()
-    db.session.add(JobTasks(job_id=job.id, task_id=task.id, status="Queued"))
-    db.session.commit()
-    assert JobTasks.query.filter_by(job_id=job.id).count() == 1   # queued whole
-
-    _agent(uuid="rc-bench", status="Idle")
-    _set_agent_cookies(client, "rc-bench")
-    # a slow speed so the 1M-word task is worth splitting (fast speeds -> 1 chunk)
-    resp = client.post("/v1/agents/benchmark",
-                       json={"benchmark_results": {"1000": 1000}})
-    assert _body(resp)["msg"] == "OK"
-    # the queued whole task was split into chunks by the report
-    rows = JobTasks.query.filter_by(job_id=job.id).all()
-    assert len(rows) > 1
-    assert all(r.chunk_total == len(rows) for r in rows)
 
 
 def test_dispatch_exhausts_task_chunks_before_next_task(app, client):

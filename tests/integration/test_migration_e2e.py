@@ -6,15 +6,41 @@ the DB. Reads two live MySQL databases:
   HASHVIEW_FRESH_DB_URI     - dev schema built from empty (parity oracle)
 """
 import os
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, text
 
 from tests.migration.expected_hex import PLAINTEXT_CASES, USERNAME_CASES
 
-# The alembic head this branch adds. Bump alongside any new revision; the
-# migration-e2e job asserts the upgraded database lands exactly here.
-DEV_HEAD = "a4c9e7b21f60"
+MIGRATIONS_DIR = str(Path(__file__).resolve().parents[2] / "migrations")
+
+
+def dev_head():
+    """The single alembic head, read from the migration scripts -- never pinned.
+
+    This was a hardcoded revision with a "bump alongside any new revision"
+    comment. The bump was forgotten, and the job then failed by reporting the
+    correct new head as if the migration had gone wrong -- a failure that says
+    nothing about what this test actually asserts (that the upgraded database
+    lands on head, whatever head is). tests/unit/test_migration_drift_idempotency.py
+    reached the same conclusion for the same reason.
+
+    Prefers the value the harness polled on, so both halves of the job assert
+    one number; falls back to asking alembic so this file still runs standalone.
+    """
+    from_harness = os.environ.get("HASHVIEW_DEV_HEAD")
+    if from_harness:
+        return from_harness
+
+    from alembic.config import Config as AlembicConfig
+    from alembic.script import ScriptDirectory
+
+    cfg = AlembicConfig()
+    cfg.set_main_option("script_location", MIGRATIONS_DIR)
+    heads = ScriptDirectory.from_config(cfg).get_heads()
+    assert len(heads) == 1, f"Expected exactly one migration head; found {heads}"
+    return heads[0]
 
 pytestmark = [pytest.mark.mysql, pytest.mark.migration]
 
@@ -42,7 +68,7 @@ def _scalar(engine, sql, **params):
 
 
 def test_alembic_at_dev_head(migrated):
-    assert _scalar(migrated, "SELECT version_num FROM alembic_version") == DEV_HEAD
+    assert _scalar(migrated, "SELECT version_num FROM alembic_version") == dev_head()
 
 
 def test_passwords_decoded_flag_flipped(migrated):

@@ -15,12 +15,11 @@ from hashview.models import (
     HashfileHashes,
     Hashfiles,
     Jobs,
-    JobTasks,
     Users,
     db,
 )
 from hashview.utils.audit import log_event
-from hashview.utils.utils import purge_orphaned_hashes, try_commit
+from hashview.utils.utils import job_assignments, purge_orphaned_hashes, try_commit
 
 hashfiles = Blueprint('hashfiles', __name__)
 
@@ -104,9 +103,11 @@ def hashfiles_list():
     # Per-hashfile job history for the info modal (id, name, owner, tasks, runtime, status, date).
     user_names = {u.id: (((u.first_name or '') + ' ' + (u.last_name or '')).strip() or '—')
                   for u in Users.query.all()}
-    task_count = {}
-    for jt in JobTasks.query.all():
-        task_count[jt.job_id] = task_count.get(jt.job_id, 0) + 1
+    # Count ATTACKS, not raw JobTasks rows. Counting rows over-reported a split
+    # task as N attacks, and once chunks are issued on demand a row count is not
+    # even stable -- it grows through a run.
+    task_count = {job_id: len(entries) for job_id, entries
+                  in job_assignments([j.id for j in Jobs.query.all()]).items()}
 
     def _runtime(j):
         if not j.started_at:

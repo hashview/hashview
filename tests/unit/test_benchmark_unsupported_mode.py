@@ -93,37 +93,48 @@ def test_slowest_benchmark_ignores_zero_among_mixed_rows(app, client):
     assert slowest_benchmark(8888) == 500
 
 
-# --- benchmark pre-scan: zero report is not "pending" ------------------------
+# --- benchmark reports are recorded, and nothing is re-planned ---------------
 
-def test_zero_speed_benchmark_does_not_trigger_rechunk(app, client, monkeypatch):
-    called = []
-    monkeypatch.setattr(
-        "hashview.api.routes.rechunk_queued_tasks_for_hashtype",
-        lambda hash_type: called.append(hash_type))
+def test_a_zero_speed_report_is_still_recorded(app, client):
+    """0 means "this agent's hashcat cannot run this mode" -- a real answer, kept
+    so the server stops re-asking for it on every heartbeat."""
     agent = _agent(uuid="zero-bench")
     _set_agent_cookies(client, "zero-bench")
 
     resp = client.post("/v1/agents/benchmark",
                        json={"benchmark_results": {"7777": 0}})
     assert _body(resp)["msg"] == "OK"
-    assert called == []                          # never rechunked
     row = AgentBenchmarks.query.filter_by(agent_id=agent.id, hash_type=7777).first()
-    assert row is not None and row.speed == 0     # but still recorded (Task 1 contract)
+    assert row is not None and row.speed == 0
 
 
-def test_nonzero_first_benchmark_still_triggers_rechunk(app, client, monkeypatch):
-    # Sanity check the pre-scan restructure didn't also break the real case.
-    called = []
-    monkeypatch.setattr(
-        "hashview.api.routes.rechunk_queued_tasks_for_hashtype",
-        lambda hash_type: called.append(hash_type))
+def test_a_benchmark_report_does_not_replan_existing_work(app, client):
+    """There is no re-planning pass any more, and there cannot need to be.
+
+    The old code re-split already-queued rows when the first usable benchmark for
+    a hash type arrived, because a plan was frozen at queue time from whatever
+    benchmarks existed then. Slices are now sized when an agent claims one, from
+    that agent's own benchmark, so a report arriving mid-run simply changes the
+    size of every slice issued after it -- no existing row is touched, and the
+    race that pass worked around cannot arise.
+    """
+    from hashview.models import JobTaskLedger
+
     _agent(uuid="nonzero-bench")
     _set_agent_cookies(client, "nonzero-bench")
+    before = {(r.id, r.status, r.chunk_skip, r.chunk_limit, r.command)
+              for r in JobTasks.query.all()}
+    ledgers_before = {(ledger.id, ledger.keyspace_pos)
+                      for ledger in JobTaskLedger.query.all()}
 
     resp = client.post("/v1/agents/benchmark",
                        json={"benchmark_results": {"6666": 5000}})
     assert _body(resp)["msg"] == "OK"
-    assert called == [6666]
+
+    assert {(r.id, r.status, r.chunk_skip, r.chunk_limit, r.command)
+            for r in JobTasks.query.all()} == before
+    assert {(ledger.id, ledger.keyspace_pos)
+            for ledger in JobTaskLedger.query.all()} == ledgers_before
 
 
 # --- heartbeat dispatch skips a hash type the agent can't run ---------------

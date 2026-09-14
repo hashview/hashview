@@ -391,13 +391,22 @@ def _task_order(job_id):
             JobTasks.query.filter_by(job_id=job_id).order_by(JobTasks.id).all()]
 
 
+
+def _entry_ids(job_id):
+    """The reorder form submits ENTRY ids, not task ids -- task ids cannot address
+    a dynamic-wordlist task assigned to one job twice."""
+    from hashview.utils.utils import job_assignments
+    return {e["task_id"]: e["entry_id"] for e in job_assignments([job_id])[job_id]}
+
 def test_jobs_reorder_tasks_reorders(app, client):
     user = _nonadmin()
     job, t1, t2 = _job_with_two_tasks(user)
     _login(client, user)
 
+    ids = _entry_ids(job.id)
     resp = client.post(f"/jobs/{job.id}/reorder_tasks",
-                       data={"order": f"{t2.id},{t1.id}"}, follow_redirects=False)
+                       data={"order": f"{ids[t2.id]},{ids[t1.id]}"},
+                       follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert _task_order(job.id) == [t2.id, t1.id]
 

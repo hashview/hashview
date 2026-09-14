@@ -208,7 +208,14 @@ def test_get_jobtask_refuses_another_agents_row(client, app):
     assert _body(resp)["job_task"] is None
 
 
-def test_get_jobtask_states_the_file_key(client, app):
+def test_file_key_falls_back_to_the_row_id_when_the_command_names_no_outfile(client, app):
+    """The fallback branch. _seed stamps a command with no --outfile, so nothing
+    is parseable and the row id is the answer -- which is also the key
+    _set_job_task_command would have baked in. Named for the branch it actually
+    exercises: it used to be called test_get_jobtask_states_the_file_key, which
+    implied it covered the derivation. It never did, and the derivation went
+    untested until the test below.
+    """
     _job, rows = _seed(rows=1, status="Running")
     (a,) = _agents("agent-a")
     rows[0].agent_id = a.id
@@ -217,6 +224,31 @@ def test_get_jobtask_states_the_file_key(client, app):
     _cookies(client, a.uuid)
     body = _body(client.get(f"/v1/jobTasks/{rows[0].id}"))
     assert body["job_task"]["file_key"] == rows[0].id
+
+
+def test_file_key_reports_the_last_outfile_because_hashcat_honours_the_last(client, app):
+    """A repeated --outfile resolves to the LAST, matching hashcat.
+
+    Verified against hashcat v6.2.6: `--outfile A --outfile B` writes B and never
+    creates A. Reachable without any tampering -- the Hashcat Mask field is
+    free-form and split on whitespace into argv elements that land after the
+    server's own --outfile, so a mask of '?d?d --outfile ...' emits a second one.
+    Reporting the first would point the agent at a file hashcat never writes.
+    """
+    _job, rows = _seed(rows=1, status="Running")
+    (a,) = _agents("agent-a")
+    rows[0].agent_id = a.id
+    rows[0].command = json.dumps([
+        "@HASHCATBINPATH@", "-m", "1000",
+        "--outfile", "control/outfiles/hc_cracked_1_111.txt",
+        "control/hashes/hashfile_1_111.txt", "?d?d",
+        "--outfile", "control/outfiles/hc_cracked_1_222.txt",
+    ])
+    db.session.commit()
+
+    _cookies(client, a.uuid)
+    body = _body(client.get(f"/v1/jobTasks/{rows[0].id}"))
+    assert str(body["job_task"]["file_key"]) == "222"
 
 
 def test_file_key_is_read_out_of_the_command_not_the_row_id(client, app):

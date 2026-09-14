@@ -1937,7 +1937,8 @@ _CRACK_BASENAME_RE = re.compile(r'hc_cracked_\d+_(.+)\.txt\Z')
 def file_key_from_command(command):
     """Read the temp-file key back out of a stored JobTasks.command, or None.
 
-    Prefers indexing the argv list -- find '--outfile', take the token after it --
+    Prefers indexing the argv list -- find the LAST '--outfile', take the token
+    after it --
     over scanning the whole command, because free-form task fields (the mask, the
     j/k rules) are literal argv elements and a mask of 'hc_cracked_9_999.txt' would
     otherwise be picked up by a plain search. Those fields all land AFTER --outfile
@@ -1952,17 +1953,32 @@ def file_key_from_command(command):
     except (TypeError, ValueError):
         argv = None
     if isinstance(argv, list):
+        # LAST --outfile, not the first: hashcat overwrites the option on every
+        # occurrence, so a repeated flag means the last one is where the cracks
+        # actually land (verified against hashcat v6.2.6 -- given two --outfile
+        # flags it writes the second and never creates the first). A command CAN
+        # carry two: the Hashcat Mask task field is free-form and split on
+        # whitespace into argv elements (split_mask_field), all of which land
+        # AFTER this flag, so a mask of '?d?d --outfile /tmp/x.txt' emits one.
+        # Taking the first would name a file hashcat never writes, and the agent
+        # would read no cracks and upload nothing -- silently, forever.
+        #
+        # Deliberately reset to None when the last --outfile is unparseable: we
+        # then do not know where hashcat writes, and answering with an earlier
+        # flag's key would be a confident lie. None falls back to the caller's
+        # own answer instead.
+        #
         # 'arg', not 'token': bandit's B105 reads any name in its secret word
         # list (token, secret, pass, pwd, ...) compared against a string literal
         # as a hardcoded password and fails the build on it.
+        found = None
         for i, arg in enumerate(argv):
             if arg == '--outfile' and i + 1 < len(argv):
                 match = _CRACK_BASENAME_RE.match(str(argv[i + 1]).rsplit('/', 1)[-1])
-                if match:
-                    return match.group(1)
-        return None
-    match = _CRACK_FILE_RE.search(command if isinstance(command, str) else str(command))
-    return match.group(1) if match else None
+                found = match.group(1) if match else None
+        return found
+    matches = _CRACK_FILE_RE.findall(command if isinstance(command, str) else str(command))
+    return matches[-1] if matches else None
 
 
 def job_task_file_key(job_task):

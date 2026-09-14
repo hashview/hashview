@@ -124,6 +124,38 @@ def test_a_mask_literal_cannot_hijack_the_key():
         {'id': 42, 'task_id': 9, 'chunk_total': -1, 'command': json.dumps(argv)})) == '42'
 
 
+def test_the_last_outfile_wins_because_hashcat_honours_the_last():
+    """A repeated --outfile must resolve to the LAST one, as hashcat does.
+
+    Verified against hashcat v6.2.6: given `--outfile A.txt --outfile B.txt` it
+    writes B and never creates A. A command really can carry two -- the Hashcat
+    Mask task field is free-form and is split on whitespace into argv elements
+    that all land after the server's own --outfile, so a mask of
+    '?d?d --outfile ...' emits a second one. Taking the first would name a file
+    hashcat never writes: the agent reads no cracks and uploads nothing, with no
+    error anywhere.
+    """
+    argv = json.loads(_command(7, 42))
+    argv += ['?d?d', '--outfile', 'control/outfiles/hc_cracked_7_999.txt']
+    assert str(agent_main.job_task_file_key(
+        {'id': 42, 'task_id': 9, 'chunk_total': -1, 'command': json.dumps(argv)})) == '999'
+
+
+def test_an_unparseable_last_outfile_does_not_fall_back_to_an_earlier_one():
+    """If the last --outfile is not a crack file, we do not know where hashcat
+    writes -- answer 'unknown' rather than confidently naming the earlier one.
+
+    Returning 42 here would claim cracks are in hc_cracked_7_42.txt when hashcat
+    is writing to /tmp/stolen.txt. Falling through to the server's file_key is
+    equally wrong about the data but does not invent agreement that isn't there.
+    """
+    argv = json.loads(_command(7, 42))
+    argv += ['?d?d', '--outfile', '/tmp/stolen.txt']
+    job_task = {'id': 42, 'task_id': 9, 'chunk_total': -1,
+                'command': json.dumps(argv), 'file_key': 55}
+    assert agent_main.job_task_file_key(job_task) == 55        # tier 2, not 42
+
+
 def test_tier2_uses_the_wire_key_when_the_command_cannot_be_parsed():
     """No --outfile in the command: fall through to the server's stated key.
 

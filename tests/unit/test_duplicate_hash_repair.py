@@ -36,7 +36,28 @@ from hashview.utils.dedupe import (
 
 MIGRATIONS = "migrations"
 BELOW = "a8c4d2e1f5b3"          # the revision immediately under f3b8c1a7d942
-HEAD = "a4c9e7b21f60"
+
+
+def head():
+    """The chain's single head, read from the scripts rather than hardcoded.
+
+    This was `HEAD = "a4c9e7b21f60"`, and merging v0.8.3-dev in moved the head
+    three revisions past it -- so the test failed with
+    `assert 'd8b3e5c02a71' == 'a4c9e7b21f60'` for a reason that has nothing to do
+    with what it asserts: that a database carrying duplicates still reaches head,
+    whatever head is. Pinning it means every unrelated migration breaks this test.
+    test_migration_smoke.py already guarantees there is exactly one head, and
+    test_migration_drift_idempotency.py derives it the same way for the same
+    reason.
+    """
+    from alembic.config import Config as AlembicConfig
+    from alembic.script import ScriptDirectory
+
+    cfg = AlembicConfig()
+    cfg.set_main_option("script_location", MIGRATIONS)
+    heads = ScriptDirectory.from_config(cfg).get_heads()
+    assert len(heads) == 1, f"Expected exactly one migration head; found {heads}"
+    return heads[0]
 OLD_INDEX = "ix_hashes_sub_ciphertext"
 UNIQUE = "uq_hashes_sub_ciphertext_hash_type"
 
@@ -103,7 +124,7 @@ def test_duplicates_no_longer_block_the_rest_of_the_migration_chain(tmp_path):
 
         insp = sa_inspect(db.engine)
         assert db.session.execute(
-            text("SELECT version_num FROM alembic_version")).scalar() == HEAD
+            text("SELECT version_num FROM alembic_version")).scalar() == head()
         assert not [c for c in insp.get_unique_constraints("hashes")
                     if c["name"] == UNIQUE], "constraint must be skipped, not forced"
         # The later revisions landed -- that is the whole point of not raising.

@@ -69,3 +69,14 @@ class DatabaseBackupForm(FlaskForm):
     """CSRF-only form backing the (fetch-driven) database backup action."""
 
     submit = SubmitField('Back up database')
+
+
+class CatalogPruneForm(FlaskForm):
+    """CSRF-only form backing the manual catalog prune action (#502).
+
+    This app has no global CSRFProtect; CSRF protection is only via
+    FlaskForm.validate_on_submit(). This form exists solely to carry and
+    validate the CSRF token, exactly like DatabaseBackupForm.
+    """
+
+    submit = SubmitField('Prune')

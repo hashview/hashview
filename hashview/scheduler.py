@@ -555,14 +555,11 @@ def _catalog_prune_candidates(stale_rules, stale_wordlists):
 
     Returns two empty lists when the prune is disarmed, so the caller's "is there
     anything to do" guard stays a single expression."""
-    from hashview.models import Settings
+    from hashview.utils.utils import catalog_prune_armed
 
     if not (stale_rules or stale_wordlists):
         return [], []
-    settings = Settings.query.first()
-    # No Settings row at all (a half-initialised install) reads as "not armed":
-    # the conservative direction for an irreversible action.
-    if settings is None or not settings.catalog_prune_orphans:
+    if not catalog_prune_armed():
         return [], []
 
     by_rule, by_wordlist = _catalog_task_references(

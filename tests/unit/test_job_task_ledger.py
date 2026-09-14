@@ -100,20 +100,21 @@ def _rows(ledger):
     return JobTasks.query.filter_by(ledger_id=ledger.id).all()
 
 
-def test_a_split_task_is_one_ledger_entry_not_many(app, db_session):
+def test_every_row_belongs_to_an_attack(app, db_session):
     job, _ = _seed()
     build_job_task_commands(job)
     db.session.commit()
 
     rows = JobTasks.query.filter_by(job_id=job.id).all()
-    assert len(rows) > 1, "expected the task to split"
     ledgers = _ledgers(job)
-    assert len(ledgers) == 1, "N chunks are ONE attack"
+    assert len(ledgers) == 1
     assert {r.ledger_id for r in rows} == {ledgers[0].id}
 
 
-def test_the_ledger_accounts_for_every_issued_unit(app, db_session):
-    """sum(chunk_keyspace) == keyspace_pos, and everything is issued up front."""
+def test_a_freshly_queued_attack_has_issued_nothing(app, db_session):
+    """The accounting identity holds trivially at the start: nothing issued, no
+    slices. It is maintained from here by minting, which is the only operation
+    that both creates a row and advances the cursor."""
     job, _ = _seed()
     build_job_task_commands(job)
     db.session.commit()
@@ -121,8 +122,8 @@ def test_the_ledger_accounts_for_every_issued_unit(app, db_session):
     ledger = _ledgers(job)[0]
     assert ledger.keyspace == 1_000_000, "base loop for -a 0 is the wordlist"
     assert ledger.keyspace_source == "exact"
-    assert sum(r.chunk_keyspace for r in _rows(ledger)) == ledger.keyspace_pos
-    assert ledger.keyspace_pos == ledger.keyspace, "materialised plan == fully issued"
+    assert ledger.keyspace_pos == 0
+    assert sum((r.chunk_keyspace or 0) for r in _rows(ledger)) == ledger.keyspace_pos
 
 
 def test_the_amplifier_is_the_rule_count(app, db_session):
@@ -144,7 +145,7 @@ def test_a_whole_unchunked_task_still_accounts_for_its_keyspace(app, db_session)
     rows = _rows(ledger)
     assert len(rows) == 1
     assert ledger.keyspace == 1_000_000
-    assert sum(r.chunk_keyspace for r in rows) == ledger.keyspace_pos == ledger.keyspace
+    assert ledger.chunkable is True, "still splittable; chunking is just switched off"
 
 
 def test_a_mask_task_has_no_keyspace_until_an_agent_measures_it(app, db_session):
@@ -209,8 +210,7 @@ def test_requeue_does_not_duplicate_or_advance_the_ledger(app, db_session):
     build_job_task_commands(job)
     db.session.commit()
     before_rows = {r.id for r in JobTasks.query.filter_by(job_id=job.id).all()}
-    before = _ledgers(job)[0]
-    keyspace, pos = before.keyspace, before.keyspace_pos
+    keyspace = _ledgers(job)[0].keyspace
 
     build_job_task_commands(job)
     db.session.commit()
@@ -218,8 +218,8 @@ def test_requeue_does_not_duplicate_or_advance_the_ledger(app, db_session):
     ledgers = _ledgers(job)
     assert len(ledgers) == 1, "re-queue must not add a second attack"
     assert {r.id for r in JobTasks.query.filter_by(job_id=job.id).all()} == before_rows
-    assert (ledgers[0].keyspace, ledgers[0].keyspace_pos) == (keyspace, pos)
-    assert sum(r.chunk_keyspace for r in _rows(ledgers[0])) == ledgers[0].keyspace_pos
+    assert ledgers[0].keyspace == keyspace
+    assert ledgers[0].keyspace_pos == 0, "a re-queued attack starts over, cleanly"
 
 
 def test_the_fingerprint_changes_when_the_wordlist_is_replaced(app, db_session):
@@ -252,7 +252,6 @@ def test_job_assignments_counts_attacks_not_rows(app, db_session):
     build_job_task_commands(job)
     db.session.commit()
 
-    assert JobTasks.query.filter_by(job_id=job.id).count() > 1
     entries = job_assignments([job.id])[job.id]
     assert len(entries) == 1
     assert entries[0]["entry_id"] == _ledgers(job)[0].id

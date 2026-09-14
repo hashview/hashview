@@ -21,6 +21,7 @@ from hashview.models import (
 )
 from hashview.utils.utils import (
     agent_telemetry,
+    close_ledger,
     is_chunk_row,
     update_job_task_status,
 )
@@ -452,7 +453,12 @@ def stop_job_task(job_task_id):
 
     if job_task and job:
         if current_user.admin or job.owner_id == current_user.id:
-            update_job_task_status(job_task.id, 'Canceled')
+            # Stopping ONE slice of an attack that still has a cursor is not a
+            # coherent request: the attack would just issue the next slice, and
+            # meanwhile the cancelled range is a permanent hole below the cursor
+            # that nothing will ever re-run. Stop the whole attack.
+            if not close_ledger(job.id, 'canceled', ledger_id=job_task.ledger_id):
+                update_job_task_status(job_task.id, 'Canceled')
         else:
             flash('You are unauthorized to stop this task', 'danger')
 
@@ -472,9 +478,12 @@ def stop_task(job_id, task_id):
         flash('Job not found.', 'warning')
         return redirect("/")
     if current_user.admin or job.owner_id == current_user.id:
-        for jt in JobTasks.query.filter_by(job_id=job_id, task_id=task_id).all():
-            if jt.status in ('Running', 'Queued', 'Not Started', 'Importing'):
-                update_job_task_status(jt.id, 'Canceled')
+        # Closes the attack's ledger as well as its live rows; without that the
+        # attack stays mintable and simply re-appears on the next heartbeat.
+        if not close_ledger(job_id, 'canceled', task_id=task_id):
+            for jt in JobTasks.query.filter_by(job_id=job_id, task_id=task_id).all():
+                if jt.status in ('Running', 'Queued', 'Not Started', 'Importing'):
+                    update_job_task_status(jt.id, 'Canceled')
     else:
         flash('You are unauthorized to stop this task', 'danger')
 

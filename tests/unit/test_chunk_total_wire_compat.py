@@ -154,22 +154,36 @@ def test_two_whole_rows_of_one_task_get_different_files(app, db_session):
         assert _legacy_agent_file_key(_wire(row)) == row.id
 
 
-def test_chunk_rows_keep_a_real_chunk_total(app, db_session):
-    """The sentinel must not clobber the count a chunked row still reports."""
+def test_a_minted_slice_is_still_keyed_on_its_own_row(app, db_session):
+    """The key contract has to survive minting, where rows appear mid-run.
+
+    A minted slice carries CHUNK_TOTAL_WHOLE like every other row -- there is no
+    chunk COUNT any more, because the size of each slice depends on which agent
+    claims it and the total is not known until the attack finishes. What matters
+    is only that the value stays truthy, so an un-upgraded agent still keys its
+    temp files on the row id.
+    """
+    from hashview.models import AgentBenchmarks, Agents, JobTaskLedger
+    from hashview.utils.utils import issue_slice
+
     job = _seed(enabled_chunking=True)
-    from hashview.models import AgentBenchmarks, Agents
+    build_job_task_commands(job)
+    db.session.commit()
+
     agent = Agents(name="ag", src_ip="1.1.1.1", uuid="u1", status="Idle")
     db.session.add(agent)
     db.session.commit()
     db.session.add(AgentBenchmarks(agent_id=agent.id, hash_type=1000, speed=1000))
     db.session.commit()
 
-    build_job_task_commands(job)
-    db.session.commit()
+    ledger = JobTaskLedger.query.filter_by(job_id=job.id).one()
+    seed_row = JobTasks.query.filter_by(ledger_id=ledger.id).one()
+    minted = issue_slice(job=job, ledger=ledger, agent_id=agent.id, hash_type=1000,
+                         target_seconds=60, row=seed_row)
+    assert minted is not None
 
-    rows = JobTasks.query.filter_by(job_id=job.id).all()
-    assert len(rows) > 1, "expected the task to split"
-    assert all(r.chunk_total == len(rows) for r in rows)
-    assert all(r.chunk_total > 0 for r in rows)
-    for row in rows:
-        assert _legacy_agent_file_key(_wire(row)) == row.id
+    assert minted.chunk_total == CHUNK_TOTAL_WHOLE
+    assert minted.chunk_total, "must stay truthy for a pre-0.8.4 agent"
+    assert _legacy_agent_file_key(_wire(minted)) == minted.id
+    for name, path in _files(minted).items():
+        assert path.endswith(f"_{minted.id}.txt") or path.endswith(f"_{minted.id}.pot"), name

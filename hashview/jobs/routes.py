@@ -45,6 +45,7 @@ from hashview.utils.hashcat_modes import CUSTOM_HASH_TYPE
 from hashview.utils.utils import (
     apply_name_filter,
     build_job_task_commands,
+    close_ledger,
     dynamic_wordlist_ids,
     import_hashfilehashes,
     is_chunk_row,
@@ -1075,6 +1076,10 @@ def jobs_stop(job_id):
             job.status = 'Canceled'
             job.ended_at = datetime.now()
 
+            # Close the ledgers too. Cancelling only the rows leaves every attack
+            # still mintable, so the next heartbeat issues a fresh slice of the
+            # job that was just stopped -- one burned per agent per beat, forever.
+            close_ledger(job_id, 'job_stopped', cancel_rows=False)
             for job_task in job_tasks:
                 job_task.status = 'Canceled'
                 job_task.agent_id = None

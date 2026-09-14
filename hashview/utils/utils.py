@@ -40,7 +40,6 @@ from hashview.utils.chunking import (
     MASK_MODES,
     WORDLIST_MODES,
     is_chunkable,
-    plan_chunks,
     wordlist_amplifier,
 )
 from hashview.utils.hashcat_modes import HASH_ONLY_AUTO_RULES
@@ -2193,6 +2192,198 @@ def _group_assignments(rows):
     return assignments
 
 
+def benchmark_for(agent_id, hash_type):
+    """One agent's measured speed (H/s) for a hash type, or None.
+
+    None covers both "never benchmarked" and "benchmarked at 0", which is the
+    tri-state meaning "this agent's hashcat cannot run this mode" -- a 0 must
+    never reach a division or a chunk-size calculation.
+
+    This is the per-agent counterpart to slowest_benchmark(), which takes the
+    MINIMUM across the fleet. Sizing a slice from the slowest agent meant an agent
+    50x faster than the floor still took 1/50th-sized bites of the keyspace.
+    """
+    row = AgentBenchmarks.query.filter_by(agent_id=agent_id, hash_type=hash_type).first()
+    return row.speed if row and row.speed > 0 else None
+
+
+def chunk_units(ledger, speed, target_seconds):
+    """Base-loop units this agent should take to spend ~target_seconds cracking.
+
+    The agent's speed is in candidates/sec and the cursor counts BASE-LOOP units,
+    so the conversion is the amplifier: one unit costs `amp` candidates.
+
+    Floored at 1 -- a zero-length slice advances nothing, produces a no-op hashcat
+    run, and would make the cursor compare-and-swap write an unchanged value,
+    which MySQL reports as rowcount 0 and we would read as "lost the race".
+    Floored again at min_slice so DEFAULT_MAX_CHUNKS keeps bounding rows per
+    attack. Clamped to whatever is left so the final slice never runs past the end.
+    """
+    remaining = ledger.keyspace - ledger.keyspace_pos
+    if remaining <= 0:
+        return 0
+    if not speed or speed <= 0 or not target_seconds or target_seconds <= 0:
+        units = ledger.min_slice
+    else:
+        candidates = int(speed) * int(target_seconds)
+        units = -(-candidates // max(1, int(ledger.amp)))    # ceil division
+    return max(1, min(max(units, ledger.min_slice or 1), remaining))
+
+
+def ledger_is_mintable(ledger):
+    """True if more of this attack's keyspace can still be handed out."""
+    return (ledger is not None and ledger.state == 'Ready' and ledger.chunkable
+            and ledger.keyspace and ledger.keyspace_pos < ledger.keyspace)
+
+
+def close_ledger(job_id, reason, task_id=None, ledger_id=None, cancel_rows=True):
+    """Stop issuing any more of an attack, and terminate what is still live.
+
+    THE single gate for cancellation, and the one thing that must never be
+    bypassed. Every cancel path works by setting existing rows to 'Canceled',
+    which under a fully-materialised plan is total -- there are no other rows. It
+    is not total against a cursor: there are always more slices waiting to be
+    born, so cancelling only the rows leaves the attack mintable and the very next
+    heartbeat issues slice N+1, cancels it, issues N+2. One slice burned per agent
+    per heartbeat, forever.
+
+    Returns the number of ledger rows closed.
+    """
+    query = JobTaskLedger.query.filter_by(job_id=job_id)
+    if ledger_id is not None:
+        query = query.filter(JobTaskLedger.id == ledger_id)
+    elif task_id is not None:
+        query = query.filter(JobTaskLedger.task_id == task_id)
+    ledgers = query.all()
+    for ledger in ledgers:
+        ledger.state = 'Closed'
+        ledger.closed_reason = reason
+        ledger.rev = (ledger.rev or 0) + 1
+        ledger.updated_at = datetime.now()
+    db.session.commit()
+
+    if cancel_rows:
+        rows = JobTasks.query.filter_by(job_id=job_id)
+        if ledger_id is not None:
+            rows = rows.filter(JobTasks.ledger_id == ledger_id)
+        elif task_id is not None:
+            # Scoped by task even when no ledger matched. Falling back to "every
+            # row of the job" here would let a request to stop ONE attack cancel
+            # the whole job.
+            rows = rows.filter(JobTasks.task_id == task_id)
+        for row in rows.all():
+            if row.status in JOBTASK_ACTIVE_STATUSES:
+                update_job_task_status(row.id, 'Canceled', finalize=False)
+        finalize_job_if_complete(job_id)
+    return len(ledgers)
+
+
+def ledger_coverage_gaps():
+    """Ledgers whose issued slices do not account for their cursor.
+
+    The accounting identity the whole design rests on:
+
+        sum(chunk_keyspace over an attack's rows) == ledger.keyspace_pos
+
+    It holds because minting is the ONLY operation that both creates a row and
+    advances the cursor, and it does both atomically, by the same amount. Nothing
+    else ever creates a sliced row or moves the cursor -- re-claiming and
+    reclaiming change agent_id and status, never the slice.
+
+    A row coming back from here means base-loop units were handed out that no row
+    accounts for, i.e. compute that will never run. Returns a list of
+    (ledger, issued_units) so a caller can log or alert. Cheap enough to run on
+    every reclaim sweep, and worth far more there than any amount of reasoning.
+    """
+    gaps = []
+    totals = dict(db.session.query(JobTasks.ledger_id,
+                                   db.func.coalesce(db.func.sum(JobTasks.chunk_keyspace), 0))
+                  .filter(JobTasks.ledger_id.isnot(None))
+                  .group_by(JobTasks.ledger_id).all())
+    for ledger in JobTaskLedger.query.filter(JobTaskLedger.keyspace_pos > 0).all():
+        issued = int(totals.get(ledger.id, 0) or 0)
+        if issued != int(ledger.keyspace_pos or 0):
+            gaps.append((ledger, issued))
+    return gaps
+
+
+def issue_slice(job, ledger, agent_id, hash_type, target_seconds, row=None):
+    """Hand this agent the next slice of an attack. Returns the JobTasks row, or None.
+
+    Creating the row and advancing the cursor happen in ONE transaction and by the
+    SAME amount. That is the whole coverage argument: every base-loop unit below
+    the cursor is accounted for by exactly one row, so nothing can be handed out
+    without a row to run it, and no row can exist for units never reserved.
+
+    The cursor is moved with a compare-and-swap rather than a read-then-write. A
+    plain SELECT inside an open transaction is a snapshot read -- under MySQL's
+    default REPEATABLE READ it cannot see another agent's committed advance -- so
+    two agents would both read the same position, both write, and one slice of the
+    keyspace would simply never be issued. An UPDATE ... WHERE is a current read,
+    so exactly one of them can move it.
+
+    A lost race is repaired by rollback(), which is NOT cleanup here: it is the
+    only way to get a fresh snapshot for the retry, AND it discards the row work
+    done speculatively in the same transaction. db.session.refresh() would not do
+    -- it re-issues a SELECT inside the same read view and returns the same stale
+    value, which is exactly why the old rechunk_queued_tasks_for_hashtype
+    re-check never worked.
+
+    ``row`` is an existing Queued row to fill in (the seed row, or one that came
+    back from a reclaim); omit it to create a new one.
+    """
+    seed_row_id = row.id if row is not None else None
+    for _ in range(3):
+        if not ledger_is_mintable(ledger):
+            return None
+        start = int(ledger.keyspace_pos)
+        units = chunk_units(ledger, benchmark_for(agent_id, hash_type), target_seconds)
+        if units <= 0:
+            return None
+        end = start + units
+        expected_rev = ledger.rev
+
+        target = row
+        if target is None:
+            target = JobTasks(job_id=job.id, task_id=ledger.task_id, status='Queued',
+                              ledger_id=ledger.id)
+            db.session.add(target)
+            db.session.flush()          # need the id: it names this run's temp files
+
+        _set_job_task_command(job, target, {'skip': start, 'limit': units},
+                              chunk_no=(ledger.issued_count or 0) + 1)
+        target.ledger_id = ledger.id
+        target.chunk_keyspace = units
+        target.agent_id = agent_id
+        target.status = 'Running'
+        target.started_at = datetime.now()
+
+        claimed = (db.session.query(JobTaskLedger)
+                   .filter(JobTaskLedger.id == ledger.id,
+                           JobTaskLedger.state == 'Ready',
+                           JobTaskLedger.keyspace_pos == start,
+                           JobTaskLedger.rev == expected_rev)
+                   .update({'keyspace_pos': end,
+                            'issued_count': JobTaskLedger.issued_count + 1,
+                            'rev': JobTaskLedger.rev + 1,
+                            'updated_at': datetime.now()},
+                           synchronize_session=False))
+        if claimed:
+            db.session.commit()         # row and cursor commit together, or neither
+            return target
+        db.session.rollback()
+        ledger = JobTaskLedger.query.get(ledger.id)
+        if ledger is None:
+            return None
+        # Re-fetch rather than reuse: the rollback reverted our edits. A row we
+        # created speculatively is gone entirely, but one the caller handed us
+        # still exists and must be filled in rather than duplicated.
+        row = JobTasks.query.get(seed_row_id) if seed_row_id is not None else None
+        if seed_row_id is not None and (row is None or row.status != 'Queued'):
+            return None                  # someone else claimed the seed row
+    return None
+
+
 def build_job_task_commands(job):
     """Queue-time: (re)build each of a job's JobTasks commands, splitting eligible
     tasks into per-agent chunks when Settings.enabled_chunking is on.
@@ -2216,131 +2407,46 @@ def build_job_task_commands(job):
              JobNotifications.sent_at.isnot(None))
      .update({'sent_at': None}, synchronize_session=False))
 
-    # Re-queue: already chunked once -> rebuild from each row's stored slice.
-    if any(is_chunk_row(row) for row in rows):
-        for row in rows:
-            _set_job_task_command(job, row, _chunk_spec_from_row(row),
-                                  chunk_no=row.chunk_no, chunk_total=row.chunk_total)
-        _sync_job_ledger(job, _group_assignments(rows))
-        return
-
     settings = Settings.query.first()
     chunking_on = bool(settings and settings.enabled_chunking)
-    target_seconds = (settings.chunk_target_duration
-                      if settings and settings.chunk_target_duration else 3600)
-    dynamic_ids = dynamic_wordlist_ids() if chunking_on else set()
-    hash_type = _job_hash_type(job) if chunking_on else None
 
+    # Collapse each attack back to a single row. A re-queue of an already-run job
+    # arrives carrying the previous run's slices; keeping them would leave the
+    # cursor describing work from a run that is over, so the accounting identity
+    # (sum of issued slices == cursor) would be false from the first heartbeat.
+    # The lowest id is kept so the attack holds its place in the queue order.
     produced = []
-    for job_task in rows:
-        task = Tasks.query.get(job_task.task_id)
-        specs = [{}]
-        if (chunking_on and task is not None and is_chunkable(
-                task.hc_attackmode, task.wl_id, task.wl_id_2, dynamic_ids)):
-            wl = Wordlists.query.get(task.wl_id) if task.wl_id else None
-            wl2 = Wordlists.query.get(task.wl_id_2) if task.wl_id_2 else None
-            rule = Rules.query.get(task.rule_id) if task.rule_id else None
-            specs = plan_chunks(
-                task.hc_attackmode,
-                wordlist_size=(wl.size if wl else None),
-                wordlist2_size=(wl2.size if wl2 else None),
-                rule_count=(rule.size if rule else 0),
-                mask=task.hc_mask,
-                slowest_speed=(slowest_benchmark(hash_type) if hash_type is not None else None),
-                target_seconds=target_seconds,
-            )
+    for task_id, group in _group_assignments(rows):
+        keeper, extras = group[0], group[1:]
+        for extra in extras:
+            db.session.delete(extra)
+        keeper.chunk_keyspace = None
+        keeper.agent_id = None
+        keeper.started_at = None
+        produced.append((task_id, [keeper]))
+    db.session.flush()
 
-        total = len(specs)
-        made = []
-        for idx, spec in enumerate(specs):
-            if idx == 0:
-                row = job_task
-            else:
-                row = JobTasks(job_id=job.id, task_id=job_task.task_id, status='Queued')
-                db.session.add(row)
-                db.session.flush()   # assign row.id so per-chunk file names are unique
-            if total > 1:
-                _set_job_task_command(job, row, spec, chunk_no=idx + 1, chunk_total=total)
-            else:
-                _set_job_task_command(job, row, spec)
-            made.append(row)
-        # One assignment per pre-fan-out row: the rows it expanded into are all
-        # receipts for the same attack.
-        produced.append((job_task.task_id, made))
+    # Every attack starts as exactly ONE queued row. A mintable attack has its
+    # slice filled in when an agent claims it, sized from THAT agent's benchmark;
+    # an attack that cannot be split keeps the whole-run command built here.
+    #
+    # The row is born carrying a valid whole-run command either way. That is the
+    # safety floor: if minting ever fails to fill in a slice, what runs is the
+    # whole attack -- a superset of its keyspace, so coverage is preserved -- and
+    # never a row with no command for the agent to run.
+    for _task_id, group in produced:
+        _set_job_task_command(job, group[0], {})
 
-    _sync_job_ledger(job, produced)
+    ledgers = _sync_job_ledger(job, produced)
 
-
-def rechunk_queued_tasks_for_hashtype(hash_type):
-    """Split still-queued whole tasks of `hash_type` now that a benchmark exists.
-
-    Chunk plans are built at queue time from the benchmarks available THEN. If a
-    job is queued for a brand-new hash type while every agent is busy, no
-    benchmark exists yet and its tasks fall back to whole (un-chunked) runs. Once
-    the first benchmark for that hash type lands (agent goes idle -> BENCHMARK ->
-    reports), this re-plans any of those tasks that are still safe to split:
-    status 'Queued', no agent assigned, not already chunked. Tasks already picked
-    up by an agent are left alone. Preserves the queue-built-upfront model.
-    """
-    settings = Settings.query.first()
-    if not (settings and settings.enabled_chunking):
-        return
-    slowest = slowest_benchmark(hash_type)
-    if not slowest:
-        return
-    target_seconds = (settings.chunk_target_duration
-                      if settings.chunk_target_duration else 3600)
-    dynamic_ids = dynamic_wordlist_ids()
-
-    candidates = (JobTasks.query
-                  .filter(JobTasks.status == 'Queued',
-                          JobTasks.agent_id.is_(None),
-                          JobTasks.chunk_skip.is_(None),
-                          JobTasks.chunk_mask.is_(None))
-                  .all())
-    changed = False
-    for jt in candidates:
-        # Re-check the row is still safe to re-plan (an agent may have grabbed it
-        # between the query and now); skip if it was taken.
-        if jt.status != 'Queued' or jt.agent_id is not None or is_chunk_row(jt):
-            continue
-        job = Jobs.query.get(jt.job_id)
-        if job is None or job.status not in ('Queued', 'Running'):
-            continue
-        if _job_hash_type(job) != hash_type:
-            continue
-        task = Tasks.query.get(jt.task_id)
-        if task is None or not is_chunkable(
-                task.hc_attackmode, task.wl_id, task.wl_id_2, dynamic_ids):
-            continue
-        wl = Wordlists.query.get(task.wl_id) if task.wl_id else None
-        wl2 = Wordlists.query.get(task.wl_id_2) if task.wl_id_2 else None
-        rule = Rules.query.get(task.rule_id) if task.rule_id else None
-        specs = plan_chunks(
-            task.hc_attackmode,
-            wordlist_size=(wl.size if wl else None),
-            wordlist2_size=(wl2.size if wl2 else None),
-            rule_count=(rule.size if rule else 0),
-            mask=task.hc_mask,
-            slowest_speed=slowest,
-            target_seconds=target_seconds,
-        )
-        if len(specs) <= 1:
-            continue  # still not worth splitting at this speed/size
-
-        total = len(specs)
-        for idx, spec in enumerate(specs):
-            if idx == 0:
-                row = jt                                   # reuse the whole row as chunk 1
-            else:
-                row = JobTasks(job_id=jt.job_id, task_id=jt.task_id, status='Queued')
-                db.session.add(row)
-                db.session.flush()
-            _set_job_task_command(job, row, spec, chunk_no=idx + 1, chunk_total=total)
-        changed = True
-
-    if changed:
-        db.session.commit()
+    # A mintable attack has issued nothing yet: its cursor starts at zero and the
+    # single queued row above is a placeholder waiting for a slice.
+    for ledger in ledgers:
+        if chunking_on and ledger.state == 'Ready' and ledger.chunkable and ledger.keyspace:
+            ledger.keyspace_pos = 0
+            ledger.issued_count = 0
+            for row in JobTasks.query.filter_by(ledger_id=ledger.id).all():
+                row.chunk_keyspace = None
 
 
 # A JobTasks row in one of these states still owes compute. Everything else
@@ -2434,6 +2540,17 @@ def finalize_job_if_complete(job_id, goal_met=False):
 
     if any(r.status in JOBTASK_ACTIVE_STATUSES for r in rows):
         return False
+
+    # No row is active -- but an attack with keyspace still unissued is not
+    # finished, it is merely between slices. This is the case the old
+    # absence-based predicate could not see: once slices are cut on demand there
+    # are moments when an attack has no materialised row at all, and reading that
+    # as "done" would complete the job, stamp ended_at and burn its notifications
+    # while most of the keyspace had never been tried.
+    for ledger in JobTaskLedger.query.filter_by(job_id=job.id).all():
+        if ledger.state in ('Ready', 'Pending') and (
+                ledger.keyspace is None or ledger.keyspace_pos < ledger.keyspace):
+            return False
 
     outcome = _job_completion_outcome(rows, goal_met=goal_met)
     ended_at = datetime.now()

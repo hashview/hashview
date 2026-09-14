@@ -43,6 +43,7 @@ _ACTION_BADGE = {
     'recovered': ('RECOVERED', 'green'),
     'file_missing': ('MISSING', 'red'),
     'file_restored': ('RESTORED', 'green'),
+    'pruned': ('PRUNED', 'red'),
     'restore': ('RESTORE', 'amber'),
 }
 

@@ -541,7 +541,8 @@ def _catalog_task_references(rule_ids, wordlist_ids):
     return catalog_task_references(rule_ids, wordlist_ids)
 
 
-def _catalog_prune_candidates(stale_rules, stale_wordlists):
+def _catalog_prune_candidates(stale_rules, stale_wordlists,
+                              healthy_rules=0, healthy_wordlists=0):
     """(rules, wordlists) safe to delete outright: stranded AND unreferenced (#494).
 
     ``stale_*`` are rows whose file is gone and whose admins were already told in
@@ -555,6 +556,24 @@ def _catalog_prune_candidates(stale_rules, stale_wordlists):
     between restore and delete there means deciding the fate of the task, which
     is an operator's call, not a scheduler's.
 
+    ``healthy_*`` is how many rows of that kind DO resolve on disk, and a kind
+    with none of them is not pruned at all. This is the second rail, and it
+    covers what the isdir circuit breaker cannot see: a control directory that
+    exists and is EMPTY. A fresh named volume on redeploy, a bind-mount typo, a
+    restore that brought the database back but not the files -- each strands the
+    whole catalog at once while every isdir check passes. Without this, that is
+    one hour from "wrong volume attached" to "the catalog is gone", and
+    remounting the right volume then produces files whose rows no longer exist.
+    When not one file of a kind is there, the disk is the thing to distrust.
+
+    Judged per kind, because control/rules and control/wordlists are separate
+    mounts on plenty of installs. Dynamic wordlists do not count as healthy:
+    their file is never read, so its presence says nothing about the mount.
+
+    The cost is that a catalog whose every row is stranded is never pruned
+    automatically, however genuine the loss. That is the right way to be wrong:
+    the alert still names every row, and deleting them by hand stays available.
+
     Returns two empty lists when the prune is disarmed, so the caller's "is there
     anything to do" guard stays a single expression."""
     from hashview.utils.utils import catalog_prune_armed
@@ -562,6 +581,13 @@ def _catalog_prune_candidates(stale_rules, stale_wordlists):
     if not (stale_rules or stale_wordlists):
         return [], []
     if not catalog_prune_armed():
+        return [], []
+
+    if not healthy_rules:
+        stale_rules = []
+    if not healthy_wordlists:
+        stale_wordlists = []
+    if not (stale_rules or stale_wordlists):
         return [], []
 
     by_rule, by_wordlist = _catalog_task_references(
@@ -615,28 +641,37 @@ def _catalog_health_check_inner(db :SQLAlchemy, logger :Logger):
     # only after a full sweep interval, which is what keeps the prune from ever
     # being the first thing an operator hears about a row (#494).
     missing_rules, restored_rules, stale_rules = [], [], []
+    healthy_rules = 0                  # rows whose file IS there; see the prune rail
     for rule in Rules.query.all():
         if rule_file_missing(rule):
             if rule.file_missing_notified:
                 stale_rules.append(rule)
             else:
                 missing_rules.append(rule)
-        elif rule.file_missing_notified:
-            restored_rules.append(rule)
+        else:
+            healthy_rules += 1
+            if rule.file_missing_notified:
+                restored_rules.append(rule)
 
     missing_wordlists, restored_wordlists, stale_wordlists = [], [], []
+    healthy_wordlists = 0
     # Dynamic rows are filtered out by wordlist_file_missing (their file is a
-    # regenerable cache), so they can never enter any of these lists.
+    # regenerable cache), so they can never enter any of these lists -- and they
+    # do not count as healthy either, since nothing ever reads that file.
     for wordlist in Wordlists.query.all():
         if wordlist_file_missing(wordlist):
             if wordlist.file_missing_notified:
                 stale_wordlists.append(wordlist)
             else:
                 missing_wordlists.append(wordlist)
-        elif wordlist.file_missing_notified:
-            restored_wordlists.append(wordlist)
+        else:
+            if (getattr(wordlist, 'type', None) or '').lower() != 'dynamic':
+                healthy_wordlists += 1
+            if wordlist.file_missing_notified:
+                restored_wordlists.append(wordlist)
 
-    pruned_rules, pruned_wordlists = _catalog_prune_candidates(stale_rules, stale_wordlists)
+    pruned_rules, pruned_wordlists = _catalog_prune_candidates(
+        stale_rules, stale_wordlists, healthy_rules, healthy_wordlists)
 
     if not (missing_rules or missing_wordlists or restored_rules or restored_wordlists
             or pruned_rules or pruned_wordlists):

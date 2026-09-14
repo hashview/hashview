@@ -73,7 +73,7 @@
                         {#- A stranded row nothing references is debris the hourly sweep deletes on its
                             own (#494). Say so HERE, on the page that shows it: a row that vanishes
                             overnight with no warning is indistinguishable from data loss. #}
-                        {%- if orphan_rule_ids is defined and rule.id in orphan_rule_ids %} <span class="badge dim" title="{{ 'No task uses this entry and its file is gone, so it will be removed automatically by the next hourly catalog sweep. Restore the file to keep it.' if prune_armed else 'No task uses this entry and its file is gone. Safe to delete.' }}">UNUSED</span>{% endif %}
+                        {%- if rule.id in orphan_rule_ids %} <span class="badge dim" title="{{ 'No task uses this entry and its file is gone, so it will be removed automatically by a later hourly catalog sweep. Restore the file to keep it.' if prune_armed else 'No task uses this entry and its file is gone. Safe to delete.' }}">UNUSED</span>{% endif %}
                     </span>
                 </td>
                 {# a missing file makes the stored line count a claim about something that isn't there #}
@@ -239,7 +239,7 @@
         {% elif gone %}
         <div class="flash flash-warning" style="margin-top:22px;">
             This file is gone from disk and no task uses this entry.
-            {% if prune_armed %}The hourly catalog sweep will remove it automatically — restore the file if you want to keep it.{% else %}Nothing will remove it automatically; delete it, or restore the file.{% endif %}
+            {% if prune_armed %}A later hourly catalog sweep will remove it automatically — restore the file if you want to keep it.{% else %}Nothing removes it automatically; delete it, or restore the file.{% endif %}
         </div>
         {% endif %}
 

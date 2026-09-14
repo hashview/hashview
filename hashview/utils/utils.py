@@ -1790,6 +1790,16 @@ def orphaned_wordlist_ids(wordlists=None):
     _, by_wordlist = catalog_task_references(wordlist_ids=missing)
     return {wl_id for wl_id in missing if not by_wordlist.get(wl_id)}
 
+def catalog_prune_armed():
+    """True when the scheduled sweep may delete orphaned catalog rows (#494).
+
+    No Settings row at all — a half-initialised install — reads as NOT armed:
+    the conservative direction for an irreversible action. The listings ask this
+    too, so the page never promises a removal that is switched off.
+    """
+    settings = Settings.current()
+    return bool(settings is not None and settings.catalog_prune_orphans)
+
 def remove_rule_file(stored_path):
     """Best-effort removal of a rule's file from ``control/rules``.
 

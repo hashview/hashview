@@ -1386,6 +1386,64 @@ def missing_wordlist_ids(wordlists=None):
             Wordlists.id, Wordlists.path, Wordlists.type).all()
     return {w.id for w in wordlists if wordlist_file_missing(w)}
 
+def catalog_task_references(rule_ids=None, wordlist_ids=None):
+    """(rule_id -> {task ids}, wordlist_id -> {task ids}) in at most two queries.
+
+    Which tasks reference a catalog row is what separates housekeeping from an
+    incident: an unreferenced stale row can simply be removed, while one behind a
+    queued job needs an operator to choose between restore and delete. wl_id_2
+    counts -- a combinator task's second wordlist is a real reference (see
+    build_hashcat_command), and forgetting it is exactly the bug the wordlist
+    delete guard had to be fixed for.
+
+    Single implementation for the scheduler's prune, the /v1 listings and the
+    UI, so none of them can disagree about what is safe to remove.
+    """
+    from sqlalchemy import or_
+
+    by_rule, by_wordlist = {}, {}
+    if rule_ids:
+        for task_id, rule_id in db.session.query(Tasks.id, Tasks.rule_id).filter(
+                Tasks.rule_id.in_(rule_ids)).all():
+            by_rule.setdefault(rule_id, set()).add(task_id)
+    if wordlist_ids:
+        for task_id, wl_id, wl_id_2 in db.session.query(
+                Tasks.id, Tasks.wl_id, Tasks.wl_id_2).filter(
+                    or_(Tasks.wl_id.in_(wordlist_ids),
+                        Tasks.wl_id_2.in_(wordlist_ids))).all():
+            for candidate in (wl_id, wl_id_2):
+                if candidate in wordlist_ids:
+                    by_wordlist.setdefault(candidate, set()).add(task_id)
+    return by_rule, by_wordlist
+
+def orphaned_rule_ids(rules=None):
+    """Ids of Rules rows whose file is gone AND which no task references (#494).
+
+    The debris set: nothing can use these, nothing points at them, and the
+    scheduled sweep deletes them once the admins have been told. Computed, never
+    stored -- like `missing`, of which it is a strict subset.
+
+    Short-circuits on a healthy catalog so the listings, which call this on every
+    GET, pay nothing for the task scan when there is nothing to scan for.
+    """
+    missing = missing_rule_ids(rules)
+    if not missing:
+        return set()
+    by_rule, _ = catalog_task_references(rule_ids=missing)
+    return {rule_id for rule_id in missing if not by_rule.get(rule_id)}
+
+def orphaned_wordlist_ids(wordlists=None):
+    """Ids of Wordlists rows whose file is gone AND which no task references.
+
+    See orphaned_rule_ids. Dynamic rows can never appear here, because
+    wordlist_file_missing never reports them missing in the first place.
+    """
+    missing = missing_wordlist_ids(wordlists)
+    if not missing:
+        return set()
+    _, by_wordlist = catalog_task_references(wordlist_ids=missing)
+    return {wl_id for wl_id in missing if not by_wordlist.get(wl_id)}
+
 def remove_rule_file(stored_path):
     """Best-effort removal of a rule's file from ``control/rules``.
 

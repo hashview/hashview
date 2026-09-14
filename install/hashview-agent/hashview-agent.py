@@ -128,7 +128,6 @@ from agent.api import api  # noqa: E402 - config.conf must exist before agent.ap
 from agent.status import convert_speed, time_difference  # noqa: E402,F401 - re-exported for callers
 from agent.status import hashcat_status as hashcatParser  # noqa: E402
 
-
 _HC_VERSION = None
 
 

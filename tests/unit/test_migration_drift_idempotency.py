@@ -134,7 +134,10 @@ def test_chunk_mask_is_widened_and_the_widening_reverses(tmp_path):
         upgrade(directory=MIGRATIONS_DIR)
         assert _chunk_mask_length(db) == 255
 
-        downgrade(directory=MIGRATIONS_DIR, revision="-1")
+        # Named predecessor, not "-1": a relative step is a step from whatever
+        # head happens to be, so every migration added after a4c9e7b21f60 would
+        # silently re-point this at an unrelated revision and fail here.
+        downgrade(directory=MIGRATIONS_DIR, revision="e5d1c7b3a904")
         assert _chunk_mask_length(db) == 64
 
         upgrade(directory=MIGRATIONS_DIR)          # idempotent re-apply

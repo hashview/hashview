@@ -224,6 +224,11 @@ def agents_delete(agent_id):
     for jt in JobTasks.query.filter_by(agent_id=agent_id).all():
         if jt.status == 'Running':
             jt.status = 'Queued'
+            # started_at is never otherwise cleared, and _parent_task_started_at
+            # takes MIN(started_at) across a task's rows -- so a re-queued row
+            # that kept this run's timestamp would let Settings.max_runtime_tasks
+            # cancel the task as soon as another agent picked it up.
+            jt.started_at = None
         jt.agent_id = None
     AgentBenchmarks.query.filter_by(agent_id=agent_id).delete(synchronize_session=False)
 

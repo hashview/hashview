@@ -417,6 +417,80 @@ def _agent_health_check_inner(db :SQLAlchemy, logger :Logger):
             agent.offline_notified = False
             db.session.commit()
 
+    _reclaim_stranded_job_tasks(db, logger, cutoff)
+
+
+def _reclaim_stranded_job_tasks(db :SQLAlchemy, logger :Logger, cutoff):
+    """Return work held by an agent that stopped checking in to the queue.
+
+    Nothing did this before. A JobTasks row assigned to an agent that died stayed
+    'Running' forever: the runtime caps (Settings.max_runtime_tasks /
+    max_runtime_jobs) are only evaluated inside the heartbeat handler, so if the
+    only agent on a job dies there are no heartbeats and neither cap ever fires;
+    this health check notified about the agent but never touched its work; and the
+    single path that did re-queue a Running row was DELETING the agent. So the
+    slice was lost, and because the row stayed non-terminal the job could never
+    reach a terminal status either.
+
+    Runs over ROWS rather than over agents. An agent-centric loop cannot see a row
+    whose owner is alive and busy with something else, which is exactly the shape
+    a Start on an already-running job produces.
+
+    The claim is a conditional UPDATE, not a read-then-write: rowcount 0 means the
+    agent checked in (or finished) between the scan and the update, and that row
+    is left strictly alone. The bias throughout is deliberate and asymmetric -- a
+    slice that gets re-issued and completed twice costs wall-clock and nothing
+    else, because the potfile de-duplicates and recovered hashes are idempotent,
+    while a slice that is never re-issued is compute lost for good AND blocks the
+    job forever. Every ambiguous case resolves toward re-issuing.
+
+    started_at is cleared with the same statement. It is never otherwise reset, and
+    _parent_task_started_at takes MIN(started_at) across a task's rows -- so a
+    reclaimed row that kept a timestamp from the run that stranded it would make
+    Settings.max_runtime_tasks cancel the task the moment it was picked back up.
+    """
+    from hashview.models import Agents, Jobs, JobTasks
+
+    stale_agent_ids = [a.id for a in Agents.query
+                       .filter(Agents.last_checkin.isnot(None),
+                               Agents.last_checkin < cutoff).all()]
+    if not stale_agent_ids:
+        return 0
+
+    stranded = (JobTasks.query
+                .filter(JobTasks.status == 'Running',
+                        JobTasks.agent_id.in_(stale_agent_ids))
+                .all())
+    reclaimed = 0
+    for job_task in stranded:
+        job = Jobs.query.get(job_task.job_id)
+        if job is None or job.status not in ('Queued', 'Running'):
+            # Re-queueing onto a stopped or deleted job would create work nothing
+            # will ever collect. Retire the row instead so the job can settle.
+            (db.session.query(JobTasks)
+             .filter(JobTasks.id == job_task.id, JobTasks.status == 'Running')
+             .update({'status': 'Canceled', 'agent_id': None},
+                     synchronize_session=False))
+            db.session.commit()
+            continue
+        owner = job_task.agent_id
+        claimed = (db.session.query(JobTasks)
+                   .filter(JobTasks.id == job_task.id,
+                           JobTasks.status == 'Running',
+                           JobTasks.agent_id == owner)
+                   .update({'status': 'Queued', 'agent_id': None, 'started_at': None},
+                           synchronize_session=False))
+        db.session.commit()
+        if claimed:
+            reclaimed += 1
+            logger.warning(
+                'AgentHealthCheck: reclaimed job_task %s from agent %s '
+                '(no check-in since the cutoff); it is queued for another agent.',
+                job_task.id, owner)
+    if reclaimed:
+        logger.info('AgentHealthCheck: reclaimed %s stranded job task(s).', reclaimed)
+    return reclaimed
+
 
 # Caps on the aggregated alert body: notify_admins fans out to email, a Pushover
 # PHONE PUSH and Slack, so a catalog-wide failure must not produce a 50 KB push.

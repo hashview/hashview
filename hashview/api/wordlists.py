@@ -57,7 +57,7 @@ def v1_api_get_wordlist():
     wordlists = Wordlists.query.all()
     rows = alchemy_to_native(wordlists)
     missing_ids = missing_wordlist_ids(wordlists)
-    orphan_ids = orphaned_wordlist_ids(wordlists)
+    orphan_ids = orphaned_wordlist_ids(wordlists, missing=missing_ids)
     for row in rows:
         # Grafted AFTER serialization; see the identical note in api/rules.py.
         # Always false for a dynamic list: its file is regenerated from the

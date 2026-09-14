@@ -85,7 +85,7 @@ def wordlists_list():
     # qualify -- their file is regenerated from the DB on every download.
     missing_wl = missing_wordlist_ids(wordlists)
     # See the note in rules_list: the rows the sweep deletes by itself (#494).
-    orphan_wl = orphaned_wordlist_ids(wordlists)
+    orphan_wl = orphaned_wordlist_ids(wordlists, missing=missing_wl)
     prune_armed = catalog_prune_armed()
     wl_bytes = {}
     for wl in wordlists:

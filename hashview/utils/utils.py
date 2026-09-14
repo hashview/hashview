@@ -1416,7 +1416,7 @@ def catalog_task_references(rule_ids=None, wordlist_ids=None):
                     by_wordlist.setdefault(candidate, set()).add(task_id)
     return by_rule, by_wordlist
 
-def orphaned_rule_ids(rules=None):
+def orphaned_rule_ids(rules=None, missing=None):
     """Ids of Rules rows whose file is gone AND which no task references (#494).
 
     The debris set: nothing can use these, nothing points at them, and the
@@ -1424,21 +1424,26 @@ def orphaned_rule_ids(rules=None):
     stored -- like `missing`, of which it is a strict subset.
 
     Short-circuits on a healthy catalog so the listings, which call this on every
-    GET, pay nothing for the task scan when there is nothing to scan for.
+    GET, pay nothing for the task scan when there is nothing to scan for. Pass
+    ``missing`` when the caller already computed it -- every listing does -- so
+    the stat-per-row pass runs once per request rather than twice.
     """
-    missing = missing_rule_ids(rules)
+    if missing is None:
+        missing = missing_rule_ids(rules)
     if not missing:
         return set()
     by_rule, _ = catalog_task_references(rule_ids=missing)
     return {rule_id for rule_id in missing if not by_rule.get(rule_id)}
 
-def orphaned_wordlist_ids(wordlists=None):
+def orphaned_wordlist_ids(wordlists=None, missing=None):
     """Ids of Wordlists rows whose file is gone AND which no task references.
 
-    See orphaned_rule_ids. Dynamic rows can never appear here, because
-    wordlist_file_missing never reports them missing in the first place.
+    See orphaned_rule_ids, including the ``missing`` passthrough. Dynamic rows
+    can never appear here, because wordlist_file_missing never reports them
+    missing in the first place.
     """
-    missing = missing_wordlist_ids(wordlists)
+    if missing is None:
+        missing = missing_wordlist_ids(wordlists)
     if not missing:
         return set()
     _, by_wordlist = catalog_task_references(wordlist_ids=missing)

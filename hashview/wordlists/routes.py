@@ -20,8 +20,10 @@ from werkzeug.utils import secure_filename
 from hashview.models import Hashes, Jobs, JobTasks, Rules, Tasks, Users, Wordlists, db
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
+    catalog_prune_armed,
     ingest_static_wordlist_file,
     missing_wordlist_ids,
+    orphaned_wordlist_ids,
     resolve_control_file,
     restore_static_wordlist_file,
     send_generated_file,
@@ -82,6 +84,9 @@ def wordlists_list():
     # Catalog health (#383): static rows whose file is gone. Dynamic rows never
     # qualify -- their file is regenerated from the DB on every download.
     missing_wl = missing_wordlist_ids(wordlists)
+    # See the note in rules_list: the rows the sweep deletes by itself (#494).
+    orphan_wl = orphaned_wordlist_ids(wordlists)
+    prune_armed = catalog_prune_armed()
     wl_bytes = {}
     for wl in wordlists:
         src_path = resolve_control_file(wl.path, 'wordlists')
@@ -126,6 +131,7 @@ def wordlists_list():
                            wl_task_count=wl_task_count, wl_job_count=wl_job_count,
                            wl_owner=wl_owner, wordlistsForm=WordlistsForm(),
                            missing_wl_ids=missing_wl, wl_bytes=wl_bytes,
+                           orphan_wl_ids=orphan_wl, prune_armed=prune_armed,
                            wordlistRestoreForm=WordlistRestoreForm(),
                            import_files=list_importable(current_app))
 

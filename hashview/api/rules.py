@@ -58,7 +58,7 @@ def v1_api_get_rules():
     rules = Rules.query.all()
     rows = alchemy_to_native(rules)
     missing_ids = missing_rule_ids(rules)
-    orphan_ids = orphaned_rule_ids(rules)
+    orphan_ids = orphaned_rule_ids(rules, missing=missing_ids)
     for row in rows:
         # Grafted AFTER serialization: AlchemyEncoder emits declared columns
         # only, and `missing` is computed, not stored (issue #383). Setting it

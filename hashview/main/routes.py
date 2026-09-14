@@ -7,12 +7,14 @@ from flask import Blueprint, flash, jsonify, make_response, redirect, render_tem
 from flask_login import current_user, login_required
 from sqlalchemy import and_, case
 
+from hashview import jinja_human_count as _human
 from hashview.models import (
     Agents,
     Customers,
     Hashes,
     HashfileHashes,
     Jobs,
+    JobTaskLedger,
     JobTasks,
     Settings,
     Tasks,
@@ -225,25 +227,42 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
         for hf_id, cnt in rows:
             hashfile_totals[hf_id] = cnt
 
+    # Attacks, keyed by ledger id. Grouping on task_id merged two assignments of
+    # the same dynamic-wordlist task into one row, and cannot express queue order
+    # at all once slices are issued on demand.
+    ledgers_by_id, ledger_order = {}, {}
+    for ledger in JobTaskLedger.query.order_by(JobTaskLedger.position.asc(),
+                                               JobTaskLedger.id.asc()).all():
+        ledgers_by_id[ledger.id] = ledger
+        ledger_order.setdefault(ledger.job_id, []).append(ledger.id)
+
     out = {}
     for job in running_jobs:
         order, by_task = [], {}
+        for key in ledger_order.get(job.id, []):
+            by_task[key] = []
+            order.append(key)
         for jt in job_tasks:
             if jt.job_id != job.id:
                 continue
-            if jt.task_id not in by_task:
-                by_task[jt.task_id] = []
-                order.append(jt.task_id)
-            by_task[jt.task_id].append(jt)
+            # Pre-ledger rows have no attack to belong to; group them by task as
+            # before so a job queued before the upgrade still renders.
+            key = jt.ledger_id if jt.ledger_id in by_task else ('task', jt.task_id)
+            if key not in by_task:
+                by_task[key] = []
+                order.append(key)
+            by_task[key].append(jt)
 
         # Hashes recovered by each task for THIS job's hashfile since the current
         # run started (recovered_at >= job.started_at), counted per account.
+        task_ids_here = {ledgers_by_id[k].task_id if k in ledgers_by_id else k[1]
+                         for k in by_task}
         recovered_by_task = {}
-        if job.hashfile_id and job.started_at and by_task:
+        if job.hashfile_id and job.started_at and task_ids_here:
             rows = (db.session.query(Hashes.task_id, db.func.count(HashfileHashes.id))
                     .join(HashfileHashes, HashfileHashes.hash_id == Hashes.id)
                     .filter(Hashes.cracked == 1,
-                            Hashes.task_id.in_(list(by_task.keys())),
+                            Hashes.task_id.in_(list(task_ids_here)),
                             HashfileHashes.hashfile_id == job.hashfile_id,
                             Hashes.recovered_at >= job.started_at)
                     .group_by(Hashes.task_id)
@@ -252,8 +271,11 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
 
         groups = []
         chunks_total = chunks_done = chunks_active = 0
-        for task_id in order:
-            chunks = by_task[task_id]
+        ks_total_job = ks_done_job = ks_running_job = 0
+        for key in order:
+            chunks = by_task[key]
+            ledger = ledgers_by_id.get(key)
+            task_id = ledger.task_id if ledger else key[1]
             total = len(chunks)
             completed = sum(1 for c in chunks if c.status == 'Completed')
             running = sum(1 for c in chunks if c.status == 'Running')
@@ -269,8 +291,26 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
             # let that Completed+Canceled mix fall through to 'Queued'. So: running
             # wins; then any still-pending work is 'Queued'; otherwise (terminal) a
             # single canceled chunk makes the task 'Canceled'; else all-done.
+            # Keyspace, which is a denominator that does not move. A row count
+            # does: slices are issued on demand, so 'total' grows through a run
+            # and a bar computed from it snaps toward 100% then jumps backwards.
+            ks_total = int(ledger.keyspace) if (ledger and ledger.keyspace) else 0
+            ks_done = sum(int(c.chunk_keyspace or 0) for c in chunks
+                          if c.status == 'Completed') if ks_total else 0
+            ks_running = sum(int(c.chunk_keyspace or 0) for c in chunks
+                             if c.status == 'Running') if ks_total else 0
+            ks_unissued = max(ks_total - int(ledger.keyspace_pos or 0), 0) if ledger else 0
+            ks_total_job += ks_total
+            ks_done_job += ks_done
+            ks_running_job += ks_running
+
             if running:
                 status = 'Running'
+            elif ledger is not None and ledger.state in ('Ready', 'Pending') and (
+                    ledger.keyspace is None or ledger.keyspace_pos < ledger.keyspace):
+                # Keyspace still unissued: the attack is BETWEEN slices, not done.
+                # The old row-count test read that gap as 'Completed'.
+                status = 'Measuring' if ledger.state == 'Pending' else 'Queued'
             elif queued:
                 status = 'Queued'
             elif canceled:
@@ -280,7 +320,8 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
             else:
                 status = 'Queued'
 
-            is_chunked = total > 1 or any(is_chunk_row(c) for c in chunks)
+            is_chunked = bool(ledger.chunkable) if ledger else (
+                total > 1 or any(is_chunk_row(c) for c in chunks))
             active, rate_hps = [], 0.0
             for c in sorted((c for c in chunks if c.status == 'Running'),
                             key=lambda c: (c.chunk_no or 0)):
@@ -298,9 +339,14 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
                 if rec_str:
                     head = rec_str.split('/')[0]
                     rec_x = int(head) if head.isdigit() else None
+                # Built here rather than composed in Jinja: chunk_no is NULL on a
+                # whole run, and {{ None }} renders the literal string 'None'.
                 active.append({
                     'chunk_no': c.chunk_no,
                     'chunk_total': c.chunk_total,
+                    'label': ('#%d' % c.chunk_no) if c.chunk_no else '—',
+                    'slice': ('%s keyspace' % _human(c.chunk_keyspace)
+                              if c.chunk_keyspace else ''),
                     'agent': agent.name if agent else '—',
                     'rate': bench or '—',
                     'recovered': rec_x,
@@ -322,12 +368,15 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
 
             task = tasks_by_id.get(task_id)
             groups.append({
+                'entry_id': key if ledger else ('t%s' % task_id),
                 'task_id': task_id,
                 'name': task.name if task else ('task %s' % task_id),
                 'attack': _attack_label(task),
                 'status': status,
                 'total': total, 'completed': completed, 'running': running,
                 'queued': queued, 'canceled': canceled,
+                'ks_total': ks_total, 'ks_done': ks_done,
+                'ks_running': ks_running, 'ks_unissued': ks_unissued,
                 'is_chunked': is_chunked,
                 'expandable': bool(running) and is_chunked,
                 'agent_display': agent_display,
@@ -347,6 +396,10 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
             'chunks_total': chunks_total,
             'chunks_done': chunks_done,
             'chunks_active': chunks_active,
+            'ks_total': ks_total_job,
+            'ks_done': ks_done_job,
+            'ks_running': ks_running_job,
+            'tasks_measuring': sum(1 for g in groups if g['status'] == 'Measuring'),
         }
     return out
 

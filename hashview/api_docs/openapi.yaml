@@ -257,8 +257,9 @@ paths:
         Agent-only. The agent posts `hashcat -b` speeds (raw hashes/sec, summed
         across its devices) keyed by hash mode, in response to a heartbeat
         `msg: "BENCHMARK"`. The server upserts one row per (agent, hash type);
-        these feed the task chunk planner, which sizes chunks from the slowest
-        benchmarked agent. Unparseable entries are skipped.
+        these feed chunk sizing: each slice is sized from the speed of the agent
+        that asks for the work, so a faster rig takes a proportionally larger
+        share of the keyspace. Unparseable entries are skipped.
       operationId: agentBenchmark
       x-audience: agent
       security:
@@ -292,7 +293,9 @@ paths:
       summary: Read rig benchmark performance per hash type
       description: >-
         Returns the stored agent benchmarks aggregated to the slowest agent's
-        speed per hash type (matching how the chunk planner sizes work). With
+        speed per hash type, as a fleet-capability summary. NOTE: this is no
+        longer how chunks are sized -- each slice is sized from the speed of the
+        agent that asks for it. With
         `?hash_type=<mode>`, returns that single mode's slowest speed, or 404
         if no agent has benchmarked it. User-only: agents have no use for the
         fleet-wide view, and reading it records no heartbeat. Read-only;

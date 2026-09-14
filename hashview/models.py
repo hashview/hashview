@@ -287,8 +287,9 @@ class AgentBenchmarks(db.Model):
 
     `speed` is raw hashes/sec summed across the agent's devices, parsed from the
     per-device `Speed.#N..........: <n> H/s` lines of `hashcat -b -m <mode>`. The
-    chunk planner sizes chunks from the SLOWEST agent's speed for the job's
-    hash_type. One row per (agent, hash_type); re-running a benchmark upserts the row.
+    Each chunk is sized from the speed of the agent that ASKS for it, so a faster
+    rig takes a proportionally larger slice of the keyspace. One row per
+    (agent, hash_type); re-running a benchmark upserts the row.
     """
 
     id = db.Column(db.Integer, primary_key=True)

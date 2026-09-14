@@ -1637,6 +1637,72 @@ def agent_telemetry(agents):
     return out
 
 
+# A hashcat OPTION at the very start of the mask field, as opposed to a mask that
+# merely begins with '-'. A mask can only ever be '-' followed by a mask
+# character; hashcat has no option named '-' + punctuation, '-?' or '-0'/'-5'..
+# '-9'. The residue ('-<letter>', '-1'..'-4') stays classified as an option,
+# which is the status quo.
+_LEADING_OPTION = re.compile(r'^(?:--[A-Za-z][A-Za-z0-9-]*|-[A-Za-z1-4])')
+
+
+def split_mask_field(field, first_token_is_mask=False):
+    """Split the free-form Hashcat-mask field and say WHERE the mask ended up.
+
+    Returns ``(parts, mask_index)``:
+
+      parts       the argv elements for this field, in field order -- exactly
+                  what mask_argv() returns.
+      mask_index  index into ``parts`` of the positional MASK element, or -1 when
+                  the field opens with a hashcat option and the mask cannot be
+                  located.
+
+    The index is what lets build_hashcat_command hoist the option elements ahead
+    of an end-of-options '--' while leaving the mask as a positional behind it
+    (issue: a chunk sub-mask such as '-?a?a?a' is read as an option otherwise).
+
+    mask_index is -1 for the options-first form (``-1 ?u?l?d ?1?1?1``): with the
+    charset value and the mask both bare tokens there is no way to tell which is
+    which, so no sentinel is emitted and the behaviour is exactly as before.
+
+    ``first_token_is_mask=True`` is passed for a CHUNK sub-mask. The chunker
+    builds those as <expanded literal prefix> + <suffix of the task mask>, so the
+    first token is mask text by construction and the index-0 option heuristic
+    must be skipped -- a chunk of '?aabc' is '-abc', which the heuristic would
+    otherwise read as an option.
+    """
+    if not field:
+        return [field], -1
+
+    tokens = [(m.start(), m.group()) for m in re.finditer(r'\S+', field)]
+    if not tokens:
+        return [field], -1
+
+    # The field opens with a real hashcat option -> we cannot tell which of the
+    # remaining bare tokens is the mask. Same list as before, no mask index.
+    if (not first_token_is_mask
+            and tokens[0][1].startswith('-')
+            and _LEADING_OPTION.match(tokens[0][1])):
+        return [tok for _, tok in tokens], -1
+
+    # Scan from index 1: token 0 is mask text (the mask always comes first in the
+    # field), so a '-' there is part of the mask, not an option boundary.
+    for index in range(1, len(tokens)):
+        start, token = tokens[index]
+        if token.startswith('-'):
+            # Slice the head out of the ORIGINAL string by offset rather than
+            # ' '.join(tokens): a mask may legitimately begin with a space (the
+            # ?s/?a expansion emits one), and joining would silently eat it.
+            # Strip the whole separator RUN, not a single space. The run is
+            # delimiter, not mask: ' '.join(field.split()) used to normalise it
+            # away, and leaving it turns a double-space typo into a mask whose
+            # every candidate ends in a space. A LEADING space is still
+            # preserved, which is why this slices by offset at all.
+            head = re.sub(r'[ \t]+$', '', field[:start])
+            return [head] + [tok for _, tok in tokens[index:]], 0
+
+    return [field], 0
+
+
 def mask_argv(mask):
     """Split a stored mask field into argv elements, at option boundaries only.
 
@@ -1668,16 +1734,56 @@ def mask_argv(mask):
 
     An empty or None mask is returned unchanged rather than dropped, so this is
     purely a split and nothing else about the command moves.
-    """
-    if not mask:
-        return [mask]
-    tokens = mask.split()
-    for index, token in enumerate(tokens):
-        if token.startswith('-'):
-            head = ' '.join(tokens[:index])
-            return ([head] if head else []) + tokens[index:]
-    return [mask]
 
+    Thin wrapper over split_mask_field(), which additionally reports which
+    element is the mask; callers that need to hoist options ahead of a '--'
+    sentinel use that directly.
+    """
+    return split_mask_field(mask)[0]
+
+
+def mask_attack_argv(attackmode, target_file, wordlist_path, mask, *, from_chunk=False):
+    """The ``-a <mode> ... <positionals>`` tail of a mask attack (modes 3/6/7).
+
+    Split out of build_hashcat_command so the live hashcat-matrix test can build
+    the real token order instead of re-implementing (and drifting from) it. Pure:
+    no DB, no Flask.
+
+    Emits hashcat's ``--`` end-of-options sentinel ONLY when the mask would
+    otherwise be read as an option -- i.e. it is the positional mask and it
+    starts with '-'. Two reasons it is conditional rather than always-on:
+
+      * every command that does not need it keeps a byte-identical argv, so an
+        agent that has not been upgraded behaves exactly as it does today; and
+      * everything after '--' is a positional, and the agent APPENDS
+        ``--status-json`` to the command it receives. After a sentinel that token
+        shifts the positionals: mode 6 then opens the mask as a wordlist
+        ("No such file or directory") and mode 7 opens --status-json as one.
+        Unconditional emission would break every mode 6/7 command in existence on
+        any un-upgraded agent.
+
+    ``--status-json`` is therefore emitted here, paired with the sentinel, so a
+    mode-3 chunk still reports status on an old agent (whose trailing duplicate
+    lands after '--' as an ignored positional). Newer agents insert their own
+    copy ahead of the sentinel and skip it when already present.
+
+    Every option must precede '--', including a hoisted custom charset: leaving
+    ``-1 ?u?l?d`` after the sentinel yields "Custom-charset 1 is undefined."
+    """
+    parts, mask_index = split_mask_field(mask, first_token_is_mask=from_chunk)
+    if mask_index == 0 and parts[0].startswith('-'):
+        mask_opts, sentinel, mask_pos = parts[1:], ['--status-json', '--'], [parts[0]]
+    else:
+        # Byte-identical to the pre-sentinel behaviour.
+        mask_opts, sentinel, mask_pos = [], [], parts
+
+    if attackmode == 3:
+        return ['-a', '3'] + mask_opts + sentinel + [target_file] + mask_pos
+    if attackmode == 6:
+        return ['-a', '6'] + mask_opts + sentinel + [target_file, wordlist_path] + mask_pos
+    if attackmode == 7:
+        return ['-a', '7'] + mask_opts + sentinel + [target_file] + mask_pos + [wordlist_path]
+    raise ValueError(f'mask_attack_argv: not a mask attack mode: {attackmode!r}')
 
 def build_hashcat_command(job_id, task_id, chunk=None, job_task_id=None):
     """Build the hashcat crack invocation as an argv LIST (list[str]).
@@ -1802,16 +1908,13 @@ def build_hashcat_command(job_id, task_id, chunk=None, job_task_id=None):
         argv.append(relative_wordlist_2_path)
         if isinstance(task.k_rule, str):
             argv += ['-k', task.k_rule]
-    # Maskmode — the mask is a literal argv element (previously unquoted in the
-    # shell string).
-    elif attackmode == 3:
-        argv += ['-a', '3', target_file] + mask_argv(mask)
-    # Hybrid (Wordlist + Mask)
-    elif attackmode == 6:
-        argv += ['-a', '6', target_file, relative_wordlist_path] + mask_argv(mask)
-    # Hybrid (Mask + Wordlist)
-    elif attackmode == 7:
-        argv += ['-a', '7', target_file] + mask_argv(mask) + [relative_wordlist_path]
+    # Maskmode / hybrids — the mask is a literal argv element (previously unquoted
+    # in the shell string). mask_attack_argv also emits hashcat's '--' sentinel
+    # when the mask would otherwise be read as an option; from_chunk tells it the
+    # mask was generated by the chunker, so its first token is mask text.
+    elif attackmode in (3, 6, 7):
+        argv += mask_attack_argv(attackmode, target_file, relative_wordlist_path,
+                                 mask, from_chunk=('mask' in chunk))
 
     return argv
 

@@ -18,7 +18,7 @@ early FK/alter migrations below it never run.
 
 from pathlib import Path
 
-from flask_migrate import stamp, upgrade
+from flask_migrate import downgrade, stamp, upgrade
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
 
@@ -112,3 +112,31 @@ def test_upgrade_head_adds_only_the_missing_columns(tmp_path):
         assert _current_rev(db) == _dev_head()
         for table, col in missing:
             assert col in _columns(db, table), f"{table}.{col} was not re-created"
+
+
+def _chunk_mask_length(db):
+    for col in sa_inspect(db.engine).get_columns("job_tasks"):
+        if col["name"] == "chunk_mask":
+            return getattr(col["type"], "length", None)
+    return None
+
+
+def test_chunk_mask_is_widened_and_the_widening_reverses(tmp_path):
+    """a4c9e7b21f60 widens job_tasks.chunk_mask 64 -> 255, and back.
+
+    Exercised through the real chain rather than by inspecting the model, and
+    round-tripped because the migration is guarded on the LIVE column width --
+    a guard that compares the wrong way would still look right on a fresh
+    upgrade and only fail on a downgrade.
+    """
+    app, db = _drifted_app(tmp_path)
+    with app.app_context():
+        upgrade(directory=MIGRATIONS_DIR)
+        assert _chunk_mask_length(db) == 255
+
+        downgrade(directory=MIGRATIONS_DIR, revision="-1")
+        assert _chunk_mask_length(db) == 64
+
+        upgrade(directory=MIGRATIONS_DIR)          # idempotent re-apply
+        assert _chunk_mask_length(db) == 255
+        assert _current_rev(db) == _dev_head()

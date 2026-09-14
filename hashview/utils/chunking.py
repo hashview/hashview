@@ -131,6 +131,19 @@ def _expand_mask(mask, desired_chunks, max_chunks):
 
     Returns a list of >= 2 sub-mask strings, or ``None`` to signal "don't split".
     """
+    # A field carrying hashcat options -- '-1 ?u?l?d ?d?d?d', or a mask with a
+    # trailing custom charset -- is not a bare mask. parse_mask reads the charset
+    # DEFINITION as mask text, so we would expand THAT and emit a sub-mask with a
+    # mangled charset: '-1 A?l?d ?d?d?d' instead of a real chunk. hashcat accepts
+    # it (as a literal mask, once the sentinel is in play) and cracks the wrong
+    # keyspace silently. Refuse to split; the task runs whole.
+    #
+    # Deferred import: hashview.utils.utils imports plan_chunks from this module.
+    from hashview.utils.utils import split_mask_field
+    parts, mask_index = split_mask_field(mask)
+    if mask_index != 0 or len(parts) != 1:
+        return None
+
     tokens = parse_mask(mask)
     if tokens is None:
         return None

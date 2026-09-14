@@ -247,3 +247,68 @@ def test_expand_mask_returns_none_for_all_literal_mask():
 def test_expand_mask_returns_none_for_unparseable_mask():
     # A custom-charset mask (?1) doesn't parse -> can't be expanded.
     assert _expand_mask('?1?l', desired_chunks=4, max_chunks=100) is None
+
+
+def test_expand_mask_documents_its_three_hazardous_prefixes():
+    """?a expands over all 95 printable ASCII, so three chunks carry a prefix
+    that is not a plain literal character:
+
+      '-'  hashcat's OPTION parser rejects the argv element (the reason
+           build_hashcat_command emits an end-of-options '--' for it)
+      ' '  a valid literal, but only while the mask stays ONE argv element
+      '?'  escaped to '??', so the chunk is '???a...' -- correct, and verified
+           against hashcat: '???a?a' generates 9025 candidates
+
+    Pinned here so the set cannot grow silently.
+    """
+    submasks = _expand_mask('?a' * 8, 95, 1000)
+    assert len(submasks) == 95
+    assert [m for m in submasks if m.startswith('-')] == ['-' + '?a' * 7]
+    assert [m for m in submasks if m.startswith(' ')] == [' ' + '?a' * 7]
+    assert [m for m in submasks if m.startswith('??')] == ['??' + '?a' * 7]
+    assert all(parse_mask(m) is not None for m in submasks)
+
+
+def test_a_submask_is_never_longer_than_the_mask_it_came_from():
+    """The invariant JobTasks.chunk_mask's column width depends on.
+
+    _expand_mask replaces a '?x' charset position (2 chars) with a literal of 1
+    char, or 2 for the '?' escape -- so a sub-mask can never grow. That is what
+    makes chunk_mask wide enough for any mask Tasks.hc_mask can hold. Pinned
+    because a truncated sub-mask is still a VALID mask: it would crack the wrong
+    keyspace silently instead of erroring.
+    """
+    for mask in ('?a?a?a?a?a?a?a?a', '?s?d?d', '?l?u?d?s', '?d' * 25,
+                 'prefix?a?a?a', '?a' * 25):
+        submasks = _expand_mask(mask, 95, 1000)
+        if submasks is None:
+            continue
+        longest = max(len(m) for m in submasks)
+        assert longest <= len(mask), (
+            f"{mask!r} produced a longer sub-mask ({longest} > {len(mask)})")
+
+
+def test_a_mask_field_carrying_options_is_never_chunked():
+    """A custom charset makes the field something other than a bare mask.
+
+    parse_mask happily reads '-1 ?u?l?d ?d?d?d' as literals-and-sets, so the
+    expander would treat the charset DEFINITION as the leading mask position and
+    expand that, emitting '-1 A?l?d ?d?d?d'. build_hashcat_command then ships the
+    whole string as ONE positional behind the '--' sentinel, and hashcat accepts
+    it as a 15-character literal mask -- no error, wrong keyspace, chunk coverage
+    silently lost. The un-chunked task is correct, so decline to split.
+    """
+    for field in ('-1 ?u?l?d ?d?d?d',        # options first (issue #491's form)
+                  '?d?d?d -1 ?u?l?d',        # charset trailing
+                  '--custom-charset1 ?u?l ?1?1?1'):
+        assert _expand_mask(field, 95, 1000) is None, field
+        assert len(plan_chunks(3, mask=field, slowest_speed=1e-3,
+                               target_seconds=3600)) == 1, field
+
+
+def test_a_bare_mask_still_chunks_and_still_gets_the_sentinel():
+    """Negative control for the guard above: it must not disarm the actual fix."""
+    specs = plan_chunks(3, mask='?s?d?d?d?d', slowest_speed=1e-3, target_seconds=3600)
+    assert len(specs) == 330
+    dash = [s['mask'] for s in specs if s['mask'].startswith('-')]
+    assert dash == ['-%s?d?d?d' % d for d in '0123456789']

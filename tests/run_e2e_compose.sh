@@ -136,9 +136,15 @@ fi
 
 echo "Running pytest against $BASE_URL"
 set +e
-./.venv/bin/python -m pytest -m e2e \
-    --ignore=tests/security \
-    --ignore=tests/unit \
+# Collect tests/e2e ONLY, rather than the whole tree minus a hand-maintained
+# deny-list. `-m e2e` filters AFTER collection, so every directory named here is
+# imported whether or not it holds an e2e test -- and this venv is built from
+# requirements-dev.txt alone (the app runs in Docker), so any module-level
+# `from hashview import ...` aborts the whole job. That is how tests/hashcat_matrix
+# broke it. Every @pytest.mark.e2e test lives in tests/e2e; the marker is kept so
+# an unmarked helper there is still skipped. Verified identical: 63 collected
+# either way.
+./.venv/bin/python -m pytest -m e2e tests/e2e \
     -vv -s --maxfail=1
 TEST_EXIT=$?
 set -e

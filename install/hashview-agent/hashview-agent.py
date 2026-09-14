@@ -13,6 +13,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 import signal
 import socket
@@ -127,9 +128,40 @@ from agent.api import api  # noqa: E402 - config.conf must exist before agent.ap
 from agent.status import convert_speed, time_difference  # noqa: E402,F401 - re-exported for callers
 from agent.status import hashcat_status as hashcatParser  # noqa: E402
 
+_HC_VERSION = None
+
+
+def hashcat_version():
+    """This host's hashcat version string, probed once and cached.
+
+    Reported on every heartbeat so the server knows which major this agent runs.
+    hashcat 7 redefines both --keyspace and --skip/--limit to whole-run units --
+    self-consistent within a version, silently mis-covering across one -- so a
+    keyspace measured by one agent can only be sliced by agents on the same major.
+    None if the probe fails; the server then never sends this agent a measured
+    slice, and it runs whole attacks instead.
+    """
+    global _HC_VERSION
+    if _HC_VERSION is None:
+        from agent.bench import parse_hashcat_version
+        from agent.config import Config
+        try:
+            # nosec B603 - fixed argv (no shell); the binary is the operator-set
+            # Config.HC_BIN_PATH.
+            proc = subprocess.run([Config.HC_BIN_PATH, '--version'],  # nosec B603
+                                  capture_output=True, timeout=60)
+            output = ((proc.stdout or b'').decode('utf-8', 'replace')
+                      + (proc.stderr or b'').decode('utf-8', 'replace'))
+            raw, _major = parse_hashcat_version(output)
+        except Exception:
+            LOG.exception('Could not determine the hashcat version.')
+            raw = None
+        _HC_VERSION = raw or ''
+    return _HC_VERSION or None
+
 
 def send_heartbeat(agent_status, hc_status):
-    return api.heartbeat(agent_status, hc_status)
+    return api.heartbeat(agent_status, hc_status, hc_version=hashcat_version())
 
 def getHashcatPid():
     if sys.platform == 'win32':
@@ -485,6 +517,97 @@ def download_hashfile(job_id, jobtask_id, hashfile_id):
         hashfile.write(hashfile_content)
     return True
 
+# The server writes --outfile control/outfiles/hc_cracked_<job>_<key>.txt into
+# the stored command, so the command itself states the temp-file key.
+# _CRACK_FILE_RE is the fallback for a command that is not a JSON argv list.
+_CRACK_FILE_RE = re.compile(r'hc_cracked_\d+_([^/\\"\']+?)\.txt')
+_CRACK_BASENAME_RE = re.compile(r'hc_cracked_\d+_(.+)\.txt\Z')
+
+
+def _file_key_from_command(command):
+    """Read the temp-file key back out of the server's stored command, or None.
+
+    Indexes the argv list -- find the LAST '--outfile', take the token after it,
+    which is the one hashcat honours -- rather
+    than scanning the whole command, because free-form task fields (the mask, the
+    j/k rules) are literal argv elements: a mask of 'hc_cracked_9_999.txt' would
+    be picked up by a plain search. Those fields all land after --outfile in the
+    server's builder today, so a search happens to be right, but it is right by
+    argv ordering rather than by construction.
+
+    The server parses the same command with the same rule, so the two sides read
+    one shared artifact instead of each re-deriving a key. If the parsers ever do
+    disagree, one of them returns None and falls back -- the agent onto the
+    server's own answer on the wire -- rather than silently diverging.
+    """
+    if not command:
+        return None
+    try:
+        argv = json.loads(command)
+    except (TypeError, ValueError):
+        argv = None
+    if isinstance(argv, list):
+        # LAST --outfile, not the first: hashcat overwrites the option on every
+        # occurrence, so a repeated flag means the last one is where the cracks
+        # actually land (verified against hashcat v6.2.6 -- given two --outfile
+        # flags it writes the second and never creates the first). A command CAN
+        # carry two: the Hashcat Mask task field is free-form and split on
+        # whitespace into argv elements (split_mask_field), all of which land
+        # AFTER this flag, so a mask of '?d?d --outfile /tmp/x.txt' emits one.
+        # Taking the first would name a file hashcat never writes, and the agent
+        # would read no cracks and upload nothing -- silently, forever.
+        #
+        # Deliberately reset to None when the last --outfile is unparseable: we
+        # then do not know where hashcat writes, and answering with an earlier
+        # flag's key would be a confident lie. None falls back to the caller's
+        # own answer instead.
+        #
+        # 'arg', not 'token': bandit's B105 reads any name in its secret word
+        # list (token, secret, pass, pwd, ...) compared against a string literal
+        # as a hardcoded password and fails the build on it.
+        found = None
+        for i, arg in enumerate(argv):
+            if arg == '--outfile' and i + 1 < len(argv):
+                match = _CRACK_BASENAME_RE.match(str(argv[i + 1]).rsplit('/', 1)[-1])
+                found = match.group(1) if match else None
+        return found
+    matches = _CRACK_FILE_RE.findall(command if isinstance(command, str) else str(command))
+    return matches[-1] if matches else None
+
+
+def job_task_file_key(job_task):
+    """The key naming this job task's target hashfile, crack outfile and potfile.
+
+    Three tiers, most authoritative first:
+
+      1. The key stated by the command itself. hashcat is given --outfile and
+         --potfile-path explicitly, so the command is not a hint about the key --
+         it IS the key, because it is the thing hashcat acts on. Whatever we name
+         our files, hashcat reads and writes the paths in here.
+      2. 'file_key' from the wire (0.8.4+ servers), for a command this agent
+         cannot parse. The server derives that field from the very same command,
+         so it agrees by construction; it is a second chance at the same answer,
+         not a competing one.
+      3. The pre-0.8.4 rule, for an older server that sends neither: chunks keyed
+         on the JobTask id, whole tasks on the task id.
+
+    Tier 1 used to be tier 2, below the wire field -- and that inversion is what
+    broke CI: a command built without an explicit job_task_id is keyed on the
+    task id, the wire field said the row id, and the agent believed the field. It
+    wrote the hashfile to a name hashcat was never told to open. The hashfile case
+    is loud (FileNotFoundError); the outfile case is silent, and looks exactly
+    like a job that ran and cracked nothing. Believing the command cannot produce
+    either, because there is nothing left for it to disagree with.
+    """
+    key = _file_key_from_command(job_task.get('command'))
+    if key:
+        return key
+    key = job_task.get('file_key')
+    if key:
+        return key
+    return job_task['id'] if job_task.get('chunk_total') else job_task['task_id']
+
+
 def build_hashcat_argv(command):
     """Decode the server's stored command (a JSON argv list) into a real argv.
 
@@ -547,13 +670,22 @@ def run_hashcat(argv, output_file):
                                     stderr=subprocess.PIPE)
             _output, error = proc.communicate()
         if error:
-            LOG.error('Command stderr: %s', error.decode('utf-8', 'replace').strip())
-            if 'hashfile is empty or corrupt' not in str(error):
-                if 'Terminated' in str(error):
-                    sys.exit()
-                else:
-                    api.sendError(str(error))
-                    os.kill(os.getpid(), signal.SIGINT)
+            # communicate() hands back bytes; str() on those yields the repr, so
+            # matching and reporting it shipped admins b'No hashes loaded.\n\n'
+            # rather than the message hashcat wrote (issue #499). Decode once and
+            # use the text everywhere below.
+            stderr_text = error.decode('utf-8', 'replace').strip()
+            # `if error:` above tests the raw bytes, so a bare newline flush gets
+            # this far and strips to nothing. Reporting that sent admins an alert
+            # with an empty body and killed the agent over a blank line.
+            if stderr_text:
+                LOG.error('Command stderr: %s', stderr_text)
+                if 'hashfile is empty or corrupt' not in stderr_text:
+                    if 'Terminated' in stderr_text:
+                        sys.exit()
+                    else:
+                        api.sendError(stderr_text)
+                        os.kill(os.getpid(), signal.SIGINT)
     except OSError as e:
         LOG.error('Command failed to execute: %s', e)
         api.sendError(str(e))
@@ -617,6 +749,60 @@ def run_benchmark(hash_modes):
 
 def report_benchmark(results):
     return api.report_benchmark(results)
+
+
+KEYSPACE_TIMEOUT = 900  # seconds; --keyspace is arithmetic, not cracking
+
+
+def run_keyspace(ledger_id, command):
+    """Run `hashcat --keyspace` for one attack and report the integer back.
+
+    Triggered by a heartbeat reply of msg='KEYSPACE'. The server cannot work this
+    out for itself: hashcat splits a mask between its base loop -- which is what
+    --skip/--limit index -- and its own device-side loop, based on the hash mode
+    and on -S, not on the mask alone. Measuring it is what lets the server slice a
+    mask attack by range rather than by expanding its leading position.
+
+    Every failure path reports nothing and returns. The server leaves an attack it
+    has no usable measurement for running WHOLE, which emits no --skip/--limit and
+    is correct whatever the unit turns out to be -- so staying quiet is the safe
+    answer, and guessing would not be.
+    """
+    from agent.bench import parse_keyspace
+    if not ledger_id or not command:
+        LOG.warning('Keyspace request was missing its attack id or command; skipping.')
+        return
+    try:
+        argv = build_hashcat_argv(command)
+    except Exception:
+        LOG.exception('Could not decode the keyspace command for attack %s.', ledger_id)
+        return
+
+    # -a 7 puts a wordlist in the probe, and hashcat needs the file to exist to
+    # answer at all. run_assigned_task syncs before every run for the same reason;
+    # without this, measuring a hybrid attack would always fail and it would
+    # silently fall back to running whole.
+    if any(str(token).startswith('control/wordlists/') for token in argv):
+        sync_wordlists()
+
+    LOG.info('Measuring the keyspace for attack %s...', ledger_id)
+    try:
+        # nosec B603 - fixed argv (no shell); built by the server from stored task
+        # fields and run with shell=False.
+        proc = subprocess.run(argv, capture_output=True,  # nosec B603
+                              timeout=KEYSPACE_TIMEOUT)
+    except Exception:
+        LOG.exception('hashcat --keyspace failed for attack %s.', ledger_id)
+        return
+    output = ((proc.stdout or b'').decode('utf-8', 'replace')
+              + (proc.stderr or b'').decode('utf-8', 'replace'))
+    keyspace = parse_keyspace(output)
+    if keyspace is None:
+        LOG.warning('Could not parse a keyspace for attack %s; it will run whole.',
+                    ledger_id)
+        return
+    LOG.info('Attack %s keyspace: %s', ledger_id, keyspace)
+    api.report_keyspace(ledger_id, keyspace)
     #os.system(cmd)
 
 def killHashcat(pid):
@@ -720,9 +906,7 @@ def maybe_update_dynamic_wordlist(task):
 
 def upload_cracks(job, job_task):
     """Upload the hashcat crack file for this job task, if any cracks exist yet."""
-    # Chunked tasks name temp files by JobTask id (to avoid collisions between
-    # chunks of one task); whole tasks keep the legacy job+task id naming.
-    file_key = job_task['id'] if job_task.get('chunk_total') else job_task['task_id']
+    file_key = job_task_file_key(job_task)
     crack_file = 'control/outfiles/hc_cracked_' + str(job['id']) + '_' + str(file_key) + '.txt'
     if not os.path.exists(crack_file):
         LOG.debug('No results yet for job task %s; nothing to upload.', job_task['id'])
@@ -795,10 +979,8 @@ def run_assigned_task(job_task_id):
     updateJobTask(job_task['id'], 'Running')
     maybe_update_dynamic_wordlist(task)
 
-    # Name the hashfile to match the server-built command's target file: chunks
-    # are keyed by JobTask id (so chunks of one task never collide); whole tasks
-    # keep the legacy job+task id naming so existing agents stay compatible.
-    file_key = job_task['id'] if job_task.get('chunk_total') else job_task['task_id']
+    # Name the hashfile to match the server-built command's target file.
+    file_key = job_task_file_key(job_task)
     if not download_hashfile(job['id'], file_key, job['hashfile_id']):
         return
 
@@ -842,6 +1024,8 @@ def handle_heartbeat():
         LOG.warning('This agent is not authorized on the server. Ask a Hashview admin to approve it.')
     elif response.get('msg') == 'BENCHMARK':
         run_benchmark(response.get('hash_modes', []))
+    elif response.get('msg') == 'KEYSPACE':
+        run_keyspace(response.get('ledger_id'), response.get('command'))
     elif response.get('msg') == 'START':
         run_assigned_task(response.get('job_task_id'))
 

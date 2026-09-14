@@ -48,11 +48,16 @@ def _extract(response, endpoint, key):
     return decoded[key]
 
 
-def heartbeat(agent_status, hc_status):
+def heartbeat(agent_status, hc_status, hc_version=None):
     message = {
         'agent_status': agent_status,
         'hc_status': hc_status,
     }
+    # Which hashcat this agent runs. The server gates measured keyspace slices on
+    # it: hashcat 7 redefines --keyspace and --skip/--limit to whole-run units, so
+    # a slice measured under a different major addresses a different space.
+    if hc_version:
+        message['hc_version'] = hc_version
 
     response = http.post('/v1/agents/heartbeat', json.loads(json.dumps(message)))
     decoded_response = _load(response, 'heartbeat')
@@ -64,6 +69,22 @@ def heartbeat(agent_status, hc_status):
     if decoded_response.get('type') == 'message' and decoded_response.get('status') == 200:
         return decoded_response
     LOG.warning('heartbeat: unexpected response type %s.', decoded_response.get('type'))
+
+def report_keyspace(ledger_id, keyspace):
+    message = {
+        'ledger_id': ledger_id,
+        'keyspace': keyspace,
+    }
+
+    response = http.post('/v1/jobtask/keyspace', json.loads(json.dumps(message)))
+    decoded_response = _load(response, 'report_keyspace')
+    if decoded_response is None:
+        return None
+    if decoded_response.get('type') == 'message' and decoded_response.get('status') == 200:
+        return decoded_response
+    LOG.warning('report_keyspace: unexpected response type %s.', decoded_response.get('type'))
+    return decoded_response
+
 
 def report_benchmark(benchmark_results):
     message = {

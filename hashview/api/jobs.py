@@ -34,6 +34,7 @@ from hashview.api._shared import (  # noqa: F401
 from hashview.models import (
     JobNotifications,
     Jobs,
+    JobTaskLedger,
     JobTasks,
     Settings,
     TaskGroups,
@@ -45,6 +46,7 @@ from hashview.utils.audit import log_event
 from hashview.utils.utils import (
     MAX_TASKS_PER_GROUP,
     build_job_task_commands,
+    close_ledger,
     dynamic_wordlist_ids,
     hashfile_hash_type,
     task_uses_dynamic_wordlist,
@@ -100,6 +102,8 @@ def v1_api_delete_job(job_id):
     job_target = f'job:{job.id} {job.name!r}'
     try:
         JobTasks.query.filter_by(job_id=job_id).delete()
+        # Ledger rows describe a job's attacks; they must not outlive it.
+        JobTaskLedger.query.filter_by(job_id=job_id).delete()
         JobNotifications.query.filter_by(job_id=job_id).delete()
         db.session.delete(job)
         db.session.commit()
@@ -453,6 +457,9 @@ def v1_api_post_stop_job(job_id):
     try:
         job.status = 'Canceled'
         job.ended_at = datetime.now()
+        # See jobs_stop: closing the ledgers is what stops fresh slices being
+        # issued for an attack that has just been cancelled.
+        close_ledger(job_id, 'job_stopped', cancel_rows=False)
         for job_task in JobTasks.query.filter_by(job_id=job_id).all():
             job_task.status = 'Canceled'
             job_task.agent_id = None

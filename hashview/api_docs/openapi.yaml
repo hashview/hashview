@@ -257,8 +257,9 @@ paths:
         Agent-only. The agent posts `hashcat -b` speeds (raw hashes/sec, summed
         across its devices) keyed by hash mode, in response to a heartbeat
         `msg: "BENCHMARK"`. The server upserts one row per (agent, hash type);
-        these feed the task chunk planner, which sizes chunks from the slowest
-        benchmarked agent. Unparseable entries are skipped.
+        these feed chunk sizing: each slice is sized from the speed of the agent
+        that asks for the work, so a faster rig takes a proportionally larger
+        share of the keyspace. Unparseable entries are skipped.
       operationId: agentBenchmark
       x-audience: agent
       security:
@@ -292,7 +293,9 @@ paths:
       summary: Read rig benchmark performance per hash type
       description: >-
         Returns the stored agent benchmarks aggregated to the slowest agent's
-        speed per hash type (matching how the chunk planner sizes work). With
+        speed per hash type, as a fleet-capability summary. NOTE: this is no
+        longer how chunks are sized -- each slice is sized from the speed of the
+        agent that asks for it. With
         `?hash_type=<mode>`, returns that single mode's slowest speed, or 404
         if no agent has benchmarked it. User-only: agents have no use for the
         fleet-wide view, and reading it records no heartbeat. Read-only;
@@ -903,13 +906,15 @@ paths:
       tags: [Job Tasks, Agent Protocol]
       summary: Get the calling agent's job-task assignment
       description: >-
-        QUIRK — the `job_task_id` path parameter is currently **ignored**:
-        the route resolves the CALLING agent from the `uuid` cookie and
-        returns the first job task assigned to that agent (used by agents to
-        re-discover their assignment after a restart). Although the auth
-        guard accepts user keys, a user credential cannot be resolved to an
-        agent and produces an unhandled server error — call this with an
-        agent credential.
+        Returns the job task named by `job_task_id`, provided it is assigned to
+        the CALLING agent (resolved from the `uuid` cookie). A job task that
+        does not exist, or that belongs to a different agent, is reported the
+        same way as "you have no assignment": `200` with a null `job_task`, so
+        nothing about another agent's row — including its command — is
+        disclosed. That is also the answer when the row was reclaimed between
+        the `START` heartbeat and this call, which is what stops an agent
+        running a slice it no longer owns. Although the auth guard accepts user
+        keys, a user credential cannot be resolved to an agent and gets `404`.
       operationId: getJobTaskAssignment
       x-audience: agent
       security:
@@ -919,16 +924,80 @@ paths:
           in: path
           required: true
           schema: {type: integer}
-          description: Currently ignored (see operation description).
+          description: The job task to fetch. Must be assigned to the calling agent.
       responses:
         '200':
           description: >-
             Envelope with `job_task` as a native JSON object (null when the
-            agent has no assignment).
+            agent has no assignment, or when the requested job task is not
+            assigned to it).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/JobTaskResponse'
+        '404':
+          description: The `uuid` cookie does not resolve to an agent.
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
+
+  /v1/jobtask/keyspace:
+    post:
+      tags: [Job Tasks, Agent Protocol]
+      summary: Report a measured hashcat keyspace for one attack
+      description: >-
+        Sent in response to a `KEYSPACE` heartbeat reply. The agent runs
+        `hashcat --keyspace` for the attack and posts the integer back.
+
+
+        The server cannot compute this itself. hashcat splits a mask between its
+        base loop — which is what `--skip`/`--limit` index — and its own
+        device-side loop, based on the hash mode and on `-S`, not on the mask
+        alone: `?a?a?a?a?a?a` reports 95^4 for a fast mode, 95^5 for a slow one
+        and 95^6 under `-S`. Measuring it is what allows a mask attack to be
+        sliced by range.
+
+
+        The report is accepted only from the agent currently holding the
+        measuring lease, and only if the number divides the candidate total
+        exactly (`total % keyspace == 0`, which hashcat's own split always
+        satisfies). Anything unusable leaves the attack running WHOLE — which
+        emits no `--skip`/`--limit` and is therefore correct whatever the unit
+        turns out to be — and still answers `200`, because there is nothing the
+        agent can do about it.
+      operationId: reportJobTaskKeyspace
+      x-audience: agent
+      security:
+        - agentUuid: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ledger_id, keyspace]
+              properties:
+                ledger_id:
+                  type: integer
+                  description: The attack this measurement is for, from the heartbeat reply.
+                keyspace:
+                  type: integer
+                  description: >-
+                    The integer `hashcat --keyspace` printed. Base-loop units, not
+                    the candidate count.
+              example: {ledger_id: 3, keyspace: 81450625}
+      responses:
+        '200':
+          description: >-
+            Recorded, or rejected as unusable (the attack then runs whole). The
+            envelope is the same either way.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiMessage'
+        '400':
+          description: Missing `ledger_id` or `keyspace`.
+        '404':
+          description: Unknown agent or unknown attack.
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
 
@@ -1812,6 +1881,23 @@ components:
           nullable: true
           description: Always null in API responses (encoder limitation).
         agent_id: {type: integer, nullable: true}
+        file_key:
+          oneOf:
+            - type: integer
+            - type: string
+          description: >-
+            The key naming this run's temp files —
+            `control/hashes/hashfile_<job_id>_<file_key>.txt`,
+            `control/outfiles/hc_cracked_<job_id>_<file_key>.txt` and
+            `control/outfiles/hc_potfile_<job_id>_<file_key>.pot`.
+            NOT authoritative: it is read back out of the `--outfile` path in
+            `command`, which is the only statement of the key hashcat itself acts
+            on. It restates that key so an agent need not parse the command; when
+            the two could ever differ, `command` wins. Equal to `id` for every row
+            this server queues (that is the key baked into the command), but a row
+            stamped by an older server can carry another key, which is why this is
+            derived rather than asserted. Agents older than 0.8.4 do not see this
+            field and derive the same value from `chunk_total`/`id`.
 
     Task:
       type: object

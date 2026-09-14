@@ -264,6 +264,14 @@ def _ordered_task_ids(job):
             JobTasks.query.filter_by(job_id=job.id).order_by(JobTasks.id).all()]
 
 
+
+def _entry_ids(job_id):
+    """The reorder form submits ENTRY ids -- ledger ids once the job is queued,
+    negated JobTasks ids before that. Task ids cannot address a dynamic-wordlist
+    task assigned to one job twice."""
+    from hashview.utils.utils import job_assignments
+    return {e["task_id"]: e["entry_id"] for e in job_assignments([job_id])[job_id]}
+
 def test_jobs_reorder_tasks_swaps_order(app, client):
     admin = make_admin()
     login(client, admin)
@@ -273,8 +281,10 @@ def test_jobs_reorder_tasks_swaps_order(app, client):
     _assign(job, t1)
     _assign(job, t2)
     assert _ordered_task_ids(job) == [t1.id, t2.id]
+    ids = _entry_ids(job.id)
     resp = client.post(f"/jobs/{job.id}/reorder_tasks",
-                       data={"order": f"{t2.id},{t1.id}"}, follow_redirects=False)
+                       data={"order": f"{ids[t2.id]},{ids[t1.id]}"},
+                       follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert _ordered_task_ids(job) == [t2.id, t1.id]
 
@@ -296,9 +306,15 @@ def test_jobs_reorder_tasks_bad_order_is_noop(app, client):
 # --- chunked tasks read as ONE attack in the editor ------------------------
 
 def _chunk(job, task, chunk_no, chunk_total, status="Queued"):
-    """A single chunk row of a split task (queue-time fan-out)."""
+    """A single chunk row of a split task (queue-time fan-out).
+
+    Carries a real slice: the slice is what MAKES a row a chunk (utils.is_chunk_row),
+    and the queue-time fan-out always writes one. A chunk_no/chunk_total pair with
+    no slice is not a shape build_job_task_commands can produce.
+    """
     jt = JobTasks(job_id=job.id, task_id=task.id, status=status, priority=3,
-                  chunk_no=chunk_no, chunk_total=chunk_total)
+                  chunk_no=chunk_no, chunk_total=chunk_total,
+                  chunk_skip=(chunk_no - 1) * 100, chunk_limit=100)
     db.session.add(jt)
     db.session.commit()
     return jt
@@ -330,7 +346,12 @@ def test_jobs_list_collapses_chunked_task_to_one_card(app, client):
         _chunk(job, task, n, 3)
     body = client.get(f"/jobs/{job.id}/tasks").get_data(as_text=True)
     assert body.count(f'data-task-id="{task.id}"') == 1     # one card, not three
-    assert "split into 3 chunks" in body
+    # The card no longer advertises a chunk COUNT. Once slices are sized per
+    # agent there is no count to advertise until the attack has finished, so the
+    # editor describes the attack by its keyspace instead. These rows were built
+    # directly by the test fixture and were never queued, so there is no ledger
+    # and no keyspace to show -- the point here is the collapse to one card.
+    assert "split into" not in body
 
 
 def test_jobs_remove_chunked_task_deletes_all_chunks(app, client):
@@ -357,14 +378,17 @@ def test_jobs_reorder_does_not_multiply_chunked_task(app, client):
         _chunk(job, t1, n, 3)
     _assign(job, t2)                      # t2 whole
     # collapsed order is [t1, t2]; reorder to [t2, t1]
+    ids = _entry_ids(job.id)
     resp = client.post(f"/jobs/{job.id}/reorder_tasks",
-                       data={"order": f"{t2.id},{t1.id}"}, follow_redirects=False)
+                       data={"order": f"{ids[t2.id]},{ids[t1.id]}"},
+                       follow_redirects=False)
     assert resp.status_code in (301, 302)
     rows = JobTasks.query.filter_by(job_id=job.id).order_by(JobTasks.id).all()
-    # t1 collapses to ONE whole row (the old code recreated 3 -> re-chunk x3)
+    # t1 collapses to ONE row (the old code recreated 3 -> re-chunk x3)
     assert sum(1 for r in rows if r.task_id == t1.id) == 1
     assert [r.task_id for r in rows] == [t2.id, t1.id]     # order swapped
-    assert all(r.chunk_total is None for r in rows)        # de-chunked; re-chunks at next queue
+    # De-chunked: no row carries a slice any more, so the next queue re-plans.
+    assert not any(r.chunk_skip is not None or r.chunk_mask for r in rows)
 
 
 def test_jobs_dynamic_duplicate_tasks_stay_separate(app, client):

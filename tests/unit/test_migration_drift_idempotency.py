@@ -24,6 +24,9 @@ from sqlalchemy import text
 
 MIGRATIONS_DIR = str(Path(__file__).resolve().parents[2] / "migrations")
 BASE_REV = "8027c2d2b40a"      # what the drifted field DB was stamped at
+# Parent of a4c9e7b21f60 (widen job_tasks.chunk_mask). Downgrading TO this
+# un-applies the widening, whatever else has landed on top of it since.
+WIDEN_CHUNK_MASK_PARENT = "e5d1c7b3a904"
 
 
 def _dev_head():
@@ -128,13 +131,18 @@ def test_chunk_mask_is_widened_and_the_widening_reverses(tmp_path):
     round-tripped because the migration is guarded on the LIVE column width --
     a guard that compares the wrong way would still look right on a fresh
     upgrade and only fail on a downgrade.
+
+    Downgrades to the widening's PARENT by name rather than by a relative "-1".
+    "-1" means "one revision below head", so every migration added after this one
+    silently retargets the downgrade at something else and the assertion below
+    starts testing nothing.
     """
     app, db = _drifted_app(tmp_path)
     with app.app_context():
         upgrade(directory=MIGRATIONS_DIR)
         assert _chunk_mask_length(db) == 255
 
-        downgrade(directory=MIGRATIONS_DIR, revision="-1")
+        downgrade(directory=MIGRATIONS_DIR, revision=WIDEN_CHUNK_MASK_PARENT)
         assert _chunk_mask_length(db) == 64
 
         upgrade(directory=MIGRATIONS_DIR)          # idempotent re-apply

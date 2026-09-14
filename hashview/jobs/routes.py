@@ -31,6 +31,7 @@ from hashview.models import (
     HashNotifications,
     JobNotifications,
     Jobs,
+    JobTaskLedger,
     JobTasks,
     Settings,
     TaskGroups,
@@ -44,12 +45,18 @@ from hashview.utils.hashcat_modes import CUSTOM_HASH_TYPE
 from hashview.utils.utils import (
     apply_name_filter,
     build_job_task_commands,
+    close_ledger,
     dynamic_wordlist_ids,
     import_hashfilehashes,
+    is_chunk_row,
+    job_assignments,
+    queue_late_assignments,
+    renumber_ledger_positions,
     save_file,
     task_uses_dynamic_wordlist,
     top_effective_task_ids,
     try_commit,
+    update_job_task_status,
     validate_hash_only_hashfile,
     validate_hex_salt,
     validate_kerberos_hashfile,
@@ -155,14 +162,12 @@ def jobs_list():
         hash_type_names = {}
 
     # Count ATTACKS (assignments), not raw rows: a task split into N chunks is one
-    # attack, so count it once (at its chunk_no==1 row) rather than N times. Whole
-    # rows -- including a dynamic-wordlist task legitimately assigned twice -- each
-    # count once.
-    job_task_count = {}
-    for jt in job_tasks:
-        if jt.chunk_total and jt.chunk_no != 1:
-            continue
-        job_task_count[jt.job_id] = job_task_count.get(jt.job_id, 0) + 1
+    # attack. Counted off the ledger, which holds exactly one row per attack --
+    # a raw row count is not stable once chunks are issued on demand, since it
+    # grows through a run and a freshly queued job may have no rows yet.
+    job_task_count = {job_id: len(entries)
+                      for job_id, entries in job_assignments(
+                          [job.id for job in jobs]).items()}
 
     jn_by_job = {}
     for n in JobNotifications.query.all():
@@ -499,28 +504,23 @@ def jobs_assigned_hashfile_cracked(job_id, hashfile_id):
     return render_template('jobs_assigned_hashfiles_cracked.html.j2', title='Jobs Assigned Hashfiles Cracked', hashfile=hashfile, job=job, cracked_hashfiles_hashes=cracked_hashfiles_hashes)
 
 def _assigned_tasks(job_id):
-    """A job's task assignments in queue order, with a split task's chunk rows
-    collapsed into a single logical entry.
+    """A job's ATTACKS in queue order, one entry each.
 
-    At queue time a chunkable task fans out into N JobTasks rows (each with
-    chunk_total set); those are ONE assignment and collapse to a single entry
-    that carries the chunk count. A dynamic-wordlist task may be assigned more
-    than once -- those are separate WHOLE rows (chunk_total is NULL) and each
-    stays its own entry. Ordered by JobTasks id, which matches both the
-    pre-chunk insertion order and the agent-dispatch order (min id per task).
-    Returns a list of {'task_id': int, 'chunks': int}.
+    Read off the ledger, which already holds exactly one row per attack: a task
+    split into N chunks is one entry, and a dynamic-wordlist task assigned twice
+    is two. Before the job is queued there is no ledger yet, so the bare
+    'Not Started' rows stand in for their attacks.
+
+    Each entry carries 'entry_id' -- the ledger id, or the negated JobTasks id
+    for a not-yet-queued row. That is what the reorder form submits: comparing
+    TASK ids could not distinguish two assignments of the same dynamic-wordlist
+    task, so the permutation check was ambiguous exactly where duplicates are
+    legal.
+
+    Returns a list of {'entry_id', 'task_id', 'position', 'keyspace', 'state',
+    'chunkable'}.
     """
-    entries, seen_chunked = [], set()
-    for jt in (JobTasks.query.filter_by(job_id=job_id)
-               .order_by(JobTasks.id.asc()).all()):
-        if jt.chunk_total:
-            if jt.task_id in seen_chunked:
-                continue
-            seen_chunked.add(jt.task_id)
-            entries.append({'task_id': jt.task_id, 'chunks': jt.chunk_total})
-        else:
-            entries.append({'task_id': jt.task_id, 'chunks': 1})
-    return entries
+    return job_assignments([job_id]).get(job_id, [])
 
 @jobs.route("/jobs/<int:job_id>/tasks", methods=['GET'])
 @login_required
@@ -597,6 +597,11 @@ def jobs_assign_task(job_id, task_id):
     else:
         db.session.add(JobTasks(job_id=job_id, task_id=task_id, status='Not Started'))
         db.session.commit()
+        # Assigning to a job that is already queued or running: queue the row now,
+        # or dispatch (which selects status == 'Queued') never sees it and the task
+        # silently never runs.
+        if queue_late_assignments(job_id):
+            db.session.commit()
 
     return redirect("/jobs/"+str(job_id)+"/tasks")
 
@@ -636,6 +641,11 @@ def jobs_assign_task_group(job_id, task_group_id):
     if missing:
         flash(f'Skipped {missing} task(s) in that group that no longer exist.', 'warning')
 
+    # See jobs_assign_task: a row added to an already-running job must be queued
+    # now or dispatch never sees it.
+    if queue_late_assignments(job_id):
+        db.session.commit()
+
     return redirect("/jobs/" + str(job_id) + "/tasks")
 
 @jobs.route("/jobs/<int:job_id>/assign_task/lucky", methods=['POST'])
@@ -671,6 +681,8 @@ def jobs_assign_lucky_task_group(job_id):
             assigned.add(task_id)
         db.session.commit()
 
+        if queue_late_assignments(job_id):
+            db.session.commit()
         flash('Successfully Added Top 10 Tasks', 'success')
     return redirect("/jobs/" + str(job_id) + "/tasks")
 
@@ -694,21 +706,46 @@ def jobs_reorder_tasks(job_id):
     # is what the page renders and submits. Using the raw per-chunk rows here made
     # a split task's task_id appear N times, so a reorder recreated N whole rows
     # for it -- multiplying the task on the next queue. One entry per attack fixes that.
-    current = [e['task_id'] for e in _assigned_tasks(job_id)]
+    entries = _assigned_tasks(job_id)
+    current = [e['entry_id'] for e in entries]
     try:
         submitted = [int(x) for x in request.form.get('order', '').split(',') if x != '']
     except ValueError:
         submitted = []
 
+    # Compared on ENTRY ids, not task ids. A dynamic-wordlist task may be assigned
+    # to one job more than once, so a multiset of task ids cannot say WHICH
+    # assignment moved where -- the check was ambiguous exactly where duplicates
+    # are legal.
     if sorted(submitted) != sorted(current):
         flash('Task order was out of date; nothing changed. Please try again.', 'danger')
         return redirect("/jobs/" + str(job_id) + "/tasks")
 
-    JobTasks.query.filter_by(job_id=job_id).delete()
-    db.session.commit()
-    for task_id in submitted:
-        db.session.add(JobTasks(job_id=job_id, task_id=task_id, status='Not Started'))
-    db.session.commit()
+    ledgers = {ledger.id: ledger
+               for ledger in JobTaskLedger.query.filter_by(job_id=job_id).all()}
+    if ledgers:
+        # Rewrite the order. Nothing is deleted: this used to drop every row and
+        # re-create it, which on a RUNNING job silently destroyed rows an agent
+        # was actively cracking -- no cancel, no agent_id cleanup, and the agent's
+        # eventual status report landing on a row that no longer existed.
+        # Reordering a running job now just reorders the work not yet issued.
+        renumber_ledger_positions(job_id, submitted)
+        db.session.commit()
+        if Jobs.query.get(job_id).status in ('Running', 'Queued'):
+            flash('Task order updated. Work already running will finish first.', 'info')
+    else:
+        # Never queued, so there is nothing in flight and no ledger yet: rebuild
+        # the rows in the new order (insertion order IS queue order until a job
+        # is queued). Entry ids are negated row ids here.
+        rows = {-e['entry_id']: e['task_id'] for e in entries}
+        JobTasks.query.filter_by(job_id=job_id).delete()
+        db.session.commit()
+        for entry_id in submitted:
+            task_id = rows.get(-entry_id)
+            if task_id is not None:
+                db.session.add(JobTasks(job_id=job_id, task_id=task_id,
+                                        status='Not Started'))
+        db.session.commit()
 
     return redirect("/jobs/" + str(job_id) + "/tasks")
 
@@ -729,7 +766,26 @@ def jobs_remove_task(job_id, task_id):
     # removes ALL of them (the old .first() left chunks 2..N orphaned). A
     # dynamic-wordlist task can be assigned more than once as separate whole rows;
     # there, drop a single instance so the others survive.
-    if any(jt.chunk_total for jt in job_tasks):
+    # Resolve the attack, then remove it whole. Cancel anything still live first
+    # so the agent is told to stop on its next heartbeat and its hc_status is
+    # cleared -- deleting the rows out from under a running agent left it cracking
+    # work nobody was waiting for, and its eventual status report landing on a row
+    # that no longer existed.
+    ledgers = (JobTaskLedger.query
+               .filter_by(job_id=job_id, task_id=task_id)
+               .order_by(JobTaskLedger.position.desc()).all())
+    if ledgers:
+        target = ledgers[0]              # the LAST assignment of this task
+        for jt in JobTasks.query.filter_by(ledger_id=target.id).all():
+            if jt.status in ('Running', 'Queued', 'Not Started', 'Importing'):
+                update_job_task_status(jt.id, 'Canceled', finalize=False)
+            db.session.delete(jt)
+        db.session.delete(target)
+        db.session.flush()
+        renumber_ledger_positions(job_id)      # close the gap
+    elif any(is_chunk_row(jt) for jt in job_tasks):
+        # Pre-ledger rows: a split task is many rows sharing this task_id, so
+        # removing the attack removes ALL of them.
         for jt in job_tasks:
             db.session.delete(jt)
     else:
@@ -853,6 +909,8 @@ def _delete_job(job):
     (jobs_delete) and bulk (jobs_bulk_delete) delete paths so both cascade the
     same way."""
     JobTasks.query.filter_by(job_id=job.id).delete()
+    # Ledger rows describe a job's attacks; they must not outlive it.
+    JobTaskLedger.query.filter_by(job_id=job.id).delete()
     JobNotifications.query.filter_by(job_id=job.id).delete()
     db.session.delete(job)
     return try_commit(f'delete job {job.id}')
@@ -1028,6 +1086,15 @@ def jobs_start(job_id):
 
     if job_tasks:
         if current_user.admin or job.owner_id == current_user.id:
+            # Refuse a job that is already live. Re-queueing one flips its rows
+            # back to 'Queued' while their agent_id still names an agent, so the
+            # agent keeps running a row that dispatch is simultaneously free to
+            # hand to someone else -- the concrete way an agent ends up owning two
+            # rows, and the way one of them is orphaned 'Running' forever. The API
+            # route has always refused this (api/jobs.py); the web route did not.
+            if job.status in ('Running', 'Queued'):
+                flash('That job is already running or queued.', 'warning')
+                return redirect(url_for('jobs.jobs_list'))
             job.status = 'Queued'
             job.queued_at = datetime.now()
             build_job_task_commands(job)
@@ -1062,6 +1129,10 @@ def jobs_stop(job_id):
             job.status = 'Canceled'
             job.ended_at = datetime.now()
 
+            # Close the ledgers too. Cancelling only the rows leaves every attack
+            # still mintable, so the next heartbeat issues a fresh slice of the
+            # job that was just stopped -- one burned per agent per beat, forever.
+            close_ledger(job_id, 'job_stopped', cancel_rows=False)
             for job_task in job_tasks:
                 job_task.status = 'Canceled'
                 job_task.agent_id = None

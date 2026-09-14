@@ -143,7 +143,13 @@ def seed(app, manifest):
             db.session.flush()
             # build_hashcat_command returns an argv list; the command column stores
             # it as JSON (same as _set_job_task_command), which the agent decodes.
-            jt.command = json.dumps(build_hashcat_command(job.id, task.id))
+            # job_task_id keys the temp files on this row's own id, exactly as
+            # _set_job_task_command does in production. Omitting it fell back to
+            # keying on task_id, which is legal but is NOT the shape the server
+            # ever queues -- so the e2e ran against a row production never
+            # produces, and the agent went looking for hashfile_<job>_<task_id>.
+            jt.command = json.dumps(build_hashcat_command(job.id, task.id,
+                                                          job_task_id=jt.id))
 
         _authorize_agents(manifest)
         db.session.commit()

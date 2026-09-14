@@ -32,18 +32,26 @@ from hashview.models import (
     HashfileHashes,
     Hashfiles,
     Jobs,
+    JobTaskLedger,
     JobTasks,
     Settings,
     db,
 )
 from hashview.utils.utils import (
     _job_hash_type,
+    build_keyspace_command,
+    close_ledger,
+    finalize_job_if_complete,
     get_md5_hash,
     hashtypes_in_use,
     hexplain_to_text,
+    is_chunk_row,
+    issue_slice,
+    job_task_file_key,
+    ledger_is_mintable,
     notify_admins,
     process_recovered_hash_notifications,
-    rechunk_queued_tasks_for_hashtype,
+    record_keyspace_measurement,
     slowest_benchmark,
     update_job_task_status,
 )
@@ -109,12 +117,17 @@ def _task_runtime_exceeded(job_id, task_id, max_hours):
 
 
 def _cancel_task_group(job_id, task_id):
-    """Cancel every still-active chunk of a (job, task) group (see
-    _ACTIVE_JOBTASK_STATUSES), so an over-limit task stops entirely and no
-    further chunk of it gets dispatched."""
+    """Stop a (job, task) entirely: close its ledger AND cancel its live rows.
+
+    Closing the ledger is the part that matters. Cancelling only the rows is
+    total against a fully-materialised plan -- there are no others -- but not
+    against a cursor, where more slices are always waiting to be born: the next
+    heartbeat would issue slice N+1, cancel it, issue N+2, forever.
+    """
     current_app.logger.info(
-        'Job %s task %s exceeded max_runtime_tasks; cancelling its active chunks.',
-        job_id, task_id)
+        'Job %s task %s exceeded max_runtime_tasks; closing it.', job_id, task_id)
+    if close_ledger(job_id, 'runtime_cap', task_id=task_id):
+        return
     for jt in JobTasks.query.filter_by(job_id=job_id, task_id=task_id).all():
         if jt.status in _ACTIVE_JOBTASK_STATUSES:
             update_job_task_status(jt.id, 'Canceled')
@@ -129,13 +142,22 @@ def _hashfile_has_uncracked(hashfile_id):
 
 
 def _cancel_job_active_tasks(job_id):
-    """Cancel every still-active task/chunk of a job. Used when the whole hashfile
-    is recovered (nothing left to crack) or for one-and-done jobs -- running the
-    rest would just burn cycles on an already-solved hashfile. Cancelling the last
-    active task lets update_job_task_status roll the job up to Completed."""
+    """Cancel every still-active task/chunk of a job because the job SUCCEEDED.
+
+    Used when the whole hashfile is recovered (nothing left to crack) or for
+    one-and-done jobs -- running the rest would just burn cycles on an
+    already-solved hashfile.
+
+    The roll-up is suppressed per row and performed once at the end with
+    goal_met=True. Both parts matter: a cancelled row normally makes a job
+    Incomplete, and here the cancellation is the shape success takes (issue
+    #220); and rolling up once avoids re-evaluating the whole job on every row.
+    """
+    close_ledger(job_id, 'recovered', cancel_rows=False)
     for jt in JobTasks.query.filter_by(job_id=job_id).all():
         if jt.status in _ACTIVE_JOBTASK_STATUSES:
-            update_job_task_status(jt.id, 'Canceled')
+            update_job_task_status(jt.id, 'Canceled', finalize=False)
+    finalize_job_if_complete(job_id, goal_met=True)
 
 
 @api.route('/v1/agents/heartbeat', methods=['POST'])
@@ -233,9 +255,14 @@ def v1_api_set_agent_heartbeat():
                 # check if job has exceeded maximum runtime
                 job = Jobs.query.get(job_task.job_id)
                 if settings.max_runtime_jobs > 0 and job.started_at is not None and job.started_at + timedelta(hours=settings.max_runtime_jobs) < datetime.now():
+                    # Close every ledger of the job as well as its rows, or the
+                    # next heartbeat starts issuing fresh slices of an attack the
+                    # cap just stopped.
+                    close_ledger(job.id, 'job_runtime_cap')
                     job_tasks = JobTasks.query.filter_by(job_id = job.id).all()
                     for job_task in job_tasks:
-                        update_job_task_status(job_task.id, 'Canceled')
+                        if job_task.status in _ACTIVE_JOBTASK_STATUSES:
+                            update_job_task_status(job_task.id, 'Canceled')
 
                     job.status = 'Canceled'
                     job.ended_at = datetime.now()
@@ -280,8 +307,27 @@ def v1_api_set_agent_heartbeat():
                 # Clear hc_status if we're idle
                 agent.status = "Idle"
                 agent.hc_status = ""
+                # Which hashcat this agent runs. Gates whether it may be given a
+                # slice measured under a different major (see the dispatch loop).
+                reported = agent_data.get('hc_version')
+                if reported and reported != agent.hc_version:
+                    agent.hc_version = str(reported)[:32]
+                    try:
+                        agent.hc_major = int(str(reported).lstrip('v').split('.')[0])
+                    except (TypeError, ValueError):
+                        agent.hc_major = None
                 db.session.commit()
-                already_assigned_task = JobTasks.query.filter_by(agent_id = agent.id).first()
+                # Hand back a row this agent is already running -- the recovery
+                # path for an agent that restarted with the task still assigned.
+                # Filtered on 'Running': a Queued row that still names an agent is
+                # NOT an assignment in progress (a Start on an already-running job
+                # leaves rows in exactly that state), and handing one back here
+                # would run it while another agent was also being given it.
+                # Ordered so the choice is deterministic rather than whatever the
+                # database happens to return first.
+                already_assigned_task = (JobTasks.query
+                                         .filter_by(agent_id=agent.id, status='Running')
+                                         .order_by(JobTasks.id.asc()).first())
                 if already_assigned_task is not None:
                     message = {
                         'status': 200,
@@ -309,67 +355,188 @@ def v1_api_set_agent_heartbeat():
                     }
                     return jsonify(message)
 
-                # Get the next Queued chunk and 'assign' it to this agent. Order so
-                # ALL chunks of a task are exhausted before the next task starts: by
-                # priority, then the task's first (lowest) JobTask id — chunk 1 reuses
-                # the original row's low id, so min(id) per (job, task) is the job's
-                # task order — then chunk number within the task. Ordering by raw id
-                # alone interleaves tasks (every task's chunk 1, then the chunk 2s, …)
-                # because chunks 2..N are created later and get higher ids.
-                task_first = (db.session.query(
-                                  JobTasks.job_id.label('job_id'),
-                                  JobTasks.task_id.label('task_id'),
-                                  func.min(JobTasks.id).label('first_id'))
-                              .group_by(JobTasks.job_id, JobTasks.task_id)
-                              .subquery())
                 # Don't dispatch this agent a task whose hash type it has already
                 # reported unsupported (speed 0) -- it would just re-report 0 and
-                # waste the chunk slot. Walk the ordered candidates and skip those.
+                # waste the slot. Walk the ordered candidates and skip those.
                 unsupported = {b.hash_type for b in
                                AgentBenchmarks.query.filter_by(agent_id=agent.id, speed=0).all()}
-                job_task_entry = None
+                target_seconds = (settings.chunk_target_duration
+                                  if settings and settings.chunk_target_duration else 3600)
+
+                # Attacks in queue order: job priority first, then the operator's
+                # order within the job. That order lives on the ledger now.
+                # min(JobTasks.id) cannot express it any more -- an attack whose
+                # first slice is issued an hour into a run gets a HIGHER min id
+                # than one that started at the beginning, which silently inverts
+                # the queue.
+                # A measuring lease that expired (the agent never came back)
+                # returns the attack to Pending so another agent can measure it.
+                # A measuring lease that expired (the agent never came back) drops
+                # the attack to Unmeasurable rather than back to Pending. It now
+                # blocks dispatch of that attack while it is Measuring, so
+                # retrying forever would stall the work; falling back to a whole
+                # run always terminates and is always correct. Re-queueing the job
+                # rebuilds the ledger and tries again.
+                (db.session.query(JobTaskLedger)
+                 .filter(JobTaskLedger.state == 'Measuring',
+                         JobTaskLedger.measure_expires.isnot(None),
+                         JobTaskLedger.measure_expires < datetime.now())
+                 .update({'state': 'Unmeasurable', 'measured_by': None,
+                          'measure_expires': None,
+                          'closed_reason': 'measure_timed_out',
+                          'rev': JobTaskLedger.rev + 1}, synchronize_session=False))
+                db.session.commit()
+
+                for ledger in (db.session.query(JobTaskLedger)
+                               .join(Jobs, Jobs.id == JobTaskLedger.job_id)
+                               .filter(Jobs.status.in_(('Queued', 'Running')))
+                               .order_by(Jobs.priority.desc(),
+                                         JobTaskLedger.job_id.asc(),
+                                         JobTaskLedger.position.asc(),
+                                         JobTaskLedger.id.asc())):
+                    cand_job = Jobs.query.get(ledger.job_id)
+                    if cand_job is None:
+                        continue
+                    if unsupported and _job_hash_type(cand_job) in unsupported:
+                        continue
+                    # A keyspace measured under a different hashcat MAJOR is not
+                    # usable here: hashcat 7 redefines --keyspace and
+                    # --skip/--limit to whole-run units, so a slice computed from
+                    # a 6.x measurement addresses a different space entirely --
+                    # silently, with nothing to show for it but hashes that were
+                    # never tried. Skip the attack; another agent can take it.
+                    if (ledger.hc_major is not None
+                            and agent.hc_major != ledger.hc_major):
+                        continue
+                    # Don't start fresh work on an attack that is already over its
+                    # runtime cap. Closing the ledger -- not just cancelling its
+                    # rows -- is what stops the next heartbeat simply issuing
+                    # another slice of it.
+                    if _task_runtime_exceeded(ledger.job_id, ledger.task_id,
+                                              settings.max_runtime_tasks):
+                        close_ledger(ledger.job_id, 'runtime_cap', ledger_id=ledger.id)
+                        update_heartbeat(uuid)
+                        return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
+
+                    # Measure BEFORE handing out any of this attack. The seed row
+                    # carries a whole-run command, so dispatching it first would
+                    # run the entire attack on one agent and the measurement would
+                    # arrive with nothing left to split -- the feature would never
+                    # do anything. Answered like BENCHMARK: ask the agent a
+                    # question instead of giving it work, costing one heartbeat.
+                    #
+                    # An agent that cannot measure (no reported hashcat version)
+                    # falls through to the dispatch below and runs the attack
+                    # whole, which is exactly what happened before any of this.
+                    if ledger.state == 'Pending' and agent.hc_major is not None:
+                        keyspace_argv = build_keyspace_command(ledger.job_id, ledger.task_id)
+                        if keyspace_argv is None:
+                            ledger.state = 'Unmeasurable'
+                            ledger.closed_reason = 'not_measurable'
+                            db.session.commit()
+                        else:
+                            claimed_measure = (db.session.query(JobTaskLedger)
+                                               .filter(JobTaskLedger.id == ledger.id,
+                                                       JobTaskLedger.state == 'Pending',
+                                                       JobTaskLedger.rev == ledger.rev)
+                                               .update({'state': 'Measuring',
+                                                        'measured_by': agent.id,
+                                                        'measure_expires': datetime.now()
+                                                        + timedelta(minutes=10),
+                                                        'rev': JobTaskLedger.rev + 1},
+                                                       synchronize_session=False))
+                            db.session.commit()
+                            if claimed_measure:
+                                update_heartbeat(uuid)
+                                return jsonify({'status': 200, 'type': 'message',
+                                                'msg': 'KEYSPACE',
+                                                'ledger_id': ledger.id,
+                                                'command': json.dumps(keyspace_argv)})
+                        continue
+
+                    # Prefer a row that is already waiting: the attack's seed row,
+                    # or a slice that came back from a reclaim. Re-issuing an
+                    # outstanding slice matters more than starting a new one --
+                    # it is a hole below the cursor, and minting past it only
+                    # widens the frontier.
+                    waiting = (JobTasks.query
+                               .filter_by(ledger_id=ledger.id, status='Queued')
+                               .order_by(JobTasks.chunk_no.asc(), JobTasks.id.asc())
+                               .first())
+                    if waiting is not None:
+                        claimed = (db.session.query(JobTasks)
+                                   .filter(JobTasks.id == waiting.id,
+                                           JobTasks.status == 'Queued')
+                                   .update({'agent_id': agent.id,
+                                            'status': 'Running',
+                                            'started_at': datetime.now()},
+                                           synchronize_session=False))
+                        db.session.commit()
+                        if not claimed:
+                            continue            # another agent took it
+                        if not is_chunk_row(waiting) and ledger_is_mintable(ledger):
+                            # The seed row: size its slice from THIS agent's
+                            # benchmark. If that fails it keeps the whole-run
+                            # command it was born with, which covers a superset of
+                            # the keyspace -- slower, never wrong.
+                            issue_slice(job=cand_job, ledger=ledger, agent_id=agent.id,
+                                        hash_type=_job_hash_type(cand_job),
+                                        target_seconds=target_seconds, row=waiting)
+                        return jsonify({'status': 200, 'type': 'message',
+                                        'msg': 'START', 'job_task_id': waiting.id})
+
+                    # Nothing waiting: cut a fresh slice off the cursor.
+                    if ledger_is_mintable(ledger):
+                        minted = issue_slice(job=cand_job, ledger=ledger,
+                                             agent_id=agent.id,
+                                             hash_type=_job_hash_type(cand_job),
+                                             target_seconds=target_seconds)
+                        if minted is not None:
+                            return jsonify({'status': 200, 'type': 'message',
+                                            'msg': 'START', 'job_task_id': minted.id})
+
+                # Rows queued by a pre-ledger server carry no ledger_id. Dispatch
+                # them the old way so a job queued before the upgrade still drains.
+                legacy_first = (db.session.query(
+                                    JobTasks.job_id.label('job_id'),
+                                    JobTasks.task_id.label('task_id'),
+                                    func.min(JobTasks.id).label('first_id'))
+                                .filter(JobTasks.ledger_id.is_(None))
+                                .group_by(JobTasks.job_id, JobTasks.task_id)
+                                .subquery())
                 for candidate in (db.session.query(JobTasks)
-                                  .join(task_first,
-                                        (JobTasks.job_id == task_first.c.job_id)
-                                        & (JobTasks.task_id == task_first.c.task_id))
-                                  .filter(JobTasks.status == 'Queued')
+                                  .join(legacy_first,
+                                        (JobTasks.job_id == legacy_first.c.job_id)
+                                        & (JobTasks.task_id == legacy_first.c.task_id))
+                                  .filter(JobTasks.status == 'Queued',
+                                          JobTasks.ledger_id.is_(None))
                                   .order_by(JobTasks.priority.desc(),
-                                            task_first.c.first_id.asc(),
+                                            legacy_first.c.first_id.asc(),
                                             JobTasks.chunk_no.asc(),
                                             JobTasks.id.asc())):
                     cand_job = Jobs.query.get(candidate.job_id)
+                    # No job-status filter: this path reproduces the pre-ledger
+                    # behaviour exactly, for rows queued before the upgrade.
                     if unsupported and cand_job is not None and _job_hash_type(cand_job) in unsupported:
                         continue
-                    job_task_entry = candidate
-                    break
-                if job_task_entry:
-                    # Don't start a fresh chunk of a task that's already over its
-                    # runtime cap. This closes the gap where, at the cap moment, no
-                    # chunk happened to be running (all just completed, only queued
-                    # left), so the Working-heartbeat check couldn't fire. Cancel the
-                    # whole group and let the next beat pick a different task.
-                    if _task_runtime_exceeded(job_task_entry.job_id,
-                                              job_task_entry.task_id,
+                    if _task_runtime_exceeded(candidate.job_id, candidate.task_id,
                                               settings.max_runtime_tasks):
-                        _cancel_task_group(job_task_entry.job_id, job_task_entry.task_id)
+                        _cancel_task_group(candidate.job_id, candidate.task_id)
                         update_heartbeat(uuid)
-                        message = {
-                            'status': 200,
-                            'type': 'message',
-                            'msg': 'OK'
-                        }
-                        return jsonify(message)
-                    job_task_entry.agent_id = agent.id
-                    job_task_entry.status = 'Running'
-                    job_task_entry.started_at = datetime.now()
+                        return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
+                    claimed = (db.session.query(JobTasks)
+                               .filter(JobTasks.id == candidate.id,
+                                       JobTasks.status == 'Queued')
+                               .update({'agent_id': agent.id,
+                                        'status': 'Running',
+                                        'started_at': datetime.now()},
+                                       synchronize_session=False))
                     db.session.commit()
-                    message = {
-                        'status': 200,
-                        'type': 'message',
-                        'msg': 'START',
-                        'job_task_id': job_task_entry.id
-                    }
-                    return jsonify(message)
+                    if not claimed:
+                        continue
+                    return jsonify({'status': 200, 'type': 'message',
+                                    'msg': 'START', 'job_task_id': candidate.id})
+
                 update_heartbeat(uuid)
                 message = {
                     'status': 200,
@@ -405,22 +572,6 @@ def v1_api_post_agent_benchmark():
         })
 
     results = data['benchmark_results'] or {}
-    # Hash types with no usable benchmark BEFORE this report. If this report gives
-    # one its first usable speed, queued whole tasks of that type can now be split
-    # (jobs queued for a brand-new type while every agent was busy ran un-chunked).
-    pending = set()
-    for mode in results:
-        try:
-            m = int(mode)
-            s = int(float(results[mode]))
-        except (TypeError, ValueError):
-            current_app.logger.debug(
-                'Agent %s benchmark pre-scan: unparseable entry %r=%r; skipping.',
-                agent.id, mode, results[mode])
-            continue
-        if s > 0 and not slowest_benchmark(m):
-            pending.add(m)
-
     for mode, speed in results.items():
         try:
             mode_i = int(mode)
@@ -442,11 +593,60 @@ def v1_api_post_agent_benchmark():
                 updated_at=datetime.now()))
     db.session.commit()
 
-    # Now that benchmarks for these types may exist, re-plan any still-queued whole
-    # tasks of theirs into chunks (no-op if the type is still unusable / nothing queued).
-    for m in pending:
-        rechunk_queued_tasks_for_hashtype(m)
+    # No re-planning step. Slices are sized when an agent claims one, from THAT
+    # agent's benchmark, so a benchmark arriving mid-run simply changes the size
+    # of every slice issued after it -- no existing row is touched, and the race
+    # the old rechunk pass worked around cannot arise.
+    return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
 
+
+@api.route('/v1/jobtask/keyspace', methods=['POST'])
+def v1_api_post_jobtask_keyspace():
+    """An agent reports what `hashcat --keyspace` said for one attack.
+
+    The server cannot compute this itself. hashcat splits a mask between its base
+    loop (what --skip/--limit index) and its own device-side loop based on the
+    hash mode and on -S, not on the mask alone: `?a?a?a?a?a?a` reports 95**4 for a
+    fast mode, 95**5 for a slow one and 95**6 under -S. Measuring it is the only
+    way to slice a mask attack by range instead of by expanding its leading
+    position, which was coarse (a ?a x8 attack split into exactly 95 pieces) and
+    produced sub-masks hashcat could misread as options.
+
+    Anything unusable -- a bad number, a lost lease, an attack whose candidate
+    total the server cannot pin down -- leaves the attack running WHOLE, which
+    emits no --skip/--limit and is correct whatever the unit turns out to be.
+    """
+    if not is_authorized(user=False, agent=True, request=request):
+        return redirect("/v1/not_authorized")
+
+    update_heartbeat(request.cookies.get('uuid'))
+    agent = Agents.query.filter_by(uuid=request.cookies.get('uuid')).first()
+    if agent is None:
+        return jsonify({'status': 404, 'type': 'Error', 'msg': 'Agent not found'}), 404
+
+    data = request.get_json(silent=True)
+    if not data or 'ledger_id' not in data or 'keyspace' not in data:
+        return jsonify({'status': 400, 'type': 'Error',
+                        'msg': 'Missing ledger_id or keyspace in request body'})
+
+    ledger = JobTaskLedger.query.get(data['ledger_id'])
+    if ledger is None:
+        return jsonify({'status': 404, 'type': 'Error', 'msg': 'Attack not found'}), 404
+    if ledger.state != 'Measuring' or ledger.measured_by != agent.id:
+        # The lease expired and someone else took it, or the attack was stopped.
+        # Not an error the agent can act on; it just moves on.
+        return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
+
+    hc_major = agent.hc_major
+    if hc_major is None:
+        record_keyspace_measurement(ledger, None, None)
+        return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
+
+    stored = record_keyspace_measurement(ledger, data['keyspace'], hc_major)
+    if not stored:
+        current_app.logger.warning(
+            'Agent %s reported an unusable keyspace %r for attack %s; it will run whole.',
+            agent.id, data['keyspace'], ledger.id)
     return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
 
 
@@ -509,11 +709,36 @@ def v1_api_get_queue_assignment(job_task_id):
             'type': 'Error',
             'msg': 'Agent not found'
         }), 404
-    job_task = JobTasks.query.filter_by(agent_id=agent.id).first()
+    # Honour the path parameter, AND check the caller owns the row. The two go
+    # together: this used to ignore job_task_id entirely and return
+    # filter_by(agent_id=...).first(), which was accidentally safe (an agent could
+    # only ever see its own row) but returned an arbitrary row when an agent held
+    # more than one, so the agent could run one command while naming a different
+    # row's files. Honouring the parameter without the ownership check would turn
+    # that accident into a cross-agent command disclosure.
+    job_task = JobTasks.query.get(job_task_id)
+    if job_task is not None and job_task.agent_id != agent.id:
+        # Answer exactly as "you have no assignment" does (issue #218's 200 with a
+        # null job_task), so the agent's existing `if not job_task: bail` path
+        # handles it and nothing about another agent's row is revealed. This is
+        # also the right answer when the row was reclaimed between START and this
+        # fetch: the agent skips instead of running a slice it no longer owns.
+        job_task = None
+
+    job_task_data = alchemy_to_native(job_task)
+    if job_task is not None:
+        # State the temp-file key outright rather than making the agent re-derive
+        # it -- but READ IT OUT OF THE COMMAND we are sending in the same payload,
+        # never recompute it from the row id. Recomputing made this field a second,
+        # independent opinion about the key, and when it disagreed with the command
+        # the agent believed the field: it downloaded the hashfile to a name hashcat
+        # was never told to open. Deriving it from the command makes the two halves
+        # of this payload incapable of contradicting each other.
+        job_task_data['file_key'] = job_task_file_key(job_task)
 
     message = {
         'status': 200,
-        'job_task': alchemy_to_native(job_task)
+        'job_task': job_task_data
     }
     return jsonify(message)
 
@@ -662,8 +887,9 @@ def v1_api_post_jobtask_crackfile_upload(job_task_id):
     # Stop the job when there's nothing left to crack. One-and-done jobs stop after
     # the first recovery; ANY job stops once its hashfile is fully recovered --
     # continuing to run the remaining chunks/tasks would just burn cycles on a
-    # solved hashfile. Cancelling the still-active tasks lets update_job_task_status
-    # roll the job up to Completed. Gated on a fresh recovery so the (cheap)
+    # solved hashfile. _cancel_job_active_tasks rolls the job up to Completed
+    # itself, because these cancellations ARE the success. Gated on a fresh
+    # recovery so the (cheap)
     # "any uncracked left?" check only runs when the recovery state changed.
     if recovered_at_least_one_hash and (
             job.limit_recovered or not _hashfile_has_uncracked(job.hashfile_id)):
@@ -696,6 +922,31 @@ def v1_api_set_queue_jobtask_status():
             'status': 400,
             'type': 'Error',
             'msg': 'Missing job task status data in request body'
+        })
+
+    # Only the agent the row is assigned to may change its status. There was no
+    # check at all: any authorized agent could set any job task to any string.
+    # It also makes a stale report harmless -- an agent whose slice was reclaimed
+    # while it was still running would otherwise mark Completed work that another
+    # agent is now part-way through, and the slice would never be re-run.
+    # An unknown id keeps falling through to update_job_task_status, which
+    # reports it as a 500 -- an existing, pinned contract, and not what this
+    # guard is about.
+    job_task = JobTasks.query.get(status_json['job_task_id'])
+    if job_task is not None and job_task.status == status_json['task_status']:
+        # Idempotent: a retried report of a status the row already has is a no-op,
+        # not a rejection. Covers the agent's defensive re-POST of 'Running'.
+        return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
+    agent = Agents.query.filter_by(uuid=request.cookies.get('uuid')).first()
+    if job_task is not None and (agent is None or job_task.agent_id != agent.id):
+        current_app.logger.warning(
+            'Rejected status %r for job task %s from agent %s: the row is assigned '
+            'to agent %s.', status_json['task_status'], job_task.id,
+            agent.id if agent else None, job_task.agent_id)
+        return jsonify({
+            'status': 409,
+            'type': 'Error',
+            'msg': 'That job task is not assigned to this agent.'
         })
 
     if (update_job_task_status(jobtask_id = status_json['job_task_id'], status = status_json['task_status'])):

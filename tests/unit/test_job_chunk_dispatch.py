@@ -1,8 +1,14 @@
-"""Dispatch-side tests for build_job_task_commands (hashview.utils.utils).
+"""Queue-time tests for build_job_task_commands (hashview.utils.utils).
 
-Covers the fan-out at queue time: a static-wordlist task splits into N chunk
-JobTasks when chunking is enabled and a benchmark exists; a dynamic-wordlist task
-and a toggle-off job stay whole; and re-queue is idempotent (no re-expansion).
+Queueing no longer materialises a chunk plan. Every attack starts as exactly ONE
+row, carrying a whole-run command; a splittable attack has its slice filled in
+when an agent claims it, sized from THAT agent's benchmark. So what these tests
+pin is the shape of the queue, not a fan-out: one row and one ledger entry per
+attack, a keyspace where the server can know one, and a re-queue that collapses
+back to that same shape rather than re-running the previous run's slices.
+
+The per-agent sizing itself, and the coverage invariant it has to preserve, are
+in test_ledger_mint.py.
 """
 
 import pytest
@@ -15,6 +21,7 @@ from hashview.models import (
     HashfileHashes,
     Hashfiles,
     Jobs,
+    JobTaskLedger,
     JobTasks,
     Settings,
     Tasks,
@@ -22,7 +29,11 @@ from hashview.models import (
     Wordlists,
     db,
 )
-from hashview.utils.utils import build_job_task_commands, rechunk_queued_tasks_for_hashtype
+from hashview.utils.utils import (
+    CHUNK_TOTAL_WHOLE,
+    build_job_task_commands,
+    is_chunk_row,
+)
 
 
 def _seed(attackmode=0, wl_type="static", wl_size=1_000_000, rule_size=100,
@@ -74,28 +85,33 @@ def _seed(attackmode=0, wl_type="static", wl_size=1_000_000, rule_size=100,
 
 
 @pytest.mark.security
-def test_static_task_fans_out_into_chunks(app, db_session):
+def test_a_splittable_task_is_queued_as_one_row_awaiting_a_slice(app, db_session):
+    """Queueing no longer decides how the keyspace is divided.
+
+    It cannot: the size of a slice depends on which agent claims it, and that is
+    not known until one asks. So the attack is queued as a single row with the
+    whole keyspace still unissued, and gets its slice at dispatch.
+
+    The row is born carrying a valid WHOLE-run command, which is the safety floor
+    -- if a slice is never filled in, what runs covers a superset of the keyspace.
+    Slower, never wrong, and never a row with no command for the agent to run.
+    """
     job, task = _seed()
     build_job_task_commands(job)
     db.session.commit()
 
     rows = JobTasks.query.filter_by(job_id=job.id).all()
-    assert len(rows) > 1, "expected the task to split into multiple chunk JobTasks"
-    # every chunk: Queued, has --skip/--limit in its command, chunk_no/total set
-    assert all(r.status == "Queued" for r in rows)
-    assert all("--skip" in r.command and "--limit" in r.command for r in rows)
-    assert all(r.chunk_total == len(rows) for r in rows)
-    assert {r.chunk_no for r in rows} == set(range(1, len(rows) + 1))
-    # chunks tile the keyspace contiguously (ordered by skip)
-    ordered = sorted(rows, key=lambda r: r.chunk_skip)
-    skip = 0
-    for r in ordered:
-        assert r.chunk_skip == skip
-        skip += r.chunk_limit
-    assert skip == 1_000_000
-    # per-chunk file identity: outfile keyed by the chunk's own job_task id
-    for r in rows:
-        assert f"_{r.id}.txt" in r.command
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.status == "Queued"
+    assert not is_chunk_row(row), "no slice until an agent claims it"
+    assert "--skip" not in row.command, "the fallback is a whole run"
+    assert f"_{row.id}.txt" in row.command, "temp files keyed on the row itself"
+
+    ledger = JobTaskLedger.query.filter_by(job_id=job.id).one()
+    assert ledger.state == "Ready" and ledger.chunkable
+    assert ledger.keyspace == 1_000_000
+    assert ledger.keyspace_pos == 0, "nothing issued yet"
 
 
 @pytest.mark.security
@@ -105,7 +121,10 @@ def test_dynamic_wordlist_task_stays_whole(app, db_session):
     db.session.commit()
     rows = JobTasks.query.filter_by(job_id=job.id).all()
     assert len(rows) == 1
-    assert rows[0].chunk_total is None
+    # Whole rows carry the CHUNK_TOTAL_WHOLE sentinel (truthy, so an un-upgraded
+    # agent still keys its temp files on the JobTask id) and no slice.
+    assert rows[0].chunk_total == CHUNK_TOTAL_WHOLE
+    assert not is_chunk_row(rows[0])
     assert "--skip" not in rows[0].command
 
 
@@ -116,7 +135,10 @@ def test_toggle_off_stays_whole(app, db_session):
     db.session.commit()
     rows = JobTasks.query.filter_by(job_id=job.id).all()
     assert len(rows) == 1
-    assert rows[0].chunk_total is None
+    # Whole rows carry the CHUNK_TOTAL_WHOLE sentinel (truthy, so an un-upgraded
+    # agent still keys its temp files on the JobTask id) and no slice.
+    assert rows[0].chunk_total == CHUNK_TOTAL_WHOLE
+    assert not is_chunk_row(rows[0])
 
 
 @pytest.mark.security
@@ -126,7 +148,10 @@ def test_no_benchmark_stays_whole(app, db_session):
     db.session.commit()
     rows = JobTasks.query.filter_by(job_id=job.id).all()
     assert len(rows) == 1
-    assert rows[0].chunk_total is None
+    # Whole rows carry the CHUNK_TOTAL_WHOLE sentinel (truthy, so an un-upgraded
+    # agent still keys its temp files on the JobTask id) and no slice.
+    assert rows[0].chunk_total == CHUNK_TOTAL_WHOLE
+    assert not is_chunk_row(rows[0])
 
 
 @pytest.mark.security
@@ -137,7 +162,7 @@ def test_requeue_is_idempotent(app, db_session):
     first = JobTasks.query.filter_by(job_id=job.id).all()
     first_count = len(first)
     first_ids = {r.id for r in first}
-    assert first_count > 1
+    assert first_count == 1
 
     # simulate stop -> start: re-run the queue builder
     for r in first:
@@ -204,44 +229,3 @@ def _add_benchmark(hash_type=1000, speed=1000, uuid="rc-agent"):
     db.session.add(AgentBenchmarks(agent_id=agent.id, hash_type=hash_type, speed=speed))
     db.session.commit()
     return agent
-
-
-@pytest.mark.security
-def test_rechunk_splits_queued_whole_task_after_benchmark(app, db_session):
-    job, _ = _seed_queued_whole_task()
-    assert JobTasks.query.filter_by(job_id=job.id).count() == 1   # ran un-chunked
-    _add_benchmark()
-    rechunk_queued_tasks_for_hashtype(1000)
-    rows = JobTasks.query.filter_by(job_id=job.id).all()
-    assert len(rows) > 1                                          # now split
-    assert all(r.chunk_total == len(rows) for r in rows)
-    assert all(r.status == "Queued" and r.agent_id is None for r in rows)
-    assert all("--skip" in r.command for r in rows)
-
-
-@pytest.mark.security
-def test_rechunk_skips_already_assigned_task(app, db_session):
-    job, _ = _seed_queued_whole_task()
-    jt = JobTasks.query.filter_by(job_id=job.id).first()
-    agent = _add_benchmark()
-    jt.status = "Running"           # an agent grabbed the whole task first
-    jt.agent_id = agent.id
-    db.session.commit()
-    rechunk_queued_tasks_for_hashtype(1000)
-    assert JobTasks.query.filter_by(job_id=job.id).count() == 1   # left alone
-
-
-@pytest.mark.security
-def test_rechunk_noop_when_chunking_disabled(app, db_session):
-    job, _ = _seed_queued_whole_task(enabled_chunking=False)
-    _add_benchmark()
-    rechunk_queued_tasks_for_hashtype(1000)
-    assert JobTasks.query.filter_by(job_id=job.id).count() == 1
-
-
-@pytest.mark.security
-def test_rechunk_skips_dynamic_wordlist_task(app, db_session):
-    job, _ = _seed_queued_whole_task(wl_type="dynamic")
-    _add_benchmark()
-    rechunk_queued_tasks_for_hashtype(1000)
-    assert JobTasks.query.filter_by(job_id=job.id).count() == 1

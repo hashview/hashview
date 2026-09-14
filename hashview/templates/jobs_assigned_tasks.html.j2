@@ -91,7 +91,8 @@
         </div>
         <div class="card-body" style="padding:0;">
             {# Drag a card to reorder; siblings slide out of the way (FLIP). On drop
-               the new task-id order is posted to jobs_reorder_tasks (POST+redirect). #}
+               the new ENTRY-id order is posted to jobs_reorder_tasks (POST+redirect).
+               data-task-id stays for the remove form, which addresses a task. #}
             <form id="reorder-form" method="POST" action="/jobs/{{job.id}}/reorder_tasks">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="order" id="reorder-order">
@@ -103,12 +104,12 @@
                    show one card each. #}
                 {% for a in (assigned if assigned is defined else []) %}
                     {% set m = task_meta.get(a.task_id) if task_meta is defined else none %}
-                    <div class="tq-item" draggable="true" data-task-id="{{ a.task_id }}">
+                    <div class="tq-item" draggable="true" data-task-id="{{ a.task_id }}" data-entry-id="{{ a.entry_id }}">
                         <span class="tq-index">{{ '%02d' % loop.index }}</span>
                         <span class="tq-grip" title="Drag to reorder">{{ icon('drag', size=16) }}</span>
                         <div class="tq-body">
                             <div class="tq-name">{{ m.name if m else 'Unknown task' }}</div>
-                            <div class="tq-sub">{{ m.type if m else 'Task' }}{% if m and m.wordlist %} · {{ m.wordlist }}{% endif %}{% if a.chunks > 1 %} · split into {{ a.chunks | commafy }} chunks{% endif %}</div>
+                            <div class="tq-sub">{{ m.type if m else 'Task' }}{% if m and m.wordlist %} · {{ m.wordlist }}{% endif %}{% if a.keyspace %} · {{ a.keyspace | human_count }} keyspace{% elif a.state == 'Pending' %} · keyspace measured when it runs{% elif a.chunkable is sameas false %} · runs as one chunk{% endif %}</div>
                         </div>
                         <div class="tq-controls">
                             <form method="POST" action="/jobs/{{job.id}}/remove_task/{{a.task_id}}" style="display:contents">
@@ -212,8 +213,10 @@
             e.preventDefault();
             if (!dragEl) return;
             var ids = Array.prototype.map.call(
-                list.querySelectorAll('.tq-item[data-task-id]'),
-                function (el) { return el.getAttribute('data-task-id'); });
+                list.querySelectorAll('.tq-item[data-entry-id]'),
+                // ENTRY ids, not task ids: a dynamic-wordlist task can be assigned
+                // to one job twice, so task ids cannot say which card moved where.
+                function (el) { return el.getAttribute('data-entry-id'); });
             document.getElementById('reorder-order').value = ids.join(',');
             document.getElementById('reorder-form').submit();
         });

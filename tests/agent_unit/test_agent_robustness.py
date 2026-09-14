@@ -193,6 +193,120 @@ def test_maybe_update_dynamic_wordlist_handles_no_data(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# #499 — hashcat's stderr must reach notifications as text, not a bytes repr
+#
+# proc.communicate() hands back bytes. Passing those through str() yields the
+# repr, so admins were notified with the literal b'No hashes loaded.\n\n'.
+# notify_admins() fans one body out to email, Pushover and Slack, and the body
+# is JSON-encoded before it leaves the agent, so the decode has to happen here.
+#
+# Only the first test below is a bug reproduction. The other two pin branch
+# behaviour that the fix refactors onto a shared local, so they pass before and
+# after — deliberately, as guards on the refactor rather than on the bug.
+# ---------------------------------------------------------------------------
+class _FakeHashcatProc:
+    """Stands in for the hashcat Popen. communicate() yields bytes, as the real
+    one does, which is the whole point of these tests."""
+
+    returncode = 0
+
+    def __init__(self, stderr):
+        self._stderr = stderr
+
+    def communicate(self):
+        return (b"", self._stderr)
+
+
+def _arm_run_hashcat(monkeypatch, stderr, sent, killed):
+    """Point run_hashcat at a fake hashcat that wrote `stderr`, recording what
+    the agent reported to the server and any attempt to signal itself."""
+    monkeypatch.setattr(agent_main.api, "sendError", lambda msg: sent.append(msg))
+    monkeypatch.setattr(agent_main.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    monkeypatch.setattr(agent_main.subprocess, "Popen", lambda *a, **k: _FakeHashcatProc(stderr))
+
+
+def test_run_hashcat_reports_decoded_stderr_not_a_bytes_repr(tmp_path, monkeypatch):
+    # hashcat writes this when nothing in the hashfile parses under the -m given.
+    sent, killed = [], []
+    _arm_run_hashcat(monkeypatch, b"No hashes loaded.\n\n", sent, killed)
+
+    agent_main.run_hashcat(["/usr/bin/hashcat", "-m", "1000"],
+                           str(tmp_path / "hc_status.json"))
+
+    assert sent == ["No hashes loaded."], (
+        "the notification body must be the text hashcat wrote; str(bytes) makes "
+        "it the repr b'No hashes loaded.\\n\\n' instead (issue #499)")
+
+
+def test_run_hashcat_preserves_line_breaks_in_multi_line_stderr(tmp_path, monkeypatch):
+    # hashcat usually writes several lines. The repr collapsed them into one
+    # line carrying literal backslash-n, which is what admins had to read.
+    sent, killed = [], []
+    _arm_run_hashcat(monkeypatch, b"Device #1: skipped.\nDevice #2: skipped.\n\n", sent, killed)
+
+    agent_main.run_hashcat(["/usr/bin/hashcat", "-m", "1000"],
+                           str(tmp_path / "hc_status.json"))
+
+    assert sent == ["Device #1: skipped.\nDevice #2: skipped."]
+    assert "\\n" not in sent[0], "line breaks must be real newlines, not the repr's escape"
+
+
+def test_run_hashcat_survives_stderr_that_is_not_valid_utf8(tmp_path, monkeypatch):
+    # Device and driver notices are locale-dependent and not guaranteed UTF-8.
+    # This decode runs inside the error path, so a raise here would break the
+    # agent's error handling itself: 'replace' keeps it reportable.
+    sent, killed = [], []
+    _arm_run_hashcat(monkeypatch, b"CUDA device \xff\xfe unavailable\n", sent, killed)
+
+    agent_main.run_hashcat(["/usr/bin/hashcat", "-m", "1000"],
+                           str(tmp_path / "hc_status.json"))
+
+    assert len(sent) == 1
+    assert sent[0].startswith("CUDA device ")
+    assert sent[0].endswith("unavailable")
+    assert "\\xff" not in sent[0], "undecodable bytes must not arrive as the repr's escape"
+
+
+def test_run_hashcat_ignores_stderr_that_is_only_whitespace(tmp_path, monkeypatch):
+    # `if error:` tests the raw bytes, so a lone flush of newlines reaches the
+    # decode and strips to nothing. Reporting that woke admins with an empty
+    # message body and killed the agent over a blank line.
+    sent, killed = [], []
+    _arm_run_hashcat(monkeypatch, b"\n\n", sent, killed)
+
+    agent_main.run_hashcat(["/usr/bin/hashcat", "-m", "1000"],
+                           str(tmp_path / "hc_status.json"))
+
+    assert sent == [], "an empty message body is not worth notifying an admin about"
+    assert killed == []
+
+
+def test_run_hashcat_stays_quiet_on_the_empty_or_corrupt_hashfile_notice(tmp_path, monkeypatch):
+    # Suppressed outright: neither reported to the server nor fatal to the agent.
+    sent, killed = [], []
+    _arm_run_hashcat(monkeypatch, b"hashfile is empty or corrupt\n", sent, killed)
+
+    agent_main.run_hashcat(["/usr/bin/hashcat", "-m", "1000"],
+                           str(tmp_path / "hc_status.json"))
+
+    assert sent == []
+    assert killed == []
+
+
+def test_run_hashcat_exits_without_reporting_when_hashcat_was_terminated(tmp_path, monkeypatch):
+    # A terminated hashcat is the server cancelling the job, not an error worth
+    # waking an admin for: the agent exits quietly.
+    sent, killed = [], []
+    _arm_run_hashcat(monkeypatch, b"Terminated\n", sent, killed)
+
+    with pytest.raises(SystemExit):
+        agent_main.run_hashcat(["/usr/bin/hashcat", "-m", "1000"],
+                               str(tmp_path / "hc_status.json"))
+
+    assert sent == []
+
+
+# ---------------------------------------------------------------------------
 # config.py — clear, fatal message on a missing file/section/key (problem D)
 # ---------------------------------------------------------------------------
 def _load_real_config():

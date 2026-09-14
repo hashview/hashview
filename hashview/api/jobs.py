@@ -34,6 +34,7 @@ from hashview.api._shared import (  # noqa: F401
 from hashview.models import (
     JobNotifications,
     Jobs,
+    JobTaskLedger,
     JobTasks,
     Settings,
     TaskGroups,
@@ -100,6 +101,8 @@ def v1_api_delete_job(job_id):
     job_target = f'job:{job.id} {job.name!r}'
     try:
         JobTasks.query.filter_by(job_id=job_id).delete()
+        # Ledger rows describe a job's attacks; they must not outlive it.
+        JobTaskLedger.query.filter_by(job_id=job_id).delete()
         JobNotifications.query.filter_by(job_id=job_id).delete()
         db.session.delete(job)
         db.session.commit()

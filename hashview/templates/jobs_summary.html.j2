@@ -63,7 +63,7 @@
                         <td>
                             {% for a in (assigned if assigned is defined else []) %}
                                 {% set order = loop.index %}
-                                <span class="mono" style="color:var(--text-mute); margin-right:8px;">{{ '%02d' % order }}</span>{{ task_names.get(a.task_id, '') }}{% if a.chunks > 1 %} <span class="mono" style="color:var(--text-mute);">({{ a.chunks | commafy }} chunks)</span>{% endif %} <br>
+                                <span class="mono" style="color:var(--text-mute); margin-right:8px;">{{ '%02d' % order }}</span>{{ task_names.get(a.task_id, '') }}{% if a.keyspace %} <span class="mono" style="color:var(--text-mute);">({{ a.keyspace | human_count }} keyspace)</span>{% elif a.state == 'Pending' %} <span class="mono" style="color:var(--text-mute);">(keyspace measured when it runs)</span>{% endif %} <br>
                             {% endfor %}
                         </td>
                     </tr>

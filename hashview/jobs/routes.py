@@ -31,6 +31,7 @@ from hashview.models import (
     HashNotifications,
     JobNotifications,
     Jobs,
+    JobTaskLedger,
     JobTasks,
     Settings,
     TaskGroups,
@@ -47,6 +48,7 @@ from hashview.utils.utils import (
     dynamic_wordlist_ids,
     import_hashfilehashes,
     is_chunk_row,
+    job_assignments,
     queue_late_assignments,
     save_file,
     task_uses_dynamic_wordlist,
@@ -157,14 +159,12 @@ def jobs_list():
         hash_type_names = {}
 
     # Count ATTACKS (assignments), not raw rows: a task split into N chunks is one
-    # attack, so count it once (at its chunk_no==1 row) rather than N times. Whole
-    # rows -- including a dynamic-wordlist task legitimately assigned twice -- each
-    # count once.
-    job_task_count = {}
-    for jt in job_tasks:
-        if is_chunk_row(jt) and jt.chunk_no != 1:
-            continue
-        job_task_count[jt.job_id] = job_task_count.get(jt.job_id, 0) + 1
+    # attack. Counted off the ledger, which holds exactly one row per attack --
+    # a raw row count is not stable once chunks are issued on demand, since it
+    # grows through a run and a freshly queued job may have no rows yet.
+    job_task_count = {job_id: len(entries)
+                      for job_id, entries in job_assignments(
+                          [job.id for job in jobs]).items()}
 
     jn_by_job = {}
     for n in JobNotifications.query.all():
@@ -501,28 +501,23 @@ def jobs_assigned_hashfile_cracked(job_id, hashfile_id):
     return render_template('jobs_assigned_hashfiles_cracked.html.j2', title='Jobs Assigned Hashfiles Cracked', hashfile=hashfile, job=job, cracked_hashfiles_hashes=cracked_hashfiles_hashes)
 
 def _assigned_tasks(job_id):
-    """A job's task assignments in queue order, with a split task's chunk rows
-    collapsed into a single logical entry.
+    """A job's ATTACKS in queue order, one entry each.
 
-    At queue time a chunkable task fans out into N JobTasks rows (each carrying a
-    chunk slice); those are ONE assignment and collapse to a single entry that
-    carries the chunk count. A dynamic-wordlist task may be assigned more than
-    once -- those are separate WHOLE rows (no slice) and each stays its own
-    entry. Ordered by JobTasks id, which matches both the pre-chunk insertion
-    order and the agent-dispatch order (min id per task).
-    Returns a list of {'task_id': int, 'chunks': int}.
+    Read off the ledger, which already holds exactly one row per attack: a task
+    split into N chunks is one entry, and a dynamic-wordlist task assigned twice
+    is two. Before the job is queued there is no ledger yet, so the bare
+    'Not Started' rows stand in for their attacks.
+
+    Each entry carries 'entry_id' -- the ledger id, or the negated JobTasks id
+    for a not-yet-queued row. That is what the reorder form submits: comparing
+    TASK ids could not distinguish two assignments of the same dynamic-wordlist
+    task, so the permutation check was ambiguous exactly where duplicates are
+    legal.
+
+    Returns a list of {'entry_id', 'task_id', 'position', 'keyspace', 'state',
+    'chunkable'}.
     """
-    entries, seen_chunked = [], set()
-    for jt in (JobTasks.query.filter_by(job_id=job_id)
-               .order_by(JobTasks.id.asc()).all()):
-        if is_chunk_row(jt):
-            if jt.task_id in seen_chunked:
-                continue
-            seen_chunked.add(jt.task_id)
-            entries.append({'task_id': jt.task_id, 'chunks': jt.chunk_total})
-        else:
-            entries.append({'task_id': jt.task_id, 'chunks': 1})
-    return entries
+    return job_assignments([job_id]).get(job_id, [])
 
 @jobs.route("/jobs/<int:job_id>/tasks", methods=['GET'])
 @login_required
@@ -719,6 +714,8 @@ def jobs_reorder_tasks(job_id):
         return redirect("/jobs/" + str(job_id) + "/tasks")
 
     JobTasks.query.filter_by(job_id=job_id).delete()
+    # Ledger rows describe a job's attacks; they must not outlive it.
+    JobTaskLedger.query.filter_by(job_id=job_id).delete()
     db.session.commit()
     for task_id in submitted:
         db.session.add(JobTasks(job_id=job_id, task_id=task_id, status='Not Started'))
@@ -867,6 +864,8 @@ def _delete_job(job):
     (jobs_delete) and bulk (jobs_bulk_delete) delete paths so both cascade the
     same way."""
     JobTasks.query.filter_by(job_id=job.id).delete()
+    # Ledger rows describe a job's attacks; they must not outlive it.
+    JobTaskLedger.query.filter_by(job_id=job.id).delete()
     JobNotifications.query.filter_by(job_id=job.id).delete()
     db.session.delete(job)
     return try_commit(f'delete job {job.id}')

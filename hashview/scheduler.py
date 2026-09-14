@@ -175,6 +175,7 @@ def _data_retention_cleanup_inner(db :SQLAlchemy, mailer :Mail, logger :Logger):
         Hashfiles,
         JobNotifications,
         Jobs,
+        JobTaskLedger,
         JobTasks,
         Settings,
         Users,
@@ -204,6 +205,8 @@ def _data_retention_cleanup_inner(db :SQLAlchemy, mailer :Mail, logger :Logger):
             logger.error(error)
 
         JobTasks.query.filter_by(job_id=job.id).delete()
+        # Ledger rows describe a job's attacks; they must not outlive it.
+        JobTaskLedger.query.filter_by(job_id=job.id).delete()
         JobNotifications.query.filter_by(job_id=job.id).delete()
 
         db.session.delete(job)
@@ -236,6 +239,8 @@ def _data_retention_cleanup_inner(db :SQLAlchemy, mailer :Mail, logger :Logger):
                     logger.error(error)
 
                 JobTasks.query.filter_by(job_id=job.id).delete()
+                # Ledger rows describe a job's attacks; they must not outlive it.
+                JobTaskLedger.query.filter_by(job_id=job.id).delete()
                 JobNotifications.query.filter_by(job_id=job.id).delete()
 
                 db.session.delete(job)

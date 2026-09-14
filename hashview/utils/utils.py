@@ -26,6 +26,7 @@ from hashview.models import (
     HashNotifications,
     JobNotifications,
     Jobs,
+    JobTaskLedger,
     JobTasks,
     Rules,
     Settings,
@@ -34,7 +35,14 @@ from hashview.models import (
     Wordlists,
     db,
 )
-from hashview.utils.chunking import is_chunkable, plan_chunks
+from hashview.utils.chunking import (
+    DEFAULT_MAX_CHUNKS,
+    MASK_MODES,
+    WORDLIST_MODES,
+    is_chunkable,
+    plan_chunks,
+    wordlist_amplifier,
+)
 from hashview.utils.hashcat_modes import HASH_ONLY_AUTO_RULES
 
 # Hard cap on how many task assignments one task group may hold (one assignment
@@ -2002,6 +2010,189 @@ def _set_job_task_command(job, row, spec, chunk_no=None, chunk_total=None):
     row.command = json.dumps(build_hashcat_command(job.id, row.task_id, chunk=spec, job_task_id=job_task_id))
 
 
+def task_fingerprint(task, wl, wl2, rule):
+    """Digest of everything a task's keyspace depends on.
+
+    A wordlist re-uploaded under the same id changes Wordlists.size, which
+    silently invalidates every offset already computed against it -- the old code
+    had no way to notice, so a re-queued job cracked the wrong ranges. Comparing
+    this on re-queue detects that instead.
+    """
+    parts = (task.hc_attackmode, task.wl_id, (wl.size if wl else None),
+             task.wl_id_2, (wl2.size if wl2 else None),
+             task.rule_id, (rule.size if rule else None), task.hc_mask)
+    return hashlib.sha256('|'.join(str(p) for p in parts).encode()).hexdigest()
+
+
+def _ledger_keyspace(task, wl, wl2, rule):
+    """(keyspace, amp, source) in hashcat base-loop units, or (None, 1, None).
+
+    Known exactly for the wordlist base-loop modes: the base loop IS the left
+    wordlist, so one unit is one word and the keyspace is its line count --
+    verified against `hashcat --keyspace` for -a 0, -a 1 and -a 6.
+
+    NOT computable for the mask modes. hashcat splits a mask between its own
+    base and device loops based on the hash mode and on -S, not on the mask
+    alone: `?a?a?a?a?a?a` reports 95**4 for fast modes, 95**5 for slow ones and
+    95**6 under -S. An agent has to measure it. Until one does, the attack runs
+    whole -- which emits no --skip/--limit and is therefore correct whatever the
+    unit turns out to be.
+    """
+    if task.hc_attackmode in WORDLIST_MODES:
+        size = wl.size if wl else None
+        if size and size > 0:
+            amp = wordlist_amplifier(task.hc_attackmode,
+                                     wordlist2_size=(wl2.size if wl2 else None),
+                                     rule_count=(rule.size if rule else 0),
+                                     mask=task.hc_mask)
+            return size, amp, 'exact'
+    return None, 1, None
+
+
+def _sync_job_ledger(job, assignments):
+    """Rebuild a job's ledger rows from its assignments, in queue order.
+
+    ``assignments`` is a list of (task_id, [rows]) in the order the operator
+    queued them. Rebuilt wholesale rather than patched: queueing re-plans the job
+    from scratch anyway, and a ledger that disagreed with the rows it describes is
+    worse than none. Returns the ledger row per assignment index.
+    """
+    JobTaskLedger.query.filter_by(job_id=job.id).delete(synchronize_session=False)
+    db.session.flush()
+
+    dynamic_ids = dynamic_wordlist_ids()
+    ledgers = []
+    for position, (task_id, task_rows) in enumerate(assignments):
+        task = Tasks.query.get(task_id)
+        wl = Wordlists.query.get(task.wl_id) if (task and task.wl_id) else None
+        wl2 = Wordlists.query.get(task.wl_id_2) if (task and task.wl_id_2) else None
+        rule = Rules.query.get(task.rule_id) if (task and task.rule_id) else None
+
+        chunkable = task is not None and is_chunkable(
+            task.hc_attackmode, task.wl_id, task.wl_id_2, dynamic_ids)
+        # Only record a keyspace for an attack that could actually use one. A
+        # dynamic wordlist has a line count, but it is regenerated per run, so
+        # storing it would pin offsets to a number that changes underneath them --
+        # which is the same reason such a task is never chunked.
+        if chunkable:
+            keyspace, amp, source = _ledger_keyspace(task, wl, wl2, rule)
+        else:
+            keyspace, amp, source = None, 1, None
+
+        if keyspace:
+            # Ready to be split along a keyspace we know exactly.
+            state = 'Ready'
+        elif chunkable and task is not None and task.hc_attackmode in MASK_MODES:
+            # Splittable in principle, but only once an agent measures it.
+            state = 'Pending'
+        else:
+            state = 'Unmeasurable'
+
+        max_chunks = DEFAULT_MAX_CHUNKS
+        ledger = JobTaskLedger(
+            job_id=job.id, task_id=task_id, position=position, state=state,
+            keyspace=keyspace, keyspace_source=source, keyspace_pos=0, amp=amp,
+            min_slice=(-(-keyspace // max_chunks) if keyspace else 1),
+            issued_count=len(task_rows), chunkable=bool(chunkable),
+            fingerprint=(task_fingerprint(task, wl, wl2, rule) if task else None),
+            updated_at=datetime.now(),
+        )
+        db.session.add(ledger)
+        db.session.flush()
+        ledgers.append(ledger)
+
+        # The plan is still materialised in full at queue time, so everything the
+        # ledger describes has already been issued. Recording that keeps
+        # keyspace_pos meaning exactly one thing -- "units handed out" -- whether
+        # the rows were created up front or on demand.
+        covered = 0
+        for row in task_rows:
+            units = (row.chunk_limit if row.chunk_limit is not None
+                     else (keyspace if keyspace else 1))
+            row.chunk_keyspace = units
+            row.ledger_id = ledger.id
+            covered += units
+        ledger.keyspace_pos = min(covered, keyspace) if keyspace else covered
+    return ledgers
+
+
+def job_assignments(job_ids):
+    """{job_id: [assignment, ...]} -- one entry per ATTACK, in queue order.
+
+    An attack is a ledger row once the job has been queued, and a bare JobTasks
+    row before that (assigned but not yet queued). Exactly one of the two
+    represents it at any moment, never both, so the count is exact.
+
+    This replaces three separate hand-rolled counts over raw JobTasks rows. All
+    three were wrong in the same direction once a task could be split -- and two
+    of them still are today -- but more importantly a raw row count stops being
+    stable at all once chunks are issued on demand: it grows through a run, and a
+    freshly queued job can have no rows yet.
+
+    Each assignment is a dict of {entry_id, task_id, position, keyspace, state,
+    chunkable}. entry_id is the ledger id, or the NEGATED JobTasks id for a
+    not-yet-queued row, so the two can never collide in a form submission.
+    """
+    job_ids = list(job_ids)
+    if not job_ids:
+        return {}
+    out = {job_id: [] for job_id in job_ids}
+    for ledger in (JobTaskLedger.query
+                   .filter(JobTaskLedger.job_id.in_(job_ids))
+                   .order_by(JobTaskLedger.position.asc(), JobTaskLedger.id.asc())):
+        out[ledger.job_id].append({
+            'entry_id': ledger.id, 'task_id': ledger.task_id,
+            'position': ledger.position, 'keyspace': ledger.keyspace,
+            'state': ledger.state, 'chunkable': ledger.chunkable,
+        })
+    ledgered = {job_id for job_id, entries in out.items() if entries}
+
+    # No ledger for this job: either it has never been queued, or it was queued
+    # by a pre-ledger server. Fall back to grouping the rows themselves, which is
+    # what the old readers did -- a task's chunk rows collapse to one entry, and
+    # a dynamic-wordlist task assigned twice stays two.
+    rows_by_job = {}
+    for row in (JobTasks.query
+                .filter(JobTasks.job_id.in_(job_ids))
+                .order_by(JobTasks.id.asc())):
+        if row.job_id in ledgered:
+            continue
+        rows_by_job.setdefault(row.job_id, []).append(row)
+    for job_id, rows in rows_by_job.items():
+        for position, (task_id, group) in enumerate(_group_assignments(rows)):
+            out[job_id].append({
+                'entry_id': -group[0].id, 'task_id': task_id,
+                'position': position, 'keyspace': None,
+                'state': 'Unqueued', 'chunkable': False,
+            })
+    return out
+
+
+def _group_assignments(rows):
+    """Group a job's JobTasks rows into ATTACKS, in queue order.
+
+    A task split into N chunks is one attack; a dynamic-wordlist task assigned
+    twice is two. Chunk rows are recognised by carrying a slice, which is what
+    makes a row a chunk -- and unlike chunk_total that reads correctly for rows
+    queued by either vintage of server.
+    """
+    assignments, by_task = [], {}
+    for row in sorted(rows, key=lambda r: r.id):
+        if row.ledger_id is not None and row.ledger_id in by_task:
+            by_task[row.ledger_id][1].append(row)
+            continue
+        if is_chunk_row(row) and row.task_id in by_task:
+            by_task[row.task_id][1].append(row)
+            continue
+        entry = (row.task_id, [row])
+        assignments.append(entry)
+        if is_chunk_row(row):
+            by_task[row.task_id] = entry
+        if row.ledger_id is not None:
+            by_task[row.ledger_id] = entry
+    return assignments
+
+
 def build_job_task_commands(job):
     """Queue-time: (re)build each of a job's JobTasks commands, splitting eligible
     tasks into per-agent chunks when Settings.enabled_chunking is on.
@@ -2030,6 +2221,7 @@ def build_job_task_commands(job):
         for row in rows:
             _set_job_task_command(job, row, _chunk_spec_from_row(row),
                                   chunk_no=row.chunk_no, chunk_total=row.chunk_total)
+        _sync_job_ledger(job, _group_assignments(rows))
         return
 
     settings = Settings.query.first()
@@ -2039,6 +2231,7 @@ def build_job_task_commands(job):
     dynamic_ids = dynamic_wordlist_ids() if chunking_on else set()
     hash_type = _job_hash_type(job) if chunking_on else None
 
+    produced = []
     for job_task in rows:
         task = Tasks.query.get(job_task.task_id)
         specs = [{}]
@@ -2058,6 +2251,7 @@ def build_job_task_commands(job):
             )
 
         total = len(specs)
+        made = []
         for idx, spec in enumerate(specs):
             if idx == 0:
                 row = job_task
@@ -2069,6 +2263,12 @@ def build_job_task_commands(job):
                 _set_job_task_command(job, row, spec, chunk_no=idx + 1, chunk_total=total)
             else:
                 _set_job_task_command(job, row, spec)
+            made.append(row)
+        # One assignment per pre-fan-out row: the rows it expanded into are all
+        # receipts for the same attack.
+        produced.append((job_task.task_id, made))
+
+    _sync_job_ledger(job, produced)
 
 
 def rechunk_queued_tasks_for_hashtype(hash_type):

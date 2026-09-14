@@ -108,7 +108,7 @@
                         <span class="tq-grip" title="Drag to reorder">{{ icon('drag', size=16) }}</span>
                         <div class="tq-body">
                             <div class="tq-name">{{ m.name if m else 'Unknown task' }}</div>
-                            <div class="tq-sub">{{ m.type if m else 'Task' }}{% if m and m.wordlist %} · {{ m.wordlist }}{% endif %}{% if a.chunks > 1 %} · split into {{ a.chunks | commafy }} chunks{% endif %}</div>
+                            <div class="tq-sub">{{ m.type if m else 'Task' }}{% if m and m.wordlist %} · {{ m.wordlist }}{% endif %}{% if a.keyspace %} · {{ a.keyspace | human_count }} keyspace{% elif a.state == 'Pending' %} · keyspace measured when it runs{% elif a.chunkable is sameas false %} · runs as one chunk{% endif %}</div>
                         </div>
                         <div class="tq-controls">
                             <form method="POST" action="/jobs/{{job.id}}/remove_task/{{a.task_id}}" style="display:contents">

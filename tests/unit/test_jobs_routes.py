@@ -336,7 +336,12 @@ def test_jobs_list_collapses_chunked_task_to_one_card(app, client):
         _chunk(job, task, n, 3)
     body = client.get(f"/jobs/{job.id}/tasks").get_data(as_text=True)
     assert body.count(f'data-task-id="{task.id}"') == 1     # one card, not three
-    assert "split into 3 chunks" in body
+    # The card no longer advertises a chunk COUNT. Once slices are sized per
+    # agent there is no count to advertise until the attack has finished, so the
+    # editor describes the attack by its keyspace instead. These rows were built
+    # directly by the test fixture and were never queued, so there is no ledger
+    # and no keyspace to show -- the point here is the collapse to one card.
+    assert "split into" not in body
 
 
 def test_jobs_remove_chunked_task_deletes_all_chunks(app, client):

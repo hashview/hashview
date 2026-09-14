@@ -188,6 +188,26 @@ def _expand_mask(mask, desired_chunks, max_chunks):
     return submasks
 
 
+def wordlist_amplifier(attackmode, *, wordlist2_size=None, rule_count=0, mask=None):
+    """Candidates hashcat generates per BASE-LOOP unit, for a wordlist-base mode.
+
+    The base loop for modes 0/1/6 is the (left) wordlist, so one unit is one word
+    and this is what each word expands into: the rule count for a straight attack,
+    the right wordlist for a combinator, the mask keyspace for a hybrid.
+
+    That product is the `amp` in `total_candidates = keyspace * amp` -- the factor
+    between what --skip/--limit count and what hashcat actually tries. Returns 1
+    when there is no amplification, never 0.
+    """
+    if attackmode == 0:
+        return max(1, rule_count or 0)
+    if attackmode == 1:
+        return max(1, wordlist2_size or 0)
+    if attackmode == 6:
+        return max(1, mask_keyspace(mask) or 1) if mask else 1
+    return 1
+
+
 def plan_chunks(attackmode, *, wordlist_size=None, wordlist2_size=None,
                 rule_count=0, mask=None, slowest_speed=None,
                 target_seconds=3600, max_chunks=DEFAULT_MAX_CHUNKS):
@@ -211,14 +231,8 @@ def plan_chunks(attackmode, *, wordlist_size=None, wordlist2_size=None,
     if attackmode in WORDLIST_MODES:
         if not wordlist_size or wordlist_size <= 0:
             return whole
-        if attackmode == 0:
-            per_word = max(1, rule_count or 0)        # rules amplify each word
-        elif attackmode == 1:
-            per_word = max(1, wordlist2_size or 0)     # each left word x right list
-        elif attackmode == 6:
-            per_word = max(1, mask_keyspace(mask) or 1) if mask else 1
-        else:
-            per_word = 1
+        per_word = wordlist_amplifier(attackmode, wordlist2_size=wordlist2_size,
+                                      rule_count=rule_count, mask=mask)
         words_per_chunk = max(1, int(target_candidates // per_word))
         num_chunks = (wordlist_size + words_per_chunk - 1) // words_per_chunk
         if num_chunks > max_chunks:

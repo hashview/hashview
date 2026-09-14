@@ -527,30 +527,16 @@ def _catalog_alert_lines(rows, task_ids_by_id, kind):
 
 
 def _catalog_task_references(rule_ids, wordlist_ids):
-    """(rule_id -> {task ids}, wordlist_id -> {task ids}) in two batched queries.
+    """(rule_id -> {task ids}, wordlist_id -> {task ids}) — see utils.
 
-    Which tasks reference a row is the field that decides the admin's next move:
-    an unreferenced stale row is housekeeping, one behind a queued job is an
-    incident. wl_id_2 counts -- a combinator task's second wordlist is a real
-    reference (see build_hashcat_command)."""
-    from sqlalchemy import or_
+    Thin wrapper over utils.catalog_task_references, which the /v1 listings and
+    the UI also use, so the sweep can never disagree with what an operator was
+    shown about which rows are referenced. Imported at call time, like the rest
+    of this module's hashview imports, to keep the scheduler importable without
+    the app."""
+    from hashview.utils.utils import catalog_task_references
 
-    from hashview.models import Tasks
-
-    by_rule, by_wordlist = {}, {}
-    if rule_ids:
-        for task_id, rule_id in Tasks.query.with_entities(
-                Tasks.id, Tasks.rule_id).filter(Tasks.rule_id.in_(rule_ids)).all():
-            by_rule.setdefault(rule_id, set()).add(task_id)
-    if wordlist_ids:
-        for task_id, wl_id, wl_id_2 in Tasks.query.with_entities(
-                Tasks.id, Tasks.wl_id, Tasks.wl_id_2).filter(
-                    or_(Tasks.wl_id.in_(wordlist_ids),
-                        Tasks.wl_id_2.in_(wordlist_ids))).all():
-            for candidate in (wl_id, wl_id_2):
-                if candidate in wordlist_ids:
-                    by_wordlist.setdefault(candidate, set()).add(task_id)
-    return by_rule, by_wordlist
+    return catalog_task_references(rule_ids, wordlist_ids)
 
 
 def _catalog_prune_candidates(stale_rules, stale_wordlists):

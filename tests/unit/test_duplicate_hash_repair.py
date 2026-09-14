@@ -17,16 +17,21 @@ the constraint, since hashview/models.py declares it and create_all() would
 enforce it. That also means the real migration is what runs here, not a copy.
 """
 
+from datetime import datetime
+
 from flask_migrate import downgrade, stamp, upgrade
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
 
 from hashview.models import Hashes, db
 from hashview.utils.dedupe import (
+    _FAR_FUTURE,
+    _FarFuture,
     classify_group,
     delete_orphaned_alerts,
     duplicate_summary,
     find_duplicate_groups,
+    group_hashfiles,
     group_rows,
     merge_group,
     orphan_summary,
@@ -499,3 +504,92 @@ def test_orphaned_links_are_reported_not_deleted(tmp_path):
         assert reported[0]["hash_id"] == 424242
         assert reported[0]["username"] == "ghost"
         assert reported[0]["hashfile_id"] == 900
+
+
+def test_group_hashfiles_reports_every_file_an_account_appears_in(tmp_path):
+    """group_hashfiles is the operator-facing context for a duplicate group: it
+    is what tells someone staring at two identical ciphertexts that they really
+    are the same account in two files. Two hashes across three links prove the
+    rows come back grouped by hash_id rather than flattened into one list.
+    """
+    app = _app_below_constraint(tmp_path)
+    with app.app_context():
+        _hash(1, "a" * 32, 1000)
+        _hash(2, "a" * 32, 1000)
+        _link(1, 1, 100, "alice")
+        _link(2, 1, 200, "alice")
+        _link(3, 2, 300, "bob")
+        db.session.commit()
+        conn = db.session.connection()
+
+        out = group_hashfiles(conn, [1, 2])
+
+        assert set(out) == {1, 2}
+        assert [(f, u) for f, _name, u in out[1]] == [(100, "alice"), (200, "alice")]
+        assert [(f, u) for f, _name, u in out[2]] == [(300, "bob")]
+
+
+def test_group_hashfiles_short_circuits_on_an_empty_id_list(tmp_path):
+    """No ids means no query -- and the early return is what keeps the IN clause
+    from being built empty, which is a syntax error in every dialect here."""
+    app = _app_below_constraint(tmp_path)
+    with app.app_context():
+        conn = db.session.connection()
+        assert group_hashfiles(conn, []) == {}
+
+
+def test_group_hashfiles_omits_a_hash_with_no_links(tmp_path):
+    """A hash nobody references contributes no key at all, rather than an empty
+    list -- callers test membership, so the difference is visible."""
+    app = _app_below_constraint(tmp_path)
+    with app.app_context():
+        _hash(1, "a" * 32, 1000)
+        _hash(2, "a" * 32, 1000)
+        _link(1, 1, 100, "alice")
+        db.session.commit()
+        conn = db.session.connection()
+
+        assert set(group_hashfiles(conn, [1, 2])) == {1}
+
+
+def test_far_future_sorts_after_every_real_recovered_at():
+    """_FAR_FUTURE stands in for a NULL recovered_at in recommend_keeper's sort
+    key, so it has to lose to any real value whichever way round Python compares.
+
+    BOTH directions are asserted because of reflected operations: `real <
+    _FAR_FUTURE` is tried as `real.__lt__(sentinel)` first, which returns
+    NotImplemented, so Python falls back to `_FAR_FUTURE.__gt__(real)`. That
+    fallback is the only reason __gt__ and __ge__ exist, and it is why the class
+    cannot just define __lt__.
+
+    Both driver shapes are exercised: the column is a DATETIME, but SQLite hands
+    back a plain string unless the column is typed, which is exactly the case the
+    class docstring says it is written for.
+    """
+    for real in (datetime(2020, 1, 1), "2020-01-01 00:00:00"):
+        assert _FAR_FUTURE > real
+        assert _FAR_FUTURE >= real
+        assert not _FAR_FUTURE < real
+        assert not _FAR_FUTURE <= real
+        assert real < _FAR_FUTURE        # reflected -> __gt__
+        assert not real > _FAR_FUTURE    # reflected -> __lt__
+
+
+def test_far_future_equals_only_itself_and_stays_hashable():
+    """__eq__ without __hash__ would make the sentinel unhashable, and it is put
+    in tuples that Python is free to hash."""
+    assert _FAR_FUTURE == _FarFuture()
+    assert _FAR_FUTURE <= _FarFuture()
+    assert not _FAR_FUTURE == datetime(2020, 1, 1)
+    assert len({_FAR_FUTURE, _FarFuture()}) == 1
+
+
+def test_recommend_keeper_prefers_a_real_recovery_over_a_null_one():
+    """The sentinel in its real use: of two cracked rows, the one that actually
+    records WHEN it was recovered wins, and a NULL recovered_at never does."""
+    rows = [
+        {"id": 2, "cracked": 1, "recovered_at": None},
+        {"id": 3, "cracked": 1, "recovered_at": datetime(2020, 1, 1)},
+    ]
+    assert recommend_keeper(rows) == 3
+    assert recommend_keeper(list(reversed(rows))) == 3

@@ -34,11 +34,14 @@ from sqlalchemy.engine.url import make_url  # noqa: E402
 
 from hashview.utils.dedupe import (  # noqa: E402
     classify_group,
+    delete_orphaned_alerts,
     duplicate_summary,
     find_duplicate_groups,
     group_hashfiles,
     group_rows,
     merge_group,
+    orphan_summary,
+    orphaned_links,
 )
 
 _CONFIG = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -115,6 +118,41 @@ def _choose(rows):
         print(f'      not one of {sorted(valid)}')
 
 
+def _report_orphans(conn, stale_links, stale_alerts):
+    """Child rows whose hash is gone. Separate from duplicates, found on the way.
+
+    Alerts are deleted with the merge: one can never fire, because
+    process_recovered_hash_notifications looks its hash up, `continue`s when it
+    is missing, and so never reaches the delete that would retire it -- while
+    still being re-read on every crack upload, forever.
+
+    Links are only reported. The row is the record that an account existed in a
+    hashfile and is not recoverable without re-importing the file, so removing it
+    is the operator's call -- even though it is the harmful kind.
+    """
+    if not (stale_links or stale_alerts):
+        return
+    print('\nOrphaned rows (a hash they point at no longer exists):')
+    if stale_alerts:
+        print(f'  {stale_alerts} hash alert(s) -- these can never fire and are '
+              'removed with --apply/--interactive.')
+    if not stale_links:
+        return
+    print(f'  {stale_links} hashfile link(s) -- NOT removed automatically. Each is '
+          'an account whose hash is gone;')
+    print('    they make build_hashcat_command raise (the job cannot be dispatched) '
+          'and make a hashfile')
+    print('    read as fully recovered (cancelling its remaining tasks). Delete them '
+          'deliberately, or')
+    print('    re-import the hashfile to restore the hashes they point at.')
+    for link in orphaned_links(conn, limit=20):
+        print(f'      hashfile_hashes id={link["id"]} -> missing hash {link["hash_id"]}'
+              f', hashfile {link["hashfile_id"]}'
+              f' ({link["hashfile_name"] or "?"}) as {link["username"] or "(no username)"}')
+    if stale_links > 20:
+        print(f'      ... and {stale_links - 20} more')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -137,9 +175,15 @@ def main():
 
     with engine.connect() as conn:
         groups_count, excess = duplicate_summary(conn)
+        stale_links, stale_alerts = orphan_summary(conn)
+        _report_orphans(conn, stale_links, stale_alerts)
+
         if not groups_count:
             print('\nNo duplicate (sub_ciphertext, hash_type) pairs. '
                   'Re-run the app or `flask db upgrade` to create the constraint.')
+            if stale_alerts and (args.apply or args.interactive):
+                with conn.begin():
+                    print(f'Deleted {delete_orphaned_alerts(conn)} orphaned alert(s).')
             return 0
         print(f'\n{groups_count} duplicate group(s), {excess} row(s) would be removed.')
 
@@ -177,6 +221,8 @@ def main():
         # undispatchable and reads as "nothing left to crack".
         merged = 0
         with conn.begin():
+            if stale_alerts:
+                print(f'Deleting {delete_orphaned_alerts(conn)} orphaned alert(s).')
             for _group, rows, keeper, _reason in plans:
                 merge_group(conn, keeper, [r['id'] for r in rows if r['id'] != keeper])
                 merged += 1

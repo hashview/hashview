@@ -32,11 +32,14 @@ from hashview.utils.backup import (
 )
 from hashview.utils.dedupe import (
     classify_group,
+    delete_orphaned_alerts,
     duplicate_summary,
     find_duplicate_groups,
     group_hashfiles,
     group_rows,
     merge_group,
+    orphan_summary,
+    orphaned_links,
 )
 from hashview.utils.hashcat_modes import hash_type_names
 from hashview.utils.utils import send_slack_channel, try_commit
@@ -224,9 +227,11 @@ def settings_list():
         # a banner the only trace is one line in the server log.
         try:
             duplicate_groups, duplicate_rows = duplicate_summary(db.session.connection())
+            stale_links, stale_alerts = orphan_summary(db.session.connection())
         except Exception:
             current_app.logger.exception('Could not count duplicate hashes.')
             duplicate_groups, duplicate_rows = 0, 0
+            stale_links, stale_alerts = 0, 0
 
         return render_template(
             'settings.html.j2',
@@ -245,6 +250,8 @@ def settings_list():
             azure_secret_set    = bool(settings.azure_client_secret),
             duplicate_groups    = duplicate_groups,
             duplicate_rows      = duplicate_rows,
+            stale_links         = stale_links,
+            stale_alerts        = stale_alerts,
         )
 
     abort(403)
@@ -281,10 +288,14 @@ def settings_duplicate_hashes():
             'reason': reason,
             'mixed_ciphertext': len({r['ciphertext'] for r in rows}) > 1,
         })
+    stale_links, stale_alerts = orphan_summary(conn)
     return render_template(
         'settings_duplicate_hashes.html.j2',
         title='duplicate hashes',
         groups=groups,
+        stale_links=stale_links,
+        stale_alerts=stale_alerts,
+        stale_link_rows=orphaned_links(conn, limit=50),
         groups_total=groups_total,
         rows_total=rows_total,
         shown=len(groups),
@@ -311,6 +322,12 @@ def settings_duplicate_hashes_merge():
         return redirect(url_for('settings.settings_duplicate_hashes'))
 
     conn = db.session.connection()
+    # Orphaned alerts go regardless of what was selected: one can never fire (its
+    # hash is gone, so process_recovered_hash_notifications skips past it without
+    # ever reaching the delete that retires it) while still being re-read on every
+    # crack upload. Orphaned LINKS are deliberately left alone -- each is the
+    # record that an account was in a hashfile, and that is not recoverable.
+    cleared_alerts = delete_orphaned_alerts(conn)
     merged = removed = 0
     for field, raw_keeper in request.form.items():
         if not field.startswith('keep_') or not raw_keeper:
@@ -335,12 +352,19 @@ def settings_duplicate_hashes_merge():
         merged += 1
         removed += len(losers)
 
-    if merged and try_commit('merge duplicate hashes'):
+    if (merged or cleared_alerts) and try_commit('merge duplicate hashes'):
         log_event('hashes.duplicates_merged',
-                  target=f'{merged} group(s)', detail=f'{removed} row(s) removed')
-        flash(f'Merged {merged} duplicate group(s), removing {removed} row(s). '
-              'Restart Hashview to create the unique constraint.', 'success')
-    elif merged:
+                  target=f'{merged} group(s)',
+                  detail=f'{removed} row(s) removed, {cleared_alerts} orphaned alert(s) cleared')
+        note = ''
+        if cleared_alerts:
+            note = f' Cleared {cleared_alerts} orphaned alert(s).'
+        if merged:
+            flash(f'Merged {merged} duplicate group(s), removing {removed} row(s).{note} '
+                  'Restart Hashview to create the unique constraint.', 'success')
+        else:
+            flash(f'No groups were selected.{note}', 'warning')
+    elif merged or cleared_alerts:
         flash('Could not merge the duplicates — please try again.', 'danger')
     else:
         flash('No groups were selected; nothing changed.', 'warning')

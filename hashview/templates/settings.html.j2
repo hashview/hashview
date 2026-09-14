@@ -291,19 +291,33 @@
                migration warns and skips the constraint rather than failing the
                whole upgrade, so without this banner the only trace is a line in
                the server log. #}
-            {% if duplicate_groups %}
+            {% if duplicate_groups or stale_links or stale_alerts %}
             <div class="card" style="margin-bottom:var(--gap); border-color:var(--amber);">
                 <div class="card-head">
                     <span class="dot-led on"></span><h3>Duplicate hashes need attention</h3>
                 </div>
                 <div class="card-body" style="display:flex; align-items:center; gap:14px;">
                     <div style="flex:1; min-width:0;">
+                        {% if duplicate_groups %}
                         <div>{{ duplicate_groups | commafy }} group(s) of duplicate hashes, {{ duplicate_rows | commafy }} redundant row(s).</div>
                         <div class="field-hint" style="margin-top:3px;">
                             The same hash is stored more than once, which prevents the uniqueness
                             constraint on the hashes table from being created &mdash; so hash imports
                             can still race and create more. Review them and choose what to keep.
                         </div>
+                        {% endif %}
+                        {% if stale_links or stale_alerts %}
+                        <div{% if duplicate_groups %} style="margin-top:6px;"{% endif %}>
+                            {% if stale_alerts %}{{ stale_alerts | commafy }} orphaned hash alert(s){% endif %}
+                            {%- if stale_alerts and stale_links %}, {% endif -%}
+                            {% if stale_links %}{{ stale_links | commafy }} orphaned hashfile link(s){% endif %}.
+                        </div>
+                        <div class="field-hint" style="margin-top:3px;">
+                            These point at a hash that no longer exists. Alerts can never fire and are
+                            cleared for you; links are shown for you to decide on, because each is the
+                            record that an account was in a hashfile.
+                        </div>
+                        {% endif %}
                     </div>
                     <a class="btn btn-primary" href="{{ url_for('settings.settings_duplicate_hashes') }}">Review</a>
                 </div>

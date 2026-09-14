@@ -17,9 +17,58 @@
     <a class="btn" href="{{ url_for('settings.settings_list') }}">Back to settings</a>
 </div>
 
+{% if stale_links or stale_alerts %}
+<div class="card" style="margin-bottom:var(--gap); border-color:var(--amber);">
+    <div class="card-head">
+        <span class="dot-led on"></span><h3>Orphaned rows</h3>
+    </div>
+    <div class="card-body">
+        {% if stale_alerts %}
+        <p style="margin:0 0 8px;">
+            <strong>{{ stale_alerts | commafy }}</strong> hash alert(s) point at a hash that is gone.
+            They can never fire, and are cleared automatically the next time you merge below.
+        </p>
+        {% endif %}
+        {% if stale_links %}
+        <p style="margin:0 0 8px;">
+            <strong>{{ stale_links | commafy }}</strong> hashfile link(s) point at a hash that is gone.
+            <strong>These are not removed for you.</strong> Each one is the record that an account
+            was in a hashfile, which cannot be recovered without re-importing that file &mdash; but
+            they also stop the affected job from being dispatched, and make its hashfile look
+            fully recovered, which cancels its remaining tasks. Re-import the hashfile, or remove
+            the rows deliberately.
+        </p>
+        <table class="tbl"><thead><tr>
+            <th>Link</th><th>Missing hash</th><th>Hashfile</th><th>Username</th>
+        </tr></thead><tbody>
+        {% for link in stale_link_rows %}
+            <tr class="mono" style="font-size:11px;">
+                <td>id {{ link.id }}</td>
+                <td style="color:var(--amber);">{{ link.hash_id }}</td>
+                <td>{{ link.hashfile_name or ('hashfile ' ~ link.hashfile_id) }}</td>
+                <td>{{ link.username or '(no username)' }}</td>
+            </tr>
+        {% endfor %}
+        </tbody></table>
+        {% if stale_links > stale_link_rows | length %}
+        <p class="mono" style="font-size:11px; color:var(--text-mute); margin:8px 0 0;">
+            &hellip; and {{ stale_links - (stale_link_rows | length) }} more.
+        </p>
+        {% endif %}
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 {% if not groups_total %}
     <div class="card"><div class="card-body" style="text-align:center; padding:40px;">
         <div class="mono" style="color:var(--text-dim);">No duplicate hashes.</div>
+        {% if stale_alerts %}
+        <form method="POST" action="{{ url_for('settings.settings_duplicate_hashes_merge') }}" style="margin-top:12px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn" type="submit">Clear {{ stale_alerts | commafy }} orphaned alert(s)</button>
+        </form>
+        {% endif %}
         <div class="mono" style="color:var(--text-mute); font-size:11px; margin-top:8px;">
             Restart Hashview to create the unique constraint if it is not there yet.
         </div>

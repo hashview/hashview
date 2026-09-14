@@ -24,10 +24,13 @@ from sqlalchemy import text
 from hashview.models import Hashes, db
 from hashview.utils.dedupe import (
     classify_group,
+    delete_orphaned_alerts,
     duplicate_summary,
     find_duplicate_groups,
     group_rows,
     merge_group,
+    orphan_summary,
+    orphaned_links,
     recommend_keeper,
 )
 
@@ -393,3 +396,85 @@ def test_merge_ignores_a_keeper_id_that_no_longer_exists(app, client):
                        follow_redirects=True)
     assert resp.status_code == 200
     assert Hashes.query.count() == 0
+
+
+# --- orphaned child rows --------------------------------------------------------
+#
+# Not caused by merging -- merge_group repoints rather than deletes -- but the
+# same absent foreign key lets anything else that removed a hash leave these
+# behind, and almost nothing cleans them up.
+
+def test_merging_never_creates_an_orphan_and_never_touches_an_existing_one(tmp_path):
+    app = _app_below_constraint(tmp_path)
+    with app.app_context():
+        _hash(1, "a" * 32, 1000)
+        _hash(2, "a" * 32, 1000)
+        _link(1, 2, 100, "alice")
+        _alert(1, 2)
+        _link(99, 424242, 900, "ghost")      # already dangling, unrelated
+        _alert(99, 424242)
+        db.session.commit()
+        conn = db.session.connection()
+
+        merge_group(conn, 1, [2])
+        db.session.commit()
+
+        # The merge's own children were repointed, not orphaned...
+        assert db.session.execute(text(
+            "SELECT hash_id FROM hashfile_hashes WHERE id = 1")).scalar() == 1
+        assert db.session.execute(text(
+            "SELECT hash_id FROM hash_notifications WHERE id = 1")).scalar() == 1
+        # ...and the pre-existing orphans are still exactly as they were.
+        assert _orphans() == (1, 1)
+
+
+def test_orphan_summary_counts_both_kinds(tmp_path):
+    app = _app_below_constraint(tmp_path)
+    with app.app_context():
+        _hash(1, "a" * 32, 1000)
+        _link(1, 1, 100)                     # fine
+        _link(2, 424242, 900, "ghost")       # dangling
+        _alert(1, 424242)                    # dangling
+        db.session.commit()
+
+        assert orphan_summary(db.session.connection()) == (1, 1)
+
+
+def test_orphaned_alerts_are_deleted(tmp_path):
+    """One can never fire: process_recovered_hash_notifications looks its hash up,
+    `continue`s when it is missing, and so never reaches the delete that would
+    retire it -- while still being re-read on every crack upload, forever."""
+    app = _app_below_constraint(tmp_path)
+    with app.app_context():
+        _hash(1, "a" * 32, 1000)
+        _alert(1, 1)                         # live, must survive
+        _alert(2, 424242)                    # dangling, must go
+        db.session.commit()
+        conn = db.session.connection()
+
+        assert delete_orphaned_alerts(conn) == 1
+        db.session.commit()
+
+        assert [r[0] for r in db.session.execute(text(
+            "SELECT id FROM hash_notifications ORDER BY id")).fetchall()] == [1]
+
+
+def test_orphaned_links_are_reported_not_deleted(tmp_path):
+    """The row is the record that an account existed in a hashfile, and that is
+    not recoverable without re-importing the file -- so removing it is the
+    operator's call, even though it is the harmful kind."""
+    app = _app_below_constraint(tmp_path)
+    with app.app_context():
+        _link(1, 424242, 900, "ghost")
+        db.session.commit()
+        conn = db.session.connection()
+
+        delete_orphaned_alerts(conn)
+        db.session.commit()
+
+        assert _orphans()[0] == 1, "links survive"
+        reported = orphaned_links(db.session.connection())
+        assert len(reported) == 1
+        assert reported[0]["hash_id"] == 424242
+        assert reported[0]["username"] == "ghost"
+        assert reported[0]["hashfile_id"] == 900

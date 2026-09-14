@@ -199,6 +199,61 @@ class _FarFuture:
 _FAR_FUTURE = _FarFuture()
 
 
+def orphan_summary(conn):
+    """(orphaned_links, orphaned_alerts) -- child rows whose hash is gone.
+
+    Not caused by merging (merge_group repoints rather than deletes), but the
+    same absent foreign key lets anything else that removed a hash leave these
+    behind, and nothing routinely cleans them up: purge_orphaned_hashes only runs
+    when a hashfile or customer is deleted.
+    """
+    links = conn.execute(text(
+        'SELECT COUNT(*) FROM hashfile_hashes f'
+        ' WHERE NOT EXISTS (SELECT 1 FROM hashes h WHERE h.id = f.hash_id)')).scalar()
+    alerts = conn.execute(text(
+        'SELECT COUNT(*) FROM hash_notifications n'
+        ' WHERE NOT EXISTS (SELECT 1 FROM hashes h WHERE h.id = n.hash_id)')).scalar()
+    return int(links or 0), int(alerts or 0)
+
+
+def orphaned_links(conn, limit=200):
+    """Dangling hashfile_hashes rows, with enough context to judge them.
+
+    Reported rather than deleted: the row is the record that an account existed
+    in a hashfile, and that is not recoverable without re-importing the file. It
+    is also the actively harmful kind -- build_hashcat_command raises on a
+    dangling first link, making the job undispatchable, and
+    _hashfile_has_uncracked reads one as "nothing left to crack", which cancels
+    the job's remaining tasks.
+    """
+    rows = conn.execute(text(
+        'SELECT f.id, f.hash_id, f.hashfile_id, hf.name, f.username'
+        '  FROM hashfile_hashes f'
+        '  LEFT JOIN hashfiles hf ON hf.id = f.hashfile_id'
+        ' WHERE NOT EXISTS (SELECT 1 FROM hashes h WHERE h.id = f.hash_id)'
+        ' ORDER BY f.hashfile_id, f.id'
+        ' LIMIT :limit'), {'limit': int(limit)}).fetchall()
+    return [{'id': int(r[0]), 'hash_id': int(r[1]), 'hashfile_id': int(r[2]),
+             'hashfile_name': r[3], 'username': r[4]} for r in rows]
+
+
+def delete_orphaned_alerts(conn):
+    """Drop hash_notifications rows whose hash is gone. Returns how many.
+
+    Safe, and the only thing that ever clears them outside a hashfile/customer
+    delete. Such a row can never fire -- process_recovered_hash_notifications
+    looks the hash up, `continue`s when it is missing, and so never reaches the
+    delete that would retire it -- while still being re-scanned by a full table
+    read on every crack upload and every /v1/hashes/import, forever.
+
+    The caller owns the transaction.
+    """
+    result = conn.execute(text(
+        'DELETE FROM hash_notifications'
+        ' WHERE NOT EXISTS (SELECT 1 FROM hashes h WHERE h.id = hash_notifications.hash_id)'))
+    return int(result.rowcount or 0)
+
+
 def merge_group(conn, keeper_id, loser_ids):
     """Fold the losers into the keeper. Returns what it did, for the receipt.
 

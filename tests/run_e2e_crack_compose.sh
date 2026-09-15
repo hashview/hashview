@@ -88,6 +88,41 @@ if ! app_up; then
   echo "App did not become ready."; $COMPOSE logs --tail 200 app; exit 1
 fi
 
+# The app answering only proves Flask is serving. On a freshly created volume
+# MySQL can still be settling behind it -- one observed run took 60s to answer,
+# seeded 1s later, and the job was simply not there afterwards: every agent
+# heartbeat found nothing to do and the failure surfaced four minutes on as
+# "recovered set()". Gate on the DATABASE answering a real query against a
+# migrated table, and require two consecutive successes so a single lucky
+# response mid-initialisation does not let the seed through.
+echo "Waiting for the database ..."
+db_ready() {
+  $COMPOSE exec -T -e PYTHONPATH=/ -w / app python - >/dev/null 2>&1 <<'PYEOF'
+from hashview.config import Config
+from sqlalchemy import create_engine, text
+
+engine = create_engine(Config.SQLALCHEMY_DATABASE_URI)
+with engine.connect() as conn:
+    conn.execute(text("SELECT COUNT(*) FROM jobs")).scalar()
+PYEOF
+}
+db_streak=0
+for _ in {1..60}; do
+  if db_ready; then
+    db_streak=$((db_streak + 1))
+    [ "$db_streak" -ge 2 ] && break
+  else
+    db_streak=0
+  fi
+  sleep 2
+done
+if [ "$db_streak" -lt 2 ]; then
+  echo "Database did not become ready for queries."
+  $COMPOSE logs --tail 100 db
+  exit 1
+fi
+echo "Database up (jobs table queryable)."
+
 echo "Seeding crack job + authorizing agents..."
 $COMPOSE cp tests/e2e/crack/seed_crack_db.py app:/tmp/seed_crack_db.py
 $COMPOSE cp tests/e2e/crack/verify_crack.py app:/tmp/verify_crack.py

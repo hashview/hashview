@@ -108,3 +108,71 @@ def test_verify_dumps_state(tmp_path):
     assert all(h["cracked"] is False for h in state["hashes"])
     # JSON-printable
     json.dumps(state)
+
+
+def test_main_reports_ok_when_the_job_is_readable_back(tmp_path, monkeypatch, capsys):
+    """The happy path still exits 0 and prints the marker the harness greps for."""
+    seed = _load("seed_crack_db", "seed_crack_db.py")
+    app = _make_app(tmp_path)
+    manifest = _manifest(tmp_path)
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(manifest))
+    monkeypatch.setattr(seed, "build_app", lambda: app)
+    monkeypatch.setattr(seed.sys, "argv", ["seed_crack_db.py", str(path)])
+
+    assert seed.main() == 0
+    assert "seed_crack_db: ok" in capsys.readouterr().out
+
+
+def test_main_fails_when_the_committed_job_is_not_readable_back(tmp_path, monkeypatch, capsys):
+    """A commit reporting no error is not proof the row is durable.
+
+    On a freshly created volume the database can still be settling behind an app
+    that is already answering, and a seed landing in that window has been seen to
+    commit "successfully" and then not be there. Before this check the run
+    continued: every agent heartbeat found nothing to do and the failure surfaced
+    four minutes later as "recovered set(), expected {...}", which reads as a
+    cracking bug rather than a database that never received the job.
+
+    Simulated by making seed() a no-op, which is indistinguishable from a commit
+    that did not land as far as the read-back is concerned.
+    """
+    seed = _load("seed_crack_db", "seed_crack_db.py")
+    app = _make_app(tmp_path)
+    manifest = _manifest(tmp_path)
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(manifest))
+    monkeypatch.setattr(seed, "build_app", lambda: app)
+    monkeypatch.setattr(seed, "seed", lambda *a, **k: None)
+    monkeypatch.setattr(seed.sys, "argv", ["seed_crack_db.py", str(path)])
+
+    assert seed.main() == 1
+    err = capsys.readouterr().err
+    assert "seed_crack_db: FAILED" in err
+    assert "not in the database on read-back" in err
+
+
+def test_main_fails_when_the_job_is_short_of_tasks(tmp_path, monkeypatch, capsys):
+    """A job row alone is not enough -- a partially applied seed leaves agents
+    with less work than the test expects, which would fail just as opaquely."""
+    from hashview.models import JobTasks
+    from hashview.models import db as _db
+    seed = _load("seed_crack_db", "seed_crack_db.py")
+    app = _make_app(tmp_path)
+    manifest = _manifest(tmp_path)
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(manifest))
+
+    def _partial(app_, manifest_):
+        seed_real(app_, manifest_)
+        with app_.app_context():
+            _db.session.delete(JobTasks.query.first())
+            _db.session.commit()
+
+    seed_real = seed.seed
+    monkeypatch.setattr(seed, "build_app", lambda: app)
+    monkeypatch.setattr(seed, "seed", _partial)
+    monkeypatch.setattr(seed.sys, "argv", ["seed_crack_db.py", str(path)])
+
+    assert seed.main() == 1
+    assert "expected 2" in capsys.readouterr().err

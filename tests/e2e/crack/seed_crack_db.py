@@ -172,7 +172,30 @@ def main():
         return 2
     with open(sys.argv[1], encoding="utf-8") as f:
         manifest = json.load(f)
-    seed(build_app(), manifest)
+    app = build_app()
+    seed(app, manifest)
+
+    # Read the job back in a FRESH session before claiming success. A commit that
+    # reports no error is not proof the row is durable: on a freshly created
+    # volume the database can still be settling behind an app that is already
+    # answering, and a seed landing in that window has been observed to commit
+    # "successfully" and then not be there. Without this, the run continued,
+    # every agent heartbeat found nothing to do, and four minutes later the
+    # failure surfaced as "recovered set(), expected {...}" -- which reads as a
+    # cracking bug rather than a database that never received the job.
+    with app.app_context():
+        db.session.remove()
+        job = Jobs.query.filter_by(name=manifest["job_name"]).first()
+        if job is None:
+            print(f"seed_crack_db: FAILED -- committed the job but "
+                  f"{manifest['job_name']!r} is not in the database on read-back. "
+                  f"The database was not ready for durable writes.", file=sys.stderr)
+            return 1
+        tasks = JobTasks.query.filter_by(job_id=job.id).count()
+        if tasks != len(manifest["tasks"]):
+            print(f"seed_crack_db: FAILED -- job {job.id} has {tasks} job_tasks, "
+                  f"expected {len(manifest['tasks'])}.", file=sys.stderr)
+            return 1
     print("seed_crack_db: ok")
     return 0
 

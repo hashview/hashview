@@ -137,7 +137,7 @@ def settings_list():
 
     if current_user.admin:
         hashview_form = HashviewSettingsForm()
-        settings = Settings.query.first()
+        settings = Settings.current()
 
         tmp_folder_size = 0
         for file in os.scandir('hashview/control/tmp/'):
@@ -377,7 +377,7 @@ def send_test_admin_slack():
     """Send a test administrative notification to the configured Slack room."""
     if not current_user.admin:
         abort(403)
-    settings_row = Settings.query.first()
+    settings_row = Settings.current()
     if not settings_row or not settings_row.slack_admin_channel:
         flash('Set a Slack administrative room first.', 'danger')
         return redirect(url_for('settings.settings_list'))

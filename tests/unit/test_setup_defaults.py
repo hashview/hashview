@@ -162,3 +162,54 @@ def test_settings_get_redirects_when_present(app, client):
     db.session.commit()
     resp = client.get("/setup/settings", follow_redirects=False)
     assert resp.status_code in (301, 302)
+
+
+# ------------------------------------------------- Settings singleton resolution
+
+
+def test_settings_current_is_deterministic_with_duplicate_rows(app):
+    """Settings is a singleton in intent but not in schema.
+
+    A live instance was found with 98 rows -- id 1 holding the real configuration
+    and 97 all-zero duplicates. Every reader used a bare .first(), which in SQL
+    has no defined order: MySQL happens to return primary-key order for a plain
+    scan of a small table, so id 1 won, but that is a property of the chosen plan
+    rather than a guarantee. Had a zero row won, the instance would have silently
+    switched to chunking disabled, no runtime caps and a retention period of 0,
+    with nothing in any log to explain it.
+    """
+    real = Settings(retention_period=30, max_runtime_jobs=24, max_runtime_tasks=4,
+                    enabled_chunking=True)
+    db.session.add(real)
+    db.session.commit()
+    for _ in range(5):
+        db.session.add(Settings(retention_period=0, max_runtime_jobs=0,
+                                max_runtime_tasks=0))
+    db.session.commit()
+
+    assert Settings.query.count() == 6
+    chosen = Settings.current()
+    assert chosen.id == real.id
+    assert chosen.enabled_chunking is True
+    assert chosen.max_runtime_tasks == 4
+
+
+def test_settings_current_is_none_before_setup(app):
+    """No row yet is a real state -- the setup wizard keys on it."""
+    assert Settings.current() is None
+
+
+def test_no_unordered_settings_read_remains():
+    """Every reader goes through Settings.current().
+
+    A bare .first() anywhere reintroduces the nondeterminism for that one call
+    site, which is worse than the original problem: different parts of the app
+    could then disagree about which row is the configuration.
+    """
+    import pathlib
+    offenders = []
+    for path in pathlib.Path('hashview').rglob('*.py'):
+        text = path.read_text(encoding='utf-8')
+        if 'Settings.query.first()' in text or 'db.session.query(Settings).first()' in text:
+            offenders.append(str(path))
+    assert offenders == []

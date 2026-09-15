@@ -46,7 +46,7 @@ def _redirect_uri(settings):
 
 @auth.route('/login/azure')
 def azure_login():
-    settings = Settings.query.first()
+    settings = Settings.current()
     client = get_entra_client(settings)
     if client is None:
         flash('Microsoft sign-in is not configured.', 'danger')
@@ -59,7 +59,7 @@ def azure_login():
 
 @auth.route('/login/azure/callback')
 def azure_callback():
-    settings = Settings.query.first()
+    settings = Settings.current()
     client = get_entra_client(settings)
     if client is None:
         flash('Microsoft sign-in is not configured.', 'danger')

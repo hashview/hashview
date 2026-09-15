@@ -426,3 +426,125 @@ def test_a_late_assignment_on_a_pre_ledger_job_mints_nothing(app, client):
     assert JobTaskLedger.query.filter_by(job_id=job.id).count() == 0
     visible = sorted(a["task_id"] for a in job_assignments([job.id])[job.id])
     assert visible == sorted([tasks[0].id, tasks[1].id, late.id])
+
+
+def test_a_task_a_ledger_still_references_cannot_be_deleted(app, client):
+    """A live attack owns its task even when no chunk is materialised.
+
+    Under on-demand minting, "this attack has no rows right now" is the ORDINARY
+    state between chunks -- so a guard that reads JobTasks alone reports the task
+    as unused mid-run. Measured before the fix: with one ledger and zero rows the
+    guard did not fire and the task was deleted, leaving the ledger pointing at a
+    task that no longer exists for the next mint to build a command from.
+    """
+    job, tasks = _seed(task_count=1, job_status="Running")
+    for row in JobTasks.query.filter_by(job_id=job.id).all():
+        db.session.delete(row)
+    db.session.commit()
+    assert JobTaskLedger.query.filter_by(task_id=tasks[0].id).count() == 1
+    assert JobTasks.query.filter_by(task_id=tasks[0].id).count() == 0
+
+    _login_admin(client)
+    resp = client.post(f"/tasks/delete/{tasks[0].id}", follow_redirects=True)
+
+    assert b"associated to one or more jobs" in resp.data
+    assert Tasks.query.get(tasks[0].id) is not None
+
+
+def test_a_task_a_ledger_still_references_cannot_be_edited(app, client):
+    """Same guard on the edit route: editing a task mid-run would change the
+    attack under the ledger describing it."""
+    job, tasks = _seed(task_count=1, job_status="Running")
+    for row in JobTasks.query.filter_by(job_id=job.id).all():
+        db.session.delete(row)
+    db.session.commit()
+
+    _login_admin(client)
+    resp = client.get(f"/tasks/edit/{tasks[0].id}", follow_redirects=True)
+
+    assert b"currently associated to one or more jobs" in resp.data
+
+
+def test_a_task_no_job_references_is_still_deletable(app, client):
+    """The guard widened, not jammed: an unused task must still delete."""
+    job, _tasks = _seed(task_count=1, job_status="Running")
+    JobTaskLedger.query.filter_by(job_id=job.id).delete()
+    for row in JobTasks.query.filter_by(job_id=job.id).all():
+        db.session.delete(row)
+    db.session.commit()
+    spare = _new_task("unused")
+
+    _login_admin(client)
+    client.post(f"/tasks/delete/{spare.id}", follow_redirects=True)
+
+    assert Tasks.query.get(spare.id) is None
+
+
+def test_a_task_added_to_a_completed_job_is_still_visible(app, client):
+    """A job keeps its ledger after it finishes, so a task added afterwards was
+    hidden by the same ledger-first read -- queue_late_assignments bailed before
+    minting anything because the job was not Queued or Running.
+
+    Nothing runs (the job is Completed), but the operator must be able to SEE
+    what they just assigned, and remove it, before starting the job again.
+    """
+    job, tasks = _seed(task_count=1, job_status="Running")
+    job.status = "Completed"
+    db.session.commit()
+    late = _new_task("late-on-completed")
+
+    _login_admin(client)
+    client.post(f"/jobs/{job.id}/assign_task/{late.id}", follow_redirects=False)
+
+    visible = [a["task_id"] for a in job_assignments([job.id])[job.id]]
+    assert visible == [tasks[0].id, late.id]
+
+    entry = JobTaskLedger.query.filter_by(job_id=job.id, task_id=late.id).one()
+    # Nothing was queued, so nothing has been issued off it.
+    assert entry.issued_count == 0
+    assert entry.keyspace_pos == 0
+    assert JobTasks.query.filter_by(job_id=job.id,
+                                    task_id=late.id).one().status == "Not Started"
+
+
+def test_removing_an_attack_sweeps_its_ledgerless_rows_too(app, client):
+    """Removing an attack must not leave a row of it still cracking.
+
+    The ledger branch is taken whenever ANY ledger exists for (job, task), but it
+    used to delete only rows carrying that ledger's id. A row of the same task
+    belonging to no ledger survived: Queued, un-cancelled, invisible on the page,
+    and still dispatchable through the legacy ledger_id IS NULL loop -- so the
+    operator removed the attack and it went on running.
+    """
+    job, tasks = _seed(task_count=1, job_status="Running")
+    stray = JobTasks(job_id=job.id, task_id=tasks[0].id, status="Queued",
+                     priority=3, ledger_id=None)
+    db.session.add(stray)
+    db.session.commit()
+    stray_id = stray.id
+
+    _login_admin(client)
+    client.post(f"/jobs/{job.id}/remove_task/{tasks[0].id}", follow_redirects=False)
+
+    assert JobTasks.query.get(stray_id) is None
+    assert JobTaskLedger.query.filter_by(job_id=job.id, task_id=tasks[0].id).count() == 0
+
+
+def test_a_task_an_attack_owns_is_not_offered_again_in_the_dropdown(app, client):
+    """Between chunks an attack has no materialised row, and the Add-Task filter
+    read rows only -- so a live attack's task was re-offered and could be
+    assigned to the same job a second time."""
+    job, tasks = _seed(task_count=1, job_status="Running")
+    for row in JobTasks.query.filter_by(job_id=job.id).all():
+        db.session.delete(row)
+    db.session.commit()
+    assert JobTaskLedger.query.filter_by(task_id=tasks[0].id).count() == 1
+
+    _login_admin(client)
+    resp = client.get(f"/jobs/{job.id}/tasks")
+
+    assert resp.status_code == 200
+    # The dropdown renders one submit button per assignable task, addressed by
+    # formaction. The owned task must not be among them.
+    offer = f'/jobs/{job.id}/assign_task/{tasks[0].id}"'.encode()
+    assert offer not in resp.data

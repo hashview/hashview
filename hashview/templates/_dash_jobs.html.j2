@@ -135,7 +135,7 @@
             <thead><tr><th>#</th><th>Job</th><th>Customer</th><th class="center">Tasks</th><th class="center">Priority</th><th>Owner</th></tr></thead>
             <tbody>
                 {% for job in queued_jobs %}
-                    {% set qt = namespace(v=0) %}{% for jt in job_tasks %}{% if jt.job_id == job.id %}{% set qt.v = qt.v + 1 %}{% endif %}{% endfor %}
+                    {% set qt = namespace(v=attack_counts.get(job.id, 0) if attack_counts is defined else 0) %}
                     <tr>
                         <td class="mono" style="color:var(--text-mute);">{{ loop.index }}</td>
                         <td style="font-weight:500;">{{ job.name }}</td>

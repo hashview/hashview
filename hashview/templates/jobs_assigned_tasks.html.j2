@@ -83,9 +83,9 @@
     {# ============ Task Queue ============ #}
     <div class="card">
         <div class="card-head">
-            <span class="dot-led {% if (job_tasks is defined) and job_tasks.count() > 0 %}on{% else %}idle{% endif %}"></span>
+            <span class="dot-led {% if (assigned is defined) and (assigned | length) > 0 %}on{% else %}idle{% endif %}"></span>
             <h3>Task Queue</h3>
-            {% if (job_tasks is defined) and job_tasks.count() > 0 %}
+            {% if (assigned is defined) and (assigned | length) > 0 %}
                 <a href="#" id="clear_all" style="margin-left:auto; color:var(--text-mute); font-size:12px; font-family:var(--mono);" title="Remove all assigned tasks for this job" onclick="document.getElementById('deleteModal').showModal(); return false;">clear all</a>
             {% endif %}
         </div>
@@ -227,7 +227,7 @@
     <a class="btn" href="{{ url_for('jobs.jobs_assign_notifications', job_id = job.id) }}">{{ icon('arrowLeft', size=15) }} Back</a>
     <span class="spacer"></span>
     {# A job needs at least one task to run; gate Next until one is assigned. #}
-    {% if (job_tasks is defined) and job_tasks.count() > 0 %}
+    {% if (assigned is defined) and (assigned | length) > 0 %}
         <a class="btn btn-primary" href="/jobs/{{job.id}}/summary" role="button">Next {{ icon('arrowRight', size=15) }}</a>
     {% else %}
         <button type="button" class="btn btn-primary" disabled title="Assign at least one task to continue">Next {{ icon('arrowRight', size=15) }}</button>

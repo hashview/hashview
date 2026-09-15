@@ -15,7 +15,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 from flask_wtf import FlaskForm
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 
 from hashview.jobs.forms import (
     JobsForm,
@@ -536,8 +536,18 @@ def jobs_list_tasks(job_id):
     # assigned UNLESS it uses a dynamic wordlist (those may be added more than
     # once). Mirrors jobs_assign_task's wl_id-based static/dynamic check so a job
     # can't be configured with two of the same non-dynamic task.
+    # One card per logical assignment: chunk rows of a split task collapse to a
+    # single entry (the editor shows the attack once, not once per chunk).
+    # Resolved here rather than just before render because the dropdown filter
+    # below needs it too.
+    assigned = _assigned_tasks(job_id)
+
     dynamic_wl_ids = dynamic_wordlist_ids()
-    assigned_task_ids = {jt.task_id for jt in job_tasks}
+    # Rows AND ledgers: an attack owns its task even between chunks, when no row
+    # of it is materialised. Reading rows alone re-offered a live attack's task
+    # in the dropdown, letting it be assigned to the same job twice.
+    assigned_task_ids = ({jt.task_id for jt in job_tasks}
+                         | {entry['task_id'] for entry in assigned})
     assignable_tasks = [t for t in tasks
                         if t.id not in assigned_task_ids
                         or task_uses_dynamic_wordlist(t, dynamic_wl_ids)]
@@ -561,10 +571,6 @@ def jobs_list_tasks(job_id):
 
     # Does this job have per-hash alerts? Drives the conditional "Alert Hashes" wizard step.
     alert_hashes = _job_has_alert_hashes(job)
-
-    # One card per logical assignment: chunk rows of a split task collapse to a
-    # single entry (the editor shows the attack once, not once per chunk).
-    assigned = _assigned_tasks(job_id)
 
     return render_template('jobs_assigned_tasks.html.j2', title='Jobs Assigned Tasks', job=job, tasks=tasks, job_tasks=job_tasks, assigned=assigned, assignable_tasks=assignable_tasks, task_meta=task_meta, task_groups=task_groups, wordlists=wordlists, alert_hashes=alert_hashes)
 
@@ -776,7 +782,20 @@ def jobs_remove_task(job_id, task_id):
                .order_by(JobTaskLedger.position.desc()).all())
     if ledgers:
         target = ledgers[0]              # the LAST assignment of this task
-        for jt in JobTasks.query.filter_by(ledger_id=target.id).all():
+        # This ledger's rows, plus any row of the same task belonging to NO
+        # ledger. The branch is taken whenever a ledger exists for (job, task),
+        # so deleting only the target's rows left a ledger-less one behind:
+        # Queued, un-cancelled, invisible on the page, and still dispatchable
+        # through the legacy ledger_id IS NULL loop -- the operator removes the
+        # attack and it keeps cracking. close_ledger already sweeps by task_id
+        # for the same reason.
+        doomed = (JobTasks.query
+                  .filter(JobTasks.job_id == job_id,
+                          JobTasks.task_id == task_id,
+                          or_(JobTasks.ledger_id == target.id,
+                              JobTasks.ledger_id.is_(None)))
+                  .all())
+        for jt in doomed:
             if jt.status in ('Running', 'Queued', 'Not Started', 'Importing'):
                 update_job_task_status(jt.id, 'Canceled', finalize=False)
             db.session.delete(jt)
@@ -1003,11 +1022,15 @@ def jobs_bulk_delete():
 def jobs_summary(job_id):
     """Function to present job summary"""
 
-    # Check if job has any assigned tasks, and if not, send the user back to the task assigned page.
-    job_tasks = JobTasks.query.filter_by(job_id=job_id).all()
-    if len(job_tasks) == 0:
+    # Has this job any assigned attacks? Counted off the ledger, like the page
+    # below renders from. Counting raw rows sent the operator back to a tasks
+    # page that was listing attacks perfectly well: mid-run a chunked attack can
+    # legitimately have no row materialised at this instant, and an orphaned
+    # ledger has none at all.
+    if not _assigned_tasks(job_id):
         flash('You must assign at least one task.', 'warning')
         return redirect("/jobs/"+str(job_id)+"/tasks")
+    job_tasks = JobTasks.query.filter_by(job_id=job_id).all()
 
     job = Jobs.query.get(job_id)
     form = JobSummaryForm()

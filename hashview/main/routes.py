@@ -391,8 +391,10 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
                     'chunk_no': c.chunk_no,
                     'chunk_total': c.chunk_total,
                     'label': ('#%d' % c.chunk_no) if c.chunk_no else '—',
-                    'slice': ('%s keyspace' % _human(c.chunk_keyspace)
-                              if c.chunk_keyspace else ''),
+                    # Bare count: this renders under the Keyspace COLUMN, where
+                    # "1.2B keyspace" would repeat the header back at the reader.
+                    'keyspace': (_human(c.chunk_keyspace)
+                                 if c.chunk_keyspace else ''),
                     'agent': agent.name if agent else '—',
                     'rate': bench or '—',
                     'recovered': rec_x,

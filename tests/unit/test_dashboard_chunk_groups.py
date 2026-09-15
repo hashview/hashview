@@ -590,9 +590,37 @@ def test_chunk_id_sits_under_task_not_status(app, client):
     attrs = re.findall(r'<td\b([^>]*)>', row)
 
     # column order: spacer, Task, Status, Agent, Keyspace, Recovered, Rate, ETA...
-    assert cells[1].startswith("#")          # the chunk id, e.g. "#3/5"
+    # Spelled out, not a bare "#3": on its own that read as an id of something
+    # unstated, sitting directly under a task name.
+    assert cells[1].startswith("Chunk #")
     assert "padding-left" in attrs[1]        # indented under the task name
     assert cells[2].strip() == ""            # Status is left empty on chunk rows
+
+
+@pytest.mark.security
+def test_chunk_keyspace_sits_under_the_keyspace_column(app, client):
+    """A chunk's own keyspace belongs under Keyspace, where the parent task row
+    shows the whole attack's -- not appended to the chunk id under Task.
+
+    The value is bare ("1.2B"), not "1.2B keyspace": under a column headed
+    Keyspace the word repeats the header back at the reader.
+    """
+    from tests.unit.helpers import login, make_admin
+    _seed_running_job()
+    # The fixture leaves chunk_keyspace unset, so the cell would render empty
+    # and the assertions below would pass without proving anything.
+    for row_ in JobTasks.query.filter_by(status="Running").all():
+        row_.chunk_keyspace = 1_200_000_000
+    db.session.commit()
+    login(client, make_admin())
+
+    html = client.get("/dashboard/jobs").get_data(as_text=True)
+    row = re.search(r'<tr class="chunk-row".*?</tr>', html, re.S).group(0)
+    cells = re.findall(r'<td\b[^>]*>(.*?)</td>', row, re.S)
+
+    assert "keyspace" not in cells[1].lower()   # not under Task any more
+    assert cells[4].strip() != ""               # ...under Keyspace instead
+    assert "keyspace" not in cells[4].lower()   # and without repeating the header
 
 
 @pytest.mark.security

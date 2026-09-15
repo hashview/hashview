@@ -105,13 +105,16 @@
                                     {% for ch in g.active_chunks %}
                                     <tr class="chunk-row" data-parent="{{ key }}" hidden>
                                         <td></td>
-                                        {# chunk id + slice sit under TASK, indented, rather than under
-                                           Status: they name WHICH piece of the task this row is, which
-                                           is a continuation of the task name above it, not a status. #}
-                                        <td class="mono" style="color:var(--text-dim); padding-left:28px;">{{ ch.label }}{% if ch.chunk_total and ch.chunk_total > 0 %}<span style="color:var(--text-mute);">/{{ ch.chunk_total }}</span>{% endif %}{% if ch.slice %}<span style="color:var(--text-mute);"> · {{ ch.slice }}</span>{% endif %}</td>
+                                        {# Which PIECE of the task this row is -- a continuation of the
+                                           task name above it, so it sits under Task, indented. Spelled
+                                           out ("Chunk #3") rather than a bare "#3", which read as an id
+                                           of something unstated. #}
+                                        <td class="mono" style="color:var(--text-dim); padding-left:28px;">{% if ch.chunk_no %}Chunk {{ ch.label }}{% if ch.chunk_total and ch.chunk_total > 0 %}<span style="color:var(--text-mute);">/{{ ch.chunk_total }}</span>{% endif %}{% else %}<span class="dash">—</span>{% endif %}</td>
                                         <td></td>
                                         <td class="mono" style="color:var(--text-dim);">{{ ch.agent }}</td>
-                                        <td></td>
+                                        {# The chunk's own keyspace, under the Keyspace column where the
+                                           parent task shows the attack's. #}
+                                        <td class="mono" style="color:var(--text-dim);">{{ ch.keyspace }}</td>
                                         <td class="center num">{% if ch.recovered is not none %}{% if job.hashfile_id %}<a class="rec-x-link" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="View hashfile analytics"><span style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span></a>{% else %}<span style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span>{% endif %}{% else %}<span class="dash">—</span>{% endif %}</td>
                                         <td class="center num" style="color:var(--text-dim);">{% if ch.rate %}{{ ch.rate }}{% else %}<span class="dash">—</span>{% endif %}</td>
                                         <td class="center num" style="color:{{ 'var(--amber)' if ch.eta else 'var(--text-mute)' }};">{% if ch.eta %}{{ ch.eta }}{% else %}<span class="dash">—</span>{% endif %}</td>

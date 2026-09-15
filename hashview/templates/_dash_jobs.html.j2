@@ -79,7 +79,7 @@
                                         {% if g.attack %}<div class="mono" style="font-size:10px;color:var(--text-mute);margin-top:2px;">{{ g.attack }}</div>{% endif %}
                                     </td>
                                     <td class="center">{{ status_badge(g.status) }}</td>
-                                    <td class="mono" style="color:var(--text-dim);">{{ g.agent_display or '—' }}</td>
+                                    <td class="mono" style="color:var(--text-dim);">{% if g.agent_display %}{{ g.agent_display }}{% else %}<span class="dash">—</span>{% endif %}</td>
                                     <td style="min-width:160px;">
                                         <div style="display:flex;justify-content:space-between;font-size:10px;font-family:var(--mono);color:var(--text-dim);margin-bottom:4px;">
                                             <span>{% if g.ks_total %}{{ g.ks_done|human_count }}/{{ g.ks_total|human_count }}{% elif g.status == 'Measuring' %}measuring…{% else %}{{ g.completed|commafy }}/{{ g.total|commafy }} chunks{% endif %}</span>
@@ -96,9 +96,9 @@
                                         </div>
                                     </td>
                                     <td class="center num">{% if job.hashfile_id %}<a class="rec-x-link" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="View hashfile analytics"><span style="color:{{ 'var(--primary)' if g.recovered else 'var(--text-mute)' }};">{{ g.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span></a>{% else %}<span style="color:{{ 'var(--primary)' if g.recovered else 'var(--text-mute)' }};">{{ g.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span>{% endif %}</td>
-                                    <td class="center num" style="color:var(--text-dim);">{{ g.rate or '—' }}</td>
-                                    <td class="center num" style="color:{{ 'var(--amber)' if g.eta else 'var(--text-mute)' }};">{{ g.eta or '—' }}</td>
-                                    {% if settings and settings.max_runtime_tasks %}<td class="center num" style="color:{{ 'var(--red)' if g.cancel_in == '0s' else 'var(--text-dim)' }};">{{ g.cancel_in or '—' }}</td>{% endif %}
+                                    <td class="center num" style="color:var(--text-dim);">{% if g.rate %}{{ g.rate }}{% else %}<span class="dash">—</span>{% endif %}</td>
+                                    <td class="center num" style="color:{{ 'var(--amber)' if g.eta else 'var(--text-mute)' }};">{% if g.eta %}{{ g.eta }}{% else %}<span class="dash">—</span>{% endif %}</td>
+                                    {% if settings and settings.max_runtime_tasks %}<td class="center num" style="color:{{ 'var(--red)' if g.cancel_in == '0s' else 'var(--text-dim)' }};">{% if g.cancel_in %}{{ g.cancel_in }}{% else %}<span class="dash">—</span>{% endif %}</td>{% endif %}
                                     <td class="center">{% if g.status == 'Running' %}<a class="icon-btn" href="{{ url_for('main.stop_task', job_id=job.id, task_id=g.task_id) }}" title="Stop task">{{ icon('stop', size=15) }}</a>{% endif %}</td>
                                 </tr>
                                 {% if g.expandable %}
@@ -111,11 +111,11 @@
                                         <td></td>
                                         <td></td>
                                         <td class="mono center" style="color:var(--text-dim);">{{ ch.label }}{% if ch.chunk_total and ch.chunk_total > 0 %}<span style="color:var(--text-mute);">/{{ ch.chunk_total }}</span>{% endif %}{% if ch.slice %}<span style="color:var(--text-mute);"> · {{ ch.slice }}</span>{% endif %}</td>
-                                        <td class="mono" style="color:var(--text-dim);">{{ ch.agent }}</td>
+                                        <td class="mono" style="color:var(--text-dim);">{% if ch.agent %}{{ ch.agent }}{% else %}<span class="dash">—</span>{% endif %}</td>
                                         <td></td>
-                                        <td class="center num">{% if ch.recovered is not none %}{% if job.hashfile_id %}<a class="rec-x-link" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="View hashfile analytics"><span style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span></a>{% else %}<span style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span>{% endif %}{% else %}—{% endif %}</td>
-                                        <td class="center num" style="color:var(--text-dim);">{{ ch.rate or '—' }}</td>
-                                        <td class="center num" style="color:{{ 'var(--amber)' if ch.eta else 'var(--text-mute)' }};">{{ ch.eta or '—' }}</td>
+                                        <td class="center num">{% if ch.recovered is not none %}{% if job.hashfile_id %}<a class="rec-x-link" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="View hashfile analytics"><span style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span></a>{% else %}<span style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span>{% endif %}{% else %}<span class="dash">—</span>{% endif %}</td>
+                                        <td class="center num" style="color:var(--text-dim);">{% if ch.rate %}{{ ch.rate }}{% else %}<span class="dash">—</span>{% endif %}</td>
+                                        <td class="center num" style="color:{{ 'var(--amber)' if ch.eta else 'var(--text-mute)' }};">{% if ch.eta %}{{ ch.eta }}{% else %}<span class="dash">—</span>{% endif %}</td>
                                         {% if settings and settings.max_runtime_tasks %}<td></td>{% endif %}
                                         <td></td>
                                     </tr>

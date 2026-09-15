@@ -6,6 +6,7 @@ chunks). These pin that math and the grouped /dashboard/jobs render.
 """
 
 import json
+import re
 from datetime import datetime
 
 import pytest
@@ -553,3 +554,62 @@ def test_auto_cancel_column_only_renders_when_the_cap_is_on(app, client):
     db.session.commit()
 
     assert "Auto-cancel" in client.get("/dashboard/jobs").get_data(as_text=True)
+
+
+@pytest.mark.security
+def test_every_empty_cell_uses_the_same_dash_placeholder(app, client):
+    """One placeholder, so "no data yet" looks the same in every column.
+
+    The dashes used to inherit each column's own colour and alignment: Rate and
+    Auto-cancel were --text-dim, ETA was --text-mute, Recovered had no colour at
+    all (so it rendered in the brightest default text), and Agent's sat left
+    while the rest were centred. A row with nothing to report showed three
+    different greys in three different places.
+
+    The chunk row's Agent cell had no placeholder at all and simply rendered
+    empty, which is why this asserts on the rendered rows rather than only on
+    the style rule.
+    """
+    from tests.unit.helpers import login, make_admin
+    _seed_running_job()
+    login(client, make_admin())
+
+    # Finish every chunk so the task row has no agent, rate or eta to show --
+    # the state the placeholder exists for. The seeded fixture fills every cell,
+    # so without this the table renders no dashes at all and the assertion below
+    # would pass by vacuum.
+    for row in JobTasks.query.all():
+        row.status = "Completed"
+        row.agent_id = None
+    for agent in Agents.query.all():
+        agent.hc_status = ""
+    db.session.commit()
+
+    html = client.get("/dashboard/jobs").get_data(as_text=True)
+    table = html[html.index('class="tbl rj-tasks"'):]
+
+    assert '<span class="dash">—</span>' in table
+    # ...and no BARE em dash left to inherit whatever colour its column had.
+    bare = re.findall(r'(?<!class="dash">)—', table)
+    assert bare == [], f"{len(bare)} unstyled dash(es) left in the task table"
+
+
+@pytest.mark.security
+def test_the_dash_placeholder_is_centred_and_one_shade(app, client):
+    """The rule that makes them uniform is actually delivered to the page.
+
+    display:block is what centres the dash regardless of its column's own
+    text-align -- without it the Agent dash stays left while the numeric
+    columns centre theirs.
+    """
+    from tests.unit.helpers import login, make_admin
+    _seed_running_job()
+    login(client, make_admin())
+
+    css = client.get("/").get_data(as_text=True)
+    rule = re.search(r'\.rj-tasks \.dash \{([^}]*)\}', css)
+    assert rule, "no .rj-tasks .dash rule served"
+    body = rule.group(1)
+    assert "text-align: center" in body
+    assert "display: block" in body
+    assert "var(--text-mute)" in body

@@ -13,7 +13,7 @@ attack again.
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -637,3 +637,98 @@ def test_a_task_an_attack_owns_is_not_offered_again_in_the_dropdown(app, client)
     # formaction. The owned task must not be among them.
     offer = f'/jobs/{job.id}/assign_task/{tasks[0].id}"'.encode()
     assert offer not in resp.data
+
+
+def _entries(job):
+    return (JobTaskLedger.query.filter_by(job_id=job.id)
+            .order_by(JobTaskLedger.position).all())
+
+
+def _finish_long_ago(entry, hours_ago=13):
+    """Mark an attack finished, started long enough ago to be past any sane cap."""
+    entry.state = "Closed"
+    entry.keyspace_pos = entry.keyspace or 1
+    for row in JobTasks.query.filter_by(ledger_id=entry.id).all():
+        row.status = "Completed"
+        row.started_at = datetime.now() - timedelta(hours=hours_ago)
+    db.session.commit()
+
+
+def _waiting_and_unstarted(entry):
+    """An attack with a row waiting and no clock running against it yet."""
+    for row in JobTasks.query.filter_by(ledger_id=entry.id).all():
+        row.status = "Queued"
+        row.agent_id = None
+        row.started_at = None
+    db.session.commit()
+
+
+def test_a_finished_attack_does_not_block_the_queue_behind_it(app, client):
+    """A long-finished attack at a low position must not stall dispatch.
+
+    The ledger loop is not filtered by state, so terminal attacks are still
+    iterated. The runtime cap was evaluated against them and then RETURNED, so
+    every heartbeat re-closed the same already-Closed ledger and ended -- never
+    reaching the attacks further down with rows waiting.
+
+    Seen on a live instance: a job Running for 13 hours against a 4h task cap,
+    four Queued chunks, two idle agents with valid benchmarks, nothing handed
+    out, indefinitely.
+    """
+    job, _tasks = _seed(task_count=2, job_status="Running")
+    Settings.query.first().max_runtime_tasks = 4
+    db.session.commit()
+    first, second = _entries(job)
+    _finish_long_ago(first)
+    _waiting_and_unstarted(second)
+    _agent("a", speed=1000)
+
+    reply = _beat(client, "a")
+
+    assert reply["msg"] == "START"
+    assert JobTasks.query.get(reply["job_task_id"]).ledger_id == second.id
+
+
+def test_a_finished_attack_is_not_relabelled_as_runtime_capped(app, client):
+    """An attack that simply finished must not be closed as 'runtime_cap'.
+
+    It is skipped before the cap is evaluated, so its closed_reason is left
+    alone -- the receipt has to say what actually happened to it.
+    """
+    job, _tasks = _seed(task_count=2, job_status="Running")
+    Settings.query.first().max_runtime_tasks = 4
+    db.session.commit()
+    first, second = _entries(job)
+    _finish_long_ago(first)
+    first.closed_reason = "fully_issued"
+    db.session.commit()
+    _waiting_and_unstarted(second)
+    _agent("a", speed=1000)
+
+    _beat(client, "a")
+
+    assert JobTaskLedger.query.get(first.id).closed_reason == "fully_issued"
+
+
+def test_an_over_cap_live_attack_is_closed_and_the_queue_continues(app, client):
+    """The cap still fires on an attack that HAS work left, and the loop then
+    carries on rather than ending the heartbeat -- one over-cap attack must not
+    starve every attack behind it."""
+    job, _tasks = _seed(task_count=2, job_status="Running")
+    Settings.query.first().max_runtime_tasks = 4
+    db.session.commit()
+    first, second = _entries(job)
+    # Live, has a row waiting, and started well past the cap.
+    for row in JobTasks.query.filter_by(ledger_id=first.id).all():
+        row.status = "Queued"
+        row.agent_id = None
+        row.started_at = datetime.now() - timedelta(hours=13)
+    db.session.commit()
+    _waiting_and_unstarted(second)
+    _agent("a", speed=1000)
+
+    reply = _beat(client, "a")
+
+    assert JobTaskLedger.query.get(first.id).state == "Closed"
+    assert reply["msg"] == "START"
+    assert JobTasks.query.get(reply["job_task_id"]).ledger_id == second.id

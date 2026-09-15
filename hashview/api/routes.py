@@ -409,15 +409,32 @@ def v1_api_set_agent_heartbeat():
                     if (ledger.hc_major is not None
                             and agent.hc_major != ledger.hc_major):
                         continue
+                    # Has this attack anything left to give? The query above is
+                    # not filtered by state, so finished attacks are still in it,
+                    # and they must be skipped BEFORE the runtime cap below --
+                    # both because runtime-capping a completed attack would label
+                    # it 'runtime_cap' when it simply finished, and because the
+                    # cap used to `return`, which turned any long-finished attack
+                    # sitting at a low position into a permanent wall: every
+                    # heartbeat re-closed the same terminal ledger and ended,
+                    # never reaching the attacks further down that had queued rows
+                    # waiting. Observed on a live instance as idle agents, queued
+                    # chunks, and nothing ever dispatched.
+                    has_waiting = (db.session.query(JobTasks.id)
+                                   .filter(JobTasks.ledger_id == ledger.id,
+                                           JobTasks.status == 'Queued')
+                                   .first() is not None)
+                    if not has_waiting and not ledger_is_mintable(ledger):
+                        continue
                     # Don't start fresh work on an attack that is already over its
                     # runtime cap. Closing the ledger -- not just cancelling its
                     # rows -- is what stops the next heartbeat simply issuing
-                    # another slice of it.
+                    # another slice of it. Then carry on down the queue: one
+                    # over-cap attack must not starve every attack behind it.
                     if _task_runtime_exceeded(ledger.job_id, ledger.task_id,
                                               settings.max_runtime_tasks):
                         close_ledger(ledger.job_id, 'runtime_cap', ledger_id=ledger.id)
-                        update_heartbeat(uuid)
-                        return jsonify({'status': 200, 'type': 'message', 'msg': 'OK'})
+                        continue
 
                     # Measure BEFORE handing out any of this attack. The seed row
                     # carries a whole-run command, so dispatching it first would

@@ -16,7 +16,7 @@ from flask import (
 from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
-from hashview.models import Hashes, Jobs, JobTasks, Rules, Tasks, Users, Wordlists, db
+from hashview.models import Hashes, Jobs, Rules, Tasks, Users, Wordlists, db
 from hashview.rules.forms import RuleContentForm, RuleRestoreForm, RulesForm
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
@@ -28,6 +28,7 @@ from hashview.utils.utils import (
     resolve_control_file,
     rule_file_missing,
     save_file,
+    task_job_references,
     try_commit,
 )
 
@@ -122,10 +123,11 @@ def rules_list():
         ).filter(Hashes.cracked == '1',
                  Hashes.task_id.in_(task_ids)).group_by(Hashes.task_id).all()
     } if task_ids else {}
-    jobs_by_task = {}
-    if task_ids:
-        for jt in JobTasks.query.filter(JobTasks.task_id.in_(task_ids)).all():
-            jobs_by_task.setdefault(jt.task_id, set()).add(jt.job_id)
+    # Rows AND ledgers: an attack owns its task whether or not its chunks are
+    # materialised right now (see task_job_references).
+    jobs_by_task = {task_id: job_ids
+                    for task_id, job_ids in task_job_references().items()
+                    if task_id in task_ids} if task_ids else {}
 
     # Jobs referenced by those tasks, for the delete dialog's blocker list: an
     # operator needs the job to unpick before the task can be edited or deleted.

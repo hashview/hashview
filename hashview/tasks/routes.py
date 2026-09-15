@@ -20,9 +20,11 @@ from hashview.tasks.forms import TasksForm
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
     apply_name_filter,
+    jobs_using_task,
     missing_rule_ids,
     missing_wordlist_ids,
     resolve_control_file,
+    task_job_references,
     try_commit,
 )
 
@@ -128,7 +130,10 @@ def tasks_list():
 
     # Tasks assigned to one or more jobs cannot be edited (the edit route enforces this
     # too); the list view uses this to disable the edit button for those tasks.
-    tasks_in_jobs = {jt.task_id for jt in job_tasks}
+    # Rows AND ledgers: an attack whose chunks are not materialised at this
+    # instant still owns its task, and mid-run that is the ordinary state.
+    task_refs = task_job_references()
+    tasks_in_jobs = set(task_refs)
 
     # Tasks that belong to a task group can't be bulk-deleted (the delete routes skip
     # them); the list view padlocks these so the checkbox isn't offered.
@@ -148,16 +153,11 @@ def tasks_list():
     # that job once.
     jobs_by_id = {j.id: j for j in jobs}
     jobs_by_task = {}
-    _seen_job_for_task = {}
-    for jt in job_tasks:
-        job = jobs_by_id.get(jt.job_id)
-        if job is None:
-            continue
-        seen = _seen_job_for_task.setdefault(jt.task_id, set())
-        if job.id in seen:
-            continue
-        seen.add(job.id)
-        jobs_by_task.setdefault(jt.task_id, []).append(job)
+    for task_id, job_ids in task_refs.items():
+        listed = [jobs_by_id[job_id] for job_id in sorted(job_ids)
+                  if job_id in jobs_by_id]
+        if listed:
+            jobs_by_task[task_id] = listed
 
     # Missing-file sets for the badge and the pickers (issue #383). The full
     # wordlists/rules lists are still passed unfiltered: the info modal resolves
@@ -312,7 +312,7 @@ def task_edit(task_id):
 
     # Check if task is currently assigned to a job.
     # We probably dont care if its assigned to a task group though
-    affected_jobs = JobTasks.query.filter_by(task_id=task_id).all()
+    affected_jobs = jobs_using_task(task_id)
     if affected_jobs:
         flash('Can not edit this task. It is currently associated to one or more jobs.', 'danger')
         return redirect(url_for('tasks.tasks_list'))
@@ -517,12 +517,12 @@ def tasks_delete(task_id):
     task_groups = TaskGroups.query.all()
     if current_user.admin or task.owner_id == current_user.id:
 
-        # Check if associated with JobTask (which implies its associated with a job)
-        jobtasks = JobTasks.query.all()
-        for jobtask in jobtasks:
-            if jobtask.task_id == task_id:
-                flash('Can not delete. Task is associated to one or more jobs.', 'danger')
-                return redirect(url_for('tasks.tasks_list'))
+        # Associated with a job? Rows AND ledgers -- a ledger entry is an attack
+        # that owns this task even when none of its chunks are materialised right
+        # now, which mid-run is the ordinary state between chunks.
+        if jobs_using_task(task_id):
+            flash('Can not delete. Task is associated to one or more jobs.', 'danger')
+            return redirect(url_for('tasks.tasks_list'))
 
         if task_id in _task_group_task_ids(task_groups):
             flash('Can not delete. The Task is associated to one or more Task Groups.', 'danger')
@@ -550,7 +550,7 @@ def tasks_bulk_delete():
     job (nor to a task group). Each id is guarded independently -- one skip never
     aborts the batch -- and a per-outcome summary is flashed."""
     deleted = skipped_job = skipped_group = skipped_rights = skipped_missing = failed = 0
-    job_task_ids = {jt.task_id for jt in JobTasks.query.all()}
+    job_task_ids = set(task_job_references())
     group_task_ids = _task_group_task_ids(TaskGroups.query.all())
     seen = set()
     for raw in request.form.getlist('task_ids'):

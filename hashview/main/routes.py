@@ -25,6 +25,7 @@ from hashview.utils.utils import (
     agent_telemetry,
     close_ledger,
     is_chunk_row,
+    job_assignments,
     update_job_task_status,
 )
 from hashview.utils.utils import (
@@ -417,7 +418,14 @@ def _jobs_ctx():
     agents_ctx = _agents_ctx()
     tasks_by_id = {t.id: t for t in tasks}
     agents_by_id = {a.id: a for a in agents_ctx['agents']}
+    # Attack counts for the queue table, off the ledger. Counting raw rows there
+    # was wrong in two directions at once: a chunked attack counted once per
+    # chunk, and under on-demand minting a freshly queued job has no rows yet, so
+    # the column read 0 for exactly the jobs the queue table exists to show.
+    attack_counts = {job_id: len(entries) for job_id, entries
+                     in job_assignments([j.id for j in queued_jobs]).items()}
     return {
+        'attack_counts': attack_counts,
         'running_jobs': running_jobs,
         'queued_jobs': queued_jobs,
         'users': Users.query.all(),

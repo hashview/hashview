@@ -2187,6 +2187,39 @@ def _sync_job_ledger(job, assignments):
     return ledgers
 
 
+def task_job_references():
+    """{task_id: {job_id, ...}} -- every task that any job references.
+
+    Counts BOTH materialised JobTasks rows and JobTaskLedger entries. A ledger
+    entry IS an attack, whether or not a row for it happens to exist right now,
+    and under on-demand minting "no row right now" is the ordinary state between
+    chunks. Reading rows alone therefore reports a live attack's task as unused:
+    verified on the test app that with one ledger and zero rows the task-delete
+    guard did not fire and the task was deleted, leaving the ledger pointing at a
+    task that is gone -- the next mint then builds a hashcat command for it.
+    """
+    references = {}
+    for task_id, job_id in db.session.query(
+            JobTasks.task_id, JobTasks.job_id).distinct():
+        references.setdefault(task_id, set()).add(job_id)
+    for task_id, job_id in db.session.query(
+            JobTaskLedger.task_id, JobTaskLedger.job_id).distinct():
+        references.setdefault(task_id, set()).add(job_id)
+    return references
+
+
+def jobs_using_task(task_id):
+    """Job ids referencing one task, from rows AND ledgers.
+
+    Targeted form of task_job_references, which see for why the ledger counts.
+    """
+    rows = {job_id for (job_id,) in db.session.query(JobTasks.job_id)
+            .filter(JobTasks.task_id == task_id).distinct()}
+    entries = {job_id for (job_id,) in db.session.query(JobTaskLedger.job_id)
+               .filter(JobTaskLedger.task_id == task_id).distinct()}
+    return rows | entries
+
+
 def renumber_ledger_positions(job_id, ordered_entry_ids=None):
     """Renumber a job's attacks to 0..N-1, in two passes.
 
@@ -2743,12 +2776,79 @@ def queue_late_assignments(job_id):
     Returns the number of rows queued. The caller owns the commit.
     """
     job = Jobs.query.get(job_id)
-    if job is None or job.status not in ('Queued', 'Running'):
+    if job is None:
         return 0
     rows = JobTasks.query.filter_by(job_id=job.id, status='Not Started').all()
+    if not rows:
+        return 0
+    runnable = job.status in ('Queued', 'Running')
+
+    # Only give the late rows a ledger entry if this job already HAS a ledger.
+    # job_assignments reads ledgers first and then skips every raw row of a job
+    # that has any ledger at all, so minting one entry for a job queued by a
+    # pre-ledger server would hide all of its other rows -- turning a gap in one
+    # attack into a gap in every one of them.
+    ledgered = (db.session.query(JobTaskLedger.id)
+                .filter(JobTaskLedger.job_id == job.id).first() is not None)
+    position = None
+    if ledgered:
+        highest = max(entry.position for entry in
+                      JobTaskLedger.query.filter_by(job_id=job.id).all())
+        position = highest + 1
+
     for row in rows:
-        _set_job_task_command(job, row, {})
-    return len(rows)
+        # Give it a ledger entry whatever the job's status. An assignment is part
+        # of the job the moment it is made, and job_assignments hides a
+        # ledger-less row on a ledgered job -- so adding a task to a Completed or
+        # Canceled job (which keeps its ledger) left it invisible until the job
+        # was next started. issued=runnable because only a row we actually queue
+        # here has had its single whole-run unit handed out.
+        if ledgered:
+            _append_late_ledger(job, row, position, issued=runnable)
+            position += 1
+        if runnable:
+            _set_job_task_command(job, row, {})
+    return len(rows) if runnable else 0
+
+
+def _append_late_ledger(job, row, position, issued=True):
+    """Mint the ledger entry for one late assignment, appended to the queue.
+
+    Shaped like _sync_job_ledger's unmeasurable case rather than reusing it:
+    that function rebuilds a job's ledger WHOLESALE -- deleting every entry and
+    resetting every cursor -- which is exactly the wrong thing mid-run.
+
+    Without this the row was queued and dispatchable but had no ledger, and
+    job_assignments skips the raw rows of any job that has a ledger. So the
+    attack was INVISIBLE everywhere the UI looks (the tasks page, the job's
+    attack count, the summary review step) while still being handed to an agent
+    by the legacy ledger_id IS NULL dispatch branch: an operator added a task,
+    the page looked unchanged, and an agent quietly started cracking it. There
+    was also no card, so no per-task remove button -- nothing could clear it
+    short of removing every task on the job.
+
+    A late assignment runs whole (see queue_late_assignments), so the entry is
+    unchunkable with no keyspace, and the single row it describes is its one
+    issued unit -- matching what _sync_job_ledger records for the same shape.
+    """
+    task = Tasks.query.get(row.task_id)
+    wl = Wordlists.query.get(task.wl_id) if (task and task.wl_id) else None
+    wl2 = Wordlists.query.get(task.wl_id_2) if (task and task.wl_id_2) else None
+    rule = Rules.query.get(task.rule_id) if (task and task.rule_id) else None
+
+    ledger = JobTaskLedger(
+        job_id=job.id, task_id=row.task_id, position=position,
+        state='Unmeasurable', keyspace=None, keyspace_source=None,
+        keyspace_pos=(1 if issued else 0), amp=1, min_slice=1,
+        issued_count=(1 if issued else 0), chunkable=False,
+        fingerprint=(task_fingerprint(task, wl, wl2, rule) if task else None),
+        updated_at=datetime.now(),
+    )
+    db.session.add(ledger)
+    db.session.flush()
+    row.ledger_id = ledger.id
+    row.chunk_keyspace = 1 if issued else None
+    return ledger
 
 
 def _job_completion_outcome(rows, goal_met=False):

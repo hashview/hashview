@@ -17,7 +17,7 @@ from flask import (
 from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
-from hashview.models import Hashes, Jobs, JobTasks, Rules, Tasks, Users, Wordlists, db
+from hashview.models import Hashes, Jobs, Rules, Tasks, Users, Wordlists, db
 from hashview.utils.audit import log_event
 from hashview.utils.utils import (
     ingest_static_wordlist_file,
@@ -25,6 +25,7 @@ from hashview.utils.utils import (
     resolve_control_file,
     restore_static_wordlist_file,
     send_generated_file,
+    task_job_references,
     try_commit,
     update_dynamic_wordlist,
     wordlist_file_missing,
@@ -71,9 +72,9 @@ def wordlists_list():
             Hashes.task_id, db.func.count(Hashes.id).label('recovered_count')
         ).filter(Hashes.cracked == '1').group_by(Hashes.task_id).all()
     }
-    jobs_by_task = {}
-    for jt in JobTasks.query.all():
-        jobs_by_task.setdefault(jt.task_id, set()).add(jt.job_id)
+    # Rows AND ledgers: an attack owns its task whether or not its chunks are
+    # materialised right now (see task_job_references).
+    jobs_by_task = task_job_references()
     # Jobs referenced by those tasks, for the delete dialog's blocker list: an
     # operator needs the job to unpick before the task can be edited or deleted.
     job_ids = {jid for ids in jobs_by_task.values() for jid in ids}

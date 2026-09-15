@@ -430,3 +430,41 @@ def test_remove_task_still_refuses_when_neither_rows_nor_ledger_exist(app, clien
     resp = client.post(f"/jobs/{job.id}/remove_task/999999", follow_redirects=True)
 
     assert b"no longer on this job" in resp.data
+
+
+def test_remove_all_tasks_does_not_start_the_job_it_is_emptying(app, client):
+    """Removing every task must not promote a Queued job to Running.
+
+    update_job_task_status promotes Queued -> Running for any status change, and
+    finalize=False does not suppress it -- it only skips the completion roll-up.
+    So cancelling rows on the way out STARTED the job being emptied, leaving
+    status='Running' with zero attacks and zero ledgers, which jobs_start then
+    refuses as already running: wedged, with no route back through the UI.
+    """
+    job, _tasks = _seed(task_count=2, job_status="Queued")
+    _agent("a", speed=1000)
+    _beat(client, "a")
+    db.session.refresh(job)
+    assert job.status == "Queued"
+
+    _login_admin(client)
+    client.post(f"/jobs/{job.id}/remove_all_tasks", follow_redirects=False)
+
+    db.session.refresh(job)
+    assert job.status == "Queued"          # not Running
+    assert JobTasks.query.filter_by(job_id=job.id).count() == 0
+    assert JobTaskLedger.query.filter_by(job_id=job.id).count() == 0
+
+
+def test_remove_all_tasks_leaves_a_running_job_running(app, client):
+    """The status is preserved, not forced -- a genuinely Running job stays put
+    rather than being quietly demoted by the same restore."""
+    job, _tasks = _seed(task_count=2, job_status="Running")
+    _agent("a", speed=1000)
+    _beat(client, "a")
+
+    _login_admin(client)
+    client.post(f"/jobs/{job.id}/remove_all_tasks", follow_redirects=False)
+
+    db.session.refresh(job)
+    assert job.status == "Running"

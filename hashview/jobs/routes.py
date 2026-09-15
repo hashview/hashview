@@ -809,6 +809,17 @@ def jobs_remove_all_tasks(job_id):
         flash('Security check failed (invalid or missing CSRF token).', 'danger')
         return redirect("/jobs/" + str(job_id) + "/tasks")
 
+    # update_job_task_status promotes a Queued job to Running (utils.py, "if
+    # job.status == 'Queued'"), and finalize=False does NOT suppress that -- it
+    # only skips the completion roll-up. Cancelling rows on the way out therefore
+    # STARTED the job we are emptying, leaving status='Running' with zero attacks
+    # and jobs_start refusing it as already running: wedged, and unwedgeable from
+    # the UI. Removing every task must not start a job, so the status is captured
+    # here and put back below.
+    job = Jobs.query.get(job_id)
+    prior_status = job.status if job else None
+    prior_started_at = job.started_at if job else None
+
     # Cancel anything still live before deleting it, exactly as jobs_remove_task
     # does: that is what clears the holding agent's hc_status and stops it
     # reporting against a row that no longer exists.
@@ -824,6 +835,9 @@ def jobs_remove_all_tasks(job_id):
     # agent heartbeat would mint fresh chunks off it and start cracking work the
     # operator had just deleted.
     JobTaskLedger.query.filter_by(job_id=job_id).delete()
+    if job is not None:
+        job.status = prior_status
+        job.started_at = prior_started_at
     if not try_commit(f'remove all tasks from job {job_id}'):
         flash('Could not remove the tasks — please try again.', 'danger')
     return redirect("/jobs/"+str(job_id)+"/tasks")

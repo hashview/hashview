@@ -195,21 +195,30 @@ def test_wordlists_restore_accepts_a_gzip_upload(app, client):
     admin = make_admin()
     login(client, admin)
     wl = make_wordlist_with_file(admin.id)
-    gz = gzip.compress(b"x\ny\n")
+    os.remove(wl.path)                                   # restore only repairs a gone file
+    gz = gzip.compress(b"x\ny\nz\n")
 
     client.post(f"/wordlists/{wl.id}/restore",
                 data={"wordlist": _upload(gz, "words.gz")},
                 content_type="multipart/form-data", follow_redirects=True)
-    assert Wordlists.query.get(wl.id).size == 2
+    # 3, not the helper default of 2: a size that matched the starting value
+    # would pass whether or not the upload was applied.
+    assert Wordlists.query.get(wl.id).size == 3
 
 
-def test_wordlists_restore_invalid_gzip_leaves_the_old_file_intact(app, client):
-    """Staged under control/tmp and os.replace()d, so a rejected upload can
-    never destroy a file that is still good."""
+def test_wordlists_restore_invalid_gzip_writes_nothing(app, client):
+    """A rejected upload is staged under control/tmp and never os.replace()d, so
+    it leaves no half-written file at the destination.
+
+    This used to assert that a good file survived a bad upload. Restore is now
+    offered only for a row whose file is already GONE, so there is no good file
+    to protect -- the equivalent guarantee is that a rejected upload does not
+    conjure a broken one.
+    """
     admin = make_admin()
     login(client, admin)
     wl = make_wordlist_with_file(admin.id, content=b"keepme\n")
-    before = open(wl.path, "rb").read()
+    os.remove(wl.path)
     # gzip magic but a truncated/corrupt body
     bad = b"\x1f\x8b" + b"\x00" * 20
 
@@ -217,7 +226,7 @@ def test_wordlists_restore_invalid_gzip_leaves_the_old_file_intact(app, client):
                        data={"wordlist": _upload(bad, "bad.gz")},
                        content_type="multipart/form-data", follow_redirects=True)
     assert b"could not be restored" in resp.data
-    assert open(wl.path, "rb").read() == before
+    assert wordlist_file_missing(Wordlists.query.get(wl.id)) is True
 
 
 def test_wordlists_restore_refuses_a_dynamic_list(app, client):
@@ -255,3 +264,58 @@ def test_wordlists_restore_missing_row_flashes_and_redirects(app, client):
                        data={"wordlist": _upload(b"a\n", "x.txt")},
                        content_type="multipart/form-data", follow_redirects=True)
     assert b"Wordlist not found" in resp.data
+
+
+def test_wordlists_restore_refuses_a_file_that_is_present(app, client):
+    """Restore is a REPAIR, not an edit.
+
+    It used to be offered on every static row -- it doubled as the only way to
+    change a wordlist's contents in place -- which made it trivial to overwrite a
+    perfectly good wordlist and silently change the candidate set under every
+    task that cites it, and under every finished job whose results claim to have
+    used it. Only a row that has outlived its file has anything to repair.
+    """
+    admin = make_admin()
+    login(client, admin)
+    wl = make_wordlist_with_file(admin.id, content=b"alpha\nbravo\n")
+    before = open(wl.path, "rb").read()
+
+    resp = client.post(f"/wordlists/{wl.id}/restore",
+                       data={"wordlist": _upload(b"a\nb\nc\n", "rockyou.txt")},
+                       content_type="multipart/form-data", follow_redirects=True)
+
+    assert b"present on disk" in resp.data
+    assert open(wl.path, "rb").read() == before
+    assert Wordlists.query.get(wl.id).size == 2
+
+
+def test_rules_restore_refuses_a_file_that_is_present(app, client, tmp_path):
+    """Same rule for rules. The list view already only offered the button for a
+    missing file; this is the matching server-side guard, since the route is
+    POST-able directly."""
+    admin = make_admin()
+    login(client, admin)
+    rule = make_rule_with_file(admin.id, content=b"c0\n")
+    before = open(rule.path).read()
+
+    resp = client.post(f"/rules/{rule.id}/restore",
+                       data={"rules": _upload(b"u1\nu2\n", "new.rule")},
+                       content_type="multipart/form-data", follow_redirects=True)
+
+    assert b"present on disk" in resp.data
+    assert open(rule.path).read() == before
+
+
+def test_the_wordlist_list_offers_restore_only_for_a_missing_file(app, client):
+    """The affordance follows the same rule as the route: no upload button and no
+    restore dialog on a row whose file is fine."""
+    admin = make_admin()
+    login(client, admin)
+    present = make_wordlist_with_file(admin.id, name="healthy")
+    gone = make_wordlist_with_file(admin.id, name="stranded")
+    os.remove(gone.path)
+
+    body = client.get("/wordlists").get_data(as_text=True)
+
+    assert f'id="restore-{gone.id}"' in body
+    assert f'id="restore-{present.id}"' not in body

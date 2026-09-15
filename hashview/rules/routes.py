@@ -301,6 +301,14 @@ def rules_restore(rule_id):
     if not form.validate_on_submit() or not form.rules.data:
         flash('Please choose a .rule file to restore from.', 'danger')
         return redirect(url_for('rules.rules_list'))
+    if not rule_file_missing(rule):
+        # Same rule as wordlists_restore: this is a repair for a row that has
+        # outlived its file, not a way to overwrite a healthy one. The list view
+        # already only offers the button when the file is gone; this is the
+        # matching server-side guard, since the route is POST-able directly.
+        flash('That rule file is present on disk. Replacing a rule that is not missing is '
+              'not supported — edit it instead, or delete it and upload a new one.', 'danger')
+        return redirect(url_for('rules.rules_list'))
 
     # Stage under control/tmp and os.replace() onto the stored path, so a failed
     # upload can never destroy a file that is still good. The basename is

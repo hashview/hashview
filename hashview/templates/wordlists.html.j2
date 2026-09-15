@@ -105,12 +105,15 @@
                     <div style="display:flex; gap:4px; justify-content:center;">
                         {% if gone %}
                         <span class="icon-btn" style="opacity:.4; cursor:not-allowed;" title="File is missing on disk — nothing to download">{{ icon('download', size=15) }}</span>
+                        {# Restore is a REPAIR, offered only for a row that has outlived its
+                           file -- same rule as the rules list. It used to sit outside this
+                           branch, doubling as "Replace file" on healthy rows, which made it
+                           easy to overwrite a good wordlist and silently change the
+                           candidate set under every task that cites it. #}
+                        <button type="button" class="icon-btn" title="Restore missing file" onclick="document.getElementById('restore-{{ wordlist.id }}').showModal()">{{ icon('upload', size=15) }}</button>
                         {% else %}
                         <a class="icon-btn" href="{{ url_for('wordlists.wordlists_download', wordlist_id=wordlist.id) }}" title="Download">{{ icon('download', size=15) }}</a>
                         {% endif %}
-                        {# offered on every static row: there is no wordlist edit route, so
-                           this is also the only way to update one's contents in place #}
-                        <button type="button" class="icon-btn" title="{{ 'Restore missing file' if gone else 'Replace file' }}" onclick="document.getElementById('restore-{{ wordlist.id }}').showModal()">{{ icon('upload', size=15) }}</button>
                         <button type="button" class="icon-btn" title="Info" onclick="document.getElementById('info-{{ wordlist.id }}').showModal()">{{ icon('info', size=15) }}</button>
                         <button type="button" class="icon-btn act-del" title="Delete" onclick="document.getElementById('del-{{ wordlist.id }}').showModal()">{{ icon('trash', size=15) }}</button>
                     </div>
@@ -514,14 +517,16 @@
 {% endfor %}
 
 {% for wordlist in wordlists %}
-{% if wordlist.type != 'dynamic' %}
-{% set gone = wordlist.id in missing_wl_ids %}
+{# Only a row whose file is gone gets a restore dialog -- it is a repair, not an
+   edit. Mirrors the rules list, which has always gated its dialog this way. #}
+{% if wordlist.type != 'dynamic' and wordlist.id in missing_wl_ids %}
+{% set gone = true %}{# the block only renders for a missing file #}
 <dialog class="hv-dialog" id="restore-{{ wordlist.id }}" style="max-width:560px; width:94vw;">
     <div class="hv-dialog-head">
         {{ icon('upload', size=16) }}
         <div style="line-height:1.2;">
-            <h3 style="margin:0;">{{ 'Restore' if gone else 'Replace' }} {{ wordlist.name }}</h3>
-            <div class="mono" style="font-size:10px; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-mute); margin-top:3px;">replace the file in place</div>
+            <h3 style="margin:0;">Restore {{ wordlist.name }}</h3>
+            <div class="mono" style="font-size:10px; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-mute); margin-top:3px;">replace the missing file in place</div>
         </div>
         <button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close">{{ icon('x', size=15) }}</button>
     </div>
@@ -529,7 +534,7 @@
         {{ wordlistRestoreForm.hidden_tag() }}
         <div class="hv-dialog-body">
             <div class="field-hint" style="margin:0 0 var(--gap);">
-                {{ 'Restores' if gone else 'Replaces' }} the file <strong>in place</strong> — entry
+                Restores the file <strong>in place</strong> — entry
                 <span class="mono">#{{ wordlist.id }}</span>, path <span class="mono">{{ wordlist.path.split('/')|last }}</span> —
                 so the {{ wl_task_count.get(wordlist.id, 0) | commafy }} task{{ '' if wl_task_count.get(wordlist.id, 0) == 1 else 's' }}
                 using it keep working. This does <strong>not</strong> create a new entry.
@@ -546,7 +551,7 @@
         </div>
         <div class="hv-dialog-foot">
             <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
-            <button type="submit" class="btn btn-primary">{{ icon('upload', size=15) }} {{ 'Restore' if gone else 'Replace' }} wordlist file</button>
+            <button type="submit" class="btn btn-primary">{{ icon('upload', size=15) }} Restore wordlist file</button>
         </div>
     </form>
 </dialog>

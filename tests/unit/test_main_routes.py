@@ -9,6 +9,7 @@ from hashview.models import (
     HashfileHashes,
     Jobs,
     JobTasks,
+    Tasks,
     db,
 )
 from hashview.utils.utils import get_md5_hash
@@ -331,3 +332,71 @@ def test_dashboard_endpoints_require_login(app, client):
                  "/dashboard/fleet"):
         resp = client.get(path)
         assert resp.status_code in (301, 302, 401), path
+
+
+def test_recovery_feed_names_the_task_that_recovered_it(app, client):
+    """The feed's Task column says which attack actually cracked the password.
+
+    Hashes.task_id is stamped when the crack is uploaded, so the name is resolved
+    through it rather than through the job -- a hash can be recovered by one
+    attack of a job whose other attacks never touched it.
+    """
+    admin = make_admin()
+    login(client, admin)
+    task = Tasks(name="Rockyou + best64", owner_id=admin.id, hc_attackmode=0,
+                 loopback=False)
+    db.session.add(task)
+    db.session.commit()
+    h = Hashes(sub_ciphertext=get_md5_hash("zzz"), ciphertext="zzz", hash_type=1000,
+               cracked=True, plaintext="Autumn2025", recovered_at=datetime(2024, 1, 2),
+               recovered_by=admin.id, task_id=task.id)
+    db.session.add(h)
+    db.session.commit()
+    db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=1, username="carol"))
+    db.session.commit()
+
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert b"Rockyou + best64" in resp.data
+
+
+def test_recovery_feed_shows_a_dash_when_no_task_is_recorded(app, client):
+    """A hash cracked before task_id existed -- or by a task since deleted --
+    must render an em dash, not a bare id or a crash."""
+    admin = make_admin()
+    login(client, admin)
+    h = Hashes(sub_ciphertext=get_md5_hash("yyy"), ciphertext="yyy", hash_type=1000,
+               cracked=True, plaintext="NoTaskPw", recovered_at=datetime(2024, 1, 2),
+               recovered_by=admin.id, task_id=None)
+    db.session.add(h)
+    db.session.commit()
+    db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=1, username="dave"))
+    db.session.commit()
+
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert b"NoTaskPw" in resp.data
+
+
+def test_eta_is_rendered_in_short_units():
+    """hashcat spells its durations out; the ETA column uses d/h/m/s so it lines
+    up with the elapsed and runtime figures beside it."""
+    from hashview.main.routes import _eta_text
+
+    assert _eta_text("Mon Aug 24 10:26:00 2026 (2 hours, 48 minutes)") == "2h 48m"
+    assert _eta_text("x (1 day, 2 hours, 3 mins, 4 secs)") == "1d 2h 3m 4s"
+    assert _eta_text("x (41 mins)") == "41m"
+    assert _eta_text("x (1h 6m)") == "1h 6m"          # already short: unchanged
+
+
+def test_eta_leaves_a_non_duration_alone():
+    """The agent's sentinels reach this too. Mangling one into a plausible
+    duration would be worse than showing it, so unparseable text passes through
+    (issue #427 tracks replacing it outright)."""
+    from hashview.main.routes import _eta_text
+
+    assert _eta_text("x (The specified time is in the past.)") == \
+        "The specified time is in the past."
+    assert _eta_text("x (1 year, 2 months)") == "1 year, 2 months"

@@ -49,7 +49,7 @@ def notifications_list():
 
     # Active delivery channels for the current user (the CHANNELS KPI): the channel
     # must be enabled instance-wide AND the user must have the per-channel config.
-    settings = Settings.query.first()
+    settings = Settings.current()
     channels = {
         'email': bool(settings and settings.email_enabled and current_user.email_address),
         'pushover': bool(settings and settings.pushover_enabled and current_user.pushover_app_id and current_user.pushover_user_key),

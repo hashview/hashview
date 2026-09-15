@@ -478,7 +478,7 @@ def _jobs_ctx():
     agents_ctx = _agents_ctx()
     tasks_by_id = {t.id: t for t in tasks}
     agents_by_id = {a.id: a for a in agents_ctx['agents']}
-    settings = Settings.query.first()
+    settings = Settings.current()
     # Attack counts for the queue table, off the ledger. Counting raw rows there
     # was wrong in two directions at once: a chunked attack counted once per
     # chunk, and under on-demand minting a freshly queued job has no rows yet, so

@@ -165,7 +165,7 @@ def _validate_job_priority(job_data):
     # substituting 3, so a caller is never told nothing while their choice is
     # discarded. Settings can legitimately be absent on a bare install; treat
     # that as disabled, matching the column default.
-    settings = Settings.query.first()
+    settings = Settings.current()
     if not (settings and settings.enabled_job_weights):
         return None, _error(400, 'Job priority weighting is disabled by the administrator. '
                                  'Omit "priority", or ask an admin to enable job weights '

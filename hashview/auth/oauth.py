@@ -51,7 +51,7 @@ def get_entra_client(settings=None):
     call per-request; discovery metadata is cached on the client by Authlib.
     """
     if settings is None:
-        settings = Settings.query.first()
+        settings = Settings.current()
     if not azure_is_configured(settings):
         return None
     sig = _signature(settings)

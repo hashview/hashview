@@ -80,7 +80,7 @@ def _azure_enabled():
     the login page (Microsoft button) and the break-glass gate below. Missing /
     unreadable Settings (e.g. first-run, pre-migration) is treated as local."""
     try:
-        s = Settings.query.first()
+        s = Settings.current()
         return bool(s and s.auth_method == 'azure'
                     and s.azure_tenant_id and s.azure_client_id and s.azure_client_secret)
     except Exception:

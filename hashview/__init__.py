@@ -456,7 +456,7 @@ def create_app(testing=False, config_overrides=None):
         defaults = {'email': True, 'pushover': True, 'slack': False}
         try:
             from hashview.models import Settings
-            s = Settings.query.first()
+            s = Settings.current()
             if not s:
                 return {'notify_channels': defaults}
             return {'notify_channels': {

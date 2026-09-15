@@ -235,7 +235,7 @@ def jobs_add():
     jobs = Jobs.query.all()
     customers = Customers.query.order_by(Customers.name).all()
     jobs_form = JobsForm()
-    settings = Settings.query.first()
+    settings = Settings.current()
     if jobs_form.validate_on_submit():
         customer_id = jobs_form.customer_id.data
         if jobs_form.customer_id.data == 'add_new':
@@ -901,7 +901,7 @@ def jobs_assign_notifications(job_id):
             return redirect("/jobs/" + str(job_id) + "/notifications/" + ",".join(hash_methods) + "/hashes")
         return redirect("/jobs/" + str(job_id) + "/tasks")
     else:
-        settings = Settings.query.first()
+        settings = Settings.current()
         return render_template('jobs_assigned_notifications.html.j2', title='Jobs Assigned Notifications', job=job, form=form, settings=settings)
 
 @jobs.route("/jobs/<int:job_id>/notifications/<method>/hashes", methods=['GET', 'POST'])
@@ -1053,7 +1053,7 @@ def jobs_summary(job_id):
     job = Jobs.query.get(job_id)
     form = JobSummaryForm()
 
-    settings = Settings.query.first()
+    settings = Settings.current()
     hashfile = Hashfiles.query.get(job.hashfile_id)
     customer = Customers.query.get(job.customer_id)
     cracked_cnt = db.session.query(Hashes).outerjoin(HashfileHashes, Hashes.id==HashfileHashes.hash_id).filter(Hashes.cracked == '1').filter(HashfileHashes.hashfile_id==hashfile.id).count()

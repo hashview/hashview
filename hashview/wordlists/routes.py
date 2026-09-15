@@ -274,8 +274,12 @@ def wordlists_restore(wordlist_id):
     further. Scp'ing into control/wordlists_import/ has the same problem: the
     importer calls the same ingest.
 
-    This is also the only way to update a static wordlist's contents at all --
-    there is no wordlist edit route.
+    Offered ONLY for a row whose file is gone. It used to be available on every
+    static row, doubling as the way to change a wordlist's contents in place --
+    but that made overwriting a perfectly good wordlist a single click, silently
+    changing the candidate set under every task that cites it and under every
+    finished job whose results claim to have used it. There is still no wordlist
+    edit route; changing contents means adding a new list.
 
     Owner-or-admin, deliberately not admin-only: restoring a file is strictly
     less destructive than the delete the owner can already do.
@@ -291,6 +295,16 @@ def wordlists_restore(wordlist_id):
         # A dynamic list has nothing to restore: its content is generated from
         # the database on every download. The Update button is its refresh.
         flash('Dynamic Wordlists are generated from the database and can not be restored.', 'danger')
+        return redirect(url_for('wordlists.wordlists_list'))
+    if not wordlist_file_missing(wordlist):
+        # Restore is a REPAIR, not an edit. It was offered on every static row
+        # because it doubled as the only way to change a wordlist's contents in
+        # place -- but that made it trivial to overwrite a wordlist that was
+        # fine, silently changing the candidate set under every task and every
+        # finished job that cites it. Only a row that has outlived its file has
+        # anything to repair.
+        flash('That wordlist file is present on disk. Replacing a wordlist that is not '
+              'missing is not supported — delete it and upload a new one instead.', 'danger')
         return redirect(url_for('wordlists.wordlists_list'))
 
     form = WordlistRestoreForm()

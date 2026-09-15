@@ -11,7 +11,8 @@ from wtforms import (
 )
 from wtforms.validators import DataRequired, ValidationError
 
-from hashview.models import Jobs
+from hashview.models import Customers, Hashfiles, Jobs
+from hashview.utils.form_limits import db_length
 from hashview.utils.hashcat_modes import (
 	CUSTOM_HASH_TYPE,
 	HASH_TYPE_CHOICES,
@@ -24,14 +25,15 @@ from hashview.utils.hashcat_modes import (
 class JobsForm(FlaskForm):
 	"""Class representing an Jobs Forms"""
 
-	name = StringField('Job Name', validators=[DataRequired()])
+	name = StringField('Job Name', validators=[DataRequired(), db_length(Jobs, 'name')])
 	priority = SelectField('Job Priority', choices=[('5', '5 - highest'),
 													('4', '4 - higher'),
 													('3', '3 - normal'),
 													('2', '2 - lower'),
 													('1', '1 - lowest')], default=3, validators=[DataRequired()])
 	customer_id = StringField('Customer ID (unused)', validators=[DataRequired()])
-	customer_name = StringField('Customer Name (unused)')
+	customer_name = StringField('Customer Name (unused)',
+									validators=[db_length(Customers, 'name')])
 	limit_recovered = BooleanField('Stop job after single hash has been recovered.')
 	submit = SubmitField('Next')
 
@@ -45,7 +47,8 @@ class JobsForm(FlaskForm):
 class JobsNewHashFileForm(FlaskForm):
     """Class representing an Jobs New Hashfile Form"""
 
-    name = StringField('Hashfile Name') # While required we may dynamically create this based on file upload
+    # While required we may dynamically create this based on file upload
+    name = StringField('Hashfile Name', validators=[db_length(Hashfiles, 'name')])
     file_type = SelectField('Hash File Format', choices=[('', '--SELECT--'),
 													('pwdump', 'pwdump()'), 
 													('NetNTLM', 'NetNTLMv1, NetNTLMv1+ESS or NetNTLMv2'), 

@@ -45,6 +45,7 @@ from hashview.users.forms import (
     UsersForm,
 )
 from hashview.utils.audit import log_event
+from hashview.utils.form_limits import column_length
 from hashview.utils.utils import send_email, send_pushover, send_slack, try_commit
 
 bcrypt = Bcrypt()
@@ -248,6 +249,18 @@ def users_edit(user_id):
     if not (first and last and email):
         flash('First name, last name, and email are required.', 'danger')
         return redirect(url_for('users.users_list'))
+
+    # This route reads request.form directly rather than going through
+    # UsersForm, so the form's db_length validators never run here. Without
+    # these checks an over-long value reaches MySQL, which rejects it in strict
+    # mode and turns a paste into a 500.
+    for label, value, column in (('First name', first, 'first_name'),
+                                 ('Last name', last, 'last_name'),
+                                 ('Email address', email, 'email_address')):
+        limit = column_length(Users, column)
+        if len(value) > limit:
+            flash(f'{label} cannot be longer than {limit} characters.', 'danger')
+            return redirect(url_for('users.users_list'))
 
     # Email must be unique, but the user keeping their own email is fine.
     clash = Users.query.filter_by(email_address=email).first()

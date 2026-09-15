@@ -4,12 +4,13 @@ from wtforms import StringField, SubmitField
 from wtforms.validators import DataRequired, ValidationError
 
 from hashview.models import TaskGroups
+from hashview.utils.form_limits import db_length
 
 
 class TaskGroupsForm(FlaskForm):
     """Class representing Task Group Forms"""
 
-    name = StringField('Name', validators=[DataRequired()])
+    name = StringField('Name', validators=[DataRequired(), db_length(TaskGroups, 'name')])
     submit = SubmitField('Create')
 
     def validate_name(self, name):

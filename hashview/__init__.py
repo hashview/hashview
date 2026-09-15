@@ -335,6 +335,13 @@ def create_app(testing=False, config_overrides=None):
     from flask_wtf.csrf import generate_csrf
     app.jinja_env.globals['csrf_token'] = generate_csrf
 
+    # db_maxlength('Customers', 'name') -> 40. The modals hand-write their
+    # <input> elements rather than rendering WTForms fields (which emit
+    # maxlength from their Length validator automatically), so this is how a
+    # hand-written input stays pinned to the column it is stored in.
+    from hashview.utils.form_limits import template_maxlength
+    app.jinja_env.globals['db_maxlength'] = template_maxlength
+
     # Version-tagged static URLs: asset('css/x.css') -> /static/css/x.css?v=<ver>.
     # The version query lets the browser far-future-cache the file yet re-fetch it
     # after an upgrade (the URL changes when __version__ changes).

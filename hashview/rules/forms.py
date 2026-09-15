@@ -3,17 +3,20 @@ from flask_wtf import FlaskForm
 from wtforms import FileField, StringField, SubmitField, TextAreaField
 from wtforms.validators import DataRequired
 
+from hashview.models import Rules
+from hashview.utils.form_limits import db_length
+
 
 class RulesForm(FlaskForm):
     """Class representing an Rules Forms"""
 
-    name = StringField('Name', validators=[DataRequired()])
+    name = StringField('Name', validators=[DataRequired(), db_length(Rules, 'name')])
     rules = FileField('Upload Rules')
     submit = SubmitField('upload')
 
 class RulesEditForm(FlaskForm):
     """Class representing a Rules Edit Form"""
-    name = StringField('Name', validators=[DataRequired()])
+    name = StringField('Name', validators=[DataRequired(), db_length(Rules, 'name')])
     content = TextAreaField('Contents', validators=[DataRequired()])
     submit = SubmitField('update')
 

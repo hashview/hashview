@@ -4,10 +4,11 @@ from wtforms import BooleanField, SelectField, StringField, SubmitField
 from wtforms.validators import DataRequired, InputRequired, ValidationError
 
 from hashview.models import Tasks
+from hashview.utils.form_limits import db_length
 
 
 class TasksForm(FlaskForm):
-    name = StringField('Name', validators=([DataRequired()]))
+    name = StringField('Name', validators=([DataRequired(), db_length(Tasks, 'name')]))
     hc_attackmode = SelectField('Attack Mode', choices=[(0, 'Straight (Wordlist w/Rules)'),
                                                         (1, 'Combination (Wordlist1, Rule1, Wordlist2, Rule2)'),
                                                         (3, 'Brute-force (A.K.A. Maskmode)'),
@@ -16,9 +17,9 @@ class TasksForm(FlaskForm):
     wl_id = SelectField('Wordlist', choices=[])
     wl_id_2 = SelectField('Second Wordlist', choices=[])
     rule_id = SelectField('Rules', choices=[])
-    j_rule = StringField('-j rule (i.e. $-)')
-    k_rule = StringField('-k rule (i.e. $!)')
-    mask = StringField('Hashcat Mask')
+    j_rule = StringField('-j rule (i.e. $-)', validators=[db_length(Tasks, 'j_rule')])
+    k_rule = StringField('-k rule (i.e. $!)', validators=[db_length(Tasks, 'k_rule')])
+    mask = StringField('Hashcat Mask', validators=[db_length(Tasks, 'hc_mask')])
     loopback = BooleanField('Enable loopback')
     submit = SubmitField('Create')
 

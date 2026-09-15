@@ -3,11 +3,14 @@ from flask_wtf import FlaskForm
 from wtforms import FileField, StringField, SubmitField
 from wtforms.validators import DataRequired
 
+from hashview.models import Wordlists
+from hashview.utils.form_limits import db_length
+
 
 class WordlistsForm(FlaskForm):
     """Class representing Wordlist Form"""
 
-    name = StringField('Name', validators=[DataRequired()])
+    name = StringField('Name', validators=[DataRequired(), db_length(Wordlists, 'name')])
     wordlist = FileField('Upload Wordlist')
     submit = SubmitField('upload')
 

@@ -123,17 +123,17 @@
                 <div class="grid" style="grid-template-columns:1fr 1fr; gap:16px;">
                     <div class="field" style="margin-bottom:0;">
                         <label class="field-label" for="as-first">First name <span class="req">*</span></label>
-                        <input class="input" type="text" name="first_name" id="as-first" value="{{ current_user.first_name }}" autocomplete="off" required>
+                        <input class="input" type="text" name="first_name" id="as-first" maxlength="{{ db_maxlength('Users', 'first_name') }}" value="{{ current_user.first_name }}" autocomplete="off" required>
                     </div>
                     <div class="field" style="margin-bottom:0;">
                         <label class="field-label" for="as-last">Last name <span class="req">*</span></label>
-                        <input class="input" type="text" name="last_name" id="as-last" value="{{ current_user.last_name }}" autocomplete="off" required>
+                        <input class="input" type="text" name="last_name" id="as-last" maxlength="{{ db_maxlength('Users', 'last_name') }}" value="{{ current_user.last_name }}" autocomplete="off" required>
                     </div>
                 </div>
                 <div class="field" style="margin-top:16px; margin-bottom:0;">
                     <label class="field-label" for="as-email">Email address <span class="req">*</span></label>
                     <div style="display:flex; gap:8px; align-items:stretch;">
-                        <input class="input" type="email" name="email" id="as-email" value="{{ current_user.email_address }}" autocomplete="off" required style="flex:1;">
+                        <input class="input" type="email" name="email" id="as-email" maxlength="{{ db_maxlength('Users', 'email_address') }}" value="{{ current_user.email_address }}" autocomplete="off" required style="flex:1;">
                         <a class="btn" href="{{ url_for('users.send_test_email', next=request.path) }}" role="button" style="flex:none;">{{ icon('mail', size=15) }} Test email</a>
                     </div>
                 </div>
@@ -174,11 +174,11 @@
                 <div class="grid" style="grid-template-columns:1fr 1fr; gap:16px;">
                     <div class="field" style="margin-bottom:0;">
                         <label class="field-label" for="as-pu-key">User key</label>
-                        <input class="input mono" type="text" name="pushover_user_key" id="as-pu-key" value="{{ current_user.pushover_user_key or '' }}" placeholder="u…" autocomplete="off">
+                        <input class="input mono" type="text" name="pushover_user_key" id="as-pu-key" maxlength="{{ db_maxlength('Users', 'pushover_user_key') }}" value="{{ current_user.pushover_user_key or '' }}" placeholder="u…" autocomplete="off">
                     </div>
                     <div class="field" style="margin-bottom:0;">
                         <label class="field-label" for="as-pu-app">App API token</label>
-                        <input class="input mono" type="text" name="pushover_app_id" id="as-pu-app" value="{{ current_user.pushover_app_id or '' }}" placeholder="a…" autocomplete="off">
+                        <input class="input mono" type="text" name="pushover_app_id" id="as-pu-app" maxlength="{{ db_maxlength('Users', 'pushover_app_id') }}" value="{{ current_user.pushover_app_id or '' }}" placeholder="a…" autocomplete="off">
                     </div>
                 </div>
                 <div style="margin-top:12px;">
@@ -192,7 +192,7 @@
                 <div class="as-sec">Slack notifications</div>
                 <div class="field" style="margin-bottom:0;">
                     <label class="field-label" for="as-slack-id">Slack Member ID</label>
-                    <input class="input mono" type="text" name="slack_id" id="as-slack-id" value="{{ current_user.slack_id or '' }}" placeholder="U0123ABCD" autocomplete="off">
+                    <input class="input mono" type="text" name="slack_id" id="as-slack-id" maxlength="{{ db_maxlength('Users', 'slack_id') }}" value="{{ current_user.slack_id or '' }}" placeholder="U0123ABCD" autocomplete="off">
                 </div>
                 <div style="margin-top:12px;">
                     <a class="btn" href="{{ url_for('users.send_test_slack', next=request.path) }}" role="button">{{ icon('slack', size=15) }} Send test Slack</a>

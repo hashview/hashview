@@ -248,7 +248,7 @@ class Customers(db.Model):
     """Class object to represent Customers"""
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(40), nullable=False)
+    name = db.Column(db.String(255), nullable=False)
 
 class Hashfiles(db.Model):
     """Class object to represent Hashfiles"""

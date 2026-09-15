@@ -22,7 +22,6 @@ import inspect
 import re
 from pathlib import Path
 
-import pytest
 from flask_wtf import FlaskForm
 from wtforms import PasswordField, StringField, TextAreaField
 from wtforms.validators import Length
@@ -40,7 +39,6 @@ from hashview.models import (
     Wordlists,
 )
 from hashview.utils.form_limits import column_length
-from tests.unit.helpers import login, make_admin, make_customer
 
 FORM_MODULES = [
     'hashview.agents.forms',
@@ -314,50 +312,6 @@ def test_db_maxlength_is_available_to_templates(app):
         column_length(Customers, 'name')
 
 
-# --- server-side enforcement --------------------------------------------------
-#
-# maxlength is a hint: a crafted POST ignores it. These prove the routes reject
-# an over-long value rather than handing it to the database.
-
-def test_customer_add_rejects_a_name_longer_than_the_column(app, client):
-    with app.app_context():
-        admin = make_admin()
-        login(client, admin)
-        limit = column_length(Customers, 'name')
-        client.post('/customers/add', data={'name': 'x' * (limit + 1)},
-                    follow_redirects=True)
-        assert Customers.query.count() == 0
-
-
-def test_customer_edit_rejects_a_name_longer_than_the_column(app, client):
-    """customers_edit reads request.form directly, so it needs its own check."""
-    with app.app_context():
-        admin = make_admin()
-        login(client, admin)
-        customer = make_customer(name='Acme')
-        limit = column_length(Customers, 'name')
-        client.post('/customers/edit',
-                    data={'customer_id': customer.id, 'name': 'x' * (limit + 1)},
-                    follow_redirects=True)
-        assert Customers.query.get(customer.id).name == 'Acme'
-
-
-@pytest.mark.parametrize('field,column', [('first_name', 'first_name'),
-                                          ('last_name', 'last_name'),
-                                          ('email', 'email_address')])
-def test_user_edit_rejects_a_value_longer_than_the_column(app, client, field, column):
-    """users_edit reads request.form directly, so it needs its own check."""
-    with app.app_context():
-        admin = make_admin()
-        login(client, admin)
-        target = make_admin(email='victim@example.com')
-        before = getattr(target, column)
-        limit = column_length(Users, column)
-        payload = {'first_name': target.first_name, 'last_name': target.last_name,
-                   'email': target.email_address}
-        # An over-long email still has to look like one, or Email() rather than
-        # the length check would be what rejected it.
-        overlong = 'x' * (limit + 1)
-        payload[field] = f'{overlong}@example.com' if field == 'email' else overlong
-        client.post(f'/users/edit/{target.id}', data=payload, follow_redirects=True)
-        assert getattr(Users.query.get(target.id), column) == before
+# Enforcement -- that each of these routes actually refuses an over-long value
+# instead of handing it to the database -- is proven route by route in
+# tests/unit/test_form_length_rejected_before_insert.py.

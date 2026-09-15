@@ -341,3 +341,59 @@ def test_an_unscoped_close_still_stops_the_whole_job(app, client):
 
     assert close_ledger(job.id, "job_stopped") == 2
     assert {ledger.state for ledger in JobTaskLedger.query.filter_by(job_id=job.id)} == {"Closed"}
+
+
+def test_dispatching_a_slice_promotes_the_job_to_running(app, client):
+    """A job being actively cracked must read as Running.
+
+    The only thing that used to promote Queued -> Running was
+    update_job_task_status, reached via the agent's defensive "I'm running this"
+    POST. Ledger dispatch stamps the row 'Running' server-side at claim/mint
+    time, so that POST now reports a status the row already has and
+    /v1/jobtask/status short-circuits it as idempotent -- never reaching the
+    promoter. The job sat at 'Queued' for its entire run, and since the dashboard
+    lists running work with Jobs.status == 'Running', a job with an agent
+    cracking on it showed as queued with no task and no progress.
+    """
+    job, _tasks = _seed(task_count=1, job_status="Queued")
+    _agent("a", speed=1000)
+
+    started = _beat(client, "a")
+    assert started["msg"] == "START"
+
+    db.session.refresh(job)
+    assert job.status == "Running"
+    assert job.started_at is not None
+
+
+def test_dispatch_clears_a_stale_ended_at_from_the_previous_run(app, client):
+    """ended_at is only ever set, never cleared, so a re-queued job carried the
+    previous run's end time -- seen in production as a Queued job stamped with an
+    ended_at from half an hour earlier."""
+    job, _tasks = _seed(task_count=1, job_status="Queued")
+    job.ended_at = datetime(2020, 1, 1)
+    db.session.commit()
+    _agent("a", speed=1000)
+
+    _beat(client, "a")
+
+    db.session.refresh(job)
+    assert job.ended_at is None
+
+
+def test_a_second_dispatch_does_not_restamp_started_at(app, client):
+    """The promotion is a compare-and-swap on 'Queued', so only the heartbeat
+    that actually started the job stamps it. Re-stamping on every slice would
+    reset the job's elapsed time and its runtime cap on each new chunk."""
+    job, _tasks = _seed(task_count=2, job_status="Queued")
+    _agent("a", speed=1000)
+    _agent("b", speed=1000)
+
+    _beat(client, "a")
+    db.session.refresh(job)
+    first = job.started_at
+    assert first is not None
+
+    _beat(client, "b")
+    db.session.refresh(job)
+    assert job.started_at == first

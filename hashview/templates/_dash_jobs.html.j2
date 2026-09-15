@@ -16,7 +16,7 @@
     <div class="term-divider">running jobs</div>
     <div style="margin-top:14px;">
         {% for job in running_jobs %}
-            {% set d = (job_dash.get(job.id) if job_dash is defined else none) or {'groups': [], 'hashfile_unrecovered': 0, 'tasks_total': 0, 'tasks_done': 0, 'tasks_running': 0, 'chunks_total': 0, 'chunks_done': 0, 'chunks_active': 0} %}
+            {% set d = (job_dash.get(job.id) if job_dash is defined else none) or {'groups': [], 'hashfile_total': 0, 'tasks_total': 0, 'tasks_done': 0, 'tasks_running': 0, 'chunks_total': 0, 'chunks_done': 0, 'chunks_active': 0} %}
             {% if job.started_at %}
                 {% set job_elapsed = (datetime.now() - job.started_at).total_seconds() %}
                 {% set job_remaining = (settings.max_runtime_jobs * 3600 - job_elapsed) if settings and settings.max_runtime_jobs else 0 %}
@@ -59,7 +59,7 @@
                         {% endif %}
                     </div>
                     <table class="tbl rj-tasks" style="margin-top:16px;">
-                        <thead><tr><th style="width:30px;"></th><th>Task</th><th class="center">Status</th><th>Agent</th><th>Keyspace</th><th class="center">Recovered</th><th class="center">Rate</th><th class="center">ETA</th><th></th></tr></thead>
+                        <thead><tr><th style="width:30px;"></th><th>Task</th><th class="center">Status</th><th>Agent</th><th>Keyspace</th><th class="center">Recovered</th><th class="center">Rate</th><th class="center">ETA</th>{% if settings and settings.max_runtime_tasks %}<th class="center" title="Time left before Settings &gt; max runtime cancels this attack">Auto-cancel</th>{% endif %}<th></th></tr></thead>
                         <tbody>
                             {% for g in d.groups %}
                                 {# Keyed on the ATTACK, not the task: two assignments of one dynamic-wordlist
@@ -95,15 +95,16 @@
                                             {% endif %}
                                         </div>
                                     </td>
-                                    <td class="center num">{% if job.hashfile_id %}<a class="rec-x-link" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="View hashfile analytics"><span style="color:{{ 'var(--primary)' if g.recovered else 'var(--text-mute)' }};">{{ g.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_unrecovered|commafy }}</span></a>{% else %}<span style="color:{{ 'var(--primary)' if g.recovered else 'var(--text-mute)' }};">{{ g.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_unrecovered|commafy }}</span>{% endif %}</td>
+                                    <td class="center num">{% if job.hashfile_id %}<a class="rec-x-link" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="View hashfile analytics"><span style="color:{{ 'var(--primary)' if g.recovered else 'var(--text-mute)' }};">{{ g.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span></a>{% else %}<span style="color:{{ 'var(--primary)' if g.recovered else 'var(--text-mute)' }};">{{ g.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span>{% endif %}</td>
                                     <td class="center num" style="color:var(--text-dim);">{{ g.rate or '—' }}</td>
                                     <td class="center num" style="color:{{ 'var(--amber)' if g.eta else 'var(--text-mute)' }};">{{ g.eta or '—' }}</td>
+                                    {% if settings and settings.max_runtime_tasks %}<td class="center num" style="color:{{ 'var(--red)' if g.cancel_in == '0s' else 'var(--text-dim)' }};">{{ g.cancel_in or '—' }}</td>{% endif %}
                                     <td class="center">{% if g.status == 'Running' %}<a class="icon-btn" href="{{ url_for('main.stop_task', job_id=job.id, task_id=g.task_id) }}" title="Stop task">{{ icon('stop', size=15) }}</a>{% endif %}</td>
                                 </tr>
                                 {% if g.expandable %}
                                     <tr class="chunk-sub" data-parent="{{ key }}" hidden>
                                         <td></td>
-                                        <td colspan="8" class="mono" style="color:var(--text-mute);font-size:10px;"><span style="color:var(--green);">{{ g.completed|commafy }}</span> completed · <span style="color:var(--amber);">{{ g.running|commafy }}</span> running · {{ g.queued|commafy }} queued</td>
+                                        <td colspan="{% if settings and settings.max_runtime_tasks %}9{% else %}8{% endif %}" class="mono" style="color:var(--text-mute);font-size:10px;"><span style="color:var(--green);">{{ g.completed|commafy }}</span> completed · <span style="color:var(--amber);">{{ g.running|commafy }}</span> running · {{ g.queued|commafy }} queued</td>
                                     </tr>
                                     {% for ch in g.active_chunks %}
                                     <tr class="chunk-row" data-parent="{{ key }}" hidden>
@@ -112,9 +113,10 @@
                                         <td class="mono center" style="color:var(--text-dim);">{{ ch.label }}{% if ch.chunk_total and ch.chunk_total > 0 %}<span style="color:var(--text-mute);">/{{ ch.chunk_total }}</span>{% endif %}{% if ch.slice %}<span style="color:var(--text-mute);"> · {{ ch.slice }}</span>{% endif %}</td>
                                         <td class="mono" style="color:var(--text-dim);">{{ ch.agent }}</td>
                                         <td></td>
-                                        <td class="center num">{% if ch.recovered is not none %}{% if job.hashfile_id %}<a class="rec-x-link" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="View hashfile analytics"><span style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_unrecovered|commafy }}</span></a>{% else %}<span style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_unrecovered|commafy }}</span>{% endif %}{% else %}—{% endif %}</td>
+                                        <td class="center num">{% if ch.recovered is not none %}{% if job.hashfile_id %}<a class="rec-x-link" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="View hashfile analytics"><span style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span></a>{% else %}<span style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span>{% endif %}{% else %}—{% endif %}</td>
                                         <td class="center num" style="color:var(--text-dim);">{{ ch.rate or '—' }}</td>
                                         <td class="center num" style="color:{{ 'var(--amber)' if ch.eta else 'var(--text-mute)' }};">{{ ch.eta or '—' }}</td>
+                                        {% if settings and settings.max_runtime_tasks %}<td></td>{% endif %}
                                         <td></td>
                                     </tr>
                                     {% endfor %}

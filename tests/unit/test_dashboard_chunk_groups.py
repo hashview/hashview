@@ -19,6 +19,7 @@ from hashview.models import (
     Hashfiles,
     Jobs,
     JobTasks,
+    Settings,
     Tasks,
     Users,
     db,
@@ -165,7 +166,7 @@ def test_recovered_counts_per_account_in_hashfile(app, db_session):
 
 
 @pytest.mark.security
-def test_recovered_scoped_to_run_and_unrecovered_denominator(app, db_session):
+def test_recovered_scoped_to_run_with_hashfile_total_denominator(app, db_session):
     # X counts only cracks from the CURRENT run (recovered_at >= job.started_at);
     # an earlier crack of the same task/hashfile is excluded. The job-level
     # denominator is the hashfile's UNRECOVERED (uncracked) accounts.
@@ -186,8 +187,10 @@ def test_recovered_scoped_to_run_and_unrecovered_denominator(app, db_session):
     dash = _build(job)
     g = {grp['task_id']: grp for grp in dash['groups']}[task_a.id]
     assert g['recovered'] == 4                     # the pre-run crack (2019) is excluded
-    # hashfile: 4 (run) + 1 (old) cracked + 3 uncracked = 8 total, 5 cracked -> 3 left
-    assert dash['hashfile_unrecovered'] == 3
+    # hashfile: 4 (run) + 1 (old) cracked + 3 uncracked = 8 accounts in total.
+    # Y is the hashfile's TOTAL, not what is left: a denominator that shrank as X
+    # grew meant two moving numbers and a ratio that never reached 1.
+    assert dash['hashfile_total'] == 8
 
 
 @pytest.mark.security
@@ -231,7 +234,10 @@ def test_dashboard_recovered_links_to_analytics(app, client):
     # the whole "X/Y" is the link now: >=3 anchors (2 task rows + task_a's active
     # chunk), and the /Y denominator closes the anchor (both X and Y enclosed).
     assert html.count('class="rec-x-link"') >= 3
-    assert '/0</span></a>' in html   # hashfile_unrecovered (Y) is 0 here
+    # Y is the hashfile's total accounts (4), so this reads "4/4". Under the old
+    # "unrecovered left" denominator the same row rendered "4/0" -- four recovered
+    # out of zero remaining, which is what prompted the change back.
+    assert '/4</span></a>' in html
 
 
 @pytest.mark.security
@@ -461,3 +467,89 @@ def test_job_task_groups_skips_other_jobs_tasks(app, db_session):
     )[mine.id]["groups"]
     grouped = {g["task_id"] for g in groups}
     assert grouped == {t_mine.id}            # only this job's task, other skipped
+
+
+# --------------------------------------------------------- auto-cancel column
+
+
+def test_auto_cancel_counts_down_from_the_earliest_chunk_start(app, db_session):
+    """Time left before Settings.max_runtime_tasks cancels the attack.
+
+    Measured from the EARLIEST chunk start, which is what the cap itself uses
+    (api/routes.py _parent_task_started_at). A task fans out across agents, so
+    any single chunk's started_at would under-report the parent's elapsed time
+    and the column would disagree with the reaper that acts on it.
+    """
+    from datetime import datetime, timedelta
+
+    from hashview.main.routes import _job_task_groups
+    job, task_a, _ = _seed_running_job()
+    rows = JobTasks.query.filter_by(job_id=job.id, task_id=task_a.id).all()
+    # Oldest chunk started 1h ago, a later one 5m ago: the cap follows the oldest.
+    rows[0].started_at = datetime.now() - timedelta(hours=1)
+    for r in rows[1:]:
+        r.started_at = datetime.now() - timedelta(minutes=5)
+    db.session.commit()
+
+    dash = _job_task_groups([job], JobTasks.query.filter_by(job_id=job.id).all(),
+                            {t.id: t for t in Tasks.query.all()}, {}, {}, {},
+                            max_runtime_tasks=3)[job.id]
+    g = {grp['task_id']: grp for grp in dash['groups']}[task_a.id]
+
+    # 3h cap, oldest chunk 1h in -> ~2h left (not 2h55m, which the newer chunk
+    # would have given).
+    assert g['cancel_in'].startswith('1h 59m') or g['cancel_in'].startswith('2h')
+
+
+def test_auto_cancel_is_absent_when_the_cap_is_disabled(app, db_session):
+    """max_runtime_tasks of 0 means no cap, so there is nothing to count down."""
+    from hashview.main.routes import _job_task_groups
+    job, task_a, _ = _seed_running_job()
+
+    dash = _job_task_groups([job], JobTasks.query.filter_by(job_id=job.id).all(),
+                            {t.id: t for t in Tasks.query.all()}, {}, {}, {},
+                            max_runtime_tasks=0)[job.id]
+
+    assert all(g['cancel_in'] is None for g in dash['groups'])
+
+
+def test_auto_cancel_floors_at_zero_rather_than_going_negative(app, db_session):
+    """Past its deadline the honest reading is "any moment now", not "-4m": the
+    reaper cancels on the next heartbeat."""
+    from datetime import datetime, timedelta
+
+    from hashview.main.routes import _job_task_groups
+    job, task_a, _ = _seed_running_job()
+    for r in JobTasks.query.filter_by(job_id=job.id, task_id=task_a.id).all():
+        r.started_at = datetime.now() - timedelta(hours=10)
+    db.session.commit()
+
+    dash = _job_task_groups([job], JobTasks.query.filter_by(job_id=job.id).all(),
+                            {t.id: t for t in Tasks.query.all()}, {}, {}, {},
+                            max_runtime_tasks=1)[job.id]
+    g = {grp['task_id']: grp for grp in dash['groups']}[task_a.id]
+
+    assert g['cancel_in'] == '0s'
+
+
+def test_auto_cancel_column_only_renders_when_the_cap_is_on(app, client):
+    """The column is hidden entirely when max_runtime_tasks is unset, so an
+    install that does not use the cap gains no empty column."""
+    from tests.unit.helpers import login, make_admin
+    _seed_running_job()
+    login(client, make_admin())
+
+    # No Settings row at all: the column must stay hidden rather than raise.
+    assert Settings.query.first() is None
+    assert "Auto-cancel" not in client.get("/dashboard/jobs").get_data(as_text=True)
+
+    settings = Settings(retention_period=30, max_runtime_jobs=0, max_runtime_tasks=0)
+    db.session.add(settings)
+    db.session.commit()
+
+    assert "Auto-cancel" not in client.get("/dashboard/jobs").get_data(as_text=True)
+
+    settings.max_runtime_tasks = 5
+    db.session.commit()
+
+    assert "Auto-cancel" in client.get("/dashboard/jobs").get_data(as_text=True)

@@ -35,7 +35,7 @@ from hashview.models import (
     Wordlists,
     db,
 )
-from hashview.utils.utils import build_job_task_commands
+from hashview.utils.utils import build_job_task_commands, job_assignments
 
 DOMAIN = "localhost.test"
 pytestmark = pytest.mark.security
@@ -341,3 +341,88 @@ def test_an_unscoped_close_still_stops_the_whole_job(app, client):
 
     assert close_ledger(job.id, "job_stopped") == 2
     assert {ledger.state for ledger in JobTaskLedger.query.filter_by(job_id=job.id)} == {"Closed"}
+
+
+def _new_task(name="late-task"):
+    wl = Wordlists.query.first()
+    rule = Rules.query.first()
+    task = Tasks(name=name, owner_id=1, hc_attackmode=0, wl_id=wl.id,
+                 rule_id=rule.id, loopback=False)
+    db.session.add(task)
+    db.session.commit()
+    return task
+
+
+def test_a_late_assignment_gets_a_ledger_and_is_visible(app, client):
+    """A task added to a job already in flight must show up in the UI.
+
+    queue_late_assignments stamped the row Queued but minted no ledger, and
+    job_assignments reads ledgers first and then SKIPS every raw row of a job
+    that has one. So the attack was invisible everywhere the UI looks while the
+    legacy ledger_id IS NULL dispatch branch still handed it to an agent: the
+    operator added a task, the page looked unchanged, and an agent quietly
+    started cracking it.
+    """
+    job, tasks = _seed(task_count=1, job_status="Running")
+    late = _new_task()
+
+    _login_admin(client)
+    client.post(f"/jobs/{job.id}/assign_task/{late.id}", follow_redirects=False)
+
+    visible = [a["task_id"] for a in job_assignments([job.id])[job.id]]
+    assert visible == [tasks[0].id, late.id]
+
+    entry = JobTaskLedger.query.filter_by(job_id=job.id, task_id=late.id).one()
+    assert entry.position == 1              # appended, not renumbered over
+    assert entry.chunkable is False         # a late assignment runs whole
+    assert JobTasks.query.filter_by(job_id=job.id,
+                                    task_id=late.id).one().ledger_id == entry.id
+
+
+def test_a_late_assignment_can_be_removed_on_its_own(app, client):
+    """Removing a late attack cleans up BOTH the row and the entry this fix mints.
+
+    This passes against the old code too, and deliberately so: the route could
+    always delete a ledger-less row, so what was missing was never the route but
+    the card -- with no ledger the tasks page rendered no entry and therefore no
+    remove button. What this pins is that the new ledger entry does not leak when
+    the attack is removed, i.e. the fix does not recreate the orphaned-ledger bug
+    it sits next to.
+    """
+    job, tasks = _seed(task_count=1, job_status="Running")
+    late = _new_task()
+    _login_admin(client)
+    client.post(f"/jobs/{job.id}/assign_task/{late.id}", follow_redirects=False)
+
+    client.post(f"/jobs/{job.id}/remove_task/{late.id}", follow_redirects=False)
+
+    assert JobTaskLedger.query.filter_by(job_id=job.id, task_id=late.id).count() == 0
+    assert JobTasks.query.filter_by(job_id=job.id, task_id=late.id).count() == 0
+    # The original attack survives untouched.
+    assert [a["task_id"] for a in job_assignments([job.id])[job.id]] == [tasks[0].id]
+
+
+def test_a_late_assignment_on_a_pre_ledger_job_mints_nothing(app, client):
+    """The guard that keeps this fix from causing the very bug it repairs.
+
+    Cannot fail against the old code -- which minted nothing, ever -- so it is a
+    regression pin on the guard rather than a reproduction of the bug.
+
+    A job queued by a pre-ledger server has rows and no ledger, and
+    job_assignments falls back to grouping those rows. Minting an entry for the
+    late row alone would make the job "ledgered", and every OTHER row would then
+    be skipped -- turning a gap in one attack into a gap in all of them.
+    """
+    job, tasks = _seed(task_count=2, job_status="Running")
+    JobTaskLedger.query.filter_by(job_id=job.id).delete()
+    for row in JobTasks.query.filter_by(job_id=job.id).all():
+        row.ledger_id = None
+    db.session.commit()
+    late = _new_task()
+
+    _login_admin(client)
+    client.post(f"/jobs/{job.id}/assign_task/{late.id}", follow_redirects=False)
+
+    assert JobTaskLedger.query.filter_by(job_id=job.id).count() == 0
+    visible = sorted(a["task_id"] for a in job_assignments([job.id])[job.id])
+    assert visible == sorted([tasks[0].id, tasks[1].id, late.id])

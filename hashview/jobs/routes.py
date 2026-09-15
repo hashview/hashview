@@ -759,7 +759,15 @@ def jobs_remove_task(job_id, task_id):
         return redirect("/jobs/" + str(job_id) + "/tasks")
 
     job_tasks = JobTasks.query.filter_by(job_id=job_id, task_id=task_id).all()
-    if not job_tasks:
+    # An attack exists if EITHER its ledger or its rows are present. Keying this
+    # on the rows alone made an orphaned ledger unremovable: the assigned-tasks
+    # list is rendered from the LEDGER (job_assignments), so the page listed the
+    # attack while this route insisted it was already gone -- and there was no
+    # way to clear it. jobs_remove_all_tasks used to create exactly that state.
+    ledgers = (JobTaskLedger.query
+               .filter_by(job_id=job_id, task_id=task_id)
+               .order_by(JobTaskLedger.position.desc()).all())
+    if not job_tasks and not ledgers:
         flash('That task is no longer on this job — it may have already been removed.', 'warning')
         return redirect("/jobs/"+str(job_id)+"/tasks")
     # A split task is many chunk rows sharing this task_id -> removing the attack
@@ -771,9 +779,6 @@ def jobs_remove_task(job_id, task_id):
     # cleared -- deleting the rows out from under a running agent left it cracking
     # work nobody was waiting for, and its eventual status report landing on a row
     # that no longer existed.
-    ledgers = (JobTaskLedger.query
-               .filter_by(job_id=job_id, task_id=task_id)
-               .order_by(JobTaskLedger.position.desc()).all())
     if ledgers:
         target = ledgers[0]              # the LAST assignment of this task
         for jt in JobTasks.query.filter_by(ledger_id=target.id).all():
@@ -804,10 +809,23 @@ def jobs_remove_all_tasks(job_id):
         flash('Security check failed (invalid or missing CSRF token).', 'danger')
         return redirect("/jobs/" + str(job_id) + "/tasks")
 
-    job_tasks = JobTasks.query.filter_by(job_id=job_id)
-    for tasks in job_tasks:
-        db.session.delete(tasks)
-    db.session.commit()
+    # Cancel anything still live before deleting it, exactly as jobs_remove_task
+    # does: that is what clears the holding agent's hc_status and stops it
+    # reporting against a row that no longer exists.
+    for job_task in JobTasks.query.filter_by(job_id=job_id).all():
+        if job_task.status in ('Running', 'Queued', 'Not Started', 'Importing'):
+            update_job_task_status(job_task.id, 'Canceled', finalize=False)
+        db.session.delete(job_task)
+    # The ledger goes too. Deleting only the rows left every ledger orphaned, and
+    # since the assigned-tasks list is rendered from the LEDGER the page went on
+    # listing attacks that no longer had a single row behind them -- unremovable,
+    # because the per-task delete looked for rows that were already gone. Worse on
+    # a Queued or Running job: a surviving ledger still has a cursor, so the next
+    # agent heartbeat would mint fresh chunks off it and start cracking work the
+    # operator had just deleted.
+    JobTaskLedger.query.filter_by(job_id=job_id).delete()
+    if not try_commit(f'remove all tasks from job {job_id}'):
+        flash('Could not remove the tasks — please try again.', 'danger')
     return redirect("/jobs/"+str(job_id)+"/tasks")
 
 @jobs.route("/jobs/<int:job_id>/notifications", methods=['GET', 'POST'])

@@ -2951,6 +2951,34 @@ def _deliver_job_notifications(job, outcome, duration):
                 job.id, job_notification.method)
 
 
+def mark_job_running(job_id):
+    """Promote a Queued job to Running when its first slice actually goes out.
+
+    The ONLY place that used to do this is update_job_task_status, and it fired
+    because dispatch handed the agent a row still marked 'Queued' -- the agent's
+    defensive "I'm running this" POST was what flipped the job.
+
+    Ledger dispatch stamps the row 'Running' server-side at claim/mint time, so
+    by the time that POST arrives the row already has the status it reports, and
+    /v1/jobtask/status short-circuits it as idempotent without ever reaching
+    update_job_task_status. The job therefore sat at 'Queued' for its whole run:
+    the dashboard lists running work with Jobs.status == 'Running', so a job
+    being actively cracked showed as queued, with no task and no progress.
+
+    Promote where the work is actually issued instead -- CAS on 'Queued' so a
+    concurrent heartbeat cannot double-stamp started_at, and clear ended_at,
+    which is otherwise left over from the previous run of a re-queued job.
+    Returns True if this call was the one that started it.
+    """
+    started = (db.session.query(Jobs)
+               .filter(Jobs.id == job_id, Jobs.status == 'Queued')
+               .update({'status': 'Running', 'started_at': datetime.now(),
+                        'ended_at': None}, synchronize_session=False))
+    if started:
+        db.session.commit()
+    return bool(started)
+
+
 def update_job_task_status(jobtask_id, status, finalize=True):
     """Function to update task status of a job
 

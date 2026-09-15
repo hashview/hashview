@@ -49,6 +49,7 @@ from hashview.utils.utils import (
     issue_slice,
     job_task_file_key,
     ledger_is_mintable,
+    mark_job_running,
     notify_admins,
     process_recovered_hash_notifications,
     record_keyspace_measurement,
@@ -482,6 +483,7 @@ def v1_api_set_agent_heartbeat():
                             issue_slice(job=cand_job, ledger=ledger, agent_id=agent.id,
                                         hash_type=_job_hash_type(cand_job),
                                         target_seconds=target_seconds, row=waiting)
+                        mark_job_running(cand_job.id)
                         return jsonify({'status': 200, 'type': 'message',
                                         'msg': 'START', 'job_task_id': waiting.id})
 
@@ -492,6 +494,7 @@ def v1_api_set_agent_heartbeat():
                                              hash_type=_job_hash_type(cand_job),
                                              target_seconds=target_seconds)
                         if minted is not None:
+                            mark_job_running(cand_job.id)
                             return jsonify({'status': 200, 'type': 'message',
                                             'msg': 'START', 'job_task_id': minted.id})
 
@@ -534,6 +537,7 @@ def v1_api_set_agent_heartbeat():
                     db.session.commit()
                     if not claimed:
                         continue
+                    mark_job_running(candidate.job_id)
                     return jsonify({'status': 200, 'type': 'message',
                                     'msg': 'START', 'job_task_id': candidate.id})
 

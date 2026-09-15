@@ -343,86 +343,90 @@ def test_an_unscoped_close_still_stops_the_whole_job(app, client):
     assert {ledger.state for ledger in JobTaskLedger.query.filter_by(job_id=job.id)} == {"Closed"}
 
 
-def _new_task(name="late-task"):
-    wl = Wordlists.query.first()
-    rule = Rules.query.first()
-    task = Tasks(name=name, owner_id=1, hc_attackmode=0, wl_id=wl.id,
-                 rule_id=rule.id, loopback=False)
-    db.session.add(task)
-    db.session.commit()
-    return task
+def test_remove_all_tasks_takes_the_ledger_with_it(app, client):
+    """Regression: "Remove all tasks" used to delete only the JobTasks rows.
 
+    The assigned-tasks list is rendered from the LEDGER (job_assignments), so
+    every ledger left behind went on showing as an attack of a job that had no
+    rows at all -- and the per-task delete refused to clear it, because it looked
+    for rows that were already gone. Seen in production as a job listing ten
+    attacks over zero job_tasks rows, unrecoverable through the UI.
 
-def test_a_late_assignment_gets_a_ledger_and_is_visible(app, client):
-    """A task added to a job already in flight must show up in the UI.
-
-    queue_late_assignments stamped the row Queued but minted no ledger, and
-    job_assignments reads ledgers first and then SKIPS every raw row of a job
-    that has one. So the attack was invisible everywhere the UI looks while the
-    legacy ledger_id IS NULL dispatch branch still handed it to an agent: the
-    operator added a task, the page looked unchanged, and an agent quietly
-    started cracking it.
+    Worse on a live job than on this one: a surviving ledger still carries its
+    cursor, so the next agent heartbeat mints a fresh chunk off it and starts
+    cracking work the operator has just deleted.
     """
-    job, tasks = _seed(task_count=1, job_status="Running")
-    late = _new_task()
+    job, _tasks = _seed(task_count=2)
+    _agent("a", speed=1000)
+    _beat(client, "a")                      # mint a row so there is live work
+    assert JobTaskLedger.query.filter_by(job_id=job.id).count() == 2
+    assert JobTasks.query.filter_by(job_id=job.id).count() > 0
 
     _login_admin(client)
-    client.post(f"/jobs/{job.id}/assign_task/{late.id}", follow_redirects=False)
+    resp = client.post(f"/jobs/{job.id}/remove_all_tasks", follow_redirects=False)
+    assert resp.status_code in (301, 302)
 
-    visible = [a["task_id"] for a in job_assignments([job.id])[job.id]]
-    assert visible == [tasks[0].id, late.id]
-
-    entry = JobTaskLedger.query.filter_by(job_id=job.id, task_id=late.id).one()
-    assert entry.position == 1              # appended, not renumbered over
-    assert entry.chunkable is False         # a late assignment runs whole
-    assert JobTasks.query.filter_by(job_id=job.id,
-                                    task_id=late.id).one().ledger_id == entry.id
-
-
-def test_a_late_assignment_can_be_removed_on_its_own(app, client):
-    """Removing a late attack cleans up BOTH the row and the entry this fix mints.
-
-    This passes against the old code too, and deliberately so: the route could
-    always delete a ledger-less row, so what was missing was never the route but
-    the card -- with no ledger the tasks page rendered no entry and therefore no
-    remove button. What this pins is that the new ledger entry does not leak when
-    the attack is removed, i.e. the fix does not recreate the orphaned-ledger bug
-    it sits next to.
-    """
-    job, tasks = _seed(task_count=1, job_status="Running")
-    late = _new_task()
-    _login_admin(client)
-    client.post(f"/jobs/{job.id}/assign_task/{late.id}", follow_redirects=False)
-
-    client.post(f"/jobs/{job.id}/remove_task/{late.id}", follow_redirects=False)
-
-    assert JobTaskLedger.query.filter_by(job_id=job.id, task_id=late.id).count() == 0
-    assert JobTasks.query.filter_by(job_id=job.id, task_id=late.id).count() == 0
-    # The original attack survives untouched.
-    assert [a["task_id"] for a in job_assignments([job.id])[job.id]] == [tasks[0].id]
-
-
-def test_a_late_assignment_on_a_pre_ledger_job_mints_nothing(app, client):
-    """The guard that keeps this fix from causing the very bug it repairs.
-
-    Cannot fail against the old code -- which minted nothing, ever -- so it is a
-    regression pin on the guard rather than a reproduction of the bug.
-
-    A job queued by a pre-ledger server has rows and no ledger, and
-    job_assignments falls back to grouping those rows. Minting an entry for the
-    late row alone would make the job "ledgered", and every OTHER row would then
-    be skipped -- turning a gap in one attack into a gap in all of them.
-    """
-    job, tasks = _seed(task_count=2, job_status="Running")
-    JobTaskLedger.query.filter_by(job_id=job.id).delete()
-    for row in JobTasks.query.filter_by(job_id=job.id).all():
-        row.ledger_id = None
-    db.session.commit()
-    late = _new_task()
-
-    _login_admin(client)
-    client.post(f"/jobs/{job.id}/assign_task/{late.id}", follow_redirects=False)
-
+    assert JobTasks.query.filter_by(job_id=job.id).count() == 0
     assert JobTaskLedger.query.filter_by(job_id=job.id).count() == 0
-    visible = sorted(a["task_id"] for a in job_assignments([job.id])[job.id])
-    assert visible == sorted([tasks[0].id, tasks[1].id, late.id])
+
+
+def test_remove_all_tasks_releases_the_agent_holding_a_chunk(app, client):
+    """Deleting live work cancels it first, so the agent is not left cracking a
+    row nobody is waiting for and reporting status against an id that is gone.
+
+    hc_status is stamped explicitly here because the heartbeat helper posts an
+    empty one: asserting it is "" without setting it first passes whether or not
+    the cancel happens, which is no test at all.
+    """
+    job, _tasks = _seed(task_count=2)
+    _agent("a", speed=1000)
+    started = _beat(client, "a")
+    running = JobTasks.query.get(started["job_task_id"])
+    agent_id = running.agent_id
+    Agents.query.get(agent_id).hc_status = '{"progress": [1, 2]}'
+    db.session.commit()
+
+    _login_admin(client)
+    client.post(f"/jobs/{job.id}/remove_all_tasks", follow_redirects=False)
+
+    assert Agents.query.get(agent_id).hc_status == ""
+
+
+def test_remove_task_clears_a_ledger_orphaned_by_the_old_remove_all(app, client):
+    """A job already wedged by the old bug repairs itself through the UI.
+
+    Reproduces the production state exactly -- rows gone, ledgers not -- and
+    proves no database surgery is needed: the existence check now keys on EITHER,
+    so the attack is removable instead of flashing "that task is no longer on
+    this job" forever.
+    """
+    job, tasks = _seed(task_count=2)
+    _agent("a", speed=1000)
+    _beat(client, "a")
+    # Wedge it exactly as the old remove_all_tasks did: rows only, ledger kept.
+    for row in JobTasks.query.filter_by(job_id=job.id).all():
+        db.session.delete(row)
+    db.session.commit()
+    assert JobTasks.query.filter_by(job_id=job.id).count() == 0
+    assert JobTaskLedger.query.filter_by(job_id=job.id).count() == 2
+
+    _login_admin(client)
+    resp = client.post(f"/jobs/{job.id}/remove_task/{tasks[0].id}",
+                       follow_redirects=False)
+    assert resp.status_code in (301, 302)
+
+    assert JobTaskLedger.query.filter_by(job_id=job.id, task_id=tasks[0].id).count() == 0
+    survivor = JobTaskLedger.query.filter_by(job_id=job.id).one()
+    assert survivor.task_id == tasks[1].id
+    assert survivor.position == 0          # the gap is closed, not left at 1
+
+
+def test_remove_task_still_refuses_when_neither_rows_nor_ledger_exist(app, client):
+    """The guard must only widen, not disappear: a task that was never on this
+    job still flashes rather than silently doing nothing."""
+    job, _tasks = _seed(task_count=1)
+    _login_admin(client)
+
+    resp = client.post(f"/jobs/{job.id}/remove_task/999999", follow_redirects=True)
+
+    assert b"no longer on this job" in resp.data

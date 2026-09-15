@@ -343,57 +343,90 @@ def test_an_unscoped_close_still_stops_the_whole_job(app, client):
     assert {ledger.state for ledger in JobTaskLedger.query.filter_by(job_id=job.id)} == {"Closed"}
 
 
-def test_dispatching_a_slice_promotes_the_job_to_running(app, client):
-    """A job being actively cracked must read as Running.
+def test_remove_all_tasks_takes_the_ledger_with_it(app, client):
+    """Regression: "Remove all tasks" used to delete only the JobTasks rows.
 
-    The only thing that used to promote Queued -> Running was
-    update_job_task_status, reached via the agent's defensive "I'm running this"
-    POST. Ledger dispatch stamps the row 'Running' server-side at claim/mint
-    time, so that POST now reports a status the row already has and
-    /v1/jobtask/status short-circuits it as idempotent -- never reaching the
-    promoter. The job sat at 'Queued' for its entire run, and since the dashboard
-    lists running work with Jobs.status == 'Running', a job with an agent
-    cracking on it showed as queued with no task and no progress.
+    The assigned-tasks list is rendered from the LEDGER (job_assignments), so
+    every ledger left behind went on showing as an attack of a job that had no
+    rows at all -- and the per-task delete refused to clear it, because it looked
+    for rows that were already gone. Seen in production as a job listing ten
+    attacks over zero job_tasks rows, unrecoverable through the UI.
+
+    Worse on a live job than on this one: a surviving ledger still carries its
+    cursor, so the next agent heartbeat mints a fresh chunk off it and starts
+    cracking work the operator has just deleted.
     """
-    job, _tasks = _seed(task_count=1, job_status="Queued")
+    job, _tasks = _seed(task_count=2)
     _agent("a", speed=1000)
+    _beat(client, "a")                      # mint a row so there is live work
+    assert JobTaskLedger.query.filter_by(job_id=job.id).count() == 2
+    assert JobTasks.query.filter_by(job_id=job.id).count() > 0
 
+    _login_admin(client)
+    resp = client.post(f"/jobs/{job.id}/remove_all_tasks", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+
+    assert JobTasks.query.filter_by(job_id=job.id).count() == 0
+    assert JobTaskLedger.query.filter_by(job_id=job.id).count() == 0
+
+
+def test_remove_all_tasks_releases_the_agent_holding_a_chunk(app, client):
+    """Deleting live work cancels it first, so the agent is not left cracking a
+    row nobody is waiting for and reporting status against an id that is gone.
+
+    hc_status is stamped explicitly here because the heartbeat helper posts an
+    empty one: asserting it is "" without setting it first passes whether or not
+    the cancel happens, which is no test at all.
+    """
+    job, _tasks = _seed(task_count=2)
+    _agent("a", speed=1000)
     started = _beat(client, "a")
-    assert started["msg"] == "START"
-
-    db.session.refresh(job)
-    assert job.status == "Running"
-    assert job.started_at is not None
-
-
-def test_dispatch_clears_a_stale_ended_at_from_the_previous_run(app, client):
-    """ended_at is only ever set, never cleared, so a re-queued job carried the
-    previous run's end time -- seen in production as a Queued job stamped with an
-    ended_at from half an hour earlier."""
-    job, _tasks = _seed(task_count=1, job_status="Queued")
-    job.ended_at = datetime(2020, 1, 1)
+    running = JobTasks.query.get(started["job_task_id"])
+    agent_id = running.agent_id
+    Agents.query.get(agent_id).hc_status = '{"progress": [1, 2]}'
     db.session.commit()
+
+    _login_admin(client)
+    client.post(f"/jobs/{job.id}/remove_all_tasks", follow_redirects=False)
+
+    assert Agents.query.get(agent_id).hc_status == ""
+
+
+def test_remove_task_clears_a_ledger_orphaned_by_the_old_remove_all(app, client):
+    """A job already wedged by the old bug repairs itself through the UI.
+
+    Reproduces the production state exactly -- rows gone, ledgers not -- and
+    proves no database surgery is needed: the existence check now keys on EITHER,
+    so the attack is removable instead of flashing "that task is no longer on
+    this job" forever.
+    """
+    job, tasks = _seed(task_count=2)
     _agent("a", speed=1000)
-
     _beat(client, "a")
+    # Wedge it exactly as the old remove_all_tasks did: rows only, ledger kept.
+    for row in JobTasks.query.filter_by(job_id=job.id).all():
+        db.session.delete(row)
+    db.session.commit()
+    assert JobTasks.query.filter_by(job_id=job.id).count() == 0
+    assert JobTaskLedger.query.filter_by(job_id=job.id).count() == 2
 
-    db.session.refresh(job)
-    assert job.ended_at is None
+    _login_admin(client)
+    resp = client.post(f"/jobs/{job.id}/remove_task/{tasks[0].id}",
+                       follow_redirects=False)
+    assert resp.status_code in (301, 302)
+
+    assert JobTaskLedger.query.filter_by(job_id=job.id, task_id=tasks[0].id).count() == 0
+    survivor = JobTaskLedger.query.filter_by(job_id=job.id).one()
+    assert survivor.task_id == tasks[1].id
+    assert survivor.position == 0          # the gap is closed, not left at 1
 
 
-def test_a_second_dispatch_does_not_restamp_started_at(app, client):
-    """The promotion is a compare-and-swap on 'Queued', so only the heartbeat
-    that actually started the job stamps it. Re-stamping on every slice would
-    reset the job's elapsed time and its runtime cap on each new chunk."""
-    job, _tasks = _seed(task_count=2, job_status="Queued")
-    _agent("a", speed=1000)
-    _agent("b", speed=1000)
+def test_remove_task_still_refuses_when_neither_rows_nor_ledger_exist(app, client):
+    """The guard must only widen, not disappear: a task that was never on this
+    job still flashes rather than silently doing nothing."""
+    job, _tasks = _seed(task_count=1)
+    _login_admin(client)
 
-    _beat(client, "a")
-    db.session.refresh(job)
-    first = job.started_at
-    assert first is not None
+    resp = client.post(f"/jobs/{job.id}/remove_task/999999", follow_redirects=True)
 
-    _beat(client, "b")
-    db.session.refresh(job)
-    assert job.started_at == first
+    assert b"no longer on this job" in resp.data

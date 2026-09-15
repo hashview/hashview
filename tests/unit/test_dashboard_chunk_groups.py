@@ -593,3 +593,62 @@ def test_chunk_id_sits_under_task_not_status(app, client):
     assert cells[1].startswith("#")          # the chunk id, e.g. "#3/5"
     assert "padding-left" in attrs[1]        # indented under the task name
     assert cells[2].strip() == ""            # Status is left empty on chunk rows
+
+
+@pytest.mark.security
+def test_every_empty_cell_uses_the_same_dash_placeholder(app, client):
+    """One placeholder, so "no data yet" looks the same in every column.
+
+    Written inline per cell the dashes inherited each column's colour and
+    alignment: Rate and Auto-cancel were --text-dim, ETA --text-mute, Recovered
+    had no colour at all (so it rendered in the brightest default text), and
+    Agent's sat left while the rest were centred.
+
+    Only the dashes that were already there are normalised. The chunk row's
+    Agent cell renders blank when unassigned and is deliberately left blank --
+    a placeholder there would be new UI, not a fix.
+    """
+    from tests.unit.helpers import login, make_admin
+    _seed_running_job()
+    login(client, make_admin())
+
+    # Finish every chunk so the task row has no agent, rate or eta to show --
+    # the state the placeholder exists for. The seeded fixture fills every cell,
+    # so without this the table renders no dashes and the assertion below would
+    # pass by vacuum. It did exactly that on the first draft.
+    for row in JobTasks.query.all():
+        row.status = "Completed"
+        row.agent_id = None
+    for agent in Agents.query.all():
+        agent.hc_status = ""
+    db.session.commit()
+
+    html = client.get("/dashboard/jobs").get_data(as_text=True)
+    table = html[html.index('class="tbl rj-tasks"'):]
+
+    assert '<span class="dash">—</span>' in table
+    # ...and no BARE em dash left to inherit whatever colour its column had.
+    bare = re.findall(r'(?<!class="dash">)—', table)
+    assert bare == [], f"{len(bare)} unstyled dash(es) left in the task table"
+
+
+@pytest.mark.security
+def test_the_dash_placeholder_rule_is_actually_served(app, client):
+    """The markup and the rule that styles it live in different templates.
+
+    _dash_jobs.html.j2 emits <span class="dash">, home.html.j2 carries the rule.
+    A merge once kept the spans and dropped the rule, so every dash silently
+    went back to inheriting its column's alignment -- the spans were all still
+    there, and nothing failed. This asserts the rule reaches the page.
+    """
+    from tests.unit.helpers import login, make_admin
+    _seed_running_job()
+    login(client, make_admin())
+
+    css = client.get("/").get_data(as_text=True)
+    rule = re.search(r'\.rj-tasks \.dash \{([^}]*)\}', css)
+    assert rule, "no .rj-tasks .dash rule served -- the dashes will not be centred"
+    body = rule.group(1)
+    assert "text-align: center" in body      # centres it
+    assert "display: block" in body          # ...regardless of the column's align
+    assert "var(--text-mute)" in body        # one shade for all of them

@@ -306,7 +306,7 @@ def decode_legacy_hex_if_needed(db :SQLAlchemy):
     from flask import current_app
     logger = current_app.logger
 
-    settings = Settings.query.first()
+    settings = Settings.current()
     if not settings or settings.passwords_decoded:
         return
 
@@ -414,5 +414,5 @@ def admin_pass_needs_changed(db :SQLAlchemy, bcrypt :Bcrypt) -> bool:
 
 
 def settings_needs_added(db :SQLAlchemy) -> bool:
-    settings = db.session.query(Settings).first()
+    settings = Settings.current()
     return settings is None

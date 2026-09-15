@@ -164,6 +164,23 @@ class Settings(db.Model):
     azure_redirect_uri = db.Column(db.String(512), nullable=True)
     azure_allowed_groups = db.Column(db.String(1024), nullable=True)  # comma-separated group Object IDs
 
+    @classmethod
+    def current(cls):
+        """The instance's settings row, chosen DETERMINISTICALLY.
+
+        Settings is a singleton in intent but not in schema -- nothing stops a
+        second row, and this instance has 98 of them (id 1 real, the rest all
+        zeros). Every reader used a bare .first(), which in SQL has no defined
+        order: MySQL happens to return primary-key order for a plain scan of a
+        small table, so id 1 wins today, but that is a property of the chosen
+        plan and not a guarantee. If a zero row ever won, the instance would
+        silently switch to chunking disabled, no runtime caps, and a retention
+        period of 0 -- with nothing in any log to say why.
+
+        Lowest id wins, which is the row the setup wizard wrote first.
+        """
+        return cls.query.order_by(cls.id.asc()).first()
+
 class Jobs(db.Model):
     """Class object to represent Jobs"""
 

@@ -166,7 +166,7 @@ def v1_api_set_agent_heartbeat():
     # Get uuid
     uuid = request.cookies.get('uuid')
 
-    settings = Settings.query.first()
+    settings = Settings.current()
 
     # Get agent from db
     agent = Agents.query.filter_by(uuid=uuid).first()

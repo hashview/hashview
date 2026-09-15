@@ -12,14 +12,7 @@
 .chunk-toggle:hover { color: var(--text); }
 .chunk-toggle.open { transform: rotate(90deg); }
 .chunk-toggle.disabled { color: var(--text-mute); opacity: .35; cursor: default; }
-.rj-tasks tr.chunk-sub td, .rj-tasks tr.chunk-row td { background: rgba(0, 0, 0, 0.25); }
-/* Placeholder for an empty cell in the running-jobs task table (Agent, Rate,
-   ETA, Auto-cancel). One rule so every dash is the same grey and sits in the
-   same place: they used to inherit each column's own colour and alignment, so
-   a row of "no data yet" rendered as three different greys, one of them left
-   aligned under Agent and the rest centred. display:block is what centres it
-   regardless of the column's own text-align. */
-.rj-tasks .dash { display: block; text-align: center; color: var(--text-mute); }
+.rj-tasks tr.chunk-row td { background: rgba(0, 0, 0, 0.25); }
 .rj-tasks tr.chunk-row td:nth-child(2) { padding-left: 20px; }
 /* Live recovery feed: show up to 100 rows but keep the viewport at ~10 rows and
    scroll the rest; the column header stays pinned while scrolling. The height cap

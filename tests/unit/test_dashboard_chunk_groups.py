@@ -556,60 +556,40 @@ def test_auto_cancel_column_only_renders_when_the_cap_is_on(app, client):
     assert "Auto-cancel" in client.get("/dashboard/jobs").get_data(as_text=True)
 
 
+# ------------------------------------------------ expanded chunk row layout
+
+
 @pytest.mark.security
-def test_every_empty_cell_uses_the_same_dash_placeholder(app, client):
-    """One placeholder, so "no data yet" looks the same in every column.
-
-    The dashes used to inherit each column's own colour and alignment: Rate and
-    Auto-cancel were --text-dim, ETA was --text-mute, Recovered had no colour at
-    all (so it rendered in the brightest default text), and Agent's sat left
-    while the rest were centred. A row with nothing to report showed three
-    different greys in three different places.
-
-    Only the dashes that were already there are normalised. The chunk row's
-    Agent cell renders blank when unassigned and is deliberately left blank --
-    adding a placeholder there would be new UI, not a fix.
-    """
+def test_expanding_a_task_does_not_render_a_chunk_summary_row(app, client):
+    """The "N completed / N running / N queued" strip under an expanded task is
+    gone: the counts are already on the parent row, and it cost a full-width
+    row of vertical space per expanded task."""
     from tests.unit.helpers import login, make_admin
     _seed_running_job()
     login(client, make_admin())
-
-    # Finish every chunk so the task row has no agent, rate or eta to show --
-    # the state the placeholder exists for. The seeded fixture fills every cell,
-    # so without this the table renders no dashes at all and the assertion below
-    # would pass by vacuum.
-    for row in JobTasks.query.all():
-        row.status = "Completed"
-        row.agent_id = None
-    for agent in Agents.query.all():
-        agent.hc_status = ""
-    db.session.commit()
 
     html = client.get("/dashboard/jobs").get_data(as_text=True)
-    table = html[html.index('class="tbl rj-tasks"'):]
 
-    assert '<span class="dash">—</span>' in table
-    # ...and no BARE em dash left to inherit whatever colour its column had.
-    bare = re.findall(r'(?<!class="dash">)—', table)
-    assert bare == [], f"{len(bare)} unstyled dash(es) left in the task table"
+    assert "chunk-row" in html          # the chunks themselves still render
+    assert "chunk-sub" not in html
+    assert "completed ·" not in html
 
 
 @pytest.mark.security
-def test_the_dash_placeholder_is_centred_and_one_shade(app, client):
-    """The rule that makes them uniform is actually delivered to the page.
-
-    display:block is what centres the dash regardless of its column's own
-    text-align -- without it the Agent dash stays left while the numeric
-    columns centre theirs.
-    """
+def test_chunk_id_sits_under_task_not_status(app, client):
+    """A chunk's id and slice name WHICH piece of the task the row is -- a
+    continuation of the task name above it, not a status. They render in the
+    Task column, indented, leaving Status empty on chunk rows."""
     from tests.unit.helpers import login, make_admin
     _seed_running_job()
     login(client, make_admin())
 
-    css = client.get("/").get_data(as_text=True)
-    rule = re.search(r'\.rj-tasks \.dash \{([^}]*)\}', css)
-    assert rule, "no .rj-tasks .dash rule served"
-    body = rule.group(1)
-    assert "text-align: center" in body
-    assert "display: block" in body
-    assert "var(--text-mute)" in body
+    html = client.get("/dashboard/jobs").get_data(as_text=True)
+    row = re.search(r'<tr class="chunk-row".*?</tr>', html, re.S).group(0)
+    cells = re.findall(r'<td\b[^>]*>(.*?)</td>', row, re.S)
+    attrs = re.findall(r'<td\b([^>]*)>', row)
+
+    # column order: spacer, Task, Status, Agent, Keyspace, Recovered, Rate, ETA...
+    assert cells[1].startswith("#")          # the chunk id, e.g. "#3/5"
+    assert "padding-left" in attrs[1]        # indented under the task name
+    assert cells[2].strip() == ""            # Status is left empty on chunk rows

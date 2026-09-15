@@ -369,7 +369,7 @@ def get_agent_timeout_minutes():
     Single source for the UI cutoff (inject_nav_counts) and the agent-health
     scheduler. Defaults to 60 on a missing Settings row / pre-migration DB."""
     try:
-        settings = Settings.query.first()
+        settings = Settings.current()
         if settings and settings.agent_timeout_minutes:
             return settings.agent_timeout_minutes
     except Exception:  # pragma: no cover - pre-migration / no DB
@@ -384,7 +384,7 @@ def notify_admins(subject, message):
     to the single shared room (Settings.slack_admin_channel), so we post there ONCE
     when any opted-in admin selected Slack — never once per admin. Respects the
     instance-wide master switches (a disabled channel never sends)."""
-    settings = Settings.query.first()
+    settings = Settings.current()
     email_on = bool(settings.email_enabled) if settings else True
     push_on = bool(settings.pushover_enabled) if settings else True
     slack_on = bool(settings.slack_enabled) if settings else False
@@ -456,7 +456,7 @@ def _post_slack(channel, subject, message):
     raises. No-ops (with a log line) when Slack is disabled/unconfigured globally
     or no target channel is given."""
 
-    settings = Settings.query.first()
+    settings = Settings.current()
     if not settings or not settings.slack_enabled or not settings.slack_bot_token:
         current_app.logger.info('SendSlack is Complete with Failure(Slack not enabled/configured).')
         return
@@ -503,7 +503,7 @@ def deliver_user_notification(user, method, subject, message, html_message=None)
     channel an admin has since turned off. Missing-config fallbacks only email
     the user when the Email channel is itself enabled."""
 
-    settings = Settings.query.first()
+    settings = Settings.current()
     # No Settings row (fresh DB): match the UI defaults — email/pushover on, slack off.
     enabled = {
         'email': bool(settings.email_enabled) if settings else True,
@@ -2703,7 +2703,7 @@ def build_job_task_commands(job):
              JobNotifications.sent_at.isnot(None))
      .update({'sent_at': None}, synchronize_session=False))
 
-    settings = Settings.query.first()
+    settings = Settings.current()
     chunking_on = bool(settings and settings.enabled_chunking)
 
     # Collapse each attack back to a single row. A re-queue of an already-run job

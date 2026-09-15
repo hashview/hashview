@@ -566,9 +566,9 @@ def test_every_empty_cell_uses_the_same_dash_placeholder(app, client):
     while the rest were centred. A row with nothing to report showed three
     different greys in three different places.
 
-    The chunk row's Agent cell had no placeholder at all and simply rendered
-    empty, which is why this asserts on the rendered rows rather than only on
-    the style rule.
+    Only the dashes that were already there are normalised. The chunk row's
+    Agent cell renders blank when unassigned and is deliberately left blank --
+    adding a placeholder there would be new UI, not a fix.
     """
     from tests.unit.helpers import login, make_admin
     _seed_running_job()

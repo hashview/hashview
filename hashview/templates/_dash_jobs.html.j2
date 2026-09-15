@@ -111,7 +111,7 @@
                                         <td></td>
                                         <td></td>
                                         <td class="mono center" style="color:var(--text-dim);">{{ ch.label }}{% if ch.chunk_total and ch.chunk_total > 0 %}<span style="color:var(--text-mute);">/{{ ch.chunk_total }}</span>{% endif %}{% if ch.slice %}<span style="color:var(--text-mute);"> · {{ ch.slice }}</span>{% endif %}</td>
-                                        <td class="mono" style="color:var(--text-dim);">{% if ch.agent %}{{ ch.agent }}{% else %}<span class="dash">—</span>{% endif %}</td>
+                                        <td class="mono" style="color:var(--text-dim);">{{ ch.agent }}</td>
                                         <td></td>
                                         <td class="center num">{% if ch.recovered is not none %}{% if job.hashfile_id %}<a class="rec-x-link" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="View hashfile analytics"><span style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span></a>{% else %}<span style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span>{% endif %}{% else %}<span class="dash">—</span>{% endif %}</td>
                                         <td class="center num" style="color:var(--text-dim);">{% if ch.rate %}{{ ch.rate }}{% else %}<span class="dash">—</span>{% endif %}</td>

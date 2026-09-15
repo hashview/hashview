@@ -18,7 +18,8 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required
-from sqlalchemy import func
+from flask_wtf import FlaskForm
+from sqlalchemy import func, text
 
 import hashview
 from hashview.models import Hashes, Settings, db
@@ -29,8 +30,19 @@ from hashview.utils.backup import (
     create_encrypted_db_backup,
     purge_stale_backups,
 )
+from hashview.utils.dedupe import (
+    classify_group,
+    delete_orphaned_alerts,
+    duplicate_summary,
+    find_duplicate_groups,
+    group_hashfiles,
+    group_rows,
+    merge_group,
+    orphan_summary,
+    orphaned_links,
+)
 from hashview.utils.hashcat_modes import hash_type_names
-from hashview.utils.utils import send_slack_channel
+from hashview.utils.utils import send_slack_channel, try_commit
 
 # control/tmp filename of a generated backup, e.g. '1a2b3c4d5e6f7a8b.sql.gz.enc'
 _BACKUP_TOKEN_RE = re.compile(r'^[0-9a-f]{16}\.sql\.gz\.enc$')
@@ -209,6 +221,18 @@ def settings_list():
         # The exact HTTPS callback to register in the Azure App Registration.
         default_azure_redirect = url_for('auth.azure_callback', _external=True, _scheme='https')
 
+        # Duplicate (sub_ciphertext, hash_type) rows block
+        # uq_hashes_sub_ciphertext_hash_type. The migration warns and skips rather
+        # than failing the whole upgrade, so nothing else surfaces this -- without
+        # a banner the only trace is one line in the server log.
+        try:
+            duplicate_groups, duplicate_rows = duplicate_summary(db.session.connection())
+            stale_links, stale_alerts = orphan_summary(db.session.connection())
+        except Exception:
+            current_app.logger.exception('Could not count duplicate hashes.')
+            duplicate_groups, duplicate_rows = 0, 0
+            stale_links, stale_alerts = 0, 0
+
         return render_template(
             'settings.html.j2',
             title               = 'settings',
@@ -224,9 +248,127 @@ def settings_list():
             database_version    = database_version,
             default_azure_redirect = default_azure_redirect,
             azure_secret_set    = bool(settings.azure_client_secret),
+            duplicate_groups    = duplicate_groups,
+            duplicate_rows      = duplicate_rows,
+            stale_links         = stale_links,
+            stale_alerts        = stale_alerts,
         )
 
     abort(403)
+
+
+@settings.route("/settings/duplicate_hashes", methods=['GET'])
+@login_required
+def settings_duplicate_hashes():
+    """Review duplicate (sub_ciphertext, hash_type) rows before merging them.
+
+    These block uq_hashes_sub_ciphertext_hash_type. The migration warns and skips
+    the constraint rather than failing the whole upgrade, so this page is where an
+    operator sees what is in the way. Shares its logic with
+    scripts/repair_duplicate_hashes.py -- the script exists for the case where the
+    app itself will not start.
+    """
+    if not current_user.admin:
+        abort(403)
+
+    conn = db.session.connection()
+    groups_total, rows_total = duplicate_summary(conn)
+    # Capped: a pathological database could hold thousands of groups, and the
+    # point of the page is to decide, not to scroll.
+    groups = []
+    for group in find_duplicate_groups(conn, limit=100):
+        rows = group_rows(conn, group['hash_type'], group['sub_ciphertext'])
+        kind, keeper, reason = classify_group(rows)
+        groups.append({
+            **group,
+            'rows': rows,
+            'hashfiles': group_hashfiles(conn, [r['id'] for r in rows]),
+            'kind': kind,
+            'keeper': keeper,
+            'reason': reason,
+            'mixed_ciphertext': len({r['ciphertext'] for r in rows}) > 1,
+        })
+    stale_links, stale_alerts = orphan_summary(conn)
+    return render_template(
+        'settings_duplicate_hashes.html.j2',
+        title='duplicate hashes',
+        groups=groups,
+        stale_links=stale_links,
+        stale_alerts=stale_alerts,
+        stale_link_rows=orphaned_links(conn, limit=50),
+        groups_total=groups_total,
+        rows_total=rows_total,
+        shown=len(groups),
+        auto_count=sum(1 for g in groups if g['kind'] == 'auto'),
+    )
+
+
+@settings.route("/settings/duplicate_hashes/merge", methods=['POST'])
+@login_required
+def settings_duplicate_hashes_merge():
+    """Merge the chosen duplicate groups.
+
+    The form posts one ``keep_<hash_type>_<sub_ciphertext>`` field per group the
+    operator decided; a group left unset is skipped. Every merge repoints
+    hashfile_hashes and hash_notifications onto the survivor rather than deleting
+    them, because hashes.id has no foreign key: a link left pointing at a deleted
+    hash makes its job undispatchable and reads as "nothing left to crack",
+    which cancels the job's remaining tasks.
+    """
+    if not current_user.admin:
+        abort(403)
+    if not FlaskForm().validate_on_submit():
+        flash('Security check failed (invalid or missing CSRF token).', 'danger')
+        return redirect(url_for('settings.settings_duplicate_hashes'))
+
+    conn = db.session.connection()
+    # Orphaned alerts go regardless of what was selected: one can never fire (its
+    # hash is gone, so process_recovered_hash_notifications skips past it without
+    # ever reaching the delete that retires it) while still being re-read on every
+    # crack upload. Orphaned LINKS are deliberately left alone -- each is the
+    # record that an account was in a hashfile, and that is not recoverable.
+    cleared_alerts = delete_orphaned_alerts(conn)
+    merged = removed = 0
+    for field, raw_keeper in request.form.items():
+        if not field.startswith('keep_') or not raw_keeper:
+            continue
+        try:
+            keeper_id = int(raw_keeper)
+        except (TypeError, ValueError):
+            continue
+        # Re-read the group from the keeper rather than trusting the form's idea
+        # of who its siblings are: the page may be minutes stale, and a merge
+        # driven by a stale row set could delete a hash imported since.
+        pair = conn.execute(text(
+            'SELECT hash_type, sub_ciphertext FROM hashes WHERE id = :i'),
+            {'i': keeper_id}).fetchone()
+        if pair is None:
+            continue
+        rows = group_rows(conn, pair[0], pair[1])
+        losers = [r['id'] for r in rows if r['id'] != keeper_id]
+        if not losers:
+            continue
+        merge_group(conn, keeper_id, losers)
+        merged += 1
+        removed += len(losers)
+
+    if (merged or cleared_alerts) and try_commit('merge duplicate hashes'):
+        log_event('hashes.duplicates_merged',
+                  target=f'{merged} group(s)',
+                  detail=f'{removed} row(s) removed, {cleared_alerts} orphaned alert(s) cleared')
+        note = ''
+        if cleared_alerts:
+            note = f' Cleared {cleared_alerts} orphaned alert(s).'
+        if merged:
+            flash(f'Merged {merged} duplicate group(s), removing {removed} row(s).{note} '
+                  'Restart Hashview to create the unique constraint.', 'success')
+        else:
+            flash(f'No groups were selected.{note}', 'warning')
+    elif merged or cleared_alerts:
+        flash('Could not merge the duplicates — please try again.', 'danger')
+    else:
+        flash('No groups were selected; nothing changed.', 'warning')
+    return redirect(url_for('settings.settings_duplicate_hashes'))
 
 
 @settings.route("/settings/send_test_admin_slack", methods=['GET'])

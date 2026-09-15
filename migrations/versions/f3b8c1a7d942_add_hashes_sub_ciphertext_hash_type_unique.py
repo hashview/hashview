@@ -39,16 +39,40 @@ that the batched import exists to speed up. ix_hashes_hash_type is deliberately
 left alone: it is a cheap 4-byte key and its other readers were not audited.
 
 Before creating the constraint, checks for pre-existing duplicate pairs, which
-would prevent its creation. If any exist this raises RuntimeError listing them,
-so the operator can merge them before re-running rather than stranding the
-migration mid-apply -- MySQL DDL is non-transactional. Note the losing row's
-hashfile_hashes children need repointing, not just deleting, because
-hashfile_hashes.hash_id has no foreign key; that is a judgement call for the
-operator, which is why this does not attempt it automatically.
+would prevent its creation. If any exist this WARNS and returns, leaving the
+constraint uncreated, rather than raising.
+
+It used to raise, and that was worse than the problem. A raise aborts the whole
+upgrade loop, so every later revision is held hostage to a data defect that has
+nothing to do with them -- and because the app applies migrations inside
+create_app() under a broad `except Exception` that only logs, the operator's
+symptom is a web server quietly running on a schema its models no longer match.
+A revision added AFTER this one cannot help either: it would never be reached.
+
+So: warn, skip the constraint, let the rest of the chain apply. The import dedup
+stays the TOCTOU race it has always been until the duplicates are merged, which
+is the status quo rather than a regression, and the next upgrade after a repair
+creates the constraint.
+
+The `return` is load-bearing and must not become a bare `pass`: the
+drop_index(ix_hashes_sub_ciphertext) below sits OUTSIDE the branch that creates
+the constraint, so falling through would drop the only index on sub_ciphertext
+while its replacement does not exist -- turning the import's dedup lookup into a
+full scan of the whole table.
+
+Merging is left to scripts/repair_duplicate_hashes.py (and the Settings page
+that shares its logic) because it is a data decision, not a schema one, and
+because the losing rows' children in hashfile_hashes AND hash_notifications need
+repointing rather than deleting: neither column has a foreign key, so a hash
+deleted out from under them leaves links that make build_hashcat_command raise
+(the job becomes undispatchable) and make _hashfile_has_uncracked read the
+hashfile as fully recovered (cancelling the job's remaining tasks).
 
 Guarded on apply (idempotent under schema drift) using sa.inspect, following
 b5c8d9e1f2a4.
 """
+import logging
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -87,15 +111,17 @@ def upgrade():
             'GROUP BY hash_type, sub_ciphertext HAVING COUNT(*) > 1 LIMIT 20'
         )).fetchall()
         if dup_rows:
-            pairs = [f'(hash_type={row[0]}, sub_ciphertext={row[1]}, rows={row[2]})'
-                     for row in dup_rows]
-            raise RuntimeError(
-                'Cannot add unique constraint to hashes (hash_type, sub_ciphertext): '
-                f'duplicate pairs exist: {pairs} (up to 20 shown). Merge them before '
-                're-running this migration, repointing any hashfile_hashes.hash_id '
-                'rows that reference the discarded hash -- that column has no foreign '
-                'key, so deleting a duplicate hash silently orphans its links.'
-            )
+            pairs = ', '.join(f'(hash_type={row[0]}, sub_ciphertext={row[1]}, rows={row[2]})'
+                              for row in dup_rows)
+            logging.getLogger('alembic.runtime.migration').warning(
+                'hashes still contains duplicate (sub_ciphertext, hash_type) pairs, so '
+                'uq_hashes_sub_ciphertext_hash_type was NOT created and the import dedup '
+                'stays a TOCTOU race until they are merged. Up to 20 shown: %s. '
+                'Repair with:  python scripts/repair_duplicate_hashes.py --report  '
+                '(then --apply), or from the web UI under Settings -> Data management. '
+                'Re-run the upgrade afterwards to create the constraint.',
+                pairs)
+            return
 
         # batch_alter_table: SQLite has no ALTER TABLE ADD CONSTRAINT, so
         # op.create_unique_constraint() raises NotImplementedError there outside

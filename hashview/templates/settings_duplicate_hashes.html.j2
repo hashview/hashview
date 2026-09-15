@@ -1,0 +1,178 @@
+{% extends "layout.html.j2" %}
+{% from "macros.html.j2" import icon %}
+{% block content %}
+{#
+  Duplicate (sub_ciphertext, hash_type) rows, and what to keep.
+
+  These block uq_hashes_sub_ciphertext_hash_type. The migration warns and skips
+  the constraint rather than failing the whole upgrade, so this page is the only
+  place the problem is visible outside the server log.
+
+  Merging repoints hashfile_hashes and hash_notifications onto the survivor; it
+  never leaves a link pointing at a deleted hash, because hashes.id has no
+  foreign key and such a link makes its job undispatchable.
+#}
+<div class="page-head">
+    <h2>{{ icon('file', size=18) }} Duplicate hashes</h2>
+    <a class="btn" href="{{ url_for('settings.settings_list') }}">Back to settings</a>
+</div>
+
+{% if stale_links or stale_alerts %}
+<div class="card" style="margin-bottom:var(--gap); border-color:var(--amber);">
+    <div class="card-head">
+        <span class="dot-led on"></span><h3>Orphaned rows</h3>
+    </div>
+    <div class="card-body">
+        {% if stale_alerts %}
+        <p style="margin:0 0 8px;">
+            <strong>{{ stale_alerts | commafy }}</strong> hash alert(s) point at a hash that is gone.
+            They can never fire, and are cleared automatically the next time you merge below.
+        </p>
+        {% endif %}
+        {% if stale_links %}
+        <p style="margin:0 0 8px;">
+            <strong>{{ stale_links | commafy }}</strong> hashfile link(s) point at a hash that is gone.
+            <strong>These are not removed for you.</strong> Each one is the record that an account
+            was in a hashfile, which cannot be recovered without re-importing that file &mdash; but
+            they also stop the affected job from being dispatched, and make its hashfile look
+            fully recovered, which cancels its remaining tasks. Re-import the hashfile, or remove
+            the rows deliberately.
+        </p>
+        <table class="tbl"><thead><tr>
+            <th>Link</th><th>Missing hash</th><th>Hashfile</th><th>Username</th>
+        </tr></thead><tbody>
+        {% for link in stale_link_rows %}
+            <tr class="mono" style="font-size:11px;">
+                <td>id {{ link.id }}</td>
+                <td style="color:var(--amber);">{{ link.hash_id }}</td>
+                <td>{{ link.hashfile_name or ('hashfile ' ~ link.hashfile_id) }}</td>
+                <td>{{ link.username or '(no username)' }}</td>
+            </tr>
+        {% endfor %}
+        </tbody></table>
+        {% if stale_links > stale_link_rows | length %}
+        <p class="mono" style="font-size:11px; color:var(--text-mute); margin:8px 0 0;">
+            &hellip; and {{ stale_links - (stale_link_rows | length) }} more.
+        </p>
+        {% endif %}
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% if not groups_total %}
+    <div class="card"><div class="card-body" style="text-align:center; padding:40px;">
+        <div class="mono" style="color:var(--text-dim);">No duplicate hashes.</div>
+        {% if stale_alerts %}
+        <form method="POST" action="{{ url_for('settings.settings_duplicate_hashes_merge') }}" style="margin-top:12px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn" type="submit">Clear {{ stale_alerts | commafy }} orphaned alert(s)</button>
+        </form>
+        {% endif %}
+        <div class="mono" style="color:var(--text-mute); font-size:11px; margin-top:8px;">
+            Restart Hashview to create the unique constraint if it is not there yet.
+        </div>
+    </div></div>
+{% else %}
+<div class="card" style="margin-bottom:var(--gap);">
+    <div class="card-body">
+        <p style="margin:0 0 8px;">
+            <strong>{{ groups_total | commafy }}</strong> duplicate group(s);
+            merging them removes <strong>{{ rows_total | commafy }}</strong> row(s).
+        </p>
+        <p class="mono" style="font-size:11px; color:var(--text-dim); margin:0;">
+            A duplicate is the same hash stored twice &mdash; same ciphertext
+            <em>and</em> same hash type. The same string uploaded once as MD5 and
+            once as NTLM is not a duplicate and is not listed here.
+            Merging keeps one row, moves every hashfile link and alert onto it,
+            and keeps any recovered password.
+            <strong>Back up the database first.</strong>
+            {% if shown < groups_total %}
+            Showing the first {{ shown }}; merge these, then reload for the rest.
+            {% endif %}
+        </p>
+    </div>
+</div>
+
+<form method="POST" action="{{ url_for('settings.settings_duplicate_hashes_merge') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% for g in groups %}
+    {% set field = 'keep_' ~ g.hash_type ~ '_' ~ g.sub_ciphertext %}
+    <div class="card" style="margin-bottom:12px;">
+        <div class="card-head">
+            <span class="dot-led {{ 'idle' if g.kind == 'auto' else 'on' }}"></span>
+            <h3 class="mono" style="font-size:12px;">
+                {{ hash_type_names.get(g.hash_type | string, 'type ' ~ g.hash_type) if hash_type_names is defined else 'type ' ~ g.hash_type }}
+                &middot; {{ g.sub_ciphertext }}
+            </h3>
+            <span class="mono" style="margin-left:auto; font-size:11px;
+                  color:{{ 'var(--text-mute)' if g.kind == 'auto' else 'var(--amber)' }};">
+                {{ g.count }} rows &middot;
+                {{ 'suggested' if g.kind == 'auto' else 'needs your decision' }}
+            </span>
+        </div>
+        <div class="card-body">
+            {% if g.kind != 'auto' %}
+            <p class="mono" style="font-size:11px; color:var(--amber); margin:0 0 10px;">
+                {{ g.reason }}
+            </p>
+            {% endif %}
+            {% if not g.mixed_ciphertext %}
+            <p class="mono" style="font-size:11px; color:var(--text-dim); margin:0 0 10px;
+                      overflow-wrap:anywhere;">{{ g.rows[0].ciphertext[:160] }}</p>
+            {% endif %}
+            <table class="tbl"><thead><tr>
+                <th style="width:34px;">Keep</th><th>Row</th><th>Recovered</th>
+                <th>Appears in</th><th class="center">Alerts</th>
+            </tr></thead><tbody>
+            {% for row in g.rows %}
+                <tr>
+                    <td class="center">
+                        <input type="radio" name="{{ field }}" value="{{ row.id }}"
+                               {% if g.kind == 'auto' and row.id == g.keeper %}checked{% endif %}>
+                    </td>
+                    <td class="mono" style="font-size:11px;">
+                        id {{ row.id }}
+                        {% if g.mixed_ciphertext %}
+                        <br><span style="color:var(--amber); overflow-wrap:anywhere;">{{ row.ciphertext[:80] }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="mono" style="font-size:11px;">
+                        {% if row.cracked %}
+                            <span style="color:var(--primary);">{{ row.plaintext }}</span>
+                            {% if row.recovered_at %}<br><span style="color:var(--text-mute);">{{ row.recovered_at }}</span>{% endif %}
+                        {% else %}<span style="color:var(--text-mute);">not cracked</span>{% endif %}
+                    </td>
+                    <td class="mono" style="font-size:11px; color:var(--text-dim);">
+                        {% for hashfile_id, name, username in g.hashfiles.get(row.id, [])[:4] %}
+                            {{ name or ('hashfile ' ~ hashfile_id) }}
+                            <span style="color:var(--text-mute);">as {{ username or '(no username)' }}</span><br>
+                        {% else %}
+                            <span style="color:var(--text-mute);">no hashfiles</span>
+                        {% endfor %}
+                        {% if g.hashfiles.get(row.id, []) | length > 4 %}
+                            <span style="color:var(--text-mute);">+{{ g.hashfiles.get(row.id, []) | length - 4 }} more</span>
+                        {% endif %}
+                    </td>
+                    <td class="center mono" style="font-size:11px; color:var(--text-dim);">{{ row.notifications or '—' }}</td>
+                </tr>
+            {% endfor %}
+            </tbody></table>
+            <label class="mono" style="font-size:11px; color:var(--text-mute); display:block; margin-top:8px;">
+                <input type="radio" name="{{ field }}" value="" {% if g.kind != 'auto' %}checked{% endif %}>
+                Leave this group alone for now
+            </label>
+        </div>
+    </div>
+    {% endfor %}
+
+    <div class="card"><div class="card-body" style="display:flex; gap:12px; align-items:center;">
+        <button class="btn btn-primary" type="submit">Merge selected groups</button>
+        <span class="mono" style="font-size:11px; color:var(--text-mute);">
+            {{ auto_count }} group(s) are pre-selected with a suggested row to keep.
+            Anything left on &ldquo;leave alone&rdquo; is untouched.
+        </span>
+    </div></div>
+</form>
+{% endif %}
+{% endblock content %}

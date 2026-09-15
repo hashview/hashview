@@ -4,13 +4,16 @@ from wtforms import FileField, StringField, SubmitField
 from wtforms.validators import DataRequired
 
 from hashview.models import Wordlists
-from hashview.utils.form_limits import db_length
+from hashview.utils.form_limits import db_length, db_truncate
 
 
 class WordlistsForm(FlaskForm):
     """Class representing Wordlist Form"""
 
-    name = StringField('Name', validators=[DataRequired(), db_length(Wordlists, 'name')])
+    # Filled from the chosen file's name by the upload modal, so it is
+    # trimmed to fit rather than refused -- see db_truncate.
+    name = StringField('Name', validators=[DataRequired(), db_length(Wordlists, 'name')],
+                       filters=[db_truncate(Wordlists, 'name')])
     wordlist = FileField('Upload Wordlist')
     submit = SubmitField('upload')
 

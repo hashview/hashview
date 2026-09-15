@@ -42,6 +42,28 @@ def db_length(model, column_name, minimum=-1):
     return Length(min=minimum, max=column_length(model, column_name))
 
 
+def db_truncate(model, column_name):
+    """A wtforms *filter* that shortens a value to fit its column.
+
+    For a field the user types into, an over-long value is an error worth
+    showing. For one the page fills in on their behalf -- the rule and wordlist
+    upload modals hide the name box and set it from the chosen file's name --
+    there is nothing for them to correct: the field they would edit is not on
+    screen, so refusing the upload is a dead end that can only be escaped by
+    renaming the file on disk. Rules.name is 50 characters, which an ordinary
+    `.rule` filename passes easily.
+
+    Filters run before validators, so the db_length validator on the same field
+    still backstops a crafted POST while never firing for a derived name.
+    """
+    limit = column_length(model, column_name)
+
+    def _filter(value):
+        return value[:limit] if isinstance(value, str) else value
+
+    return _filter
+
+
 def template_maxlength(model_name, column_name):
     """``db_maxlength('Customers', 'name')`` -> 40, for use in templates.
 

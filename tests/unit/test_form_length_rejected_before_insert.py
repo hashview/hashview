@@ -218,20 +218,29 @@ def test_task_groups_edit_rejects_an_over_long_name(app, client, admin):
 
 # --- rules / wordlists -------------------------------------------------------
 
-def test_rules_add_rejects_an_over_long_name(app, client, admin):
+# The rule and wordlist upload modals hide the name box and fill it from the
+# chosen file's name, so there is no field for the user to shorten. Those two
+# are trimmed to fit instead of refused -- refusing would be a dead end only
+# escapable by renaming the file on disk (Rules.name is 50 characters, which an
+# ordinary .rule filename passes easily). The value still never exceeds the
+# column, which is what this module is about.
+
+def test_rules_add_trims_an_over_long_name_to_the_column(app, client, admin):
     client.post('/rules/add',
                 data={'name': _too_long(Rules, 'name'),
                       'rules': (io.BytesIO(b'$1\n'), 'r.rule')},
                 content_type='multipart/form-data', follow_redirects=True)
-    assert Rules.query.count() == 0
+    rule = Rules.query.one()
+    assert len(rule.name) == column_length(Rules, 'name')
 
 
-def test_wordlists_add_rejects_an_over_long_name(app, client, admin):
+def test_wordlists_add_trims_an_over_long_name_to_the_column(app, client, admin):
     client.post('/wordlists/add',
                 data={'name': _too_long(Wordlists, 'name'),
                       'wordlist': (io.BytesIO(b'alpha\nbravo\n'), 'wl.txt')},
                 content_type='multipart/form-data', follow_redirects=True)
-    assert Wordlists.query.count() == 0
+    wordlist = Wordlists.query.one()
+    assert len(wordlist.name) == column_length(Wordlists, 'name')
 
 
 # --- agents ------------------------------------------------------------------
@@ -323,5 +332,11 @@ def test_settings_rejects_an_over_long_value(app, client, admin, field):
                'max_runtime_tasks': '0', 'agent_timeout_minutes': '60',
                'chunk_target_duration': '600', 'auth_method': 'local',
                field: _too_long(Settings, field)}
-    client.post('/settings', data=payload, follow_redirects=True)
+    resp = client.post('/settings', data=payload, follow_redirects=True)
     assert getattr(Settings.query.get(settings.id), field) == before
+    # A rejected save must say so. These five Entra ID inputs rendered no error
+    # and the route flashed nothing, so an over-long value silently discarded
+    # every other setting on the page at the same time.
+    body = resp.get_data(as_text=True)
+    assert 'Settings not saved' in body
+    assert 'cannot be longer than' in body

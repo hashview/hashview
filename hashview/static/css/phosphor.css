@@ -471,13 +471,23 @@ html[data-scanlines="off"] .scanlines { display: none; }
 
 .page {
   padding: 26px;
-  /* Cap for very wide monitors so tables don't sprawl. */
-  max-width: min(1800px, 100%);
   /* Right gutter lines the content's right edge up with the topbar clock's
      divider: topbar right padding (26px) + the fixed clock cluster (~92px =
      16px pad-left + 14px icon + 7px gap + ~55px "HH:MM:SS"). Left stays 26px
      to match the topbar/sidebar edge. Tune this one value if it's a hair off. */
   margin-right: 92px;
+  /* No max-width: the block fills the grid column, so its RIGHT edge is pinned
+     by the gutter above and collapsing the sidebar widens the page leftward
+     instead of sliding it.
+
+     There used to be a `max-width: min(1800px, 100%)` here to stop tables
+     sprawling on very wide monitors. Because the block is left-aligned, that cap
+     moved BOTH edges left by the 184px the rail gives up (248px -> 64px) on any
+     screen wide enough for it to bind -- the content jumped sideways and the
+     right gutter grew, which is the opposite of what collapsing should do.
+     Anchoring it right instead (margin-left: auto) would have stopped the jump
+     but also stopped it widening, so the cap is gone rather than re-anchored. */
+  margin-left: 0;
 }
 .page-head {
   display: flex;

@@ -120,7 +120,9 @@ def test_job_task_groups_chunked_task(app, db_session):
     assert len(g['active_chunks']) == 1
     chunk = g['active_chunks'][0]
     assert chunk['chunk_no'] == 3 and chunk['agent'] == 'rig-alpha'
-    assert g['eta'] == '41 mins'
+    # Short form: hashcat writes '41 mins', the dashboard renders '41m' so the
+    # ETA column matches the elapsed/runtime figures beside it (_eta_compact).
+    assert g['eta'] == '41m'
 
 
 @pytest.mark.security

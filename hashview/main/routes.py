@@ -108,6 +108,10 @@ def _recovery_feed():
 
     users = Users.query.all()
     user_names = {u.id: ((u.first_name or '') + ' ' + (u.last_name or '')).strip() for u in users}
+    # Which attack actually recovered it. Hashes.task_id is stamped at upload
+    # time, so a hash cracked before that column existed -- or by a task since
+    # deleted -- resolves to nothing and shows an em dash rather than a bare id.
+    task_names = {t.id: t.name for t in Tasks.query.all()}
 
     # Last 100 recovered passwords, deduped by (hash_id, username). The hash↔hashfile_hashes
     # join is one-to-many (same hash across hashfiles / repeated username rows), so a plain
@@ -135,6 +139,7 @@ def _recovery_feed():
             'plaintext': h.plaintext or '',
             'type': hash_type_names.get(str(h.hash_type), str(h.hash_type)),
             'recovered_by': user_names.get(h.recovered_by) or '—',
+            'task': task_names.get(h.task_id) or '—',
         })
         if len(recovery_feed) >= 100:
             break
@@ -180,10 +185,39 @@ def _attack_label(task):
     return _ATTACK_LABELS.get(task.hc_attackmode, 'mode %s' % task.hc_attackmode)
 
 
+def _eta_compact(text):
+    """Rewrite a spelled-out duration as '1d 2h 3m 4s'.
+
+    hashcat writes the units out in full -- '(2 hours, 48 minutes)' -- while the
+    elapsed and runtime figures beside this column are already 'Xh Ym', so the
+    ETA was the odd one out and the widest thing in a narrow column.
+
+    Matched on each unit's leading letter, unambiguous across the four hashcat
+    emits (days/hours/minutes/seconds, singular or plural). Anything that does
+    not parse cleanly is returned untouched rather than guessed at: the agent's
+    non-duration sentinels ("The specified time is in the past.") reach this
+    function too, and mangling one into a plausible-looking duration would be
+    worse than passing it through. Already-short input is unchanged.
+    """
+    if not text:
+        return text
+    parts = re.findall(r'(\d+)\s*([A-Za-z]+)', text)
+    if not parts:
+        return text
+    out = []
+    for count, word in parts:
+        initial = word[0].lower()
+        if initial not in ('d', 'h', 'm', 's'):
+            return text
+        out.append(count + initial)
+    return ' '.join(out)
+
+
 def _eta_text(raw):
-    """Extract hashcat's '(3h 22m)' portion from a Time_Estimated string."""
+    """hashcat's '(...)' portion of a Time_Estimated string, in the short form
+    the dashboard's other durations use."""
     if raw and '(' in raw:
-        return raw.split('(', 1)[1].split(')', 1)[0]
+        return _eta_compact(raw.split('(', 1)[1].split(')', 1)[0])
     return ''
 
 

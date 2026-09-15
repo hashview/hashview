@@ -227,8 +227,27 @@ def _eta_seconds(text):
     return sum(int(n) * unit[u] for n, u in re.findall(r'(\d+)\s*([dhms])', text or ''))
 
 
+def _short_duration(seconds):
+    """Seconds as '1d 2h 3m 4s', largest two units that matter, or '0s'.
+
+    Matches the ETA column's short units so the two read as the same kind of
+    thing. Anything already past its deadline is '0s' rather than a negative:
+    the reaper cancels on the next heartbeat, so the honest reading is "any
+    moment now", not "-4m".
+    """
+    seconds = int(seconds)
+    if seconds <= 0:
+        return '0s'
+    parts = []
+    for unit, size in (('d', 86400), ('h', 3600), ('m', 60), ('s', 1)):
+        if seconds >= size:
+            parts.append('%d%s' % (seconds // size, unit))
+            seconds %= size
+    return ' '.join(parts[:2])
+
+
 def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
-                     recovered_list, time_estimated_list):
+                     recovered_list, time_estimated_list, max_runtime_tasks=0):
     """Group each running job's JobTasks by task_id into per-task summary rows.
 
     With chunking on, a task fans out into many JobTasks; the dashboard shows one
@@ -237,19 +256,11 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
     {job_id: {groups: [...], tasks_total/done/running, chunks_total/done/active}}.
     """
     hashfile_ids = {j.hashfile_id for j in running_jobs}
-    # Cracked accounts per hashfile (any task, current state) -- subtracted from
-    # the hashfile total to get the "unrecovered left" denominator on the dashboard.
-    hashfile_cracked = {}
-    if hashfile_ids:
-        rows = (db.session.query(HashfileHashes.hashfile_id,
-                                 db.func.count(HashfileHashes.id))
-                .join(Hashes, Hashes.id == HashfileHashes.hash_id)
-                .filter(Hashes.cracked == 1,
-                        HashfileHashes.hashfile_id.in_(hashfile_ids))
-                .group_by(HashfileHashes.hashfile_id)
-                .all())
-        for hf_id, cnt in rows:
-            hashfile_cracked[hf_id] = cnt
+    # The Recovered column reads X/Y where Y is the hashfile's TOTAL accounts.
+    # It briefly showed "unrecovered left" (total minus already-cracked), which
+    # made Y shrink as X grew -- two moving numbers, and a ratio that never
+    # reached 1. The cracked-per-hashfile query that fed that subtraction is gone
+    # with it, one fewer aggregate per dashboard poll.
 
     # Total accounts (HashfileHashes rows) per hashfile.
     hashfile_totals = {}
@@ -366,10 +377,10 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
                 rec = recovered_list.get(c.agent_id, '')
                 rec_str = rec.split(' ')[0] if rec else ''   # hashcat "X/Y" (drop the %)
                 # Chunk X = hashcat's recovered count for this agent's session. The
-                # /Y denominator shown in the template is the job's DB-computed
-                # "unrecovered left" (hashfile_unrecovered), same as the task row --
-                # so hashcat's own total is dropped here. Numeric so |commafy adds
-                # thousands separators.
+                # /Y denominator shown in the template is the hashfile's total
+                # accounts (hashfile_total), same as the task row -- so hashcat's
+                # own total is dropped here. Numeric so |commafy adds thousands
+                # separators.
                 rec_x = None
                 if rec_str:
                     head = rec_str.split('/')[0]
@@ -401,6 +412,21 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
             else:
                 agent_display = ''
 
+            # Time left before Settings.max_runtime_tasks cancels this attack.
+            # Measured from the EARLIEST chunk start, which is what the cap itself
+            # uses (api/routes.py _parent_task_started_at): a task fans out across
+            # agents, so any single chunk's started_at would under-report the
+            # parent's elapsed time and the column would disagree with the reaper.
+            # None whenever there is nothing to say -- cap disabled, or the attack
+            # has not started -- and the column is hidden entirely in that case.
+            cancel_in = None
+            if max_runtime_tasks and status == 'Running':
+                starts = [c.started_at for c in chunks if c.started_at is not None]
+                if starts:
+                    deadline = min(starts) + timedelta(hours=max_runtime_tasks)
+                    cancel_in = _short_duration(
+                        (deadline - datetime.now()).total_seconds())
+
             task = tasks_by_id.get(task_id)
             groups.append({
                 'entry_id': key if ledger else ('t%s' % task_id),
@@ -418,13 +444,13 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
                 'recovered': recovered_by_task.get(task_id, 0),
                 'rate': _fmt(rate_hps) if rate_hps else '',
                 'eta': eta,
+                'cancel_in': cancel_in,
                 'active_chunks': active,
             })
 
         out[job.id] = {
             'groups': groups,
-            'hashfile_unrecovered': max(hashfile_totals.get(job.hashfile_id, 0)
-                                        - hashfile_cracked.get(job.hashfile_id, 0), 0),
+            'hashfile_total': hashfile_totals.get(job.hashfile_id, 0),
             'tasks_total': len(groups),
             'tasks_done': sum(1 for g in groups if g['status'] == 'Completed'),
             'tasks_running': sum(1 for g in groups if g['status'] == 'Running'),
@@ -452,6 +478,7 @@ def _jobs_ctx():
     agents_ctx = _agents_ctx()
     tasks_by_id = {t.id: t for t in tasks}
     agents_by_id = {a.id: a for a in agents_ctx['agents']}
+    settings = Settings.query.first()
     # Attack counts for the queue table, off the ledger. Counting raw rows there
     # was wrong in two directions at once: a chunked attack counted once per
     # chunk, and under on-demand minting a freshly queued job has no rows yet, so
@@ -466,11 +493,13 @@ def _jobs_ctx():
         'customers': Customers.query.all(),
         'job_tasks': job_tasks,
         'tasks': tasks,
-        'settings': Settings.query.first(),
+        'settings': settings,
         'datetime': datetime,
         'timedelta': timedelta,
         'job_dash': _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
-                                     agents_ctx['recovered_list'], agents_ctx['time_estimated_list']),
+                                     agents_ctx['recovered_list'], agents_ctx['time_estimated_list'],
+                                     max_runtime_tasks=(settings.max_runtime_tasks
+                                                        if settings else 0) or 0),
         **agents_ctx,
     }
 

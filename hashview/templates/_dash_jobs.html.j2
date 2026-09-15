@@ -102,15 +102,14 @@
                                     <td class="center">{% if g.status == 'Running' %}<a class="icon-btn" href="{{ url_for('main.stop_task', job_id=job.id, task_id=g.task_id) }}" title="Stop task">{{ icon('stop', size=15) }}</a>{% endif %}</td>
                                 </tr>
                                 {% if g.expandable %}
-                                    <tr class="chunk-sub" data-parent="{{ key }}" hidden>
-                                        <td></td>
-                                        <td colspan="{% if settings and settings.max_runtime_tasks %}9{% else %}8{% endif %}" class="mono" style="color:var(--text-mute);font-size:10px;"><span style="color:var(--green);">{{ g.completed|commafy }}</span> completed · <span style="color:var(--amber);">{{ g.running|commafy }}</span> running · {{ g.queued|commafy }} queued</td>
-                                    </tr>
                                     {% for ch in g.active_chunks %}
                                     <tr class="chunk-row" data-parent="{{ key }}" hidden>
                                         <td></td>
+                                        {# chunk id + slice sit under TASK, indented, rather than under
+                                           Status: they name WHICH piece of the task this row is, which
+                                           is a continuation of the task name above it, not a status. #}
+                                        <td class="mono" style="color:var(--text-dim); padding-left:28px;">{{ ch.label }}{% if ch.chunk_total and ch.chunk_total > 0 %}<span style="color:var(--text-mute);">/{{ ch.chunk_total }}</span>{% endif %}{% if ch.slice %}<span style="color:var(--text-mute);"> · {{ ch.slice }}</span>{% endif %}</td>
                                         <td></td>
-                                        <td class="mono center" style="color:var(--text-dim);">{{ ch.label }}{% if ch.chunk_total and ch.chunk_total > 0 %}<span style="color:var(--text-mute);">/{{ ch.chunk_total }}</span>{% endif %}{% if ch.slice %}<span style="color:var(--text-mute);"> · {{ ch.slice }}</span>{% endif %}</td>
                                         <td class="mono" style="color:var(--text-dim);">{{ ch.agent }}</td>
                                         <td></td>
                                         <td class="center num">{% if ch.recovered is not none %}{% if job.hashfile_id %}<a class="rec-x-link" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="View hashfile analytics"><span style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span></a>{% else %}<span style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span>{% endif %}{% else %}—{% endif %}</td>

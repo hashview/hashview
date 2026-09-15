@@ -6,6 +6,7 @@ chunks). These pin that math and the grouped /dashboard/jobs render.
 """
 
 import json
+import re
 from datetime import datetime
 
 import pytest
@@ -553,3 +554,42 @@ def test_auto_cancel_column_only_renders_when_the_cap_is_on(app, client):
     db.session.commit()
 
     assert "Auto-cancel" in client.get("/dashboard/jobs").get_data(as_text=True)
+
+
+# ------------------------------------------------ expanded chunk row layout
+
+
+@pytest.mark.security
+def test_expanding_a_task_does_not_render_a_chunk_summary_row(app, client):
+    """The "N completed / N running / N queued" strip under an expanded task is
+    gone: the counts are already on the parent row, and it cost a full-width
+    row of vertical space per expanded task."""
+    from tests.unit.helpers import login, make_admin
+    _seed_running_job()
+    login(client, make_admin())
+
+    html = client.get("/dashboard/jobs").get_data(as_text=True)
+
+    assert "chunk-row" in html          # the chunks themselves still render
+    assert "chunk-sub" not in html
+    assert "completed ·" not in html
+
+
+@pytest.mark.security
+def test_chunk_id_sits_under_task_not_status(app, client):
+    """A chunk's id and slice name WHICH piece of the task the row is -- a
+    continuation of the task name above it, not a status. They render in the
+    Task column, indented, leaving Status empty on chunk rows."""
+    from tests.unit.helpers import login, make_admin
+    _seed_running_job()
+    login(client, make_admin())
+
+    html = client.get("/dashboard/jobs").get_data(as_text=True)
+    row = re.search(r'<tr class="chunk-row".*?</tr>', html, re.S).group(0)
+    cells = re.findall(r'<td\b[^>]*>(.*?)</td>', row, re.S)
+    attrs = re.findall(r'<td\b([^>]*)>', row)
+
+    # column order: spacer, Task, Status, Agent, Keyspace, Recovered, Rate, ETA...
+    assert cells[1].startswith("#")          # the chunk id, e.g. "#3/5"
+    assert "padding-left" in attrs[1]        # indented under the task name
+    assert cells[2].strip() == ""            # Status is left empty on chunk rows

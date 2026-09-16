@@ -189,6 +189,13 @@ def settings_list():
                 flash('Updated Hashview settings!', 'success')
             db.session.commit()
             return redirect(url_for('settings.settings_list'))
+        elif request.method == 'POST':
+            # A rejected POST used to fall straight through to the re-render with
+            # no message anywhere, so the page came back looking unchanged and
+            # the whole save was silently lost. The per-field errors are rendered
+            # beside their inputs; this says that nothing was saved at all, which
+            # is the part a field-level message cannot convey.
+            flash('Settings not saved — check the highlighted fields below.', 'danger')
         elif request.method == 'GET':
             hashview_form.retention_period.data = settings.retention_period
             hashview_form.max_runtime_jobs.data = settings.max_runtime_jobs

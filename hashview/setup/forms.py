@@ -3,16 +3,19 @@ from flask_wtf import FlaskForm
 from wtforms import IntegerField, PasswordField, StringField, SubmitField
 from wtforms.validators import DataRequired, Email, EqualTo, Length, NumberRange
 
+from hashview.models import Users
+from hashview.utils.form_limits import db_length
+
 
 class SetupAdminPassForm(FlaskForm):
     """Class representing an Admin Pass Forms"""
 
     first_name = StringField(
-        'First Name', validators=[DataRequired(), Length(min=1, max=20)])
+        'First Name', validators=[DataRequired(), db_length(Users, 'first_name', minimum=1)])
     last_name = StringField(
-        'Last Name', validators=[DataRequired(), Length(min=1, max=20)])
+        'Last Name', validators=[DataRequired(), db_length(Users, 'last_name', minimum=1)])
     email_address = StringField(
-        'Email', validators=[DataRequired(), Email()])
+        'Email', validators=[DataRequired(), Email(), db_length(Users, 'email_address')])
     password = PasswordField(
         'Password', validators=[DataRequired(), Length(min=14)])
     confirm_password = PasswordField(

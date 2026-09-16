@@ -101,7 +101,7 @@ function hvCustomerInfo(id) {
             {{ modal_errors(form_err, 'add-customer-modal') }}
             <div class="field" style="margin-bottom:0;">
                 <label class="field-label" for="cu-name">Customer name <span class="req">*</span></label>
-                <input class="input" type="text" name="name" id="cu-name" placeholder="e.g. Acme Corp" autocomplete="off" required>
+                <input class="input" type="text" name="name" id="cu-name" maxlength="{{ db_maxlength('Customers', 'name') }}" placeholder="e.g. Acme Corp" autocomplete="off" required>
             </div>
         </div>
         <div class="hv-dialog-foot">
@@ -127,7 +127,7 @@ function hvCustomerInfo(id) {
             {{ modal_errors(form_err, 'edit-customer-modal') }}
             <div class="field" style="margin-bottom:0;">
                 <label class="field-label" for="ec-name">Customer name <span class="req">*</span></label>
-                <input class="input" type="text" name="name" id="ec-name" autocomplete="off" required>
+                <input class="input" type="text" name="name" id="ec-name" maxlength="{{ db_maxlength('Customers', 'name') }}" autocomplete="off" required>
             </div>
         </div>
         <div class="hv-dialog-foot">

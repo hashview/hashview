@@ -41,6 +41,7 @@ from hashview.models import (
     db,
 )
 from hashview.utils.audit import log_event
+from hashview.utils.form_limits import column_length
 from hashview.utils.hashcat_modes import CUSTOM_HASH_TYPE
 from hashview.utils.utils import (
     apply_name_filter,
@@ -369,6 +370,19 @@ def jobs_assigned_hashfile(job_id):
             hashfile_path = os.path.join(current_app.root_path, 'control/tmp', random_hex)
             with open(hashfile_path, 'w+') as hashfilehashes_file:
                 hashfilehashes_file.write(jobs_new_hashfile_form.hashfilehashes.data)
+
+        # The upload branch takes the name straight from the browser-supplied
+        # filename, which no form validator ever sees (the paste branch uses the
+        # bounded `name` field). Check it against the column here so an
+        # over-long name is refused with a message instead of reaching MySQL,
+        # which rejects it in strict mode and 500s after the upload is stored.
+        name_max = column_length(Hashfiles, 'name')
+        if len(hashfile_name) > name_max:
+            msg = f'Hashfile name cannot be longer than {name_max} characters.'
+            if is_ajax:
+                return jsonify({'status': 'error', 'msg': msg}), 400
+            flash(msg, 'danger')
+            return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
 
         if len(hashfile_path) > 0:
             try:

@@ -13,6 +13,7 @@ from hashview.models import (
     db,
 )
 from hashview.utils.audit import log_event
+from hashview.utils.form_limits import column_length
 from hashview.utils.hashcat_modes import hash_type_names
 from hashview.utils.utils import purge_orphaned_hashes, try_commit
 
@@ -135,6 +136,13 @@ def customers_edit():
 
     if not name:
         return _edit_error('Customer name is required.')
+    # This route reads request.form directly instead of going through
+    # CustomersForm, so the form's db_length validator never runs here. Without
+    # this check an over-long name reaches MySQL, which rejects it in strict
+    # mode and turns a typo into a 500.
+    name_max = column_length(Customers, 'name')
+    if len(name) > name_max:
+        return _edit_error(f'Customer name cannot be longer than {name_max} characters.')
     clash = Customers.query.filter_by(name=name).first()
     if clash and clash.id != customer.id:
         return _edit_error('That customer already exists. Please choose a different one.')

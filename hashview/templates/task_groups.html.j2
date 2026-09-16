@@ -19,7 +19,7 @@
     <div class="hv-dialog-body" style="max-height:74vh; overflow-y:auto;">
         <div class="field">
             <label class="field-label" for="{{ p }}-name">Group name <span class="req">*</span></label>
-            <input class="input" type="text" name="name" id="{{ p }}-name" placeholder="e.g. Fast NTLM First Pass" autocomplete="off" required>
+            <input class="input" type="text" name="name" id="{{ p }}-name" maxlength="{{ db_maxlength('TaskGroups', 'name') }}" placeholder="e.g. Fast NTLM First Pass" autocomplete="off" required>
         </div>
         <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 4px;">
             {# LEFT: ADD TASKS #}

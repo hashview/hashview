@@ -20,7 +20,11 @@ import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SKIP_DIRS = {".git", "venv", "node_modules", "__pycache__", "migrations"}
+# `.venv` is the documented in-repo virtualenv (CONTRIBUTING.md), so it must be
+# skipped or the scan reads the SQL inside site-packages and flags other
+# projects' code. `site-packages` is belt-and-braces for a venv named otherwise.
+SKIP_DIRS = {".git", ".venv", "venv", "site-packages", "node_modules",
+             "__pycache__", "migrations"}
 
 # MySQL 8.0's own list, read from INFORMATION_SCHEMA.KEYWORDS WHERE RESERVED = 1
 # on 8.0.46. Embedded rather than queried so this test needs no database.

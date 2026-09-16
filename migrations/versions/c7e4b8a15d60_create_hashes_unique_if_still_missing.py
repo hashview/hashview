@@ -1,7 +1,7 @@
 """create hashes (sub_ciphertext, hash_type) unique constraint if still missing
 
 Revision ID: c7e4b8a15d60
-Revises: d8b3e5c02a71
+Revises: f2a6c9d41b78
 Create Date: 2026-09-16 00:00:00.000000
 
 f3b8c1a7d942 creates uq_hashes_sub_ciphertext_hash_type, but when it finds
@@ -30,7 +30,13 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = 'c7e4b8a15d60'
-down_revision = 'd8b3e5c02a71'
+# Re-parented onto f2a6c9d41b78 (widen customers.name), which landed on the dev
+# line first. Both were written against d8b3e5c02a71, and two revisions sharing
+# a parent is two Alembic heads -- which `flask db upgrade` refuses to resolve
+# and tests/unit/test_migration_smoke.py fails on. The two are unrelated (a
+# customers column width and a hashes constraint), so the order between them
+# carries no meaning; this one simply goes last.
+down_revision = 'f2a6c9d41b78'
 branch_labels = None
 depends_on = None
 

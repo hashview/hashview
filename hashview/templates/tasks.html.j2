@@ -24,7 +24,7 @@
 <div class="hv-dialog-body" style="max-height:72vh; overflow-y:auto;">
     <div class="field">
         <label class="field-label" for="{{ p }}-name">Task name <span class="req">*</span></label>
-        <input class="input" type="text" name="name" id="{{ p }}-name" placeholder="e.g. rockyou + OneRule" autocomplete="off" required>
+        <input class="input" type="text" name="name" id="{{ p }}-name" maxlength="{{ db_maxlength('Tasks', 'name') }}" placeholder="e.g. rockyou + OneRule" autocomplete="off" required>
     </div>
     <div class="field">
         <label class="field-label">Attack mode</label>
@@ -86,17 +86,17 @@
     {# Mask — mask, hybrid #}
     <div class="field" id="{{ p }}-fld-mask" style="display:none;">
         <label class="field-label">Hashcat mask <span class="req">*</span></label>
-        <input class="input mono" type="text" name="mask" id="{{ p }}-mask" placeholder="?l?l?l?l?d?d" autocomplete="off">
+        <input class="input mono" type="text" name="mask" id="{{ p }}-mask" maxlength="{{ db_maxlength('Tasks', 'hc_mask') }}" placeholder="?l?l?l?l?d?d" autocomplete="off">
     </div>
 
     {# Combinator optional rules #}
     <div class="field" id="{{ p }}-fld-jrule" style="display:none;">
         <label class="field-label">Left rule <span style="color:var(--text-mute); font-weight:400;">· optional (-j)</span></label>
-        <input class="input mono" type="text" name="j_rule" id="{{ p }}-jrule" placeholder="e.g. $-" autocomplete="off">
+        <input class="input mono" type="text" name="j_rule" id="{{ p }}-jrule" maxlength="{{ db_maxlength('Tasks', 'j_rule') }}" placeholder="e.g. $-" autocomplete="off">
     </div>
     <div class="field" id="{{ p }}-fld-krule" style="display:none; margin-bottom:0;">
         <label class="field-label">Right rule <span style="color:var(--text-mute); font-weight:400;">· optional (-k)</span></label>
-        <input class="input mono" type="text" name="k_rule" id="{{ p }}-krule" placeholder="e.g. $!" autocomplete="off">
+        <input class="input mono" type="text" name="k_rule" id="{{ p }}-krule" maxlength="{{ db_maxlength('Tasks', 'k_rule') }}" placeholder="e.g. $!" autocomplete="off">
     </div>
 </div>
 {% endmacro %}

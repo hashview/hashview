@@ -11,6 +11,9 @@ from wtforms import (
 )
 from wtforms.validators import DataRequired, NumberRange
 
+from hashview.models import Settings
+from hashview.utils.form_limits import db_length
+
 
 class HashviewSettingsForm(FlaskForm):
     """Class representing an Settings Forms"""
@@ -29,9 +32,11 @@ class HashviewSettingsForm(FlaskForm):
     email_enabled = BooleanField('Enable Email notifications.')
     pushover_enabled = BooleanField('Enable Pushover notifications.')
     slack_enabled = BooleanField('Enable Slack notifications.')
-    slack_bot_token = StringField('Slack bot token (xoxb-…)')
+    slack_bot_token = StringField('Slack bot token (xoxb-…)',
+                                  validators=[db_length(Settings, 'slack_bot_token')])
     # Room (channel id) for administrative notifications (agent errors).
-    slack_admin_channel = StringField('Slack room for administrative messages')
+    slack_admin_channel = StringField('Slack room for administrative messages',
+                                      validators=[db_length(Settings, 'slack_admin_channel')])
     # Authentication — local (default) or Microsoft Entra ID SSO. No DataRequired
     # on the azure fields: local mode must validate with them blank. The route
     # enforces completeness when azure is selected. The client secret is a
@@ -43,11 +48,17 @@ class HashviewSettingsForm(FlaskForm):
                               choices=[('local', 'Local (username & password)'),
                                        ('azure', 'Microsoft Entra ID (SSO)')],
                               default='local', validate_choice=False)
-    azure_tenant_id = StringField('Directory (tenant) ID')
-    azure_client_id = StringField('Application (client) ID')
-    azure_client_secret = PasswordField('Client secret', render_kw={'autocomplete': 'new-password'})
-    azure_redirect_uri = StringField('Redirect URI')
-    azure_allowed_groups = StringField('Allowed group Object IDs (comma-separated)')
+    azure_tenant_id = StringField('Directory (tenant) ID',
+                                  validators=[db_length(Settings, 'azure_tenant_id')])
+    azure_client_id = StringField('Application (client) ID',
+                                  validators=[db_length(Settings, 'azure_client_id')])
+    azure_client_secret = PasswordField('Client secret',
+                                        render_kw={'autocomplete': 'new-password'},
+                                        validators=[db_length(Settings, 'azure_client_secret')])
+    azure_redirect_uri = StringField('Redirect URI',
+                                     validators=[db_length(Settings, 'azure_redirect_uri')])
+    azure_allowed_groups = StringField('Allowed group Object IDs (comma-separated)',
+                                       validators=[db_length(Settings, 'azure_allowed_groups')])
     submit = SubmitField('Update')
 
     def validate_rention_period(self, retention_period):

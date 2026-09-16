@@ -27,6 +27,8 @@ BASE_REV = "8027c2d2b40a"      # what the drifted field DB was stamped at
 # Parent of a4c9e7b21f60 (widen job_tasks.chunk_mask). Downgrading TO this
 # un-applies the widening, whatever else has landed on top of it since.
 WIDEN_CHUNK_MASK_PARENT = "e5d1c7b3a904"
+# Parent of f2a6c9d41b78 (widen customers.name 40 -> 255), for the same reason.
+WIDEN_CUSTOMERS_NAME_PARENT = "d8b3e5c02a71"
 
 
 def _dev_head():
@@ -147,4 +149,32 @@ def test_chunk_mask_is_widened_and_the_widening_reverses(tmp_path):
 
         upgrade(directory=MIGRATIONS_DIR)          # idempotent re-apply
         assert _chunk_mask_length(db) == 255
+        assert _current_rev(db) == _dev_head()
+
+
+def _customers_name_length(db):
+    for col in sa_inspect(db.engine).get_columns("customers"):
+        if col["name"] == "name":
+            return getattr(col["type"], "length", None)
+    return None
+
+
+def test_customers_name_is_widened_and_the_widening_reverses(tmp_path):
+    """f2a6c9d41b78 widens customers.name 40 -> 255, and back.
+
+    Round-tripped for the reason spelled out above for chunk_mask: the
+    migration is guarded on the LIVE column width, and a guard that compares
+    the wrong way still looks correct on a fresh upgrade (where the model has
+    already built the column at 255) and only fails coming back up from 40.
+    """
+    app, db = _drifted_app(tmp_path)
+    with app.app_context():
+        upgrade(directory=MIGRATIONS_DIR)
+        assert _customers_name_length(db) == 255
+
+        downgrade(directory=MIGRATIONS_DIR, revision=WIDEN_CUSTOMERS_NAME_PARENT)
+        assert _customers_name_length(db) == 40
+
+        upgrade(directory=MIGRATIONS_DIR)          # idempotent re-apply
+        assert _customers_name_length(db) == 255
         assert _current_rev(db) == _dev_head()

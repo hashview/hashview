@@ -3,17 +3,24 @@ from flask_wtf import FlaskForm
 from wtforms import FileField, StringField, SubmitField, TextAreaField
 from wtforms.validators import DataRequired
 
+from hashview.models import Rules
+from hashview.utils.form_limits import db_length, db_truncate
+
 
 class RulesForm(FlaskForm):
     """Class representing an Rules Forms"""
 
-    name = StringField('Name', validators=[DataRequired()])
+    # The upload modal hides this box and fills it from the chosen file's
+    # name, so an over-long value is trimmed rather than refused -- see
+    # db_truncate. RulesEditForm below is not wired to any route.
+    name = StringField('Name', validators=[DataRequired(), db_length(Rules, 'name')],
+                       filters=[db_truncate(Rules, 'name')])
     rules = FileField('Upload Rules')
     submit = SubmitField('upload')
 
 class RulesEditForm(FlaskForm):
     """Class representing a Rules Edit Form"""
-    name = StringField('Name', validators=[DataRequired()])
+    name = StringField('Name', validators=[DataRequired(), db_length(Rules, 'name')])
     content = TextAreaField('Contents', validators=[DataRequired()])
     submit = SubmitField('update')
 

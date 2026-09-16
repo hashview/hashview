@@ -258,24 +258,29 @@
                             <div class="field">
                                 <label class="field-label" for="set-azure-tenant">Directory (tenant) ID</label>
                                 {{ HashviewForm.azure_tenant_id(class="input mono", id="set-azure-tenant", placeholder="00000000-0000-0000-0000-000000000000", autocomplete="off") }}
+                                {% for e in HashviewForm.azure_tenant_id.errors %}<div class="invalid-feedback" style="display:block;">{{ e }}</div>{% endfor %}
                             </div>
                             <div class="field">
                                 <label class="field-label" for="set-azure-client">Application (client) ID</label>
                                 {{ HashviewForm.azure_client_id(class="input mono", id="set-azure-client", placeholder="00000000-0000-0000-0000-000000000000", autocomplete="off") }}
+                                {% for e in HashviewForm.azure_client_id.errors %}<div class="invalid-feedback" style="display:block;">{{ e }}</div>{% endfor %}
                             </div>
                             <div class="field">
                                 <label class="field-label" for="set-azure-secret">Client secret</label>
                                 {{ HashviewForm.azure_client_secret(class="input mono", id="set-azure-secret", placeholder=('•••••••••• (unchanged — leave blank to keep)' if azure_secret_set else 'paste client secret value'), autocomplete="new-password") }}
+                                {% for e in HashviewForm.azure_client_secret.errors %}<div class="invalid-feedback" style="display:block;">{{ e }}</div>{% endfor %}
                                 <span class="field-hint">Write-only — the stored secret is never shown or sent to the browser. Leave blank to keep the current value.</span>
                             </div>
                             <div class="field">
                                 <label class="field-label" for="set-azure-redirect">Redirect URI</label>
                                 {{ HashviewForm.azure_redirect_uri(class="input mono", id="set-azure-redirect", placeholder=default_azure_redirect, autocomplete="off") }}
+                                {% for e in HashviewForm.azure_redirect_uri.errors %}<div class="invalid-feedback" style="display:block;">{{ e }}</div>{% endfor %}
                                 <span class="field-hint">Register this <b>exact HTTPS</b> URL in the App Registration → Redirect URIs (Web). Leave blank to use: <span class="mono">{{ default_azure_redirect }}</span></span>
                             </div>
                             <div class="field" style="margin-bottom:0;">
                                 <label class="field-label" for="set-azure-groups">Allowed group Object IDs</label>
                                 {{ HashviewForm.azure_allowed_groups(class="input mono", id="set-azure-groups", placeholder="groupId1,groupId2 (blank = any tenant user)", autocomplete="off") }}
+                                {% for e in HashviewForm.azure_allowed_groups.errors %}<div class="invalid-feedback" style="display:block;">{{ e }}</div>{% endfor %}
                                 <span class="field-hint">Comma-separated security-group Object IDs. When set, only members of these groups may sign in (and be auto-provisioned). Blank allows any authenticated tenant user.</span>
                             </div>
                         </div>

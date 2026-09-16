@@ -179,7 +179,7 @@ All of the following run on push and PR unless noted:
 | `pylint.yml` | Pylint across 3.11/3.12/3.13 (**push only**, not PR) |
 | `e2e.yml` | Playwright e2e suite against a Docker Compose stack, strict mode |
 | `e2e-crack.yml` | Multi-agent real-crack harness against a pinned, checksummed rockyou.txt |
-| `db-parity.yml` | Real Alembic migration chain + `-m mysql` integration tests against MariaDB |
+| `db-parity.yml` | Real Alembic migration chain + `-m mysql` integration tests against MariaDB 11, MySQL 8.0 and MySQL 8.4 |
 | `migration-e2e.yml` | `main` → dev upgrade path, using built Docker images of both |
 | `mutation.yml` | Weekly `mutmut` campaign — quality signal only, never blocks a PR |
 

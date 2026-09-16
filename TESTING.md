@@ -21,7 +21,7 @@ gates.
 
 | Suite | Path | How it runs | Imports `hashview.*`? |
 | --- | --- | --- | --- |
-| Unit | `tests/unit/` (~98 files) | `pytest tests/unit` | Yes |
+| Unit | `tests/unit/` (~134 files) | `pytest tests/unit` | Yes |
 | Security | `tests/security/` | `pytest tests/security` (tests marked `security`) | Yes |
 | Agent unit | `tests/agent_unit/` | `pytest tests/agent_unit` | No (imports `agent.*`) |
 | Integration (MySQL) | `tests/integration/` | `pytest tests/integration -m mysql` | Yes |
@@ -29,6 +29,8 @@ gates.
 | Migration e2e (main→dev) | `tests/integration/test_migration_e2e.py`, `tests/migration/` | `tests/run_migration_e2e.sh` | No (raw SQLAlchemy against two live MySQL DBs) |
 | E2E (Playwright) | `tests/e2e/` | `pytest -m e2e` against a live host | No |
 | E2E crack harness | `tests/crack/`, `tests/e2e/crack/` | `tests/run_e2e_crack_compose.sh` | Mixed |
+| hashcat matrix | `tests/hashcat_matrix/` | `HASHCAT_BIN=... pytest tests/hashcat_matrix` | No (drives the real binary) |
+| Kerberos hashcat interop | `tests/hashcat_interop/` | `HASHCAT_BIN=... pytest tests/hashcat_interop` | Yes |
 
 Markers are declared in `pytest.ini`:
 
@@ -42,14 +44,18 @@ Markers are declared in `pytest.ini`:
   (needs `HASHVIEW_TEST_DATABASE_URI`)
 - `migration` — end-to-end main->dev database migration test (needs docker and
   built images; see "CI workflows" below)
+- `hashcat_matrix` — live hashcat interop tests (opt-in; needs `HASHCAT_BIN`;
+  see "hashcat version interoperability" below)
+- `hashcat_interop` — live hashcat Kerberos AES-mode interop tests (needs
+  `HASHCAT_BIN`; see the Kerberos interop section below)
 - `docker_analytics` — `/analytics` bug hunt against a running docker stack
   (needs `HASHVIEW_DOCKER_BASE_URL`)
 
 > **Note on invocation.** Suites are selected by *path*, not by a single marker.
 > CI runs `python -m pytest tests/unit tests/security tests/agent_unit ...`
 > directly. But `-m security` is **not** equivalent to `pytest tests/security`:
-> a large share of `tests/unit/` (34 files) also carries `pytest.mark.security`
-> alongside the 6 files under `tests/security/`, so the marker selects a
+> a large share of `tests/unit/` (49 files) also carries `pytest.mark.security`
+> alongside the 7 files under `tests/security/`, so the marker selects a
 > cross-cutting slice of security-relevant tests while the path selects the
 > dedicated suite. Use the path when you mean "the security suite."
 
@@ -367,8 +373,9 @@ The unit job measures more than a single line number:
 
 ## CI workflows
 
-Eight workflows run on push / PR (plus one scheduled). Each gates a distinct
-slice:
+Nine workflows gate a distinct slice. Triggers vary: most run on push and PR,
+`pylint.yml` on push only, and `hashcat-matrix.yml` / `mutation.yml` on a
+schedule as well:
 
 | Workflow | Trigger | What it gates |
 | --- | --- | --- |
@@ -376,28 +383,48 @@ slice:
 | `e2e.yml` | push, PR | The Playwright e2e suite via `run_e2e_compose.sh`, under `HASHVIEW_E2E_STRICT=1` + a deterministic `HASHVIEW_E2E_*` env block. |
 | `e2e-crack.yml` | push, PR | The multi-agent real-crack harness via `run_e2e_crack_compose.sh`, using a pinned + checksummed SecLists rockyou. |
 | `migration-e2e.yml` | push, PR | The end-to-end main->dev database migration test (see below). 35-minute timeout; checks out with `fetch-depth: 0` so `origin/main` is available to build the "old" image. |
-| `db-parity.yml` | push, PR | MySQL/MariaDB parity (see below). |
+| `db-parity.yml` | push, PR | MySQL/MariaDB parity matrix — MariaDB 11, MySQL 8.0 and 8.4 (see below). |
 | `kerberos-hashcat-interop.yml` | push, PR (path-filtered), manual dispatch | Real-binary hashcat Kerberos interop matrix (see below). |
+| `hashcat-matrix.yml` | PR (path-filtered), weekly cron, manual dispatch | Pinned real-binary hashcat matrix plus a floating newest-release check (see "hashcat version interoperability"). |
 | `lint.yml` | push, PR | Ruff lint, Bandit SAST vs the committed baseline (server + agent), `pip-audit` of production deps, and OpenAPI spec validation. |
 | `pylint.yml` | push | Pylint across Python 3.11/3.12/3.13. |
 | `mutation.yml` | weekly cron + manual dispatch | Non-blocking `mutmut` campaign; uploads a survivor report artifact (never fails the build). |
+
+`close-issues-on-dev-merge.yml` is housekeeping rather than a gate: because
+GitHub's native `Closes #N` only fires against the default branch, it scans a
+merged PR's title, body and commits for closing keywords and closes the
+referenced issues by hand when the PR lands on `v0.8.3-dev`.
 
 ### MySQL / MariaDB parity (`db-parity.yml`)
 
 The unit suite runs on SQLite, so the Alembic chain's MySQL-only DDL is never
 executed there (`tests/unit/test_migration_smoke.py` deliberately can't run it).
-`db-parity.yml` closes that gap with a real `mariadb:11` service container:
+`db-parity.yml` closes that gap with a matrix over three real servers — MariaDB
+11, MySQL 8.0 (the common production version) and MySQL 8.4 (the current LTS) —
+with `fail-fast: false`, so when engines disagree the job shows *which* ones
+rather than cancelling a sibling. Running MariaDB alone was not enough: MySQL
+and MariaDB do not reserve the same words, and an engine-specific SQL error
+(such as the `GROUPS` alias that broke the duplicate-hash repair) could pass
+every other check.
 
-1. Runs the real migration chain from an empty schema to head against MariaDB
-   via `scripts/run_migrations.py` (`alembic upgrade head`). A migration error
+For each engine the job:
+
+1. Runs the real migration chain from an empty schema to head via
+   `scripts/run_migrations.py` (`alembic upgrade head`). A migration error
    fails the job — the class of bug the SQLite suite can't see.
 2. Runs the `mysql`-marked integration tests
-   (`pytest tests/integration -m mysql`) against that migration-built schema.
+   (`pytest tests/integration -m mysql`) against that migration-built schema,
+   including `tests/integration/test_dedupe_mysql.py`, which exercises every
+   read and write statement of the duplicate-hash repair so the job has
+   something to catch there.
 
 Both are driven by `HASHVIEW_TEST_DATABASE_URI`
 (`mysql+mysqlconnector://...?charset=utf8mb4`). The same variable, when set,
 also overrides the unit-test database URI (`tests/unit/conftest.py`), and the
-integration tests skip cleanly when it is unset (local dev).
+integration tests skip cleanly when it is unset (local dev). The job waits for
+the database through the app's own driver and requires two consecutive
+successes, because the MySQL image answers `mysqladmin ping` from a temporary
+server it runs while initialising.
 
 ## Migration E2E (`migration-e2e.yml`)
 

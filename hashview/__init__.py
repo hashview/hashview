@@ -61,6 +61,37 @@ def setup_defaults_if_needed():
     except Exception:
         logger.exception('Upgrading Database failed.')
 
+    # The uniqueness constraint on hashes(sub_ciphertext, hash_type) cannot be
+    # created while duplicate rows exist, and the migration that creates it is
+    # recorded as applied the moment it skips over them -- so no later
+    # `db upgrade` ever reattempts, and an operator who merges their duplicates
+    # afterwards is stranded with no constraint and no way to ask for one.
+    # Retrying here is what makes "restart Hashview" advice that can actually be
+    # followed. Gated on the cheap inspector check first, so the GROUP BY only
+    # runs while the constraint is genuinely missing, and never again once it
+    # exists.
+    try:
+        from hashview.utils.dedupe import (
+            UNIQUE_CONSTRAINT,
+            constraint_present,
+            create_unique_constraint,
+            duplicate_summary,
+        )
+        with db.engine.connect() as conn:
+            if not constraint_present(conn):
+                duplicate_groups = duplicate_summary(conn)[0]
+                if duplicate_groups:
+                    logger.warning(
+                        '%s is missing: %s duplicate (sub_ciphertext, hash_type) '
+                        'pair(s) block it, so hash imports can still race. Merge '
+                        'them under Settings -> Data management, or with '
+                        'scripts/repair_duplicate_hashes.py --apply.',
+                        UNIQUE_CONSTRAINT, duplicate_groups)
+                elif create_unique_constraint(conn):
+                    logger.info('Created %s.', UNIQUE_CONSTRAINT)
+    except Exception:
+        logger.exception('Could not create the hashes uniqueness constraint.')
+
     try:
         from hashview.scheduler import register_default_jobs
         logger.info('Adding Default Scheduled Jobs Progressing.')

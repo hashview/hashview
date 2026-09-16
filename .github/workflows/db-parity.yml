@@ -1,10 +1,20 @@
-name: DB Parity (MariaDB)
+name: DB Parity (MariaDB + MySQL)
 
-# Closes the gap left by the SQLite-only unit suite: the Alembic chain's
-# MySQL-only DDL (create_foreign_key / alter_column) is NEVER executed in the
-# unit tests (see tests/unit/test_migration_smoke.py). This job runs the real
-# migration chain from an empty schema to head against a real MariaDB service,
-# then runs the `mysql`-marked integration tests against that migration-built DB.
+# Closes the gap left by the SQLite-only unit suite. Two distinct gaps, in fact:
+#
+#  1. The Alembic chain's MySQL-only DDL (create_foreign_key / alter_column) is
+#     NEVER executed by the unit tests (see tests/unit/test_migration_smoke.py).
+#  2. Raw SQL that SQLite parses and a MySQL-family server rejects. Production
+#     runs MySQL, and MySQL and MariaDB do NOT reserve the same words -- a
+#     `SELECT COUNT(*) AS groups` in the duplicate-hash repair was valid on
+#     SQLite and on MariaDB and a 1064 syntax error on every MySQL 8.0.2+
+#     install, because MySQL reserved GROUPS for window functions. Running one
+#     engine could never have caught it, so the matrix runs both.
+#
+# MySQL 8.0 is the common production version; 8.4 is the current LTS, so a
+# newly reserved word is caught before operators meet it. fail-fast is off:
+# when an engine-specific difference appears, the point is to see WHICH engines
+# disagree, which a cancelled sibling job hides.
 
 on: [push, pull_request]
 
@@ -12,28 +22,47 @@ permissions:
   contents: read
 
 jobs:
-  mariadb-parity:
+  db-parity:
+    name: ${{ matrix.label }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: MariaDB 11
+            image: mariadb:11
+            health_cmd: healthcheck.sh --connect --innodb_initialized
+          - label: MySQL 8.0
+            image: mysql:8.0
+            health_cmd: mysqladmin ping -h 127.0.0.1 --silent
+          - label: MySQL 8.4 (LTS)
+            image: mysql:8.4
+            health_cmd: mysqladmin ping -h 127.0.0.1 --silent
+
     services:
-      mariadb:
-        image: mariadb:11
+      db:
+        image: ${{ matrix.image }}
+        # Both spellings are set because the two images read different ones:
+        # MariaDB prefers MARIADB_*, MySQL only understands MYSQL_*. Each image
+        # ignores the pair it does not know, so one block serves the matrix.
         env:
           MARIADB_ROOT_PASSWORD: hashview
           MARIADB_DATABASE: hashview
+          MYSQL_ROOT_PASSWORD: hashview
+          MYSQL_DATABASE: hashview
         ports:
           - 3306:3306
-        # Health-check so steps don't start until the server accepts connections.
         options: >-
-          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-cmd="${{ matrix.health_cmd }}"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
 
     env:
       # mysql-connector-python (the dialect the app uses, see hashview/config.py)
-      # so the migration + integration runs hit MySQL through the exact same
+      # so the migration + integration runs hit the server through the exact same
       # driver/dialect as production. charset=utf8mb4 mirrors the app's URL.
       HASHVIEW_TEST_DATABASE_URI: "mysql+mysqlconnector://root:hashview@127.0.0.1:3306/hashview?charset=utf8mb4"
 
@@ -55,13 +84,53 @@ jobs:
       - name: Create runtime control dirs (gitignored, required by tests)
         run: mkdir -p hashview/control/{hashes,logs,rules,tmp,wordlists,wordlists_import}
 
+      # The service health-check is not sufficient on its own: the MySQL image's
+      # entrypoint runs a TEMPORARY server while it initialises, and mysqladmin
+      # ping answers from that one -- so a job can start before the real server
+      # is listening, or before MYSQL_DATABASE exists. Connect through the app's
+      # own driver to the target database, and require two consecutive
+      # successes, the same shape as tests/run_e2e_crack_compose.sh's db_ready.
+      - name: Wait for the database to accept connections
+        run: |
+          python - <<'PY'
+          import os, sys, time
+          from sqlalchemy import create_engine, text
+          url = os.environ["HASHVIEW_TEST_DATABASE_URI"]
+          streak, deadline = 0, time.time() + 120
+          while time.time() < deadline:
+              try:
+                  with create_engine(url).connect() as c:
+                      c.execute(text("SELECT 1"))
+                  streak += 1
+                  if streak == 2:
+                      print("database ready")
+                      sys.exit(0)
+              except Exception as exc:
+                  streak = 0
+                  last = exc
+              time.sleep(2)
+          print(f"database never became ready: {last}", file=sys.stderr)
+          sys.exit(1)
+          PY
+
+      - name: Report the server version under test
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          with create_engine(os.environ["HASHVIEW_TEST_DATABASE_URI"]).connect() as c:
+              print("server:", c.execute(text("SELECT VERSION()")).scalar())
+          PY
+
       # Core deliverable: run the REAL migration chain from an empty schema to
-      # head against MariaDB. Fails the job (non-zero exit) if any migration
-      # errors — which is precisely the class of bug the SQLite suite can't see.
-      - name: Run Alembic migration chain against MariaDB (upgrade head)
+      # head. Fails the job (non-zero exit) if any migration errors — which is
+      # precisely the class of bug the SQLite suite cannot see.
+      - name: Run the Alembic migration chain (upgrade head)
         run: python scripts/run_migrations.py
 
-      # Integration tests against the migration-built MariaDB schema. -m mysql
-      # selects only the marked tests; they fail the job if any assertion fails.
+      # Integration tests against the migration-built schema. -m mysql selects
+      # only the marked tests; they fail the job if any assertion fails. This is
+      # where raw SQL the engine refuses to parse surfaces, so a query added to
+      # the app without a test here is still invisible to this job.
       - name: Run MySQL integration tests
         run: python -m pytest tests/integration -m mysql -q

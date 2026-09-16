@@ -296,6 +296,19 @@
                migration warns and skips the constraint rather than failing the
                whole upgrade, so without this banner the only trace is a line in
                the server log. #}
+            {% if data_health_error %}
+            <div class="card" style="margin-bottom:var(--gap); border-color:var(--red, var(--amber));">
+                <div class="card-head">
+                    <span class="dot-led on"></span><h3>Data health check failed</h3>
+                </div>
+                <div class="card-body">
+                    <div>Hashview could not count duplicate or orphaned rows, so this page cannot tell you
+                        whether there are any to repair. Treat the counts below as unknown, not as zero.</div>
+                    <div class="field-hint mono" style="margin-top:6px;">{{ data_health_error }}</div>
+                </div>
+            </div>
+            {% endif %}
+
             {% if duplicate_groups or stale_links or stale_alerts %}
             <div class="card" style="margin-bottom:var(--gap); border-color:var(--amber);">
                 <div class="card-head">

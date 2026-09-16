@@ -35,6 +35,7 @@ So the children are repointed, never orphaned, and a group is only ever merged
 automatically when the data leaves nothing to decide.
 """
 
+import sqlalchemy as sa
 from sqlalchemy import text
 
 # Every SQL string in this module is assembled with f-strings, which bandit
@@ -67,8 +68,14 @@ def duplicate_summary(conn):
     excess_rows is how many rows would go away: the count the operator cares
     about, and not the same as the group count once a group has three members.
     """
+    # `group_count`, not `groups`: GROUPS is a reserved word in MySQL 8.0.2+
+    # (the window-function frame unit), so an unquoted alias of that name is a
+    # syntax error -- which took this whole feature, and the duplicate banner on
+    # the Settings page, out on any MySQL 8 install. Neither SQLite (the unit
+    # suite) nor MariaDB (the parity job) reserves it, which is why CI was
+    # green. See tests/unit/test_sql_reserved_words.py.
     row = conn.execute(text(
-        'SELECT COUNT(*) AS groups, COALESCE(SUM(cnt - 1), 0) AS excess FROM ('
+        'SELECT COUNT(*) AS group_count, COALESCE(SUM(cnt - 1), 0) AS excess FROM ('
         '  SELECT COUNT(*) AS cnt FROM hashes'
         '  GROUP BY hash_type, sub_ciphertext HAVING COUNT(*) > 1'
         ') AS grouped'
@@ -267,6 +274,53 @@ def delete_orphaned_alerts(conn):
         'DELETE FROM hash_notifications'
         ' WHERE NOT EXISTS (SELECT 1 FROM hashes h WHERE h.id = hash_notifications.hash_id)'))
     return int(result.rowcount or 0)
+
+
+UNIQUE_CONSTRAINT = 'uq_hashes_sub_ciphertext_hash_type'
+_SUPERSEDED_INDEX = 'ix_hashes_sub_ciphertext'
+
+
+def constraint_present(conn):
+    """True when the (sub_ciphertext, hash_type) uniqueness constraint exists."""
+    inspector = sa.inspect(conn)
+    columns = ['sub_ciphertext', 'hash_type']
+    for constraint in inspector.get_unique_constraints('hashes'):
+        if set(constraint['column_names']) == set(columns):
+            return True
+    # MySQL surfaces a unique constraint through get_indexes as well.
+    return any(index.get('unique') and list(index['column_names']) == columns
+               for index in inspector.get_indexes('hashes'))
+
+
+def create_unique_constraint(conn):
+    """Create the constraint the duplicate repair exists to make possible.
+
+    Migration f3b8c1a7d942 creates it, but SKIPS and returns normally when it
+    finds duplicates -- so Alembic stamps the revision as applied and never
+    runs it again. "Re-run the upgrade to create the constraint", which that
+    migration's own warning advises, therefore does nothing at all: the upgrade
+    starts from a revision above it. Merging the duplicates has to be able to
+    finish the job itself, which is what this does.
+
+    Returns True if it created the constraint, False if it was already there.
+    Raises if duplicates remain -- the caller checks first, and the database
+    would refuse anyway.
+    """
+    if constraint_present(conn):
+        return False
+    with conn.begin():
+        conn.execute(text(
+            f'ALTER TABLE hashes ADD CONSTRAINT {UNIQUE_CONSTRAINT} '
+            '  UNIQUE (sub_ciphertext, hash_type)'
+        ))
+        # Only now is the single-column index redundant, so this order never
+        # leaves the table without an index on sub_ciphertext. f3b8c1a7d942
+        # returns before its own drop on an affected database, so the index is
+        # still there to remove.
+        if any(index['name'] == _SUPERSEDED_INDEX
+               for index in sa.inspect(conn).get_indexes('hashes')):
+            conn.execute(text(f'DROP INDEX {_SUPERSEDED_INDEX} ON hashes'))
+    return True
 
 
 def merge_group(conn, keeper_id, loser_ids):

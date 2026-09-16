@@ -570,3 +570,45 @@ def test_combine_hash_with_null_and_named_usernames(app):
         assert len(links) == 2
         usernames = {link.username for link in links}
         assert usernames == {None, 'alice'}
+
+
+def test_combine_keyset_paging_bounds_memory(app, monkeypatch):
+    """Keyset paging on HashfileHashes.id bounds memory when reading sources.
+
+    With _IMPORT_CHUNK_SIZE monkeypatched small, the combined file's sources
+    must span multiple pages, and the loop must terminate gracefully without
+    hanging or omitting rows. The paging advances after_id to each row_id,
+    so a keyset bug that fails to advance would hang forever; this test
+    guards against that and asserts the final row count matches expectations.
+    """
+    with app.app_context():
+        cust = make_customer()
+        admin = make_admin()
+
+        hf1 = _make_hashfile(cust.id, admin.id, name='hf1')
+        hf2 = _make_hashfile(cust.id, admin.id, name='hf2')
+
+        # Create 10 hashes total: hf1 gets 0..6, hf2 gets 4..9 (overlap at 4,5,6)
+        hashes = [_make_hash(f'{i:032x}', hash_type=1000) for i in range(10)]
+        for h in hashes[:7]:
+            _link_hash(hf1.id, h.id)
+        for h in hashes[4:]:
+            _link_hash(hf2.id, h.id)
+
+        # Shrink chunk size to 3 so sources are split across multiple pages
+        monkeypatch.setattr(utils_mod, '_IMPORT_CHUNK_SIZE', 3)
+        combined, err = combine_hashfiles([hf1.id, hf2.id],
+                                         customer_id=cust.id, owner_id=admin.id)
+
+        assert err is None
+        assert combined is not None
+
+        links = (HashfileHashes.query.filter_by(hashfile_id=combined.id)
+                 .order_by(HashfileHashes.id).all())
+        # Expected: hf1's 7 (0..6) + hf2's 6 (4..9), deduplicated to 10 total
+        assert len(links) == 10
+        hash_ids = [link.hash_id for link in links]
+        # Should preserve first-seen order: hf1 first (h0..h6), then hf2 new ones (h7..h9)
+        assert hash_ids == [h.id for h in hashes]
+        # Verify no duplicates
+        assert len(hash_ids) == len(set(hash_ids))

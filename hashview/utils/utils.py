@@ -1211,6 +1211,90 @@ def _length_bucket_bounds(name):
     return (low, low)           # 'N' exact
 
 
+# Sentinel for "no lower bound yet", so the first batch is never confused with a
+# batch that legitimately ended on a NULL. Using None for both made the loop
+# re-issue the unbounded query forever when the NULL filter was absent -- an
+# infinite loop that grows the wordlist file until the disk fills, which a
+# mutation test caught as a hang rather than a failure.
+_NO_KEYSET_BOUND = object()
+
+# Rows per round trip when walking the recovered corpus. The whole point is
+# that this number, not the size of the corpus, bounds what the server sends in
+# one go and what the app holds at once.
+PLAINTEXT_BATCH_SIZE = 50_000
+
+
+def iter_distinct_recovered_plaintexts(batch_size=PLAINTEXT_BATCH_SIZE):
+    """Yield every distinct recovered plaintext, one bounded batch at a time.
+
+    This used to be a single ``SELECT DISTINCT plaintext FROM hashes WHERE
+    cracked = true``, and on a large corpus that is two separate problems.
+
+    Server side: DISTINCT over millions of rows builds an on-disk temporary
+    table (tmp_table_size defaults to 16 MB) before it can send anything, then
+    has to push every row across. An installation with ~5.9M distinct
+    plaintexts spent ~50s in that state and was cut off by net_write_timeout
+    (default 60s) mid-fetch -- surfacing as "2013 Lost connection to MySQL
+    server during query", which reads like a dead server when the server is
+    fine.
+
+    Client side: mysql-connector buffers the entire result set before the
+    caller's loop body runs even once (SQLAlchemy's stream_results is a no-op
+    here -- this dialect reports supports_server_side_cursors = False), so the
+    app also held every plaintext in memory simultaneously.
+
+    Keyset pagination fixes both: each batch is an index range scan that starts
+    returning at once, and memory is bounded by batch_size. Ordering by
+    plaintext is what makes the keyset sound -- each batch resumes strictly
+    after the last value seen, so no value is skipped or repeated, and DISTINCT
+    within a batch plus the strict ``>`` across batches give the same set the
+    single query did.
+
+    Pairs with the (cracked, plaintext) index from e9f4c2a70b18. WITHOUT that
+    index each batch re-derives the whole temporary table and paginating is far
+    slower than the single query it replaces (measured on a 2M-row copy: 10.8s
+    per batch versus 10.7s for the whole thing). With it, a 50,000-row batch is
+    about 0.05s.
+    """
+    last = _NO_KEYSET_BOUND
+    while True:
+        conditions = [Hashes.cracked.is_(True), Hashes.plaintext.isnot(None)]
+        if last is not _NO_KEYSET_BOUND:
+            conditions.append(Hashes.plaintext > last)
+        rows = (
+            Hashes.query
+            .filter(*conditions)
+            .with_entities(Hashes.plaintext)
+            .distinct()
+            .order_by(Hashes.plaintext)
+            .limit(batch_size)
+            .all()
+        )
+        if not rows:
+            return
+        for (plaintext,) in rows:
+            yield plaintext
+        # Resume strictly after the largest value in this batch. Under a
+        # case-insensitive collation (MySQL's default) the comparison and
+        # DISTINCT agree on what counts as equal, so the variants the single
+        # query collapsed are the ones this skips.
+        previous, last = last, rows[-1][0]
+        if len(rows) < batch_size:
+            return
+        if previous is not _NO_KEYSET_BOUND and last == previous:
+            # The loop can only wedge by re-fetching the same batch forever,
+            # which would grow the wordlist file until the disk filled. Detect
+            # that by EQUALITY, never by ordering: the database orders by its
+            # own collation (MySQL's default is accent- and case-insensitive,
+            # so 'ünïcödé' sorts near 'u'), while Python compares codepoints
+            # and puts it after 'z'. An ordering check here fires spuriously on
+            # any corpus containing non-ASCII passwords -- which, for a
+            # password cracker, is all of them.
+            raise RuntimeError(
+                'recovered-plaintext pagination stopped advancing at '
+                f'{last!r}; refusing to loop')
+
+
 def generate_recovered_password_wordlist(path, min_length=0, max_length=None):
     """Write distinct recovered plaintexts to ``path``, filtered by length.
 
@@ -1225,19 +1309,12 @@ def generate_recovered_password_wordlist(path, min_length=0, max_length=None):
     ``$HEX[...]`` form. Stored plaintext is always valid UTF-8 (real text, or
     the ASCII ``$HEX[...]`` wrapper), so the file is written as UTF-8 text.
     """
-    plains = (
-        Hashes.query.filter_by(cracked=True)
-        .distinct('plaintext')
-        .with_entities(Hashes.plaintext)
-    )
     with open(path, 'w', encoding='utf-8') as fh:
-        for entry in plains:
-            if entry.plaintext is None:
-                continue
-            length = len(_decode_plaintext_bytes(entry.plaintext))
+        for plaintext in iter_distinct_recovered_plaintexts():
+            length = len(_decode_plaintext_bytes(plaintext))
             if length < min_length or (max_length is not None and length > max_length):
                 continue
-            fh.write(entry.plaintext + '\n')
+            fh.write(plaintext + '\n')
 
 
 def update_dynamic_wordlist(wordlist_id, dest_path=None):

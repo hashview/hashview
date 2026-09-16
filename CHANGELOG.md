@@ -93,6 +93,7 @@ Notable changes will be documented here
 - Alembic migrations for the dev line were consolidated into a single baseline
 - Pinned Python to 3.11+; added a ruff / pylint / bandit / pre-commit lint-and-security stack, a LICENSE, and substantially expanded automated tests (unit, agent, end-to-end, and security)
 - Every top-level page is now covered by a Playwright reachability test, and a guard fails CI when a new sidebar entry ships without one; Task Groups gained an end-to-end create/delete test
+- The database parity CI job runs against MySQL 8.0 and 8.4 as well as MariaDB. MySQL is what production runs and the two engines do not reserve the same words, so an engine-specific SQL error could pass every check -- one did. The job also now exercises the duplicate-hash repair's queries, which nothing in the parity suite previously touched; adding the engine without that would still have gone green
 
 **Per-Agent Chunk Sizing and Keyspace Tracking**
 - Chunks are now sized for the agent that asks for the work, rather than one flat size computed from the slowest benchmark in the fleet. An agent 50x faster than the slowest one previously still took 1/50th-sized bites of the keyspace; it now takes a proportionally larger slice, so the Settings target duration means what it says on every rig

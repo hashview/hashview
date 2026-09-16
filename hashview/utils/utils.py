@@ -2105,9 +2105,14 @@ def combine_hashfiles(hashfile_ids, customer_id, owner_id):
 
     # Sources are walked in the caller's order and each source in link-id
     # order, so the combined file keeps first-seen order across sources.
-    # Rows are streamed and inserted per _IMPORT_CHUNK_SIZE (like
-    # import_hashfilehashes) so two large NTDS dumps do not become millions
-    # of in-flight objects and one multi-million-row INSERT.
+    # Rows are paged via keyset pagination on HashfileHashes.id (the primary
+    # key) and inserted per _IMPORT_CHUNK_SIZE (like import_hashfilehashes)
+    # so two large NTDS dumps do not become millions of in-flight objects and
+    # one multi-million-row INSERT. Keyset paging (id > after_id) bounds
+    # memory because MySQL's mysql-connector-python dialect reports
+    # supports_server_side_cursors = False, so yield_per cannot stop the
+    # driver from buffering the entire result set client-side. This matches
+    # the hash-export path in settings/routes.py:550-595.
     #
     # This is ONE transaction on purpose: flush per chunk, commit once at the
     # end. Do not add per-chunk commits -- a failure between commits would
@@ -2115,26 +2120,39 @@ def combine_hashfiles(hashfile_ids, customer_id, owner_id):
     seen_keys = set()
     pending = []
     for hid in unique_ids:
-        links = (
-            HashfileHashes.query.filter_by(hashfile_id=hid)
-            .with_entities(HashfileHashes.hash_id, HashfileHashes.username)
-            .order_by(HashfileHashes.id)
-            .yield_per(_IMPORT_CHUNK_SIZE)
-        )
-        for hash_id, username in links:
-            key = (hash_id, username)
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-            pending.append({
-                'hash_id': hash_id,
-                'username': username,
-                'hashfile_id': new_hashfile.id,
-            })
-            if len(pending) >= _IMPORT_CHUNK_SIZE:
-                db.session.bulk_insert_mappings(HashfileHashes, pending)
-                db.session.flush()
-                pending = []
+        def page(after_id, _hid=hid):
+            """One batch of rows with an id above ``after_id``, in id order."""
+            return db.session.query(
+                HashfileHashes.id,
+                HashfileHashes.hash_id,
+                HashfileHashes.username
+            ).filter(
+                HashfileHashes.hashfile_id == _hid,
+                HashfileHashes.id > after_id
+            ).order_by(HashfileHashes.id).limit(_IMPORT_CHUNK_SIZE).all()
+
+        after_id = 0
+        while True:
+            rows = page(after_id)
+            if not rows:
+                break
+            for row_id, hash_id, username in rows:
+                after_id = row_id
+                key = (hash_id, username)
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                pending.append({
+                    'hash_id': hash_id,
+                    'username': username,
+                    'hashfile_id': new_hashfile.id,
+                })
+                if len(pending) >= _IMPORT_CHUNK_SIZE:
+                    db.session.bulk_insert_mappings(HashfileHashes, pending)
+                    db.session.flush()
+                    pending = []
+            if len(rows) < _IMPORT_CHUNK_SIZE:
+                break
 
     if pending:
         db.session.bulk_insert_mappings(HashfileHashes, pending)

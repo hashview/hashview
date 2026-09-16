@@ -12,6 +12,7 @@ Notable changes will be documented here
 - Card-style, drag-and-drop task queue when building a job
 - Live recovery feed on the dashboard showing freshly cracked hashes with relative timestamps (e.g. "3 minutes ago")
 - Scrollable, filterable "InstaCrack" panel showing which hashes are already recovered when a hashfile is added to a job
+- Select multiple existing hashfiles when building a job; they are combined into one new auto-named hashfile (#359)
 
 **Single Sign-On (Microsoft Entra ID / Azure AD)**
 - Optional OIDC web login alongside local accounts, with group-gated just-in-time user provisioning (configured under Settings)

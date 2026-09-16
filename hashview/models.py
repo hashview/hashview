@@ -430,6 +430,11 @@ class Hashes(db.Model):
     __table_args__ = (
         db.Index('ix_hashes_cracked_recovered_at', 'cracked', 'recovered_at'),
         db.Index('ix_hashes_cracked_task_id', 'cracked', 'task_id'),
+        # Covers SELECT DISTINCT plaintext WHERE cracked -- the dynamic
+        # recovered-password wordlists. Without it that DISTINCT builds an
+        # on-disk temporary table over the whole corpus before sending a single
+        # row. See migration e9f4c2a70b18.
+        db.Index('ix_hashes_cracked_plaintext', 'cracked', 'plaintext'),
         db.UniqueConstraint('sub_ciphertext', 'hash_type',
                             name='uq_hashes_sub_ciphertext_hash_type'),
     )

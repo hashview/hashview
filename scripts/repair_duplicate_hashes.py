@@ -33,7 +33,10 @@ from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.engine.url import make_url  # noqa: E402
 
 from hashview.utils.dedupe import (  # noqa: E402
+    UNIQUE_CONSTRAINT,
     classify_group,
+    constraint_present,
+    create_unique_constraint,
     delete_orphaned_alerts,
     duplicate_summary,
     find_duplicate_groups,
@@ -153,6 +156,32 @@ def _report_orphans(conn, stale_links, stale_alerts):
         print(f'      ... and {stale_links - 20} more')
 
 
+
+def _finish_constraint(conn, applying):
+    """Create uq_hashes_sub_ciphertext_hash_type now that nothing blocks it.
+
+    This has to happen here rather than on the next `flask db upgrade`. The
+    migration that creates the constraint skips it when it finds duplicates and
+    then returns NORMALLY, so Alembic stamps the revision as applied -- a later
+    upgrade begins above it and never reattempts. Telling an operator to re-run
+    the upgrade, as that migration's warning used to, is advice that silently
+    does nothing.
+    """
+    if constraint_present(conn):
+        print(f'Constraint {UNIQUE_CONSTRAINT} is in place; nothing further to do.')
+        return
+    if not applying:
+        print(f'\nThe {UNIQUE_CONSTRAINT} constraint is still missing. '
+              'Re-run with --apply to create it.\n'
+              'NOTE: `flask db upgrade` will NOT create it -- the migration that '
+              'does was already recorded as applied when it skipped over the '
+              'duplicates.')
+        return
+    created = create_unique_constraint(conn)
+    print(f'Created {UNIQUE_CONSTRAINT}.' if created
+          else f'Constraint {UNIQUE_CONSTRAINT} was already in place.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -179,11 +208,11 @@ def main():
         _report_orphans(conn, stale_links, stale_alerts)
 
         if not groups_count:
-            print('\nNo duplicate (sub_ciphertext, hash_type) pairs. '
-                  'Re-run the app or `flask db upgrade` to create the constraint.')
+            print('\nNo duplicate (sub_ciphertext, hash_type) pairs.')
             if stale_alerts and (args.apply or args.interactive):
                 with conn.begin():
                     print(f'Deleted {delete_orphaned_alerts(conn)} orphaned alert(s).')
+            _finish_constraint(conn, applying=args.apply or args.interactive)
             return 0
         print(f'\n{groups_count} duplicate group(s), {excess} row(s) would be removed.')
 
@@ -252,8 +281,7 @@ def main():
             print('Re-run with --interactive to decide the rest; the constraint is not '
                   'created until none remain.')
         else:
-            print('Now restart Hashview (or run `flask db upgrade`) to create '
-                  'uq_hashes_sub_ciphertext_hash_type.')
+            _finish_constraint(conn, applying=True)
     return 0
 
 

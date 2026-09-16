@@ -119,7 +119,9 @@ def upgrade():
                 'stays a TOCTOU race until they are merged. Up to 20 shown: %s. '
                 'Repair with:  python scripts/repair_duplicate_hashes.py --report  '
                 '(then --apply), or from the web UI under Settings -> Data management. '
-                'Re-run the upgrade afterwards to create the constraint.',
+                '--apply creates the constraint itself once the last duplicate is '
+                'merged; re-running this upgrade will NOT, because this revision is '
+                'recorded as applied the moment it skips.',
                 pairs)
             return
 

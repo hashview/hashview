@@ -157,3 +157,41 @@ def test_merge_group_runs_end_to_end_on_the_real_engine(mysql_session):
         HashfileHashes.query.filter_by(hash_id=keeper_id).all()
     )
     assert usernames == ["alice", "bob"], "links move, and duplicates collapse"
+
+
+def test_create_unique_constraint_recreates_it_on_the_real_engine(mysql_session):
+    """The helper that finishes the repair, exercised as DDL on MySQL.
+
+    This is the step that rescues an operator whose migration skipped the
+    constraint: f3b8c1a7d942 is stamped as applied the moment it skips, so no
+    later `db upgrade` reattempts, and only this helper -- called by the repair
+    script and on every app start -- can still create it.
+
+    DDL auto-commits on MySQL and so escapes the fixture's savepoint isolation,
+    which is why the constraint is restored in a finally: the schema this job's
+    other tests run against has to end exactly as it started.
+    """
+    from sqlalchemy import text
+
+    from hashview.utils.dedupe import (
+        UNIQUE_CONSTRAINT,
+        constraint_present,
+        create_unique_constraint,
+    )
+
+    conn = mysql_session.connection()
+    assert constraint_present(conn), "the migrated schema should already have it"
+
+    try:
+        conn.execute(text(f"ALTER TABLE hashes DROP INDEX {UNIQUE_CONSTRAINT}"))
+        assert not constraint_present(conn), "precondition: dropped"
+
+        assert create_unique_constraint(conn) is True
+        assert constraint_present(conn)
+        # Idempotent: startup calls it on every boot until it succeeds once.
+        assert create_unique_constraint(conn) is False
+    finally:
+        if not constraint_present(conn):
+            conn.execute(text(
+                f"ALTER TABLE hashes ADD CONSTRAINT {UNIQUE_CONSTRAINT} "
+                "UNIQUE (sub_ciphertext, hash_type)"))

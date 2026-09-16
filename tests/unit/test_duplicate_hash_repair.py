@@ -624,3 +624,26 @@ def test_settings_reports_a_failed_data_health_check(app, client, monkeypatch):
         assert 'Data health check failed' in body
         assert 'not as zero' in body
         assert '1064' in body
+
+
+# --- the constraint the whole repair exists to make possible -------------------
+
+def test_constraint_present_detects_the_uniqueness_constraint(app):
+    """The model declares it, so create_all() builds it on the test schema."""
+    from hashview.utils.dedupe import constraint_present
+
+    with app.app_context():
+        assert constraint_present(db.session.connection()) is True
+
+
+def test_create_unique_constraint_is_a_no_op_when_it_already_exists(app):
+    """Idempotent: startup calls this on every boot until it succeeds once.
+
+    Creating it a second time would raise, and the caller in
+    setup_defaults_if_needed swallows exceptions into a log line, so a
+    non-idempotent helper would be an error logged on every single start.
+    """
+    from hashview.utils.dedupe import create_unique_constraint
+
+    with app.app_context():
+        assert create_unique_constraint(db.session.connection()) is False

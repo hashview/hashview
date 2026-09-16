@@ -67,8 +67,14 @@ def duplicate_summary(conn):
     excess_rows is how many rows would go away: the count the operator cares
     about, and not the same as the group count once a group has three members.
     """
+    # `group_count`, not `groups`: GROUPS is a reserved word in MySQL 8.0.2+
+    # (the window-function frame unit), so an unquoted alias of that name is a
+    # syntax error -- which took this whole feature, and the duplicate banner on
+    # the Settings page, out on any MySQL 8 install. Neither SQLite (the unit
+    # suite) nor MariaDB (the parity job) reserves it, which is why CI was
+    # green. See tests/unit/test_sql_reserved_words.py.
     row = conn.execute(text(
-        'SELECT COUNT(*) AS groups, COALESCE(SUM(cnt - 1), 0) AS excess FROM ('
+        'SELECT COUNT(*) AS group_count, COALESCE(SUM(cnt - 1), 0) AS excess FROM ('
         '  SELECT COUNT(*) AS cnt FROM hashes'
         '  GROUP BY hash_type, sub_ciphertext HAVING COUNT(*) > 1'
         ') AS grouped'

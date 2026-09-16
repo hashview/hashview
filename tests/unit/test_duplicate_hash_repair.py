@@ -593,3 +593,34 @@ def test_recommend_keeper_prefers_a_real_recovery_over_a_null_one():
     ]
     assert recommend_keeper(rows) == 3
     assert recommend_keeper(list(reversed(rows))) == 3
+
+
+# --- a failed count must not look like a clean table --------------------------
+
+def test_settings_reports_a_failed_data_health_check(app, client, monkeypatch):
+    """A broken count used to render identically to "nothing to repair".
+
+    The Settings -> Data management section is gated on the counts being
+    non-zero, and the route fell back to zero on any exception -- so the
+    reserved-word syntax error in duplicate_summary hid the entire repair
+    feature behind a page that positively claimed there was nothing to fix,
+    while the upgrade log said the opposite.
+    """
+    from hashview.models import Settings, db
+    from hashview.settings import routes as settings_routes
+    from tests.unit.helpers import login, make_admin
+
+    with app.app_context():
+        login(client, make_admin())
+        db.session.add(Settings(retention_period=30, max_runtime_jobs=0,
+                                max_runtime_tasks=0))
+        db.session.commit()
+
+        def _boom(_conn):
+            raise RuntimeError('1064 (42000): You have an error in your SQL syntax')
+
+        monkeypatch.setattr(settings_routes, 'duplicate_summary', _boom)
+        body = client.get('/settings', follow_redirects=True).get_data(as_text=True)
+        assert 'Data health check failed' in body
+        assert 'not as zero' in body
+        assert '1064' in body

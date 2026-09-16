@@ -225,13 +225,20 @@ def settings_list():
         # uq_hashes_sub_ciphertext_hash_type. The migration warns and skips rather
         # than failing the whole upgrade, so nothing else surfaces this -- without
         # a banner the only trace is one line in the server log.
+        data_health_error = None
         try:
             duplicate_groups, duplicate_rows = duplicate_summary(db.session.connection())
             stale_links, stale_alerts = orphan_summary(db.session.connection())
-        except Exception:
+        except Exception as exc:
             current_app.logger.exception('Could not count duplicate hashes.')
             duplicate_groups, duplicate_rows = 0, 0
             stale_links, stale_alerts = 0, 0
+            # Falling back to zero renders EXACTLY like a clean table -- no
+            # banner, no Review button -- so the page positively asserted there
+            # was nothing to repair while the upgrade log said the opposite.
+            # That is how a reserved-word syntax error in the count query hid
+            # the whole repair feature. Report the failure instead of a number.
+            data_health_error = str(exc).splitlines()[0][:300]
 
         return render_template(
             'settings.html.j2',
@@ -248,6 +255,7 @@ def settings_list():
             database_version    = database_version,
             default_azure_redirect = default_azure_redirect,
             azure_secret_set    = bool(settings.azure_client_secret),
+            data_health_error   = data_health_error,
             duplicate_groups    = duplicate_groups,
             duplicate_rows      = duplicate_rows,
             stale_links         = stale_links,

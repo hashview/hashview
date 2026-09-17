@@ -73,18 +73,58 @@ def test_a_null_plaintext_does_not_wedge_the_walk(mysql_session):
     assert 'alpha' in walked and 'beta' in walked
 
 
-def test_the_query_is_served_by_the_covering_index(mysql_session):
-    """Without (cracked, plaintext) each batch rebuilds a temp table.
+def test_the_batch_query_is_served_by_the_covering_index(mysql_session):
+    """EXPLAIN the SQL the WALK ACTUALLY EMITS, not a hand-written lookalike.
 
-    That makes paginating SLOWER than the single query it replaces, so the
-    index is not an optimisation to this change -- it is a precondition.
+    The first version of this test EXPLAINed a query this module wrote by hand
+    with `cracked = true`, and passed while the real walk shipped
+    `cracked IS true` -- which MySQL cannot use for index range access, because
+    IS TRUE is a boolean test operator rather than an equality comparison. The
+    walk quietly fell back to scanning ix_hashes_plaintext with a row lookup per
+    entry, doing work proportional to every plaintext in the table instead of
+    the cracked ones: 1.8s became 129.7s on 4M rows at 25% cracked.
+
+    So this captures the statement the ORM emits and explains THAT, through the
+    raw cursor with the same parameters. A test that reconstructs the query it
+    is checking cannot catch the query changing.
     """
-    from sqlalchemy import text
+    from sqlalchemy import event
 
-    plan = mysql_session.execute(text(
-        'EXPLAIN SELECT DISTINCT plaintext FROM hashes WHERE cracked = true'
-    )).mappings().one()
+    _seed(mysql_session, ['alpha', 'bravo', 'charlie'])
+
+    captured = []
+    engine = mysql_session.get_bind()
+
+    @event.listens_for(engine, 'before_cursor_execute')
+    def _capture(conn, cursor, statement, parameters, context, executemany):
+        if 'DISTINCT' in statement and 'hashes' in statement:
+            captured.append((statement, parameters))
+
+    try:
+        list(iter_distinct_recovered_plaintexts(batch_size=2))
+    finally:
+        event.remove(engine, 'before_cursor_execute', _capture)
+
+    assert captured, 'the walk emitted no DISTINCT query to explain'
+    statement, parameters = captured[-1]
+
+    # IS TRUE is the specific trap; assert on the emitted text as well as the
+    # plan, so the reason a plan regressed is legible when this fails.
+    assert 'IS true' not in statement and 'IS 1' not in statement, (
+        'the walk compares cracked with IS, which cannot use the composite '
+        f'index on MySQL: {statement}')
+
+    raw = mysql_session.connection().connection
+    cursor = raw.cursor()
+    try:
+        cursor.execute('EXPLAIN ' + statement, parameters)
+        columns = [c[0] for c in cursor.description]
+        plan = dict(zip(columns, cursor.fetchone(), strict=True))
+    finally:
+        cursor.close()
+
     assert plan['key'] == 'ix_hashes_cracked_plaintext', (
-        f"expected the covering index, got {plan['key']!r}")
+        f"the batch query is not using the covering index, got {plan['key']!r}; "
+        f"plan: {plan}")
     assert 'Using temporary' not in (plan['Extra'] or ''), (
-        f"the DISTINCT still builds a temporary table: {plan['Extra']!r}")
+        f"the batch query builds a temporary table: {plan['Extra']!r}")

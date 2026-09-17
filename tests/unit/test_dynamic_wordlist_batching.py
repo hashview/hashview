@@ -190,3 +190,42 @@ def test_every_batch_query_carries_an_explicit_order_by(app):
     for statement in walk:
         assert 'ORDER BY' in statement.upper(), (
             f'batch query has no ORDER BY, so the keyset is unsound on MySQL: {statement}')
+
+
+def test_the_walk_compares_cracked_with_equality_not_is(app):
+    """`cracked = true`, never `cracked IS true` -- an index-usability trap.
+
+    MySQL treats IS TRUE as a boolean test operator rather than an equality
+    comparison, so it cannot drive index range access: `cracked IS true`
+    abandons the composite (cracked, plaintext) index and scans the plaintext
+    index instead, with a row lookup per entry to test cracked. That is work
+    proportional to every plaintext in the table rather than to the cracked
+    ones -- 1.8s became 129.7s on a 4M-row table at 25% cracked.
+
+    SQLite cannot show this: it happily uses an index either way, and the test
+    corpus here is entirely cracked so a row lookup costs nothing. Assert on the
+    emitted SQL, which is where the trap actually lives.
+    """
+    from sqlalchemy import event
+
+    statements = []
+    with app.app_context():
+        engine = db.engine
+
+        @event.listens_for(engine, 'before_cursor_execute')
+        def _record(conn, cursor, statement, parameters, context, executemany):
+            if 'DISTINCT' in statement and 'hashes' in statement:
+                statements.append(' '.join(statement.split()))
+
+        try:
+            _seed(app, ['alpha', 'bravo'])
+            list(iter_distinct_recovered_plaintexts(batch_size=1))
+        finally:
+            event.remove(engine, 'before_cursor_execute', _record)
+
+    assert statements, 'the walk emitted no DISTINCT query'
+    for statement in statements:
+        assert 'cracked IS' not in statement, (
+            f'IS defeats the composite index on MySQL: {statement}')
+        assert 'cracked = ' in statement, (
+            f'expected an equality comparison on cracked: {statement}')

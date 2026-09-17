@@ -15,6 +15,7 @@ from flask import after_this_request, current_app, send_from_directory, url_for
 from flask_mail import Message
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.sql import exists
+from sqlalchemy.sql import true as sa_true
 
 from hashview.models import (
     AgentBenchmarks,
@@ -1258,7 +1259,14 @@ def iter_distinct_recovered_plaintexts(batch_size=PLAINTEXT_BATCH_SIZE):
     """
     last = _NO_KEYSET_BOUND
     while True:
-        conditions = [Hashes.cracked.is_(True), Hashes.plaintext.isnot(None)]
+        # `== true()`, NOT `.is_(True)`. MySQL's IS TRUE is a boolean test
+        # operator, not an equality comparison, so it cannot drive index range
+        # access: `cracked IS true` abandons ix_hashes_cracked_plaintext and
+        # falls back to scanning ix_hashes_plaintext with a row lookup per
+        # entry to test cracked -- work proportional to EVERY plaintext in the
+        # table rather than the cracked ones. Measured on 4M rows / 25%
+        # cracked: 1.8s with `= true`, 129.7s with `IS true`.
+        conditions = [Hashes.cracked == sa_true(), Hashes.plaintext.isnot(None)]
         if last is not _NO_KEYSET_BOUND:
             conditions.append(Hashes.plaintext > last)
         rows = (

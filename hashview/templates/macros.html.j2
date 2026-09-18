@@ -54,6 +54,19 @@
 {%- endmacro %}
 
 {# Priority pips 1..5 — ported from ui.jsx PriorityPips. #}
+{# The one place the priority words live. Matches JobsForm.priority's own choices
+   (highest/higher/normal/lower/lowest) rather than inventing a second vocabulary
+   for the same five values. Kept deliberately short: the field label already
+   says "higher runs first", so "Higher priority" here would just repeat the
+   label back at the user. #}
+{% set PRIORITY_NAMES = ['Lowest', 'Lower', 'Normal', 'Higher', 'Highest'] %}
+
+{# Name for a stored priority. Anything outside 1..5 falls back to the default
+   rather than raising -- the column is a plain integer with no constraint. #}
+{% macro priority_name(n) -%}
+{{ PRIORITY_NAMES[n|int - 1] if 1 <= n|int <= 5 else PRIORITY_NAMES[2] }}
+{%- endmacro %}
+
 {% macro priority_pips(n) -%}
 <span style="display:inline-flex;gap:3px;">
   {%- for i in range(1, 6) -%}

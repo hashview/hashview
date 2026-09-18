@@ -10,6 +10,7 @@ import traceback
 from pathlib import Path
 
 from hashview import create_app
+from hashview.utils.tls import server_ssl_context
 
 
 def ensure_authlib():
@@ -426,11 +427,16 @@ def cli(args) -> int:
             app.run(debug=parsed_args.debug)
 
         else:
+            # A context object rather than the (cert, key) tuple werkzeug
+            # would otherwise build: werkzeug wraps the LISTENING socket, so the
+            # TLS handshake runs inline on the accept thread with no deadline,
+            # and a single client that connects without sending a ClientHello
+            # stops the server accepting anything at all. See utils/tls.py.
             app.run(
                 host='0.0.0.0',
                 port=8443,
-                ssl_context=('./hashview/ssl/cert.pem',
-                             './hashview/ssl/key.pem'),
+                ssl_context=server_ssl_context('./hashview/ssl/cert.pem',
+                                               './hashview/ssl/key.pem'),
                 debug=parsed_args.debug,
             )
 

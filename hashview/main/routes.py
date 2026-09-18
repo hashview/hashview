@@ -21,6 +21,7 @@ from hashview.models import (
     Users,
     db,
 )
+from hashview.utils.audit import job_task_target, log_event
 from hashview.utils.utils import (
     agent_telemetry,
     close_ledger,
@@ -586,6 +587,11 @@ def stop_job_task(job_task_id):
             if job_task.ledger_id is None or not close_ledger(
                     job.id, 'canceled', ledger_id=job_task.ledger_id):
                 update_job_task_status(job_task.id, 'Canceled')
+            # Logged after the cancel, on BOTH branches: the fallback is the one
+            # a pre-ledger job takes, and it would otherwise leave no record.
+            log_event('task.cancel',
+                      target=job_task_target(job, task_id=job_task.task_id),
+                      detail=f'stopped by user from the dashboard (job_task:{job_task.id})')
         else:
             flash('You are unauthorized to stop this task', 'danger')
 
@@ -611,6 +617,8 @@ def stop_task(job_id, task_id):
             for jt in JobTasks.query.filter_by(job_id=job_id, task_id=task_id).all():
                 if jt.status in ('Running', 'Queued', 'Not Started', 'Importing'):
                     update_job_task_status(jt.id, 'Canceled')
+        log_event('task.cancel', target=job_task_target(job, task_id=task_id),
+                  detail='stopped by user from the dashboard')
     else:
         flash('You are unauthorized to stop this task', 'danger')
 

@@ -100,10 +100,19 @@
                                 <button type="submit" class="icon-btn act-go" title="Restart">{{ icon('refresh', size=15) }}</button>
                             </form>
                         {% endif %}
-                        {% if job.status != 'Incomplete' %}
+                        {# Info and Analytics are available for every status, Incomplete
+                           included: an incomplete job is the one you most need to look
+                           into, and its modal is rendered below regardless. Analytics is
+                           gated on the hashfile rather than on the status, because a job
+                           abandoned at step one of the wizard has no hashfile yet and the
+                           link would silently widen to every hashfile the customer owns.
+                           Same guard the modal already uses for its recovered-count link. #}
+                        {% if job.hashfile_id %}
                             <a class="icon-btn" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="Analytics">{{ icon('chart', size=15) }}</a>
-                            <button type="button" class="icon-btn" title="Info" onclick="document.getElementById('info-{{ job.id }}').showModal()">{{ icon('info', size=15) }}</button>
+                        {% else %}
+                            <span class="icon-btn" style="opacity:.4; cursor:not-allowed;" title="No hashfile assigned yet">{{ icon('chart', size=15) }}</span>
                         {% endif %}
+                        <button type="button" class="icon-btn" title="Info" onclick="document.getElementById('info-{{ job.id }}').showModal()">{{ icon('info', size=15) }}</button>
                         {% if job.status == 'Running' or job.status == 'Queued' %}
                             <span class="icon-btn" style="opacity:.4; cursor:not-allowed;" title="Locked while active">{{ icon('edit', size=15) }}</span>
                         {% else %}

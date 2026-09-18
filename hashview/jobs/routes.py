@@ -40,7 +40,7 @@ from hashview.models import (
     Wordlists,
     db,
 )
-from hashview.utils.audit import log_event
+from hashview.utils.audit import job_target, log_event
 from hashview.utils.form_limits import column_length
 from hashview.utils.hashcat_modes import CUSTOM_HASH_TYPE
 from hashview.utils.utils import (
@@ -51,6 +51,7 @@ from hashview.utils.utils import (
     import_hashfilehashes,
     is_chunk_row,
     job_assignments,
+    notify_owner_of_cancellation,
     queue_late_assignments,
     renumber_ledger_positions,
     save_file,
@@ -1192,6 +1193,12 @@ def jobs_stop(job_id):
                 job_task.status = 'Canceled'
                 job_task.agent_id = None
             db.session.commit()
+            # Same event name and payload as POST /v1/jobs/stop (api/jobs.py), so
+            # stopping a job from the UI and over the API produce one comparable
+            # record instead of the UI being invisible in the audit log.
+            log_event('job.stop', target=job_target(job),
+                      detail='stopped by user from the jobs list')
+            notify_owner_of_cancellation(job, current_user, when=job.ended_at)
             flash('Job has been stopped!', 'success')
         else:
             flash('Job not activly running.', 'danger')

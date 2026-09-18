@@ -38,6 +38,42 @@ http.mount("https://", adapter)
 http.mount("http://", adapter)
 
 
+# Seconds to wait on the server. WITHOUT these requests blocks forever, on
+# connect and on every read: an agent whose server has gone away, or is behind a
+# black-holed port, never gives up and never retries -- and on the server side
+# the half-open connection it leaves behind is what can stall the TLS accept
+# loop. `read` is the gap BETWEEN bytes rather than a deadline for the whole
+# response, so a multi-gigabyte wordlist download is unaffected for as long as
+# it keeps arriving; it is generous because the server may spend time generating
+# a dynamic wordlist before the first byte moves.
+DEFAULT_CONNECT_TIMEOUT = 10
+DEFAULT_READ_TIMEOUT = 120
+
+
+def _seconds(value, default):
+    """Coerce an optional config value to a positive number of seconds."""
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return default
+    return seconds if seconds > 0 else default
+
+
+def _timeout():
+    """(connect, read) for every request this module makes.
+
+    getattr rather than plain attribute access: the keys are optional, so a
+    config.conf written before they existed -- and the stubbed Config the agent
+    unit tests install -- simply fall back to the defaults.
+    """
+    return (
+        _seconds(getattr(Config, 'HTTP_CONNECT_TIMEOUT', None),
+                 DEFAULT_CONNECT_TIMEOUT),
+        _seconds(getattr(Config, 'HTTP_READ_TIMEOUT', None),
+                 DEFAULT_READ_TIMEOUT),
+    )
+
+
 def _scheme():
     """Return 'https://' when the configured use_ssl is truthy, else 'http://'.
 
@@ -72,7 +108,8 @@ def get(url):
     # bubble a raw exception up to callers that expect a body-or-None. Log it and
     # return None so the caller degrades gracefully and retries next cycle.
     try:
-        response = http.get(path, verify=False, cookies=cookie)
+        response = http.get(path, verify=False, cookies=cookie,
+                            timeout=_timeout())
     except requests.exceptions.RequestException as err:
         LOG.warning('GET %s failed: %s', path, err)
         return None
@@ -102,7 +139,9 @@ def post(url, data):
         print('[DEBUG] http.py->POST: ' + str(cookie))
 
     try:
-        response = http.post(path, data=json.dumps(data), verify=False, cookies=cookie, headers=headers)
+        response = http.post(path, data=json.dumps(data), verify=False,
+                             cookies=cookie, headers=headers,
+                             timeout=_timeout())
     except requests.exceptions.RequestException as err:
         LOG.warning('POST %s failed: %s', path, err)
         return None

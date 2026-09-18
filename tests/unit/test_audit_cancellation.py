@@ -221,7 +221,7 @@ def test_auditing_never_blocks_the_cap_from_being_enforced(audit_app, monkeypatc
         monkeypatch.setattr(api_routes, "log_event", _boom)
         api_routes._cancel_task_group(job.id, task.id)
 
-        assert JobTasks.query.get(job_task.id).status == "Canceled", (
+        assert JobTasks.query.get(job_task.id).status == "Expired", (
             "the runtime cap was not applied because auditing raised")
 
 

@@ -8,7 +8,12 @@ That is an ABSENCE test over a row set, and it was wrong in four ways that these
 tests pin:
 
   * a Canceled row is terminal but it is not DONE, so a job whose every task was
-    cancelled reported itself Completed;
+    cancelled reported itself Completed. That rule has since been REVERSED on
+    purpose: reaching the end of the queue is what Completed means, and what
+    stopped an individual attack does not change whether the job ran its course.
+    A job that WAS cut short is stamped directly -- 'Expired' by the job runtime
+    cap, 'Canceled' by an operator -- and never reaches the roll-up, so
+    'Incomplete' now means only "created but never queued";
   * a 'Not Started' row (which jobs_assign_task creates when a task is added to
     an already-running job) was invisible to BOTH the predicate and the dispatch
     query, so the job completed with a task that never ran a candidate;
@@ -109,21 +114,43 @@ def test_job_completes_when_every_task_completed(app, db_session):
     assert Hashfiles.query.get(hf.id).runtime > 0
 
 
-def test_a_fully_cancelled_job_is_incomplete_not_completed(app, db_session):
-    """Cancelled is terminal, but it is not done. The old code called it Completed."""
+def test_a_job_whose_queue_ran_out_is_completed_whatever_stopped_its_tasks(app,
+                                                                           db_session):
+    """Reaching the end of the queue is what Completed means.
+
+    These two used to assert Incomplete. The job itself was never cut short --
+    if it had been, the job-level cap would have written Expired and an operator
+    stop would have written Canceled, and neither reaches the roll-up at all.
+    What stopped an individual attack does not change whether the JOB ran its
+    course.
+    """
     job, rows, _ = _seed(task_count=2)
     update_job_task_status(rows[0].id, "Canceled")
     update_job_task_status(rows[1].id, "Canceled")
+    assert Jobs.query.get(job.id).status == "Completed"
 
-    assert Jobs.query.get(job.id).status == "Incomplete"
 
-
-def test_a_partly_cancelled_job_is_incomplete(app, db_session):
+def test_a_partly_cancelled_job_is_completed(app, db_session):
     job, rows, _ = _seed(task_count=2)
     update_job_task_status(rows[0].id, "Completed")
     update_job_task_status(rows[1].id, "Canceled")
 
-    assert Jobs.query.get(job.id).status == "Incomplete"
+    assert Jobs.query.get(job.id).status == "Completed"
+
+
+def test_a_job_with_an_expired_task_is_completed(app, db_session):
+    """The case the new status exists for: one attack hit max_runtime_tasks.
+
+    The task is Expired, the job finished inside its own cap, so the job is
+    Completed -- and the expired task is still on the record, which is the point
+    of giving it a status of its own rather than reusing Canceled.
+    """
+    job, rows, _ = _seed(task_count=2)
+    update_job_task_status(rows[0].id, "Completed")
+    update_job_task_status(rows[1].id, "Expired")
+
+    assert Jobs.query.get(job.id).status == "Completed"
+    assert JobTasks.query.get(rows[1].id).status == "Expired"
 
 
 def test_a_not_started_row_is_queued_rather_than_ignored(app, db_session):
@@ -214,11 +241,19 @@ def test_a_goal_met_cancellation_completes_rather_than_incompletes(app, db_sessi
     assert Jobs.query.get(job.id).status == "Completed"
 
 
-def test_the_same_shape_without_goal_met_is_incomplete(app, db_session):
-    """The control for the test above: only the caller's intent differs."""
+def test_the_same_shape_without_goal_met_is_also_completed(app, db_session):
+    """goal_met no longer changes the OUTCOME, and that is deliberate.
+
+    It used to be the only thing separating "cancelled because we succeeded"
+    from "cancelled for any other reason". Now every all-terminal row set rolls
+    up to Completed, so this is no longer a control on the outcome -- it is a
+    guard that the two paths have not diverged. goal_met survives because the
+    caller still uses it to say WHY the job ended, which the notification wording
+    reads.
+    """
     job, rows, _ = _seed(task_count=2)
     update_job_task_status(rows[0].id, "Completed")
     update_job_task_status(rows[1].id, "Canceled", finalize=False)
 
     assert finalize_job_if_complete(job.id) is True
-    assert Jobs.query.get(job.id).status == "Incomplete"
+    assert Jobs.query.get(job.id).status == "Completed"

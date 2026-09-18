@@ -1845,7 +1845,7 @@ components:
           description: Always null in API responses (encoder limitation).
         status:
           type: string
-          enum: [Ready, Queued, Running, Paused, Completed, Canceled, Incomplete]
+          enum: [Ready, Queued, Running, Paused, Completed, Canceled, Expired, Incomplete]
         started_at:
           type: string
           nullable: true
@@ -1875,7 +1875,7 @@ components:
           description: The full hashcat command (built when the job is queued).
         status:
           type: string
-          enum: [Not Started, Queued, Running, Paused, Completed, Canceled, Importing]
+          enum: [Not Started, Queued, Running, Paused, Completed, Canceled, Expired, Importing]
         started_at:
           type: string
           nullable: true
@@ -2123,7 +2123,7 @@ components:
         job_task_id: {type: integer}
         task_status:
           type: string
-          enum: [Not Started, Queued, Running, Paused, Completed, Canceled, Importing]
+          enum: [Not Started, Queued, Running, Paused, Completed, Canceled, Expired, Importing]
 
     SearchRequest:
       type: object

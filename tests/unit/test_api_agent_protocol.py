@@ -182,7 +182,7 @@ def test_parent_task_runtime_cap_cancels_whole_group(app, client):
     resp = client.post("/v1/agents/heartbeat", json={"agent_status": "Working", "hc_status": ""})
     assert _body(resp)["msg"] == "Canceled"
     rows = {jt.chunk_no: jt.status for jt in JobTasks.query.filter_by(job_id=job.id, task_id=7).all()}
-    assert rows == {1: "Completed", 2: "Canceled", 3: "Canceled"}   # running + queued both canceled
+    assert rows == {1: "Completed", 2: "Expired", 3: "Expired"}   # running + queued both canceled
     assert JobTasks.query.filter_by(job_id=job.id, task_id=99).first().status == "Queued"
 
 
@@ -216,8 +216,8 @@ def test_whole_unchunked_task_still_capped(app, client):
     db.session.commit()
     _set_agent_cookies(client, "rt-whole")
     resp = client.post("/v1/agents/heartbeat", json={"agent_status": "Working", "hc_status": ""})
-    assert _body(resp)["msg"] == "Canceled"
-    assert JobTasks.query.get(jt.id).status == "Canceled"
+    assert _body(resp)["msg"] == "Canceled"      # the wire verb is unchanged
+    assert JobTasks.query.get(jt.id).status == "Expired"
 
 
 def test_idle_dispatch_skips_and_cancels_expired_task(app, client):
@@ -238,7 +238,7 @@ def test_idle_dispatch_skips_and_cancels_expired_task(app, client):
     _set_agent_cookies(client, "rt-idle")
     resp = client.post("/v1/agents/heartbeat", json={"agent_status": "Idle", "hc_status": ""})
     assert _body(resp)["msg"] == "OK"                                  # not START
-    assert JobTasks.query.filter_by(job_id=job.id, task_id=7, chunk_no=2).first().status == "Canceled"
+    assert JobTasks.query.filter_by(job_id=job.id, task_id=7, chunk_no=2).first().status == "Expired"
     assert JobTasks.query.filter_by(agent_id=agent.id).first() is None  # nothing assigned
 
 

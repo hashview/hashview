@@ -49,6 +49,7 @@ from hashview.utils.utils import (
     close_ledger,
     dynamic_wordlist_ids,
     hashfile_hash_type,
+    notify_owner_of_cancellation,
     task_uses_dynamic_wordlist,
     top_effective_task_ids,
 )
@@ -475,6 +476,7 @@ def v1_api_post_stop_job(job_id):
 
     log_event('job.stop', actor=(user.email_address, user.id),
               target=f'job:{job.id} {job.name!r}')
+    notify_owner_of_cancellation(job, user, when=job.ended_at)
     return jsonify({
         'status': 200,
         'type': 'message',

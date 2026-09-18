@@ -35,7 +35,14 @@ from hashview.models import (
     JobTaskLedger,
     JobTasks,
     Settings,
+    Tasks,
     db,
+)
+from hashview.utils.audit import (
+    SYSTEM_ACTOR,
+    job_target,
+    job_task_target,
+    log_event,
 )
 from hashview.utils.utils import (
     _job_hash_type,
@@ -117,6 +124,35 @@ def _task_runtime_exceeded(job_id, task_id, max_hours):
     return started is not None and started + timedelta(hours=max_hours) < datetime.now()
 
 
+def _audit_auto_cancel(event, job_id, task_id=None, cap=None):
+    """Record a cancellation the SYSTEM performed, with the cap that caused it.
+
+    Actor is explicit. These fire inside an agent heartbeat, so a request
+    context exists, but resolve_actor() returns (None, None) there -- the uuid
+    cookie is an agent uuid and matches no user's api_key -- which would make an
+    automatic cancellation read as an anonymous user action.
+
+    Best-effort and never fatal: an audit write must not be able to stop a
+    runtime cap from being enforced. log_event already swallows its own errors;
+    this guards the name lookups it is given.
+    """
+    try:
+        job = Jobs.query.get(job_id)
+        if job is None:
+            return
+        settings = Settings.current()
+        hours = getattr(settings, cap, None) if settings else None
+        detail = f'{cap} exceeded ({hours}h)' if hours else f'{cap} exceeded'
+        if task_id is None:
+            target = job_target(job)
+        else:
+            target = job_task_target(job, task=Tasks.query.get(task_id),
+                                     task_id=task_id)
+        log_event(event, target=target, detail=detail, actor=SYSTEM_ACTOR)
+    except Exception:   # nosec B110 - auditing must never block enforcement
+        current_app.logger.exception('Could not audit the automatic cancellation.')
+
+
 def _cancel_task_group(job_id, task_id):
     """Stop a (job, task) entirely: close its ledger AND cancel its live rows.
 
@@ -127,6 +163,8 @@ def _cancel_task_group(job_id, task_id):
     """
     current_app.logger.info(
         'Job %s task %s exceeded max_runtime_tasks; closing it.', job_id, task_id)
+    _audit_auto_cancel('task.auto_cancel', job_id, task_id=task_id,
+                       cap='max_runtime_tasks')
     if close_ledger(job_id, 'runtime_cap', task_id=task_id):
         return
     for jt in JobTasks.query.filter_by(job_id=job_id, task_id=task_id).all():
@@ -259,6 +297,8 @@ def v1_api_set_agent_heartbeat():
                     # Close every ledger of the job as well as its rows, or the
                     # next heartbeat starts issuing fresh slices of an attack the
                     # cap just stopped.
+                    _audit_auto_cancel('job.auto_cancel', job.id,
+                                       cap='max_runtime_jobs')
                     close_ledger(job.id, 'job_runtime_cap')
                     job_tasks = JobTasks.query.filter_by(job_id = job.id).all()
                     for job_task in job_tasks:
@@ -433,6 +473,13 @@ def v1_api_set_agent_heartbeat():
                     # over-cap attack must not starve every attack behind it.
                     if _task_runtime_exceeded(ledger.job_id, ledger.task_id,
                                               settings.max_runtime_tasks):
+                        # Distinct from the _cancel_task_group site above: this
+                        # fires for an attack the requesting agent is NOT running,
+                        # so one heartbeat can cap several jobs' attacks as it
+                        # walks the queue. Each needs its own record.
+                        _audit_auto_cancel('task.auto_cancel', ledger.job_id,
+                                           task_id=ledger.task_id,
+                                           cap='max_runtime_tasks')
                         close_ledger(ledger.job_id, 'runtime_cap', ledger_id=ledger.id)
                         continue
 

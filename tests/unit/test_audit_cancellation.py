@@ -29,6 +29,14 @@ pytestmark = pytest.mark.security
 @pytest.fixture()
 def audit_app(app, tmp_path):
     app.config["HASHVIEW_LOGS_DIR"] = str(tmp_path / "logs")
+    # Production sets MAIL_DEFAULT_SENDER from config.conf; the test app does
+    # not, and Flask-Mail refuses a message with no sender -- send_email then
+    # swallows the error and returns False, so an un-set sender looks exactly
+    # like "no email was sent" and every outbox assertion below would pass for
+    # the wrong reason. Flask-Mail snapshots the value into its extension state
+    # at init_app time, so setting app.config alone is too late.
+    app.config["MAIL_DEFAULT_SENDER"] = "hashview@example.test"
+    app.extensions["mail"].default_sender = "hashview@example.test"
     configure_audit_logging(app)
     return app
 
@@ -215,3 +223,124 @@ def test_auditing_never_blocks_the_cap_from_being_enforced(audit_app, monkeypatc
 
         assert JobTasks.query.get(job_task.id).status == "Canceled", (
             "the runtime cap was not applied because auditing raised")
+
+
+# --- the owner is told when somebody else stops their work -------------------
+#
+# Authorization on every stop route is "admin OR owner", so a canceller who is
+# not the owner is necessarily an administrator. That is exactly the case the
+# owner cannot otherwise see: their job or task turns up Canceled with nothing
+# to say who did it or when.
+
+def test_owner_is_emailed_when_an_admin_stops_their_job(audit_app, client):
+    with audit_app.app_context():
+        owner = Users(first_name="Job", last_name="Owner", admin=False,
+                      email_address="owner@example.test", password="x" * 60)
+        _db.session.add(owner)
+        _db.session.commit()
+        job, _task, _jt = _running_job(owner)
+
+        admin = _admin()
+        _login(client, admin)
+        with audit_app.extensions['mail'].record_messages() as outbox:
+            client.post(f"/jobs/stop/{job.id}", follow_redirects=True)
+
+        assert Jobs.query.get(job.id).status == "Canceled"
+        assert len(outbox) == 1, 'the owner was not emailed'
+        msg = outbox[0]
+        assert msg.recipients == [owner.email_address]
+        assert job.name in msg.subject
+        # Everything an owner needs to act: what, when, and who.
+        assert job.name in msg.body
+        assert admin.email_address in msg.body
+        assert datetime.now().strftime('%Y-%m-%d') in msg.body
+
+
+def test_owner_is_emailed_when_an_admin_cancels_one_of_their_tasks(audit_app, client):
+    with audit_app.app_context():
+        owner = Users(first_name="Job", last_name="Owner", admin=False,
+                      email_address="owner@example.test", password="x" * 60)
+        _db.session.add(owner)
+        _db.session.commit()
+        job, task, _jt = _running_job(owner)
+
+        admin = _admin()
+        _login(client, admin)
+        with audit_app.extensions['mail'].record_messages() as outbox:
+            client.get(f"/job_task/stop_task/{job.id}/{task.id}",
+                       follow_redirects=True)
+
+        assert len(outbox) == 1, 'the owner was not emailed about the task'
+        msg = outbox[0]
+        assert msg.recipients == [owner.email_address]
+        assert task.name in msg.body, 'the email must name the task, not just the job'
+        assert job.name in msg.body
+        assert admin.email_address in msg.body
+
+
+def test_no_email_when_the_owner_stops_their_own_job(audit_app, client):
+    """You do not need telling that you did it."""
+    with audit_app.app_context():
+        owner = _admin()                      # owner AND admin
+        _login(client, owner)
+        job, _task, _jt = _running_job(owner)
+
+        with audit_app.extensions['mail'].record_messages() as outbox:
+            client.post(f"/jobs/stop/{job.id}", follow_redirects=True)
+
+        assert Jobs.query.get(job.id).status == "Canceled"
+        assert outbox == [], 'the owner was emailed about their own action'
+
+
+def test_a_stop_still_succeeds_when_the_mail_server_is_unreachable(audit_app,
+                                                                   client,
+                                                                   monkeypatch):
+    """Stopping a job must not fail because mail is down.
+
+    send_email already swallows its own errors, so this raises from further out
+    -- the owner lookup -- to prove the guard around the whole notification is
+    what protects the stop, not just Flask-Mail's own try/except.
+    """
+    from hashview.utils import utils as utils_mod
+
+    with audit_app.app_context():
+        owner = Users(first_name="Job", last_name="Owner", admin=False,
+                      email_address="owner@example.test", password="x" * 60)
+        _db.session.add(owner)
+        _db.session.commit()
+        job, _task, _jt = _running_job(owner)
+        admin = _admin()
+        _login(client, admin)
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError('SMTP is a black hole')
+
+        monkeypatch.setattr(utils_mod, 'send_email', _boom)
+        client.post(f"/jobs/stop/{job.id}", follow_redirects=True)
+
+        assert Jobs.query.get(job.id).status == "Canceled", (
+            'the job was not stopped because notifying the owner raised')
+
+
+def test_no_email_when_email_is_disabled_instance_wide(audit_app, client):
+    with audit_app.app_context():
+        owner = Users(first_name="Job", last_name="Owner", admin=False,
+                      email_address="owner@example.test", password="x" * 60)
+        _db.session.add(owner)
+        _db.session.commit()
+        job, _task, _jt = _running_job(owner)
+        settings = Settings.query.first()
+        if settings is None:
+            settings = Settings(retention_period=30, max_runtime_jobs=0,
+                                max_runtime_tasks=0)
+            _db.session.add(settings)
+        settings.email_enabled = False
+        _db.session.commit()
+
+        admin = _admin()
+        _login(client, admin)
+        with audit_app.extensions['mail'].record_messages() as outbox:
+            client.post(f"/jobs/stop/{job.id}", follow_redirects=True)
+
+        assert Jobs.query.get(job.id).status == "Canceled"
+        assert outbox == [], 'email was sent while the instance-wide switch was off'

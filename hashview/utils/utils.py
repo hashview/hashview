@@ -377,6 +377,57 @@ def get_agent_timeout_minutes():
         return 60
     return 60
 
+def notify_owner_of_cancellation(job, canceled_by, task=None, when=None):
+    """Tell a job's owner that somebody ELSE stopped their work.
+
+    Only fires when the canceller is not the owner. Every stop route authorises
+    "admin OR owner", so a non-owner canceller is necessarily an administrator --
+    and that is precisely the case the owner cannot otherwise see: their job or
+    task simply turns up Canceled with nothing to say who did it or when.
+
+    ``task`` scopes the message to one attack; omit it for a whole-job stop.
+    ``when`` is the cancellation time, passed in rather than read from the clock
+    here so the email and the audit entry cannot disagree.
+
+    Best-effort in every direction: a stop must never fail, or be undone,
+    because mail is unreachable. Respects the instance-wide email switch, the
+    same as notify_admins.
+    """
+    try:
+        if job is None or canceled_by is None:
+            return False
+        if job.owner_id is None or job.owner_id == canceled_by.id:
+            return False        # you do not need telling that you did it
+        settings = Settings.current()
+        if settings is not None and not settings.email_enabled:
+            return False
+        owner = Users.query.get(job.owner_id)
+        if owner is None or not owner.email_address:
+            return False
+
+        when = when or datetime.now()
+        actor = f'{canceled_by.first_name} {canceled_by.last_name}'.strip() \
+            or canceled_by.email_address
+        what = f'Task "{task.name}" on job "{job.name}"' if task is not None \
+            else f'Job "{job.name}"'
+        subject = (f'Hashview: your task on job "{job.name}" was canceled'
+                   if task is not None else
+                   f'Hashview: your job "{job.name}" was canceled')
+        body = (
+            f'{what} was canceled by another user.\n'
+            f'\n'
+            f'  What:      {what}\n'
+            f'  Canceled:  {when.strftime("%Y-%m-%d %H:%M:%S")}\n'
+            f'  By:        {actor} <{canceled_by.email_address}>\n'
+            f'\n'
+            'You are receiving this because you own the job.\n'
+        )
+        return send_email(owner, subject, body)
+    except Exception:   # nosec B110 - notifying the owner must never block a stop
+        current_app.logger.exception('Could not notify the job owner of a cancellation.')
+        return False
+
+
 def notify_admins(subject, message):
     """Deliver an administrative notification (e.g. an agent error) to the admins
     who opted in, over each channel they selected and that is instance-enabled.

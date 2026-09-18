@@ -27,6 +27,7 @@ from hashview.utils.utils import (
     close_ledger,
     is_chunk_row,
     job_assignments,
+    notify_owner_of_cancellation,
     update_job_task_status,
 )
 from hashview.utils.utils import (
@@ -592,6 +593,8 @@ def stop_job_task(job_task_id):
             log_event('task.cancel',
                       target=job_task_target(job, task_id=job_task.task_id),
                       detail=f'stopped by user from the dashboard (job_task:{job_task.id})')
+            notify_owner_of_cancellation(job, current_user,
+                                         task=Tasks.query.get(job_task.task_id))
         else:
             flash('You are unauthorized to stop this task', 'danger')
 
@@ -619,6 +622,7 @@ def stop_task(job_id, task_id):
                     update_job_task_status(jt.id, 'Canceled')
         log_event('task.cancel', target=job_task_target(job, task_id=task_id),
                   detail='stopped by user from the dashboard')
+        notify_owner_of_cancellation(job, current_user, task=Tasks.query.get(task_id))
     else:
         flash('You are unauthorized to stop this task', 'danger')
 

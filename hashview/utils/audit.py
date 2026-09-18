@@ -126,6 +126,27 @@ def resolve_actor():
     return (None, None)
 
 
+# Automatic cancellations run inside an agent's heartbeat, so a request context
+# exists -- but resolve_actor() still yields (None, None) there, because the
+# `uuid` cookie on a heartbeat is an AGENT uuid and the api_key lookup matches no
+# user. Logged without an explicit actor they would read as anonymous user
+# actions. SYSTEM_ACTOR says plainly that nobody did it.
+SYSTEM_ACTOR = ('system', None)
+
+
+def job_target(job):
+    """Audit target string for a job, matching the 'job:17 \'name\'' convention."""
+    return f'job:{job.id} {job.name!r}'
+
+
+def job_task_target(job, task=None, task_id=None):
+    """Audit target for a task WITHIN a job -- both ids, because a task belongs
+    to many jobs and 'task:4 was cancelled' does not say which run stopped."""
+    if task is not None:
+        return f'job:{job.id} {job.name!r} task:{task.id} {task.name!r}'
+    return f'job:{job.id} {job.name!r} task:{task_id}'
+
+
 def log_event(event, target=None, outcome='success', detail=None, actor=None):
     """Append one audit record to audit.log. Never raises.
 

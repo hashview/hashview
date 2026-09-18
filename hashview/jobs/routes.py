@@ -47,6 +47,7 @@ from hashview.utils.utils import (
     apply_name_filter,
     build_job_task_commands,
     close_ledger,
+    combine_hashfiles,
     dynamic_wordlist_ids,
     import_hashfilehashes,
     is_chunk_row,
@@ -479,10 +480,60 @@ def jobs_assigned_hashfile(job_id):
                 except OSError:
                     pass
 
-    elif request.method == 'POST' and request.form.get('hashfile_id'):
-        # User selected an existing hashfile
-        job.hashfile_id = request.form['hashfile_id']
+    elif (request.method == 'POST'
+          and not is_ajax
+          and (request.form.get('hf_source') == 'existing'
+               or 'hashfile_id' in request.form)):
+        # User submitted the existing hashfiles form (marked by hf_source=existing
+        # hidden field, or by legacy direct hashfile_id submission).
+        selected = request.form.getlist('hashfile_id')
+
+        if not selected:
+            # Empty selection
+            flash('Select at least one hashfile.', 'danger')
+            return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
+
+        if len(selected) == 1:
+            # Single selection: validate and assign directly
+            try:
+                hf_id = int(selected[0])
+            except (ValueError, TypeError):
+                flash('Invalid hashfile selection.', 'danger')
+                return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
+
+            hf = Hashfiles.query.get(hf_id)
+            if not hf or hf.customer_id != job.customer_id:
+                flash('Invalid hashfile selection.', 'danger')
+                return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
+
+            job.hashfile_id = hf_id
+            db.session.commit()
+            return redirect("/jobs/" + str(job.id)+"/notifications")
+
+        # Two or more selections: combine them
+        combined, error_msg = combine_hashfiles(
+            selected,
+            customer_id=job.customer_id,
+            owner_id=current_user.id,
+        )
+
+        if error_msg:
+            flash(error_msg, 'danger')
+            return redirect(url_for('jobs.jobs_assigned_hashfile', job_id=job_id))
+
+        # Success: assign combined file and log
+        job.hashfile_id = combined.id
         db.session.commit()
+
+        # Count hashes in the combined file for logging
+        combined_hash_count = HashfileHashes.query.filter_by(
+            hashfile_id=combined.id
+        ).count()
+
+        log_event('hashfile.combine',
+                  target=f'hashfile:{combined.id} {combined.name!r}',
+                  detail=f'sources={len({int(s) for s in selected})} hashes={combined_hash_count}')
+
         return redirect("/jobs/" + str(job.id)+"/notifications")
 
     else:

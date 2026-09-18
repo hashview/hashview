@@ -8,7 +8,7 @@ import os
 import re
 import secrets
 import struct
-from datetime import datetime
+from datetime import UTC, datetime
 
 import requests
 from flask import after_this_request, current_app, send_from_directory, url_for
@@ -2182,6 +2182,121 @@ def hashfile_hash_type(hashfile_id):
         return None
     h = Hashes.query.get(hfh.hash_id)
     return h.hash_type if h else None
+
+
+def combine_hashfiles(hashfile_ids, customer_id, owner_id):
+    """Combine several existing hashfiles into one new hashfile.
+
+    Returns (hashfile, None) on success, or (None, error_message) on refusal.
+    """
+    unique_ids = []
+    seen = set()
+    for hid in hashfile_ids:
+        try:
+            int_id = int(hid)
+        except (TypeError, ValueError):
+            return (None, 'Invalid hashfile selection.')
+        if int_id not in seen:
+            unique_ids.append(int_id)
+            seen.add(int_id)
+
+    if len(unique_ids) < 2:
+        return (None, 'Select at least two hashfiles to combine.')
+
+    # Deliberately the same message for "does not exist" and "belongs to
+    # another customer", so the response does not leak which ids exist.
+    hashfiles_by_id = {}
+    for hid in unique_ids:
+        hf = Hashfiles.query.get(hid)
+        if not hf or hf.customer_id != customer_id:
+            return (None, 'Invalid hashfile selection.')
+        hashfiles_by_id[hid] = hf
+
+    for hid in unique_ids:
+        if HashfileHashes.query.filter_by(hashfile_id=hid).first() is None:
+            return (None, f'Hashfile {hashfiles_by_id[hid].name!r} has no hashes.')
+
+    # Only the representative (first) link's hash type is validated per source,
+    # consistent with how hashfile_hash_type()/build_hashcat_command derive a
+    # file's type. A dangling link further down a source is copied as-is.
+    hash_types = {hashfile_hash_type(hid) for hid in unique_ids}
+    if None in hash_types:
+        return (None, 'A selected hashfile has no resolvable hash type.')
+    if len(hash_types) > 1:
+        return (None, 'All selected hashfiles must share one hash type.')
+
+    hex_salt_values = {hashfiles_by_id[hid].hex_salt for hid in unique_ids}
+    if len(hex_salt_values) > 1:
+        return (None, 'All selected hashfiles must agree on the hex-salt setting.')
+    shared_hex_salt = hex_salt_values.pop()
+
+    new_hashfile = Hashfiles(
+        name=f'combined-{datetime.now(UTC):%Y%m%d-%H%M%S}',
+        customer_id=customer_id,
+        owner_id=owner_id,
+        hex_salt=shared_hex_salt,
+    )
+    db.session.add(new_hashfile)
+    db.session.flush()
+
+    # Sources are walked in the caller's order and each source in link-id
+    # order, so the combined file keeps first-seen order across sources.
+    # Rows are paged via keyset pagination on HashfileHashes.id (the primary
+    # key) and inserted per _IMPORT_CHUNK_SIZE (like import_hashfilehashes)
+    # so two large NTDS dumps do not become millions of in-flight objects and
+    # one multi-million-row INSERT. Keyset paging (id > after_id) bounds
+    # memory because MySQL's mysql-connector-python dialect reports
+    # supports_server_side_cursors = False, so yield_per cannot stop the
+    # driver from buffering the entire result set client-side. This matches
+    # the hash-export path in settings/routes.py:550-595.
+    #
+    # This is ONE transaction on purpose: flush per chunk, commit once at the
+    # end. Do not add per-chunk commits -- a failure between commits would
+    # leave an orphaned, partially filled Hashfiles row behind.
+    seen_keys = set()
+    pending = []
+    for hid in unique_ids:
+        def page(after_id, _hid=hid):
+            """One batch of rows with an id above ``after_id``, in id order."""
+            return db.session.query(
+                HashfileHashes.id,
+                HashfileHashes.hash_id,
+                HashfileHashes.username
+            ).filter(
+                HashfileHashes.hashfile_id == _hid,
+                HashfileHashes.id > after_id
+            ).order_by(HashfileHashes.id).limit(_IMPORT_CHUNK_SIZE).all()
+
+        after_id = 0
+        while True:
+            rows = page(after_id)
+            if not rows:
+                break
+            for row_id, hash_id, username in rows:
+                after_id = row_id
+                key = (hash_id, username)
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                pending.append({
+                    'hash_id': hash_id,
+                    'username': username,
+                    'hashfile_id': new_hashfile.id,
+                })
+                if len(pending) >= _IMPORT_CHUNK_SIZE:
+                    db.session.bulk_insert_mappings(HashfileHashes, pending)
+                    db.session.flush()
+                    pending = []
+            if len(rows) < _IMPORT_CHUNK_SIZE:
+                break
+
+    if pending:
+        db.session.bulk_insert_mappings(HashfileHashes, pending)
+
+    if not try_commit(f'combine_hashfiles {unique_ids}'):
+        return (None, 'Could not combine those hashfiles.')
+
+    return (new_hashfile, None)
 
 
 def _job_hash_type(job):

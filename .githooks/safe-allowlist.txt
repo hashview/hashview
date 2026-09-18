@@ -37,6 +37,10 @@ regardless
 # (CHANGELOG + a code comment) — not a credential.
 regardless
 
+# "rita" keyword substring inside the ordinary English word "authoritative"
+# (CHANGELOG describes the ledger/database as authoritative) — not a credential.
+authoritative
+
 # Test-only dummy credential literals in the API test fixtures
 # (tests/unit/test_api_customer_hashfiles.py admin_user fixture).
 password="hashed-pw"

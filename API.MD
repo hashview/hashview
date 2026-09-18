@@ -37,6 +37,6 @@ auth failure the server issues an HTTP 302 to `/v1/not_authorized`.
 Most endpoints answer **HTTP 200** and report the real outcome in the response
 body's `status` field (200/400/403/426/500); a few newer endpoints also use
 genuine HTTP status codes (e.g. 404 on `DELETE /v1/jobs/{job_id}`). The list
-and detail endpoints return ORM rows JSON-encoded **as a string** that must be
-decoded a second time. Both quirks — and the exact response shape of every
-endpoint — are documented in the OpenAPI spec.
+and detail endpoints now return ORM rows as **native JSON**, so a client no
+longer has to parse the response body a second time. The exact response shape
+of every endpoint is documented in the OpenAPI spec.

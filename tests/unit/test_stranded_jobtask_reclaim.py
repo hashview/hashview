@@ -71,11 +71,11 @@ def _seed(agent_last_checkin, job_status="Running", task_status="Running",
     db.session.add(agent)
     db.session.commit()
     job = Jobs(name="j", owner_id=user.id, customer_id=cust.id, hashfile_id=hf.id,
-               status=job_status, priority=3, started_at=datetime.now())
+               status=job_status, priority=3, started_at=datetime.utcnow())
     db.session.add(job)
     db.session.commit()
     jt = JobTasks(job_id=job.id, task_id=task.id, status=task_status, priority=3,
-                  agent_id=agent.id, started_at=datetime.now() - timedelta(hours=9),
+                  agent_id=agent.id, started_at=datetime.utcnow() - timedelta(hours=9),
                   chunk_no=2, chunk_total=4, chunk_skip=500, chunk_limit=500,
                   command='["@HASHCATBINPATH@","-m","1000"]')
     db.session.add(jt)
@@ -90,7 +90,7 @@ def _run():
 
 
 def test_a_dead_agents_running_row_is_requeued(app, db_session):
-    job, jt, agent = _seed(agent_last_checkin=datetime.now() - timedelta(hours=5))
+    job, jt, agent = _seed(agent_last_checkin=datetime.utcnow() - timedelta(hours=5))
     logger = _run()
 
     row = JobTasks.query.get(jt.id)
@@ -106,7 +106,7 @@ def test_the_reclaimed_row_keeps_its_slice_and_command(app, db_session):
     the temp-file names inside it are keyed on the row's own id, which travels
     with the row rather than with whoever is running it.
     """
-    job, jt, agent = _seed(agent_last_checkin=datetime.now() - timedelta(hours=5))
+    job, jt, agent = _seed(agent_last_checkin=datetime.utcnow() - timedelta(hours=5))
     before = (jt.chunk_skip, jt.chunk_limit, jt.chunk_no, jt.chunk_total, jt.command)
     _run()
 
@@ -119,7 +119,7 @@ def test_started_at_is_cleared_so_the_runtime_cap_does_not_instantly_kill_it(app
     """started_at is never otherwise reset, and _parent_task_started_at is a MIN
     across the task's rows -- a stale stamp would cancel the task the moment it
     was picked back up."""
-    job, jt, agent = _seed(agent_last_checkin=datetime.now() - timedelta(hours=5))
+    job, jt, agent = _seed(agent_last_checkin=datetime.utcnow() - timedelta(hours=5))
     assert jt.started_at is not None
     _run()
 
@@ -127,7 +127,7 @@ def test_started_at_is_cleared_so_the_runtime_cap_does_not_instantly_kill_it(app
 
 
 def test_a_live_agents_row_is_left_alone(app, db_session):
-    job, jt, agent = _seed(agent_last_checkin=datetime.now() - timedelta(minutes=1))
+    job, jt, agent = _seed(agent_last_checkin=datetime.utcnow() - timedelta(minutes=1))
     _run()
 
     row = JobTasks.query.get(jt.id)
@@ -136,7 +136,7 @@ def test_a_live_agents_row_is_left_alone(app, db_session):
 
 
 def test_a_completed_row_is_not_resurrected(app, db_session):
-    job, jt, agent = _seed(agent_last_checkin=datetime.now() - timedelta(hours=5),
+    job, jt, agent = _seed(agent_last_checkin=datetime.utcnow() - timedelta(hours=5),
                            task_status="Completed")
     _run()
 
@@ -145,7 +145,7 @@ def test_a_completed_row_is_not_resurrected(app, db_session):
 
 def test_a_row_on_a_stopped_job_is_retired_not_requeued(app, db_session):
     """Re-queueing onto a cancelled job would create work nothing ever collects."""
-    job, jt, agent = _seed(agent_last_checkin=datetime.now() - timedelta(hours=5),
+    job, jt, agent = _seed(agent_last_checkin=datetime.utcnow() - timedelta(hours=5),
                            job_status="Canceled")
     _run()
 
@@ -157,7 +157,7 @@ def test_a_row_on_a_stopped_job_is_retired_not_requeued(app, db_session):
 def test_reclaim_is_idempotent_across_sweeps(app, db_session):
     """The sweep runs every 5 minutes; a second pass must not disturb the row it
     already queued (it no longer matches status == 'Running')."""
-    job, jt, agent = _seed(agent_last_checkin=datetime.now() - timedelta(hours=5))
+    job, jt, agent = _seed(agent_last_checkin=datetime.utcnow() - timedelta(hours=5))
     _run()
     first = JobTasks.query.get(jt.id).status
     logger = _run()

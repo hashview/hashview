@@ -2696,9 +2696,10 @@ def close_ledger(job_id, reason, task_id=_UNSCOPED, ledger_id=_UNSCOPED,
             # row of the job" here would let a request to stop ONE attack cancel
             # the whole job.
             rows = rows.filter(JobTasks.task_id == task_id)
+        terminal = ('Expired' if reason in _RUNTIME_CAP_REASONS else 'Canceled')
         for row in rows.all():
             if row.status in JOBTASK_ACTIVE_STATUSES:
-                update_job_task_status(row.id, 'Canceled', finalize=False)
+                update_job_task_status(row.id, terminal, finalize=False)
         finalize_job_if_complete(job_id)
     return len(ledgers)
 
@@ -2895,6 +2896,17 @@ def build_job_task_commands(job):
 # can POST any status string to /v1/jobtask/status, so it stays honoured.
 JOBTASK_ACTIVE_STATUSES = ('Running', 'Queued', 'Not Started', 'Importing')
 
+# Terminal statuses: a row in one of these owes no more compute. 'Expired' joins
+# Completed and Canceled here -- it must NEVER be added to the active set above,
+# or finalize_job_if_complete would wait forever for work nothing will finish.
+JOBTASK_TERMINAL_STATUSES = ('Completed', 'Canceled', 'Expired')
+
+# Which terminal status a closed attack's rows get. 'Expired' means a runtime cap
+# stopped it; 'Canceled' means a person or the recovery short-circuit did. Keyed
+# on the reason close_ledger is already given, so the two cap call sites need no
+# new argument and no other caller can accidentally mint an Expired row.
+_RUNTIME_CAP_REASONS = ('runtime_cap', 'job_runtime_cap')
+
 
 def queue_late_assignments(job_id):
     """Queue any 'Not Started' row on a job that is already queued or running.
@@ -2988,24 +3000,27 @@ def _append_late_ledger(job, row, position, issued=True):
 
 
 def _job_completion_outcome(rows, goal_met=False):
-    """Terminal status for a job whose rows are all terminal.
+    """Terminal status for a job whose rows are all terminal: always 'Completed'.
 
-    Completed means every row actually finished. A cancelled row is terminal but
-    it is NOT done -- the old predicate treated the two as the same thing, so a
-    job whose every chunk was cancelled by the runtime reaper reported itself
-    Completed, with an ended_at and a "your job has completed" notification.
+    A job that reaches the end of its queue has run its course, and that holds
+    whether every attack finished, some were stopped by the per-task runtime cap,
+    or the operator cancelled a few along the way. The job itself was not cut
+    short -- if it had been, the job-level cap would have stamped it 'Expired'
+    and an operator stop would have stamped it 'Canceled', both written directly
+    and neither reaching this function.
 
-    ``goal_met`` is the exception, and it is passed by the caller rather than
-    re-derived here: the recovery short-circuit cancels a job's remaining tasks
-    precisely BECAUSE the job succeeded (a one-and-done job got its crack, or the
-    hashfile has nothing uncracked left). Those cancellations must not drag the
-    roll-up to Incomplete. Deriving it from hashfile state instead would
-    misreport a job the operator stopped on a hashfile that some OTHER job had
-    already finished off.
+    So 'Incomplete' is no longer a roll-up outcome. It survives as exactly one
+    thing: the status jobs_add gives a job created but never queued. That is a
+    cleaner reading than the old one, where 'Incomplete' meant two unrelated
+    things -- "never started" and "started, but something was cancelled" -- and
+    it is what makes hiding Info and Analytics behind it correct, since a job
+    that never ran has nothing to show.
+
+    ``goal_met`` no longer changes the answer (every all-terminal row set is
+    Completed now) but stays in the signature: callers pass it to say WHY the job
+    ended, and _deliver_job_notifications still words its message from it.
     """
-    if goal_met or all(r.status == 'Completed' for r in rows):
-        return 'Completed'
-    return 'Incomplete'
+    return 'Completed'
 
 
 def finalize_job_if_complete(job_id, goal_met=False):
@@ -3092,8 +3107,12 @@ def _deliver_job_notifications(job, outcome, duration):
         .filter(Hashes.cracked == '0') \
         .filter(HashfileHashes.hashfile_id == job.hashfile_id).count()
     total_cnt = cracked_cnt + uncracked_cnt
-    headline = ('Has Completed!' if outcome == 'Completed'
-                else 'Finished Incomplete (some tasks did not run)')
+    # The old wording here was 'Finished Incomplete (some tasks did not run)',
+    # which no job reaching this point can be any more: the roll-up returns
+    # 'Completed' for every all-terminal row set, and a job stopped by a cap or a
+    # person never reaches the roll-up at all. The branch is kept rather than
+    # dropped so a future outcome does not silently inherit "Has Completed!".
+    headline = 'Has Completed!' if outcome == 'Completed' else 'Has Finished'
     ran_for = ('It ran for ' + getTimeFormat(duration) + ' and recovered '
                + str(cracked_cnt) + ' out of ' + str(total_cnt) + ' hashes.')
 
@@ -3171,7 +3190,7 @@ def update_job_task_status(jobtask_id, status, finalize=True):
         return False
 
     jobtask.status = status
-    if status == 'Completed' or status == 'Canceled':
+    if status in JOBTASK_TERMINAL_STATUSES:
         # Clear the assigned agent's stale hashcat status BEFORE nulling agent_id.
         # Nulling first made the lookup Agents.query.get(None) -> None, so the agent
         # was never found and kept its stale hc_status forever (issue #237). The

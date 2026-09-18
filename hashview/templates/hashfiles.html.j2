@@ -231,7 +231,7 @@ function hvHfOpenBulkDel(){
         {% for j in hfjobs %}
         <div class="card" style="margin-bottom:12px; padding:14px 16px;">
             <div style="display:flex; align-items:center; gap:10px;">
-                <span class="dot-led {% if j.status == 'Running' %}run{% elif j.status == 'Completed' %}on{% elif j.status == 'Canceled' %}off{% else %}idle{% endif %}"></span>
+                <span class="dot-led {% if j.status == 'Running' %}run{% elif j.status == 'Completed' %}on{% elif j.status == 'Canceled' or j.status == 'Expired' %}off{% else %}idle{% endif %}"></span>
                 <span class="mono" style="color:var(--text-mute);">#{{ j.id }}</span>
                 <span style="font-weight:600; color:var(--text);">{{ j.name }}</span>
                 <span style="margin-left:auto;">{{ status_badge(j.status) }}</span>

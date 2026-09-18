@@ -394,7 +394,10 @@ def test_heartbeat_working_agent_task_runtime_exceeded_cancels_task(
     body = _json(resp)
     assert body["msg"] == "Canceled"
     _db.session.refresh(jt)
-    assert jt.status == "Canceled"
+    # Expired, not Canceled: a runtime cap stopped this, not a person. The wire
+    # verb the agent is given stays "Canceled" -- that is its instruction to
+    # stop, not a record of why.
+    assert jt.status == "Expired"
 
 
 @pytest.mark.security
@@ -427,7 +430,7 @@ def test_heartbeat_working_agent_job_runtime_exceeded_cancels_job(
     body = _json(resp)
     assert body["msg"] == "Canceled"
     _db.session.refresh(job)
-    assert job.status == "Canceled"
+    assert job.status == "Expired"
 
 
 @pytest.mark.security

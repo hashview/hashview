@@ -94,7 +94,7 @@
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="icon-btn act-stop" title="Stop">{{ icon('stop', size=15) }}</button>
                             </form>
-                        {% elif job.status == 'Canceled' %}
+                        {% elif job.status == 'Canceled' or job.status == 'Expired' %}
                             <form method="POST" action="{{ url_for('jobs.jobs_start', job_id=job.id) }}" style="display:contents">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="icon-btn act-go" title="Restart">{{ icon('refresh', size=15) }}</button>

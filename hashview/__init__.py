@@ -311,8 +311,11 @@ def create_app(testing=False, config_overrides=None):
     from hashview.users.routes import login_manager
     login_manager.init_app(app)
 
-    from flask_mail import Mail
-    mail = Mail()
+    # TimeoutMail, not flask_mail.Mail: the stock one builds its SMTP socket
+    # with no timeout, so an unresponsive relay blocks the sending thread
+    # forever -- and sends happen inside request handlers. See utils/mail.py.
+    from hashview.utils.mail import TimeoutMail
+    mail = TimeoutMail()
     mail.init_app(app)
 
     from hashview.agents.routes import agents

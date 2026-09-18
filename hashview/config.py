@@ -3,6 +3,7 @@ import secrets
 from configparser import ConfigParser
 
 from hashview.form_limits import resolve_max_form_memory_size
+from hashview.utils.mail import DEFAULT_MAIL_TIMEOUT
 
 file_config = ConfigParser()
 
@@ -75,3 +76,10 @@ class Config:
     MAIL_USERNAME = file_config['SMTP']['username']
     MAIL_PASSWORD = file_config['SMTP']['password']
     MAIL_DEFAULT_SENDER = file_config['SMTP']['default_sender']
+    # Seconds before an unresponsive relay is abandoned. Flask-Mail builds its
+    # SMTP socket with no timeout, so without this a relay that accepts a
+    # connection and then goes quiet parks the worker thread that is sending --
+    # and Hashview sends mail synchronously from request handlers. Read with
+    # .get() so a config.conf predating the key keeps working (same idiom as
+    # SECRET_KEY / MAX_FORM_MEMORY_SIZE above). See hashview/utils/mail.py.
+    MAIL_TIMEOUT = int(file_config['SMTP'].get('timeout') or DEFAULT_MAIL_TIMEOUT)

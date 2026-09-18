@@ -39,4 +39,9 @@ port = 25
 use_tls = False
 username = 
 password = 
-default_sender = 
+default_sender =
+# Seconds before an unresponsive relay is given up on. Optional: defaults to 10
+# when absent, so an existing config.conf needs no change. Never leave this
+# unbounded -- mail is sent from inside request handlers, so a relay that
+# accepts a connection and then goes quiet would block that request forever.
+# timeout = 10 

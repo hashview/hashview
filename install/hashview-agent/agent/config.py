@@ -39,3 +39,11 @@ class Config:
     # Optional host-specific hashcat args (e.g. '-d 3,4' to pin GPUs); applied to
     # both cracking and benchmarking. Absent in older configs -> '' (no args).
     HC_EXTRA_ARGS = file_config['AGENT'].get('HC_EXTRA_ARGS', '')
+
+    # How long to wait on the server before giving up, in seconds. Optional:
+    # absent in older configs -> the defaults in agent/http/http.py. `connect`
+    # bounds establishing the socket; `read` bounds the gap BETWEEN bytes, not
+    # the whole transfer, so a large wordlist download is unaffected for as long
+    # as it keeps making progress.
+    HTTP_CONNECT_TIMEOUT = file_config['HASHVIEW'].get('connect_timeout', '')
+    HTTP_READ_TIMEOUT = file_config['HASHVIEW'].get('read_timeout', '')

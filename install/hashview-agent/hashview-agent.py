@@ -114,7 +114,13 @@ if not os.path.exists('agent/config.conf'):
     config.write("[HASHVIEW]\n")
     config.write("server = " + str(server) + "\n")
     config.write("port = " + str(port) + "\n")
-    config.write("use_ssl = " + str(use_tls) + "\n\n")
+    config.write("use_ssl = " + str(use_tls) + "\n")
+    # Commented out: these are optional and agent/http/http.py carries the same
+    # defaults, so a config written before they existed behaves identically.
+    # Written out anyway so the knobs are discoverable without reading the
+    # source -- `read` is the gap between bytes, not a cap on download size.
+    config.write("# connect_timeout = 10\n")
+    config.write("# read_timeout = 120\n\n")
 
     config.write("[AGENT]\n")
     config.write("name = " + str(name) + "\n")

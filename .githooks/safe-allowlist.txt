@@ -177,3 +177,22 @@ image:\s*\S+@sha256:[0-9a-f]{64}
 # (tests/unit/test_catalog_orphaned_flag.py, test_catalog_prune_setting.py)
 api_key = "api-key-"
 api_key="key-prune"
+
+# --- rebase-carried false positives, unrelated to any branch's own changes ---
+# A rebase widens the scan range to every commit reachable from the new tip
+# but not yet on the target ref's old tip (see test_merge_only_push_is_not_
+# blocked_and_is_still_scanned for why that width is intentional), which
+# re-surfaces dummy test fixtures already reviewed on their original branch.
+
+# Dummy source IP used across Agents() test fixtures (tests/unit/test_agents_*,
+# test_scheduler_*, test_stranded_jobtask_reclaim.py, etc.) -- not a real host.
+src_ip="1\.1\.1\.1"
+
+# Throwaway login password used by tests/unit/test_form_length_rejected_before_insert.py
+# and tests/unit/test_login_redirect.py -- the well-known xkcd example password,
+# not a real credential.
+correct horse battery staple
+
+# Commit message (b859ea9, "feat(audit): record job/task cancellations...")
+# describing the #226 shell-injection fix; the phrase itself, not a secret.
+Possible hardcoded password: '--outfile'

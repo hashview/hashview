@@ -710,11 +710,18 @@ def run_benchmark(hash_modes):
     re-asking for it every heartbeat; see hashview/api/routes.py's
     heartbeat and slowest_benchmark for the other half of this contract.
     """
-    from agent.bench import parse_benchmark_speed, parse_hc_extra_args
+    from agent.bench import (
+        parse_benchmark_speed,
+        parse_hc_extra_args,
+        strip_benchmark_incompatible_args,
+    )
     from agent.config import Config
     # Apply host-specific args (e.g. '-d 3,4') to the benchmark too, so the
-    # measured rate reflects the same devices that will run the crack.
-    hc_args = parse_hc_extra_args(getattr(Config, 'HC_EXTRA_ARGS', ''))
+    # measured rate reflects the same devices that will run the crack -- but
+    # drop any flag hashcat refuses in -b mode (e.g. --hwmon-temp-abort) first,
+    # or every mode reports speed 0 and gets marked unsupported for no reason.
+    hc_args = strip_benchmark_incompatible_args(
+        parse_hc_extra_args(getattr(Config, 'HC_EXTRA_ARGS', '')))
     results = {}
     failed = []
     for mode in hash_modes or []:

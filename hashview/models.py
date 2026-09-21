@@ -225,6 +225,17 @@ class JobTasks(db.Model):
     #              or its job exceeded Settings.max_runtime_jobs
     status = db.Column(db.String(50), nullable=False)
     started_at = db.Column(db.DateTime, nullable=True)      # These defaults should be changed
+    # Stamped when the row reaches a terminal status (Completed/Canceled/Expired)
+    # and cleared whenever it is re-queued or re-claimed, so [started_at,
+    # ended_at] describes THIS attempt and nothing else.
+    #
+    # Nothing reads it yet. It exists so a job's ACTIVE time can be derived as
+    # the union of its rows' intervals -- merge the overlaps, sum what is left --
+    # rather than as wall-clock since the job started. The two differ by however
+    # long a higher-priority job starved this one, which is time no agent spent
+    # on it and which the runtime cap should arguably not count. A sum of
+    # intervals would be wrong in the other direction: chunks run in parallel.
+    ended_at = db.Column(db.DateTime, nullable=True)
     agent_id = db.Column(db.Integer, db.ForeignKey('agents.id'))
     # Chunking: each dispatched slice is its own JobTasks row. chunk_no is a
     # 1-based issue counter within the attack.

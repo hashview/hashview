@@ -453,6 +453,8 @@ def _reclaim_stranded_job_tasks(db :SQLAlchemy, logger :Logger, cutoff):
     reclaimed row that kept a timestamp from the run that stranded it would make
     Settings.max_runtime_tasks cancel the task the moment it was picked back up.
     """
+    from datetime import datetime
+
     from hashview.models import Agents, Jobs, JobTasks
 
     stale_agent_ids = [a.id for a in Agents.query
@@ -473,7 +475,8 @@ def _reclaim_stranded_job_tasks(db :SQLAlchemy, logger :Logger, cutoff):
             # will ever collect. Retire the row instead so the job can settle.
             (db.session.query(JobTasks)
              .filter(JobTasks.id == job_task.id, JobTasks.status == 'Running')
-             .update({'status': 'Canceled', 'agent_id': None},
+             .update({'status': 'Canceled', 'agent_id': None,
+                      'ended_at': datetime.now()},
                      synchronize_session=False))
             db.session.commit()
             continue
@@ -482,7 +485,8 @@ def _reclaim_stranded_job_tasks(db :SQLAlchemy, logger :Logger, cutoff):
                    .filter(JobTasks.id == job_task.id,
                            JobTasks.status == 'Running',
                            JobTasks.agent_id == owner)
-                   .update({'status': 'Queued', 'agent_id': None, 'started_at': None},
+                   .update({'status': 'Queued', 'agent_id': None,
+                            'started_at': None, 'ended_at': None},
                            synchronize_session=False))
         db.session.commit()
         if claimed:
@@ -722,6 +726,20 @@ def register_default_jobs(app :Flask):
         trigger='interval',
         minutes=5,
     )
+    # Jobs past Settings.max_runtime_jobs. Every minute, and deliberately the
+    # tightest cadence of the four: this one exists because a job can outlive its
+    # cap while NOBODY is asking about it, and until something notices, the
+    # dashboard shows it running. Every other sweep here reacts to a condition
+    # that is already visible somewhere; this one is the only thing that makes
+    # the condition visible at all. A minute of staleness on a job whose runtime
+    # is measured in hours is noise, and the sweep is one indexed query when
+    # there is nothing to do.
+    scheduler.add_job(
+        id='JOB_RUNTIME',
+        func=partial(job_runtime_check, app),
+        trigger='interval',
+        minutes=1,
+    )
     # Rule/wordlist rows whose file vanished (issue #383). Hourly, not the
     # 5-minute cadence above: an offline agent is a transient condition worth
     # catching early, while a missing file is a step condition created only by
@@ -733,6 +751,69 @@ def register_default_jobs(app :Flask):
         trigger='cron',
         hour='*',
     )
+
+
+def job_runtime_check(app :Flask):
+    """Scheduled job: expire jobs past Settings.max_runtime_jobs (see inner)."""
+    with app.app_context():
+        try:
+            from hashview.models import db
+            _job_runtime_check_inner(db, app.logger)
+        except Exception:
+            app.logger.exception(
+                'JobRuntimeCheck ScheduledJob is Complete with Result(Failure).')
+
+
+def _job_runtime_check_inner(db :SQLAlchemy, logger :Logger):
+    """Expire every job that has outlived Settings.max_runtime_jobs.
+
+    The cap was only ever evaluated inside the agent heartbeat, against the one
+    job that heartbeat was about to be given work for. That leaves a job whose
+    agents have all moved on to a higher-priority job unevaluated for as long as
+    the other job runs: it blows its cap silently, keeps its Running status, and
+    stays on the dashboard looking alive until some agent happens to come back to
+    it and trips the check on the way past. A job that outlived its cap AND lost
+    its last agent is never evaluated again at all.
+
+    Sweeping is the fix because it is the only formulation that does not depend
+    on someone asking. Nothing here is heartbeat-specific, so the enforcement
+    itself is shared with that path rather than reimplemented --
+    expire_job_over_runtime owns the ordering, the idempotency and the CAS that
+    stops the two callers double-expiring the same job.
+
+    Deliberately silent when there is nothing to do. This runs 1,440 times a day
+    and an unconditional log line per run would bury everything else.
+    """
+    from hashview.models import Jobs, Settings
+    from hashview.utils.utils import expire_job_over_runtime
+
+    settings = Settings.current()
+    cap = getattr(settings, 'max_runtime_jobs', 0) if settings else 0
+    if not cap or cap <= 0:
+        return 0
+
+    # started_at IS NOT NULL narrows the scan only: a Queued job that has never
+    # started has no clock to measure, and the cap is about runtime rather than
+    # queue time. expire_job_over_runtime refuses those anyway, so this changes
+    # nothing but the number of rows loaded every minute.
+    candidates = (db.session.query(Jobs)
+                  .filter(Jobs.status.in_(('Queued', 'Running')),
+                          Jobs.started_at.isnot(None))
+                  .all())
+
+    expired = 0
+    for job in candidates:
+        try:
+            if expire_job_over_runtime(job, cap):
+                expired += 1
+                logger.warning('Job %s (%s) expired: max_runtime_jobs exceeded (%sh).',
+                               job.id, job.name, cap)
+        except Exception:
+            # One job that cannot be expired must not stop the rest being swept.
+            db.session.rollback()
+            logger.exception('Failed to expire job %s past its runtime cap.',
+                             getattr(job, 'id', '?'))
+    return expired
 
 
 def agent_health_check(app :Flask):

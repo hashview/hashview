@@ -31,7 +31,6 @@ from hashview.models import (
     JobTaskLedger,
     JobTasks,
     Settings,
-    Tasks,
     db,
 )
 from hashview.utils.audit import (
@@ -48,8 +47,10 @@ from hashview.utils.audit import (
 from hashview.utils.clock import utcnow
 from hashview.utils.utils import (
     _job_hash_type,
+    audit_auto_cancel,
     build_keyspace_command,
     close_ledger,
+    expire_job_over_runtime,
     finalize_job_if_complete,
     get_md5_hash,
     hashtypes_in_use,
@@ -126,35 +127,6 @@ def _task_runtime_exceeded(job_id, task_id, max_hours):
     return started is not None and started + timedelta(hours=max_hours) < utcnow()
 
 
-def _audit_auto_cancel(event, job_id, task_id=None, cap=None):
-    """Record a cancellation the SYSTEM performed, with the cap that caused it.
-
-    Actor is explicit. These fire inside an agent heartbeat, so a request
-    context exists, but resolve_actor() returns (None, None) there -- the uuid
-    cookie is an agent uuid and matches no user's api_key -- which would make an
-    automatic cancellation read as an anonymous user action.
-
-    Best-effort and never fatal: an audit write must not be able to stop a
-    runtime cap from being enforced. log_event already swallows its own errors;
-    this guards the name lookups it is given.
-    """
-    try:
-        job = Jobs.query.get(job_id)
-        if job is None:
-            return
-        settings = Settings.current()
-        hours = getattr(settings, cap, None) if settings else None
-        detail = f'{cap} exceeded ({hours}h)' if hours else f'{cap} exceeded'
-        if task_id is None:
-            target = job_target(job)
-        else:
-            target = job_task_target(job, task=Tasks.query.get(task_id),
-                                     task_id=task_id)
-        log_event(event, target=target, detail=detail, actor=SYSTEM_ACTOR)
-    except Exception:   # nosec B110 - auditing must never block enforcement
-        current_app.logger.exception('Could not audit the automatic cancellation.')
-
-
 def _cancel_task_group(job_id, task_id):
     """Stop a (job, task) entirely: close its ledger AND cancel its live rows.
 
@@ -165,7 +137,7 @@ def _cancel_task_group(job_id, task_id):
     """
     current_app.logger.info(
         'Job %s task %s exceeded max_runtime_tasks; closing it.', job_id, task_id)
-    _audit_auto_cancel('task.auto_cancel', job_id, task_id=task_id,
+    audit_auto_cancel('task.auto_cancel', job_id, task_id=task_id,
                        cap='max_runtime_tasks')
     if close_ledger(job_id, 'runtime_cap', task_id=task_id):
         return
@@ -304,30 +276,13 @@ def v1_api_set_agent_heartbeat():
                     }
                     return jsonify(message)
 
-                # check if job has exceeded maximum runtime
+                # check if job has exceeded maximum runtime. Shared with the
+                # JOB_RUNTIME sweep, which evaluates the same cap for jobs no
+                # agent is currently asking about -- see expire_job_over_runtime
+                # for why that second caller exists and how the two are kept from
+                # both expiring the same job.
                 job = Jobs.query.get(job_task.job_id)
-                if settings.max_runtime_jobs > 0 and job.started_at is not None and job.started_at + timedelta(hours=settings.max_runtime_jobs) < utcnow():
-                    # Close every ledger of the job as well as its rows, or the
-                    # next heartbeat starts issuing fresh slices of an attack the
-                    # cap just stopped.
-                    _audit_auto_cancel('job.auto_cancel', job.id,
-                                       cap='max_runtime_jobs')
-                    close_ledger(job.id, 'job_runtime_cap')
-                    job_tasks = JobTasks.query.filter_by(job_id = job.id).all()
-                    # finalize=False: with the roll-up now returning Completed for
-                    # any all-terminal row set, letting the last row finalize would
-                    # stamp the job Completed and fire its completion notifications
-                    # a moment before the line below overwrites it with Expired.
-                    # The job's own status is decided here, not derived.
-                    for job_task in job_tasks:
-                        if job_task.status in _ACTIVE_JOBTASK_STATUSES:
-                            update_job_task_status(job_task.id, 'Expired',
-                                                   finalize=False)
-
-                    job.status = 'Expired'
-                    job.ended_at = utcnow()
-                    db.session.commit()
-
+                if expire_job_over_runtime(job, settings.max_runtime_jobs):
                     message = {
                         'status': 200,
                         'type': 'message',
@@ -496,7 +451,7 @@ def v1_api_set_agent_heartbeat():
                         # fires for an attack the requesting agent is NOT running,
                         # so one heartbeat can cap several jobs' attacks as it
                         # walks the queue. Each needs its own record.
-                        _audit_auto_cancel('task.auto_cancel', ledger.job_id,
+                        audit_auto_cancel('task.auto_cancel', ledger.job_id,
                                            task_id=ledger.task_id,
                                            cap='max_runtime_tasks')
                         close_ledger(ledger.job_id, 'runtime_cap', ledger_id=ledger.id)

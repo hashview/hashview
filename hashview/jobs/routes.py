@@ -1196,6 +1196,7 @@ def jobs_stop(job_id):
             for job_task in job_tasks:
                 job_task.status = 'Canceled'
                 job_task.agent_id = None
+                job_task.ended_at = datetime.now()
             db.session.commit()
             # Same event name and payload as POST /v1/jobs/stop (api/jobs.py), so
             # stopping a job from the UI and over the API produce one comparable

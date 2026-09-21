@@ -465,6 +465,7 @@ def v1_api_post_stop_job(job_id):
         for job_task in JobTasks.query.filter_by(job_id=job_id).all():
             job_task.status = 'Canceled'
             job_task.agent_id = None
+            job_task.ended_at = datetime.now()
         db.session.commit()
     except Exception:
         db.session.rollback()

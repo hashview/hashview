@@ -12,8 +12,10 @@ Closes #
 - [ ] Pushed through the pre-push hook (not `--no-verify`)
 - [ ] New/changed behavior has test coverage
 - [ ] If a route changed: `hashview/api_docs/openapi.yaml` is updated
-- [ ] If a migration was added: it's MySQL/MariaDB-safe, and `DEV_HEAD` in
-      `tests/run_migration_e2e.sh` is bumped
+- [ ] If a migration was added: it's MySQL/MariaDB-safe, and `DEV_HEAD` is
+      bumped in all three pinned files (`tests/run_migration_e2e.sh`,
+      `tests/integration/test_migration_e2e.py`,
+      `tests/unit/test_migration_drift_idempotency.py`)
 - [ ] If user-visible: `CHANGELOG.md` has an entry under `## Current Release`
 - [ ] N/A items above are just left unchecked, not deleted
 

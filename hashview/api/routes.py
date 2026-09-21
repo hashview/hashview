@@ -167,9 +167,17 @@ def _cancel_task_group(job_id, task_id):
                        cap='max_runtime_tasks')
     if close_ledger(job_id, 'runtime_cap', task_id=task_id):
         return
+    # Belt and braces, and unreachable today: close_ledger cancels the attack's
+    # rows whether or not it found a ledger to close, so by the time a return of
+    # 0 brings us here nothing is left in an active status and this loop is a
+    # no-op. Verified, not assumed -- a mutation that changes the status below
+    # back to 'Canceled' passes every test. Kept because close_ledger's contract
+    # is "close the ledger", not "cancel the rows", and matched to 'Expired' so
+    # that if the two ever diverge this path does not start quietly disagreeing
+    # about why a task stopped.
     for jt in JobTasks.query.filter_by(job_id=job_id, task_id=task_id).all():
         if jt.status in _ACTIVE_JOBTASK_STATUSES:
-            update_job_task_status(jt.id, 'Canceled')
+            update_job_task_status(jt.id, 'Expired')
 
 
 def _hashfile_has_uncracked(hashfile_id):
@@ -267,7 +275,10 @@ def v1_api_set_agent_heartbeat():
 
                 # Check if task has exceeded maximum runtime
                 job_task = JobTasks.query.filter_by(agent_id = agent.id).first()
-                if not job_task or job_task.status == 'Canceled':
+                # Expired counts here too: without it the agent is never told
+                # to stop, the row keeps its agent_id, and the cap below re-fires
+                # on every single heartbeat.
+                if not job_task or job_task.status in ('Canceled', 'Expired'):
                     message = {
                         'status': 200,
                         'type': 'message',
@@ -301,11 +312,17 @@ def v1_api_set_agent_heartbeat():
                                        cap='max_runtime_jobs')
                     close_ledger(job.id, 'job_runtime_cap')
                     job_tasks = JobTasks.query.filter_by(job_id = job.id).all()
+                    # finalize=False: with the roll-up now returning Completed for
+                    # any all-terminal row set, letting the last row finalize would
+                    # stamp the job Completed and fire its completion notifications
+                    # a moment before the line below overwrites it with Expired.
+                    # The job's own status is decided here, not derived.
                     for job_task in job_tasks:
                         if job_task.status in _ACTIVE_JOBTASK_STATUSES:
-                            update_job_task_status(job_task.id, 'Canceled')
+                            update_job_task_status(job_task.id, 'Expired',
+                                                   finalize=False)
 
-                    job.status = 'Canceled'
+                    job.status = 'Expired'
                     job.ended_at = datetime.now()
                     db.session.commit()
 

@@ -191,7 +191,11 @@ class Jobs(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     queued_at = db.Column(db.DateTime, nullable=True)
-    # status: Running/Paused/Completed/Queued/Canceled/Ready/Incomplete
+    # status: Running/Paused/Completed/Queued/Canceled/Ready/Expired/Incomplete
+    #   Expired    -- exceeded Settings.max_runtime_jobs
+    #   Canceled   -- stopped by a person
+    #   Incomplete -- created but never queued; NOT a roll-up outcome
+    #                 (see utils._job_completion_outcome)
     status = db.Column(db.String(20), nullable=False)
     started_at = db.Column(db.DateTime, nullable=True)
     ended_at = db.Column(db.DateTime, nullable=True)
@@ -209,7 +213,9 @@ class JobTasks(db.Model):
     task_id = db.Column(db.Integer, nullable=False, index=True)
     priority = db.Column(db.Integer, nullable=False, default=3)
     command = db.Column(db.String(1024))
-    # status: Running/Paused/Not Started/Completed/Queued/Canceled/Importing
+    # status: Running/Paused/Not Started/Completed/Queued/Canceled/Expired/Importing
+    #   Expired -- the (job, task) group exceeded Settings.max_runtime_tasks,
+    #              or its job exceeded Settings.max_runtime_jobs
     status = db.Column(db.String(50), nullable=False)
     started_at = db.Column(db.DateTime, nullable=True)      # These defaults should be changed
     agent_id = db.Column(db.Integer, db.ForeignKey('agents.id'))

@@ -1,5 +1,6 @@
 {% extends "layout.html.j2" %}
-{% from "macros.html.j2" import icon, phos_field, status_badge, priority_pips, wizard_stepper %}
+{% from "macros.html.j2" import icon, phos_field, status_badge, priority_pips,
+                                priority_name, PRIORITY_NAMES, wizard_stepper %}
 {% block title %}Create Job · Hashview{% endblock %}
 {% block content %}
 <script>
@@ -24,6 +25,18 @@
     function updatePriority(v){
         v = parseInt(v, 10);
         document.getElementById('priority_label').textContent = v + '/5';
+        // The words come off the slider's data attribute, which the template
+        // fills from macros.html.j2's PRIORITY_NAMES -- the same list that
+        // rendered the initial label. Hard-coding them here would put the
+        // vocabulary in two places and let them drift.
+        var word = document.getElementById('priority_word');
+        var slider = document.getElementById('priority');
+        if (word && slider && slider.dataset.priorityNames){
+            try {
+                var names = JSON.parse(slider.dataset.priorityNames);
+                if (names[v - 1]) word.textContent = names[v - 1];
+            } catch (e) { /* leave the server-rendered word in place */ }
+        }
         var html = '<span style="display:inline-flex;gap:3px;">';
         for (var i = 1; i <= 5; i++){
             var on = i <= v;
@@ -77,11 +90,18 @@
                 <label class="field-label">Job Priority <span style="color:var(--text-mute);font-weight:400;">· higher runs first</span></label>
                 <div style="display:flex;align-items:center;gap:16px;">
                     <input type="range" class="hv-range" id="priority" name="priority" min="1" max="5" step="1"
-                           value="{{ jobsForm.priority.data or 3 }}" style="flex:1;" oninput="updatePriority(this.value)">
+                           value="{{ jobsForm.priority.data or 3 }}" style="flex:1;"
+                           data-priority-names='{{ PRIORITY_NAMES|tojson }}'
+                           oninput="updatePriority(this.value)">
                     <div style="display:flex;align-items:center;gap:9px;min-width:96px;">
                         <span id="priority_pips">{{ priority_pips((jobsForm.priority.data or 3)|int) }}</span>
                         <span class="mono" id="priority_label" style="color:var(--primary);font-size:14px;text-shadow:var(--glow-text);">{{ jobsForm.priority.data or 3 }}/5</span>
                     </div>
+                    {# Rendered server-side as well as by updatePriority(), so the
+                       word is right on first paint and stays right if the JS never
+                       runs. aria-live because it changes without the focus moving. #}
+                    <span class="mono" id="priority_word" aria-live="polite"
+                          style="color:var(--text-dim);font-size:12px;min-width:66px;">{{ priority_name(jobsForm.priority.data or 3) }}</span>
                 </div>
             </div>
             {% endif %}

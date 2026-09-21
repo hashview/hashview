@@ -328,17 +328,22 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
             completed = sum(1 for c in chunks if c.status == 'Completed')
             running = sum(1 for c in chunks if c.status == 'Running')
             canceled = sum(1 for c in chunks if c.status == 'Canceled')
+            expired = sum(1 for c in chunks if c.status == 'Expired')
             queued = sum(1 for c in chunks if c.status in ('Queued', 'Not Started'))
             chunks_total += total
             chunks_done += completed
             chunks_active += running
 
-            # Derive the parent status, preferring "canceled" in the terminal state.
-            # A canceled task often has some chunks that finished before the stop (or
-            # a race completes one mid-cancel); checking canceled == total here would
-            # let that Completed+Canceled mix fall through to 'Queued'. So: running
-            # wins; then any still-pending work is 'Queued'; otherwise (terminal) a
-            # single canceled chunk makes the task 'Canceled'; else all-done.
+            # Derive the parent status, preferring the stopped states in the
+            # terminal case. A stopped task often has some chunks that finished
+            # before the stop (or a race completes one mid-stop); checking
+            # expired/canceled == total here would let that mix fall through to
+            # 'Queued'. So: running wins; then any still-pending work is 'Queued';
+            # otherwise (terminal) a single expired chunk makes the task 'Expired',
+            # then a single canceled one makes it 'Canceled'; else all-done.
+            # Expired outranks Canceled because it is the more specific fact: the
+            # runtime cap is what stopped this attack, and an operator looking at a
+            # capped job needs to see that rather than a generic cancellation.
             # Keyspace, which is a denominator that does not move. A row count
             # does: slices are issued on demand, so 'total' grows through a run
             # and a bar computed from it snaps toward 100% then jumps backwards.
@@ -361,6 +366,8 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
                 status = 'Measuring' if ledger.state == 'Pending' else 'Queued'
             elif queued:
                 status = 'Queued'
+            elif expired:
+                status = 'Expired'
             elif canceled:
                 status = 'Canceled'
             elif completed == total:

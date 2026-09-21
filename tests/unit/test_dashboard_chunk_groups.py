@@ -419,8 +419,21 @@ def _seed_task_with_chunk_statuses(statuses, email):
     (["Completed", "Completed", "Completed"], "Completed"),
     (["Running", "Queued", "Canceled"], "Running"),              # any running wins
     (["Queued", "Canceled"], "Queued"),                         # pending beats a lone cancel
-    # Terminal fallback: a status outside running/queued/canceled/completed
-    # (e.g. 'Importing') with not-all-completed lands on the else -> 'Queued'.
+    # Expired: the runtime cap stopped this attack. Before the status existed
+    # these rows were 'Canceled'; before the ladder learned about them they
+    # counted in no bucket at all and fell through to the else -> 'Queued', so
+    # the dashboard showed a capped attack as still waiting to run, forever.
+    (["Expired"], "Expired"),                                    # single chunk
+    (["Expired", "Expired", "Expired"], "Expired"),              # all expired
+    (["Completed", "Completed", "Expired"], "Expired"),          # some finished first
+    # Expired outranks Canceled: the cap is the more specific fact, and it is
+    # what an operator looking at a capped job needs to see.
+    (["Canceled", "Expired"], "Expired"),
+    # ...but neither outranks live or pending work.
+    (["Running", "Expired"], "Running"),
+    (["Queued", "Expired"], "Queued"),
+    # Terminal fallback: a status outside running/queued/expired/canceled/
+    # completed (e.g. 'Importing') with not-all-completed lands on the else.
     (["Completed", "Importing"], "Queued"),
 ])
 def test_job_task_group_status_derivation(app, db_session, statuses, expected):

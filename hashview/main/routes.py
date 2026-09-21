@@ -248,6 +248,29 @@ def _short_duration(seconds):
     return ' '.join(parts[:2])
 
 
+def hashfile_account_totals(hashfile_ids):
+    """{hashfile_id: account count} for the given hashfiles, in one query.
+
+    Counts HashfileHashes rows -- ACCOUNTS, not distinct hashes. The two differ
+    whenever a hashfile lists the same hash against more than one username, and
+    accounts is the right unit here because it is the denominator the Recovered
+    column already reads X/Y against. Counting distinct hashes instead would put
+    two different totals for one hashfile on the same screen.
+
+    Shared by the running-job task tables and the queue table so both are fed by
+    the same aggregate rather than two queries that could drift.
+    """
+    ids = {hf_id for hf_id in hashfile_ids if hf_id}
+    if not ids:
+        return {}
+    rows = (db.session.query(HashfileHashes.hashfile_id,
+                             db.func.count(HashfileHashes.id))
+            .filter(HashfileHashes.hashfile_id.in_(ids))
+            .group_by(HashfileHashes.hashfile_id)
+            .all())
+    return {hf_id: cnt for hf_id, cnt in rows}
+
+
 def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
                      recovered_list, time_estimated_list, max_runtime_tasks=0):
     """Group each running job's JobTasks by task_id into per-task summary rows.
@@ -264,16 +287,7 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
     # reached 1. The cracked-per-hashfile query that fed that subtraction is gone
     # with it, one fewer aggregate per dashboard poll.
 
-    # Total accounts (HashfileHashes rows) per hashfile.
-    hashfile_totals = {}
-    if hashfile_ids:
-        rows = (db.session.query(HashfileHashes.hashfile_id,
-                                 db.func.count(HashfileHashes.id))
-                .filter(HashfileHashes.hashfile_id.in_(hashfile_ids))
-                .group_by(HashfileHashes.hashfile_id)
-                .all())
-        for hf_id, cnt in rows:
-            hashfile_totals[hf_id] = cnt
+    hashfile_totals = hashfile_account_totals(hashfile_ids)
 
     # Attacks, keyed by ledger id. Grouping on task_id merged two assignments of
     # the same dynamic-wordlist task into one row, and cannot express queue order
@@ -496,8 +510,15 @@ def _jobs_ctx():
     # the column read 0 for exactly the jobs the queue table exists to show.
     attack_counts = {job_id: len(entries) for job_id, entries
                      in job_assignments([j.id for j in queued_jobs]).items()}
+    # Hash counts for the queue table. Keyed by job id rather than hashfile id so
+    # the template needs no second lookup, and only for queued jobs -- the
+    # running cards get theirs from _job_task_groups.
+    queued_hf_totals = hashfile_account_totals({j.hashfile_id for j in queued_jobs})
+    queued_hash_counts = {j.id: queued_hf_totals.get(j.hashfile_id)
+                          for j in queued_jobs}
     return {
         'attack_counts': attack_counts,
+        'queued_hash_counts': queued_hash_counts,
         'running_jobs': running_jobs,
         'queued_jobs': queued_jobs,
         'users': Users.query.all(),

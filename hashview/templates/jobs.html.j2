@@ -191,6 +191,32 @@
             <div>{{ kv_label('Runtime') }}<div class="mono" style="color:var(--text);">{{ job_runtime.get(job.id, '-') if job_runtime is defined else '-' }}</div></div>
         </div>
 
+        {# Assigned tasks, in queue order, each with the status of the ATTACK --
+           the same derivation the dashboard uses, so a task cannot read Canceled
+           there and Completed here. Capped: a task group can assign thousands,
+           and 20 modals render on every page of this list. #}
+        {% set attacks = job_attacks.get(job.id, []) if job_attacks is defined else [] %}
+        {% set shown = attacks[:25] %}
+        <div style="margin-top:20px;">
+            {{ kv_label('Assigned tasks') }}
+            {% if shown %}
+            <div style="max-height:220px; overflow-y:auto;">
+                {% for a in shown %}
+                <div style="display:flex; align-items:center; gap:10px; padding:5px 0; border-bottom:1px solid var(--surface-3);">
+                    <span class="mono" style="color:var(--text-mute); font-size:11px; min-width:20px; text-align:right;">{{ loop.index }}</span>
+                    <span style="color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{% if task_names is defined and task_names.get(a.task_id) %}{{ task_names[a.task_id] }}{% else %}task #{{ a.task_id }}{% endif %}</span>
+                    <span style="margin-left:auto; flex:none;">{{ status_badge(a.status) }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% if attacks | length > shown | length %}
+            <div class="mono" style="color:var(--text-mute); margin-top:7px; font-size:11.5px;">+ {{ (attacks | length - shown | length) | commafy }} more &mdash; open the job to see them all</div>
+            {% endif %}
+            {% else %}
+            <div class="mono" style="color:var(--text-mute);">no tasks assigned</div>
+            {% endif %}
+        </div>
+
         <div style="margin-top:20px;">
             {{ kv_label('Notifications') }}
             {% set nf = job_notifs.get(job.id) if job_notifs is defined else none %}

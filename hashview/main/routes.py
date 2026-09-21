@@ -25,6 +25,7 @@ from hashview.utils.audit import job_task_target, log_event
 from hashview.utils.utils import (
     agent_telemetry,
     close_ledger,
+    derive_attack_status,
     is_chunk_row,
     job_assignments,
     notify_owner_of_cancellation,
@@ -342,22 +343,11 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
             completed = sum(1 for c in chunks if c.status == 'Completed')
             running = sum(1 for c in chunks if c.status == 'Running')
             canceled = sum(1 for c in chunks if c.status == 'Canceled')
-            expired = sum(1 for c in chunks if c.status == 'Expired')
             queued = sum(1 for c in chunks if c.status in ('Queued', 'Not Started'))
             chunks_total += total
             chunks_done += completed
             chunks_active += running
 
-            # Derive the parent status, preferring the stopped states in the
-            # terminal case. A stopped task often has some chunks that finished
-            # before the stop (or a race completes one mid-stop); checking
-            # expired/canceled == total here would let that mix fall through to
-            # 'Queued'. So: running wins; then any still-pending work is 'Queued';
-            # otherwise (terminal) a single expired chunk makes the task 'Expired',
-            # then a single canceled one makes it 'Canceled'; else all-done.
-            # Expired outranks Canceled because it is the more specific fact: the
-            # runtime cap is what stopped this attack, and an operator looking at a
-            # capped job needs to see that rather than a generic cancellation.
             # Keyspace, which is a denominator that does not move. A row count
             # does: slices are issued on demand, so 'total' grows through a run
             # and a bar computed from it snaps toward 100% then jumps backwards.
@@ -371,23 +361,14 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
             ks_done_job += ks_done
             ks_running_job += ks_running
 
-            if running:
-                status = 'Running'
-            elif ledger is not None and ledger.state in ('Ready', 'Pending') and (
-                    ledger.keyspace is None or ledger.keyspace_pos < ledger.keyspace):
-                # Keyspace still unissued: the attack is BETWEEN slices, not done.
-                # The old row-count test read that gap as 'Completed'.
-                status = 'Measuring' if ledger.state == 'Pending' else 'Queued'
-            elif queued:
-                status = 'Queued'
-            elif expired:
-                status = 'Expired'
-            elif canceled:
-                status = 'Canceled'
-            elif completed == total:
-                status = 'Completed'
-            else:
-                status = 'Queued'
+            # One definition of the parent status, shared with the jobs list so
+            # the same attack cannot read 'Canceled' here and 'Completed' there.
+            # The precedence and the reason for each arm live with the helper.
+            status = derive_attack_status(
+                [c.status for c in chunks],
+                state=ledger.state if ledger else None,
+                keyspace=ledger.keyspace if ledger else None,
+                keyspace_pos=ledger.keyspace_pos if ledger else 0)
 
             is_chunked = bool(ledger.chunkable) if ledger else (
                 total > 1 or any(is_chunk_row(c) for c in chunks))

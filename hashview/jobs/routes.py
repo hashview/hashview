@@ -119,8 +119,10 @@ def jobs_list():
     customers = Customers.query.all()
     users = Users.query.all()
     hashfiles = Hashfiles.query.all()
-    job_tasks = JobTasks.query.all()
-    tasks = Tasks.query.all()
+    # Names only, for the attack list in each job's info modal. This page used to
+    # load the whole JobTasks table and the whole Tasks table into the template
+    # context, and no template ever read either one.
+    task_names = dict(db.session.query(Tasks.id, Tasks.name).all())
 
     # --- per-hashfile facts for the jobs on this page ---
     # Count / cracked-count / representative hash type, plus which hashfiles carry
@@ -163,13 +165,15 @@ def jobs_list():
     except Exception:  # pragma: no cover - defensive
         hash_type_names = {}
 
-    # Count ATTACKS (assignments), not raw rows: a task split into N chunks is one
-    # attack. Counted off the ledger, which holds exactly one row per attack --
-    # a raw row count is not stable once chunks are issued on demand, since it
-    # grows through a run and a freshly queued job may have no rows yet.
+    # Every job on this page's ATTACKS, in queue order, each carrying the derived
+    # status the dashboard shows for the same attack. Attacks, not raw rows: a
+    # task split into N chunks is one attack, and a row count is not stable once
+    # slices are issued on demand -- it grows through a run, and a freshly queued
+    # job may have no rows at all yet. One query for the whole page, so the 20
+    # info modals rendered below add nothing per job.
+    job_attacks = job_assignments([job.id for job in jobs])
     job_task_count = {job_id: len(entries)
-                      for job_id, entries in job_assignments(
-                          [job.id for job in jobs]).items()}
+                      for job_id, entries in job_attacks.items()}
 
     jn_by_job = {}
     for n in JobNotifications.query.all():
@@ -218,8 +222,8 @@ def jobs_list():
         customers=customers,
         users=users,
         hashfiles=hashfiles,
-        job_tasks=job_tasks,
-        tasks=tasks,
+        task_names=task_names,
+        job_attacks=job_attacks,
         job_cracked=job_cracked,
         job_hash_type=job_hash_type,
         job_runtime=job_runtime,

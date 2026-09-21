@@ -3,9 +3,7 @@
 import argparse
 import builtins
 import logging
-import os
 import sys
-import time
 import traceback
 from pathlib import Path
 
@@ -220,113 +218,6 @@ def ensure_tasks(db):
 def ensure_version_alignment():
     from flask_migrate import upgrade
     upgrade()
-
-
-def data_retention_cleanup(app):
-    with app.app_context():
-        from datetime import datetime, timedelta
-
-        from hashview.models import db
-        db.init_app(app)
-
-        from hashview.models import (
-            Hashes,
-            HashfileHashes,
-            Hashfiles,
-            HashNotifications,
-            JobNotifications,
-            Jobs,
-            JobTasks,
-            Settings,
-            Users,
-        )
-        from hashview.utils.utils import send_email
-
-        setting = Settings.query.get('1')
-        retention_period = setting.retention_period
-        filter_after = datetime.today() - timedelta(days = retention_period)
-
-        # Remove job, job tasks and job notifications
-        jobs = Jobs.query.filter(Jobs.created_at < filter_after).all()
-        for job in jobs:
-            # Send email saying we've deleted their job
-            user = Users.query.get(job.owner_id)
-            subject = 'Hashview removed an old job: ' + str(job.name)
-            message = (
-                f'Hello {user.first_name}, \n\n In accordance to the data '
-                f'retention policy of {retention_period} days, your job '
-                f'"{job.name}" was deleted.'
-            )
-            send_email(user, subject, message)
-
-            JobTasks.query.filter_by(job_id=job.id).delete()
-            JobNotifications.query.filter_by(job_id=job.id).delete()
-
-            db.session.delete(job)
-            db.session.commit()
-
-        # Remove Hashfiles (jobs younger than retention period that reference
-        # these hashfiles get removed too).
-        hashfiles = Hashfiles.query.filter(Hashfiles.uploaded_at < filter_after).all()
-        for hashfile in hashfiles:
-
-            # Job, jobtask and job notifications
-            jobs = Jobs.query.filter_by(hashfile_id = hashfile.id).all()
-            for job in jobs:
-                user = Users.query.get(job.owner_id)
-                subject = (
-                    'Hashview removed a job that was associated to an old hash file: '
-                    + str(job.name)
-                )
-                message = (
-                    f'Hello {user.first_name}, \n\n In accordance to the data '
-                    f'retention policy of {retention_period} days, your hashfile '
-                    f'"{hashfile.name}" was associated with a job '
-                    f'"{job.name}". This job was deleted.'
-                )
-                send_email(user, subject, message)
-
-                JobTasks.query.filter_by(job_id=job.id).delete()
-                JobNotifications.query.filter_by(job_id=job.id).delete()
-
-                db.session.delete(job)
-                db.session.commit()
-
-            # Hashfiles, HashfileHashes and Hash notifications
-            user = Users.query.get(hashfile.owner_id)
-            subject = 'Hashview removed an old Hashfile: ' + str(hashfile.name)
-            message = (
-                f'Hello {user.first_name}, \n\n In accordance to the data '
-                f'retention policy of {retention_period} days, your hashfile '
-                f'"{hashfile.name}" was removed.'
-            )
-            send_email(user, subject, message)
-
-            hashfile_hashes = HashfileHashes.query.filter_by(hashfile_id = hashfile.id).all()
-            for hashfile_hash in hashfile_hashes:
-                hashes = Hashes.query.filter_by(id=hashfile_hash.hash_id).filter_by(cracked=0).all()
-                for hash_entry in hashes:
-                    # Only delete this hash if it isn't shared with another
-                    # hashfile. Duplicates drop to < 2 once the hashfile_hash
-                    # entry is removed, allowing later deletion.
-                    hashfile_cnt = (
-                        HashfileHashes.query.filter_by(hash_id=hash_entry.id)
-                        .distinct('hashfile_id').count()
-                    )
-                    if hashfile_cnt < 2:
-                        db.session.delete(hash_entry)
-                        db.session.commit()
-                        HashNotifications.query.filter_by(hash_id=hashfile_hash.hash_id).delete()
-                db.session.delete(hashfile_hash)
-            db.session.delete(hashfile)
-            db.session.commit()
-
-        # Clean temp folder of files older than RETENTION PERIOD
-        for file in os.listdir('hashview/control/tmp'):
-            tmp_path = 'hashview/control/tmp/' + file
-            age_limit = time.time() - retention_period * 86400
-            if os.stat(tmp_path).st_mtime < age_limit and file != '.gitignore':
-                os.remove(tmp_path)
 
 
 def cli(args) -> int:

@@ -1406,7 +1406,28 @@ def update_dynamic_wordlist(wordlist_id, dest_path=None):
         # ciphertexts): all stored as text, written directly as UTF-8.
         file = open(target_path, 'w', encoding='utf-8')
         if 'Usernames' in wordlist.name:
-            usernames = HashfileHashes.query.distinct('username')
+            # One column, and no SQL DISTINCT. Both halves are deliberate.
+            #
+            # This was `HashfileHashes.query.distinct('username')`. The argument
+            # is DISTINCT ON, which only PostgreSQL implements: everywhere else
+            # SQLAlchemy drops it and warns it will raise in a future release
+            # (#373). Dropping it alone would change nothing at all -- an entity
+            # query selects the primary key too, so the surviving DISTINCT could
+            # never collapse a row. What it did do was materialise every
+            # hashfile_hashes row as a full ORM object, on the agent's download
+            # path, inside a request handler. Measured on 300k rows: 9.5s and
+            # 476MB peak as entities against 2.6s and 71MB as one column, for
+            # byte-identical output. The corpus walk one branch up
+            # (iter_distinct_recovered_plaintexts) exists because the same shape
+            # took a production server out with "2013 Lost connection".
+            #
+            # And no `.distinct()` on the column either, tempting as it is:
+            # hashfile_hashes.username is utf8mb4 with no explicit COLLATE, so
+            # on MySQL 8 it inherits utf8mb4_0900_ai_ci -- case- AND
+            # accent-insensitive. A SQL-side DISTINCT would fold 'Admin' and
+            # 'admin' into one candidate; the Python set below keeps both, which
+            # is the behaviour a wordlist wants.
+            usernames = HashfileHashes.query.with_entities(HashfileHashes.username)
             username_set = set()
             for entry in usernames:
                 if entry.username:
@@ -1420,7 +1441,11 @@ def update_dynamic_wordlist(wordlist_id, dest_path=None):
             for entry in username_set:
                 file.write(entry + '\n')
         elif 'Customers' in wordlist.name:
-            customers = Customers.query.distinct('name')
+            # Same #373 fix, same reasoning as above, though the stakes here are
+            # only tidiness: the customers table is small, and the consumer
+            # lowercases, so a collation-folded DISTINCT would have been
+            # harmless. The set below is what dedupes.
+            customers = Customers.query.with_entities(Customers.name)
             customer_set = set()
             for entry in customers:
                 customer_set.add(entry.name.lower())

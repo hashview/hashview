@@ -64,6 +64,7 @@ Notable changes will be documented here
 - Per-agent host-specific hashcat arguments via `HC_EXTRA_ARGS` (e.g. to pin specific GPUs)
 
 **Jobs & Hashfiles**
+- The job information window on the jobs list now lists the job's assigned tasks in queue order, each with its own status, rather than only counting them. The status shown is the attack's, derived exactly as the running-jobs dashboard derives it: an attack stopped after some of its chunks had already finished reads `CANCELED` (or `EXPIRED`, when a runtime cap stopped it) instead of falling back to `QUEUED`, and an attack waiting between chunks reads `QUEUED` rather than `COMPLETE`. Tasks on a job that has not been started yet read `NOT STARTED`. A job with more than 25 attacks lists the first 25 and says how many more there are
 - Bulk-select and bulk-delete on the hashfiles list
 - Per-hashfile `--hex-salt` option for salted hash types
 - Custom hashcat hash-mode entry for the `$hash` and `$user:$hash` hashfile formats (#447), for operators running a hashcat build with modes not in Hashview's bundled list. No import-time shape validation is performed on a custom mode. An agent whose hashcat can't benchmark a mode reports it as unsupported instead of hanging: the mode is never re-requested from that agent and it is never dispatched tasks of that type

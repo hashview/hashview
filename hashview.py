@@ -3,7 +3,6 @@
 import argparse
 import builtins
 import logging
-import os
 import sys
 import traceback
 from pathlib import Path

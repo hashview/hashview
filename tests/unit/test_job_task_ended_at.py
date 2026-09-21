@@ -116,6 +116,8 @@ def test_the_runtime_cap_stamps_it(app):
                             max_runtime_tasks=0))
     db.session.commit()
     job, _task, row = _job_and_row(owner, hours_ago=5)
+    job.processing_seconds = 5 * 3600      # the clock the cap reads
+    db.session.commit()
 
     assert expire_job_over_runtime(job, 1) is True
 

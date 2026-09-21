@@ -8,7 +8,7 @@ import os
 import re
 import secrets
 import struct
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import requests
 from flask import after_this_request, current_app, send_from_directory, url_for
@@ -3245,7 +3245,9 @@ def expire_job_over_runtime(job, max_runtime_hours, now=None):
     * It settles the race. The sweep and a heartbeat can reach the same job at
       the same moment, and the debug reloader runs two scheduler instances in two
       processes. Exactly one caller claims it, so ended_at is stamped once and
-      one audit entry is written.
+      one audit entry is written. It is also the ONLY check that the job is still
+      live -- an already-Completed or already-Canceled job simply fails to claim
+      -- so there is no second status guard above to drift away from it.
     * Closing the ledger first does not work. close_ledger terminates the job's
       rows and then calls finalize_job_if_complete, which -- with every row now
       terminal -- rolls the job up to Completed. A claim made after that finds
@@ -3259,19 +3261,26 @@ def expire_job_over_runtime(job, max_runtime_hours, now=None):
     after the claim because dispatch skips any job not in ('Queued', 'Running'),
     so an Expired job cannot be handed a slice in the window between the two.
 
-    The cap is still measured as wall-clock since job.started_at, unchanged. Time
-    the job spent starved by a higher-priority job therefore still counts against
-    it; JobTasks.ended_at now records what would be needed to measure time
-    actually worked instead.
+    The cap is measured against Jobs.processing_seconds -- time the job was
+    actually being worked, credited one sweep interval at a time by
+    scheduler._accrue_processing_time -- and NOT against wall-clock since
+    job.started_at. The difference is a job that gets starved: a higher-priority
+    job takes the whole fleet, this one sits with no agent on it, and under
+    wall-clock it blows a cap it was never given the chance to spend. Under this
+    clock, time nobody spent working on it costs it nothing.
+
+    Worth stating plainly, because it is the trade: a job can now outlive its cap
+    in wall-clock terms by an unbounded margin. That is the intended answer --
+    "should this have been killed hours ago?" is no when it was waiting rather
+    than running -- but it does mean max_runtime_jobs no longer bounds how long a
+    job can sit in the system, only how much of the fleet's time it can consume.
     """
     if not max_runtime_hours or max_runtime_hours <= 0:
         return False
-    if job is None or job.started_at is None:
-        return False
-    if job.status not in ('Queued', 'Running'):
+    if job is None:
         return False
     now = now or datetime.now()
-    if job.started_at + timedelta(hours=max_runtime_hours) >= now:
+    if (job.processing_seconds or 0) < max_runtime_hours * 3600:
         return False
 
     claimed = (db.session.query(Jobs)
@@ -3548,11 +3557,18 @@ def mark_job_running(job_id):
     concurrent heartbeat cannot double-stamp started_at, and clear ended_at,
     which is otherwise left over from the previous run of a re-queued job.
     Returns True if this call was the one that started it.
+
+    The processing clock is reset here for the same reason: re-running a job is
+    a new run, and it gets the whole of max_runtime_jobs to spend. Carrying the
+    previous run's credit over would expire the re-run before it began, which is
+    the cap's most confusing possible failure -- a job that dies instantly and
+    reports a runtime it did not have.
     """
     started = (db.session.query(Jobs)
                .filter(Jobs.id == job_id, Jobs.status == 'Queued')
                .update({'status': 'Running', 'started_at': utcnow(),
-                        'ended_at': None}, synchronize_session=False))
+                        'ended_at': None, 'processing_seconds': 0,
+                        'last_counted_at': None}, synchronize_session=False))
     if started:
         db.session.commit()
     return bool(started)

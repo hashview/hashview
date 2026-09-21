@@ -53,13 +53,22 @@ def _settings(max_runtime_jobs=1):
     return s
 
 
-def _job(owner, hours_ago=5, status="Running", name="capped", with_row=True):
+def _job(owner, hours_ago=5, status="Running", name="capped", with_row=True,
+         processed_seconds=2 * 3600, row_status="Running"):
+    """A job with `processed_seconds` of credited processing time.
+
+    started_at is still seeded, because a real job has one and because the sweep
+    narrows its candidates on it -- but it is no longer what the cap reads. The
+    two are set independently here on purpose: every test that cares about the
+    difference sets them to disagree.
+    """
     customer = Customers.query.first() or Customers(name="Cap Customer")
     db.session.add(customer)
     db.session.commit()
     started = None if hours_ago is None else datetime.now() - timedelta(hours=hours_ago)
     job = Jobs(name=name, status=status, customer_id=customer.id, owner_id=owner.id,
-               priority=3, started_at=started)
+               priority=3, started_at=started,
+               processing_seconds=processed_seconds)
     task = Tasks(name=f"{name}-task", owner_id=owner.id, hc_attackmode=3,
                  hc_mask="?d?d?d?d")
     db.session.add_all([job, task])
@@ -71,7 +80,7 @@ def _job(owner, hours_ago=5, status="Running", name="capped", with_row=True):
                                chunkable=True)
         db.session.add(ledger)
         db.session.commit()
-        row = JobTasks(job_id=job.id, task_id=task.id, status="Running",
+        row = JobTasks(job_id=job.id, task_id=task.id, status=row_status,
                        priority=3, ledger_id=ledger.id, started_at=started)
         db.session.add(row)
         db.session.commit()
@@ -115,7 +124,7 @@ def test_the_attack_is_closed_so_nothing_is_minted_afterwards(app):
 def test_a_job_inside_its_cap_is_untouched(app):
     owner = _owner()
     _settings(max_runtime_jobs=8)
-    job, _task, row = _job(owner, hours_ago=5)
+    job, _task, row = _job(owner, hours_ago=5, processed_seconds=2 * 3600)
 
     assert _job_runtime_check_inner(db, _LOG) == 0
 
@@ -124,28 +133,24 @@ def test_a_job_inside_its_cap_is_untouched(app):
 
 
 def test_a_job_that_never_started_is_not_expired(app):
-    # The cap is on RUNTIME. A queued job that has never been handed to an agent
-    # has no clock running, and expiring it for sitting in the queue would make
-    # the queue itself lossy.
+    # The cap is on processing time. A queued job that has never been handed to
+    # an agent has processed nothing, so there is nothing to have exceeded.
     owner = _owner()
     _settings(max_runtime_jobs=1)
-    job, _task, _row = _job(owner, hours_ago=None, status="Queued")
+    job, _task, _row = _job(owner, hours_ago=None, status="Queued",
+                            processed_seconds=0, row_status="Queued")
 
     assert _job_runtime_check_inner(db, _LOG) == 0
     assert Jobs.query.get(job.id).status == "Queued"
 
 
-def test_a_never_started_job_is_refused_by_the_helper_too(app):
-    """Tested against the helper directly, not through the sweep.
-
-    The sweep narrows its candidates with started_at IS NOT NULL, so going
-    through it can never reach this branch -- and the heartbeat does not narrow
-    anything, it passes whatever job the row belongs to. Without the guard that
-    is None + timedelta, which is a TypeError inside a scheduled job.
-    """
+def test_a_job_that_has_processed_nothing_is_refused_by_the_helper(app):
+    """Tested against the helper directly: the heartbeat calls it with whatever
+    job the heartbeating row belongs to, narrowing nothing."""
     owner = _owner()
     _settings(max_runtime_jobs=1)
-    job, _task, _row = _job(owner, hours_ago=None, status="Queued")
+    job, _task, _row = _job(owner, hours_ago=None, status="Queued",
+                            processed_seconds=0, row_status="Queued")
 
     assert expire_job_over_runtime(job, 1) is False
     assert Jobs.query.get(job.id).status == "Queued"
@@ -154,7 +159,7 @@ def test_a_never_started_job_is_refused_by_the_helper_too(app):
 def test_the_cap_being_disabled_disables_the_sweep(app):
     owner = _owner()
     _settings(max_runtime_jobs=0)          # 0 = infinite, per the settings form
-    job, _task, _row = _job(owner, hours_ago=500)
+    job, _task, _row = _job(owner, hours_ago=500, processed_seconds=500 * 3600)
 
     assert _job_runtime_check_inner(db, _LOG) == 0
     assert Jobs.query.get(job.id).status == "Running"
@@ -261,6 +266,146 @@ def test_one_unexpirable_job_does_not_strand_the_rest(app, monkeypatch):
     assert _job_runtime_check_inner(db, _LOG) == 1
     assert Jobs.query.get(second.id).status == "Expired"
     assert Jobs.query.get(first.id).status == "Running"
+
+
+# --- the clock the cap now reads ----------------------------------------------
+
+def test_a_starved_job_is_not_charged_for_the_time_it_waited(app):
+    """The whole point, in one test.
+
+    Ten hours in the system under a one-hour cap, but only two minutes of it
+    spent actually cracking -- the rest waiting behind a higher-priority job.
+    Under wall-clock this job dies. It should not: the fleet was never on it.
+    """
+    owner = _owner()
+    _settings(max_runtime_jobs=1)
+    job, _task, _row = _job(owner, hours_ago=10, processed_seconds=120)
+
+    assert _job_runtime_check_inner(db, _LOG) == 0
+    assert Jobs.query.get(job.id).status == "Running", (
+        "a job was expired for time no agent spent working on it")
+
+
+def test_a_job_that_really_did_run_too_long_still_dies(app):
+    # The other half: the cap must still bite when the time was actually spent.
+    owner = _owner()
+    _settings(max_runtime_jobs=1)
+    job, _task, _row = _job(owner, hours_ago=1, processed_seconds=2 * 3600)
+
+    assert _job_runtime_check_inner(db, _LOG) == 1
+    assert Jobs.query.get(job.id).status == "Expired"
+
+
+def test_working_jobs_are_credited_one_interval_per_sweep(app):
+    from hashview.scheduler import JOB_RUNTIME_SWEEP_SECONDS
+
+    owner = _owner()
+    _settings(max_runtime_jobs=0)              # cap off: only the clock is under test
+    job, _task, _row = _job(owner, processed_seconds=0)
+
+    _job_runtime_check_inner(db, _LOG)
+    assert Jobs.query.get(job.id).processing_seconds == JOB_RUNTIME_SWEEP_SECONDS
+
+    # A later sweep credits another interval. Backdate the marker to stand in for
+    # the interval actually elapsing between the two.
+    Jobs.query.get(job.id).last_counted_at = datetime.now() - timedelta(minutes=5)
+    db.session.commit()
+    _job_runtime_check_inner(db, _LOG)
+    assert Jobs.query.get(job.id).processing_seconds == 2 * JOB_RUNTIME_SWEEP_SECONDS
+
+
+def test_a_job_with_no_running_task_is_credited_nothing(app):
+    """Queued rows mean the job is waiting for the fleet, not using it.
+
+    This is the state a starved job sits in for hours, so crediting it here
+    would put the wall-clock behaviour straight back.
+    """
+    owner = _owner()
+    _settings(max_runtime_jobs=0)
+    job, _task, _row = _job(owner, processed_seconds=0, row_status="Queued")
+
+    _job_runtime_check_inner(db, _LOG)
+
+    assert Jobs.query.get(job.id).processing_seconds == 0
+
+
+def test_two_sweeps_inside_one_interval_credit_once(app):
+    """The debug reloader runs two schedulers, in two processes, on the same
+    database. Without the last_counted_at guard every job's clock would run at
+    double speed in debug and single speed in production."""
+    from hashview.scheduler import JOB_RUNTIME_SWEEP_SECONDS
+
+    owner = _owner()
+    _settings(max_runtime_jobs=0)
+    job, _task, _row = _job(owner, processed_seconds=0)
+
+    _job_runtime_check_inner(db, _LOG)
+    _job_runtime_check_inner(db, _LOG)          # the second scheduler, right behind
+
+    assert Jobs.query.get(job.id).processing_seconds == JOB_RUNTIME_SWEEP_SECONDS
+
+
+def test_the_clock_runs_even_while_the_cap_is_off(app):
+    """Otherwise turning the cap on hands every already-working job a fresh
+    allowance, and the setting reads as retroactive when it is not."""
+    owner = _owner()
+    _settings(max_runtime_jobs=0)
+    job, _task, _row = _job(owner, processed_seconds=0)
+
+    _job_runtime_check_inner(db, _LOG)
+
+    assert Jobs.query.get(job.id).processing_seconds > 0
+
+
+def test_a_job_crosses_its_cap_on_the_sweep_that_takes_it_over(app):
+    """Credit first, then evaluate -- not the other way round, which would leave
+    a job one interval over its cap before anything noticed."""
+    from hashview.scheduler import JOB_RUNTIME_SWEEP_SECONDS
+
+    owner = _owner()
+    _settings(max_runtime_jobs=1)
+    # One interval short of the cap: this sweep's credit is what crosses it.
+    job, _task, _row = _job(owner, hours_ago=1,
+                            processed_seconds=3600 - JOB_RUNTIME_SWEEP_SECONDS)
+
+    assert _job_runtime_check_inner(db, _LOG) == 1
+    assert Jobs.query.get(job.id).status == "Expired"
+
+
+def test_only_running_jobs_accrue(app):
+    # A Queued job cannot be being worked on, whatever its rows say.
+    owner = _owner()
+    _settings(max_runtime_jobs=0)
+    job, _task, _row = _job(owner, status="Queued", processed_seconds=0)
+
+    _job_runtime_check_inner(db, _LOG)
+
+    assert Jobs.query.get(job.id).processing_seconds == 0
+
+
+def test_re_running_a_job_starts_its_clock_over(app):
+    """A re-run gets the whole cap again.
+
+    Carrying the previous run's credit forward would expire the new run on its
+    first sweep -- a job that dies immediately and reports a runtime it never
+    had, which is the most confusing thing this cap could possibly do.
+    """
+    from hashview.utils.utils import mark_job_running
+
+    owner = _owner()
+    _settings(max_runtime_jobs=1)
+    job, _task, _row = _job(owner, status="Queued", processed_seconds=5 * 3600,
+                            row_status="Queued")
+    Jobs.query.get(job.id).last_counted_at = datetime.now()
+    db.session.commit()
+
+    assert mark_job_running(job.id) is True
+
+    restarted = Jobs.query.get(job.id)
+    assert restarted.processing_seconds == 0
+    assert restarted.last_counted_at is None
+    assert _job_runtime_check_inner(db, _LOG) == 0, (
+        "the re-run was expired using the previous run's clock")
 
 
 # --- wiring -------------------------------------------------------------------

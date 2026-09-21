@@ -415,10 +415,13 @@ def test_heartbeat_working_agent_job_runtime_exceeded_cancels_job(
     hf = Hashfiles(name="hb-hf5", customer_id=cust.id, owner_id=admin_user.id)
     _db.session.add(hf)
     _db.session.commit()
-    # Job started 2 hours ago (exceeds 1-hour limit)
+    # Two hours of credited PROCESSING time against a 1-hour cap. Wall-clock
+    # since started_at no longer decides this: a job that sat waiting for the
+    # fleet has not used any of its allowance.
     old_start = datetime.now() - timedelta(hours=2)
     job = Jobs(name="hb-job5", status="Running", hashfile_id=hf.id,
-               customer_id=cust.id, owner_id=admin_user.id, started_at=old_start)
+               customer_id=cust.id, owner_id=admin_user.id, started_at=old_start,
+               processing_seconds=2 * 3600)
     _db.session.add(job)
     _db.session.commit()
     jt = JobTasks(job_id=job.id, task_id=1, status="Running",

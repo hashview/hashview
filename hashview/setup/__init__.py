@@ -1,6 +1,8 @@
 import os
 import secrets
+import shutil
 
+from flask import current_app
 from flask_bcrypt import Bcrypt
 from flask_sqlalchemy import SQLAlchemy
 
@@ -8,6 +10,7 @@ from hashview.models import Hashes, HashfileHashes, Rules, Settings, Tasks, User
 from hashview.utils.utils import (
     bytes_to_text,
     compress_to_gz,
+    decompress_gz,
     dynamic_password_length_wordlists,
     get_filehash,
     get_filesize,
@@ -15,6 +18,33 @@ from hashview.utils.utils import (
     gz_linecount,
     is_gzip,
 )
+
+# The seed files shipped in the install tree. Resolved relative to the REPO ROOT
+# (the parent of the Flask app's root_path), not the process CWD: spelled bare,
+# 'install/rockyou.txt.gz' only resolves when the server happens to have been
+# started from the repo root, an implicit requirement nothing states or
+# enforces. The bare spelling stays as a fallback so any layout that worked
+# before still works.
+SEED_WORDLIST_GZ = 'install/rockyou.txt.gz'
+SEED_RULE_GZ = 'install/best64.rule.gz'
+
+
+def _seed_source(relative_path):
+    """Absolute path to a shipped seed file, falling back to the bare path."""
+    candidate = os.path.join(os.path.dirname(current_app.root_path), relative_path)
+    return candidate if os.path.exists(candidate) else relative_path
+
+
+def _control_dir(name):
+    """Absolute path to control/<name>, created if it isn't there yet.
+
+    Always derived from app.root_path, never from the CWD, so the seeded file
+    lands where the download route serves from -- it serves by basename out of
+    this directory.
+    """
+    path = os.path.join(current_app.root_path, 'control', name)
+    os.makedirs(path, exist_ok=True)
+    return path
 
 # Bumped when the recomputation logic for backfilled `.size` values changes, so
 # a fixed-but-still-wrong backfill can be re-run once against installs that
@@ -66,9 +96,32 @@ def default_rules_need_added(db :SQLAlchemy) -> bool:
 
 
 def add_default_rules(db :SQLAlchemy):
-    os.system('gzip -d -k install/best64.rule.gz')
-    rules_path = 'hashview/control/rules/best64.rule'
-    os.replace('install/best64.rule', rules_path)
+    """Seed the Best64 rule from the shipped install/best64.rule.gz.
+
+    Decompressed in-process (utils.decompress_gz -- gzip.open, streamed) STRAIGHT
+    into control/rules. What this replaces failed two different ways (#395):
+
+      * `os.system('gzip -d -k ...')` threw its exit status away, so a missing
+        gzip binary, or gzip refusing because the output already existed from a
+        half-finished earlier boot, was indistinguishable from success. The next
+        line then raised FileNotFoundError, which the caller swallows and logs
+        identically to every other failure.
+      * `os.replace` is a rename, and a rename cannot cross a filesystem
+        boundary. Mount control/ as a volume -- which is the recommended fix for
+        the data loss in #383 -- and install/ and control/ are on different
+        devices, so seeding died with EXDEV on the first boot and on every boot
+        after it, since the "do I need this?" predicate stays True.
+
+    Writing to the destination removes the rename entirely: nothing crosses a
+    device, and no decompressed copy is left behind in install/ for the next
+    boot to trip over. Rules stay plaintext at rest, unlike wordlists.
+
+    The stored path is absolute, matching what rules_add records for an uploaded
+    rule; the relative one this used to write only resolved while the process
+    CWD happened to be the repo root.
+    """
+    rules_path = os.path.join(_control_dir('rules'), 'best64.rule')
+    decompress_gz(_seed_source(SEED_RULE_GZ), rules_path)
     rule = Rules(
         name     = 'Best64 Rule',
         owner_id = 1,
@@ -85,16 +138,39 @@ def default_static_wordlist_need_added(db :SQLAlchemy) -> bool:
 
 
 def add_default_static_wordlist(db :SQLAlchemy):
-    os.system('gzip -d -k install/rockyou.txt.gz')
-    wordlist_path = 'hashview/control/wordlists/rockyou.txt'
-    os.replace('install/rockyou.txt', wordlist_path)
+    """Seed Rockyou from the shipped install/rockyou.txt.gz, left COMPRESSED.
+
+    Static wordlists are stored gzip-at-rest under a '<hex>.gz' name, so the
+    shipped archive is copied into the wordlists dir as-is rather than unpacked.
+    The old form decompressed 53 MB into 130 MB of plaintext, renamed it across
+    directories, and then compress_existing_wordlists_if_needed -- which runs a
+    few lines later on the very same boot -- compressed it straight back at
+    gzip -9. Copying the bytes skips a decompress and a recompress of the
+    largest file the installer touches, and lands the row in its final shape, so
+    that pass has nothing left to do but confirm it.
+
+    Same two failure modes fixed as in add_default_rules (#395): no shell, so no
+    discarded exit status, and no rename, so no EXDEV when control/ is a mount.
+
+    The DB row is written exactly as the compression pass would have left it --
+    absolute '<hex>.gz' path, checksum over the COMPRESSED file (the contract
+    the agent verifies after downloading it), line count of the decompressed
+    text, byte_size of what is on disk -- because anything else would be
+    silently re-derived, or worse, left inconsistent with every other wordlist.
+    """
+    wordlist_path = os.path.join(_control_dir('wordlists'),
+                                 secrets.token_hex(8) + '.gz')
+    with open(_seed_source(SEED_WORDLIST_GZ), 'rb') as src, \
+            open(wordlist_path, 'wb') as dst:
+        shutil.copyfileobj(src, dst)
     wordlist = Wordlists(
-        name     = 'Rockyou.txt',
-        owner_id = 1,
-        type     = 'static',
-        path     = wordlist_path,                # Can we make this a relative path?
-        checksum = get_filehash(wordlist_path),
-        size     = get_linecount(wordlist_path),
+        name      = 'Rockyou.txt',
+        owner_id  = 1,
+        type      = 'static',
+        path      = wordlist_path,
+        checksum  = get_filehash(wordlist_path),   # sha256 of the .gz
+        size      = gz_linecount(wordlist_path),   # lines of decompressed text
+        byte_size = get_filesize(wordlist_path),
     )
     db.session.add(wordlist)
     db.session.commit()
@@ -144,7 +220,6 @@ def compress_existing_wordlists_if_needed(db :SQLAlchemy):
     file in the wordlists dir so a 14M-line rockyou.txt.gz is only ever
     re-counted once, not on every boot.
     """
-    from flask import current_app
     logger = current_app.logger
     wordlists_dir = os.path.join(current_app.root_path, 'control/wordlists')
     linecount_backfill_marker = os.path.join(wordlists_dir, LINECOUNT_BACKFILL_MARKER)
@@ -303,7 +378,6 @@ def decode_legacy_hex_if_needed(db :SQLAlchemy):
     fresh installs default True -> skip). The flag is set only after a full pass,
     so a crash re-runs; the per-page commits make progress durable and the
     not-valid-hex guard makes re-runs largely a no-op on already-decoded rows."""
-    from flask import current_app
     logger = current_app.logger
 
     settings = Settings.current()
@@ -400,7 +474,7 @@ def admin_pass_needs_changed(db :SQLAlchemy, bcrypt :Bcrypt) -> bool:
     # the hash value means no explicit cache invalidation is needed and every
     # transition (default -> changed -> default) stays correct. Cached on app
     # config so it never leaks across app instances (tests) or worker processes.
-    from flask import current_app, has_app_context
+    from flask import has_app_context
     app = current_app._get_current_object() if has_app_context() else None
     if app is not None:
         cached = app.config.get('_ADMIN_PASS_DEFAULT_CACHE')

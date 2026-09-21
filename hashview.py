@@ -173,57 +173,6 @@ def ensure_dynamic_wordlist(db):
         print(f'\nAdded {added} missing dynamic wordlist(s).')
 
 
-def ensure_static_wordlist(db):
-    from hashview.models import Wordlists
-    from hashview.utils.utils import get_filehash, get_linecount
-
-    static_wordlist_count = Wordlists.query.filter_by(type='static').count()
-    if static_wordlist_count > 0:
-        print(f'✓ Static Wordlist exist in database. Count({static_wordlist_count})')
-        return
-
-    else:
-        print('\nSetting up static wordlist rockyou.')
-        os.system("gzip -d -k install/rockyou.txt.gz")
-        wordlist_path = 'hashview/control/wordlists/rockyou.txt'
-        os.replace('install/rockyou.txt', wordlist_path)
-        wordlist = Wordlists(
-            name     = 'Rockyou.txt',
-            owner_id = '1',
-            type     = 'static',
-            path     = wordlist_path,                # Can we make this a relative path?
-            checksum = get_filehash(wordlist_path),
-            size     = get_linecount(wordlist_path),
-        )
-        db.session.add(wordlist)
-        db.session.commit()
-
-
-def ensure_rules(db):
-    from hashview.models import Rules
-    from hashview.utils.utils import get_filehash, get_linecount
-
-    rule_count = Rules.query.count()
-    if rule_count > 0:
-        print(f'✓ Rules exist in database. Count({rule_count})')
-        return
-
-    else:
-        print('\nSetting up best64.rules')
-        os.system("gzip -d -k install/best64.rule.gz")
-        rules_path = 'hashview/control/rules/best64.rule'
-        os.replace('install/best64.rule', rules_path)
-        rule = Rules(
-            name     = 'Best64 Rule',
-            owner_id = '1',
-            path     = rules_path,
-            checksum = get_filehash(rules_path),
-            size     = get_linecount(rules_path),
-        )
-        db.session.add(rule)
-        db.session.commit()
-
-
 def ensure_tasks(db):
     from hashview.models import Tasks
 

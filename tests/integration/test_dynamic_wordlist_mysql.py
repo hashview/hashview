@@ -128,3 +128,65 @@ def test_the_batch_query_is_served_by_the_covering_index(mysql_session):
         f"plan: {plan}")
     assert 'Using temporary' not in (plan['Extra'] or ''), (
         f"the batch query builds a temporary table: {plan['Extra']!r}")
+
+
+# Usernames are a second collation-dependent corpus in the same function, and
+# the trap is the mirror image of the plaintext one above: there the fix was to
+# make Python agree with the database's ordering, here it is to keep the
+# database out of the comparison entirely.
+USERNAMES = ['admin', 'Admin', 'ADMIN', 'ünïcödé', 'Ünïcödé', 'svc_backup']
+
+
+def test_the_username_wordlist_keeps_variants_a_sql_distinct_would_fold(
+        mysql_session, tmp_path):
+    """Every username reaches the wordlist, including the ones MySQL calls equal.
+
+    hashfile_hashes.username is utf8mb4 with no explicit COLLATE, so it inherits
+    the server default -- utf8mb4_0900_ai_ci on MySQL 8, utf8mb4_general_ci on
+    MariaDB, both case- and accent-insensitive. `SELECT DISTINCT username` over
+    this corpus therefore returns FEWER rows than there are distinct strings,
+    silently dropping candidates from a wordlist whose entire job is to try
+    them. The generator dedupes in Python instead, by codepoint.
+
+    SQLite compares case-sensitively, so the unit-suite counterpart of this test
+    passes whether or not the DISTINCT is there. This one is the one that bites.
+    """
+    from hashview.models import HashfileHashes, Users, Wordlists
+    from hashview.utils.utils import update_dynamic_wordlist
+
+    user = Users(first_name='dwl', last_name='u',
+                 email_address='dwl-usernames@example.com',
+                 password='x' * 60, admin=True)
+    mysql_session.add(user)
+    mysql_session.flush()
+
+    for index, name in enumerate(USERNAMES):
+        # hash_id / hashfile_id are unconstrained: migration 0fa1e1dc4069 drops
+        # both foreign keys on this table.
+        mysql_session.add(HashfileHashes(hash_id=900000 + index,
+                                         hashfile_id=900000, username=name))
+    mysql_session.flush()
+
+    target = tmp_path / 'usernames.txt'
+    target.write_text('')
+    wordlist = Wordlists(name='(DYNAMIC) All Usernames', owner_id=user.id,
+                         type='dynamic', path=str(target), checksum='', size=0)
+    mysql_session.add(wordlist)
+    mysql_session.flush()
+
+    update_dynamic_wordlist(wordlist.id)
+
+    written = set(target.read_text().splitlines())
+    assert set(USERNAMES) <= written, (
+        'usernames were lost between the table and the wordlist: '
+        f'missing {set(USERNAMES) - written}')
+
+    # And show the loss the code is avoiding, on this backend, right now.
+    from sqlalchemy import text
+    folded = {row[0] for row in mysql_session.execute(text(
+        'SELECT DISTINCT username FROM hashfile_hashes '
+        ' WHERE hashfile_id = 900000'))}
+    assert len(folded) < len(USERNAMES), (
+        'this backend compares usernames case-sensitively, so the assertion '
+        'above no longer demonstrates anything -- check the column collation')
+    assert written - folded, 'the Python dedupe kept nothing SQL DISTINCT dropped'

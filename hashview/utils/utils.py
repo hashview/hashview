@@ -2384,6 +2384,63 @@ def renumber_ledger_positions(job_id, ordered_entry_ids=None):
     db.session.flush()
 
 
+def derive_attack_status(chunk_statuses, state=None, keyspace=None,
+                         keyspace_pos=0):
+    """The status of one ATTACK, derived from its dispatch rows and its ledger.
+
+    An attack has no status column of its own: it is a ledger row plus however
+    many JobTasks rows have been issued against it so far. This is the single
+    definition of how those collapse into one word, shared by the dashboard's
+    per-task rows and the jobs list. Two hand-rolled copies would drift, and the
+    precedence below was hard-won -- every arm of it is a fixed bug.
+
+    Order, and why:
+
+    * Running wins outright.
+    * Then a row set that has never been queued reads 'Not Started'. Assignments
+      exist before the job is ever started, and on the jobs list that is the
+      common case; calling them 'Queued' would claim work is waiting on an agent.
+    * Then the ledger: keyspace still unissued means the attack is BETWEEN
+      slices, not done. Slices are minted on demand, so the row set legitimately
+      empties mid-attack and a row-count test reads that gap as 'Completed'.
+      'Pending' is the pre-measurement state, shown as 'Measuring'.
+    * Then any pending row -> 'Queued'.
+    * Only then the stopped states, and a single stopped row is enough. A stopped
+      attack usually has chunks that finished before the stop (or a race that
+      completed one mid-stop), so requiring expired/canceled == total would let
+      that mix fall through to the else. 'Expired' outranks 'Canceled' because it
+      is the more specific fact: the runtime cap is what stopped this attack, and
+      an operator looking at a capped job needs to see that rather than a generic
+      cancellation.
+    * All rows Completed -> 'Completed'; anything else (e.g. a stray 'Importing')
+      falls back to 'Queued'.
+
+    `state`/`keyspace`/`keyspace_pos` are the ledger's; pass state=None for an
+    attack that has no ledger row (queued by a pre-ledger server, or not yet
+    queued at all) and the ledger arm is skipped.
+    """
+    statuses = list(chunk_statuses)
+    total = len(statuses)
+    completed = sum(1 for s in statuses if s == 'Completed')
+
+    if any(s == 'Running' for s in statuses):
+        return 'Running'
+    if statuses and all(s == 'Not Started' for s in statuses):
+        return 'Not Started'
+    if state in ('Ready', 'Pending') and (keyspace is None
+                                          or (keyspace_pos or 0) < keyspace):
+        return 'Measuring' if state == 'Pending' else 'Queued'
+    if any(s in ('Queued', 'Not Started') for s in statuses):
+        return 'Queued'
+    if any(s == 'Expired' for s in statuses):
+        return 'Expired'
+    if any(s == 'Canceled' for s in statuses):
+        return 'Canceled'
+    if completed == total:
+        return 'Completed'
+    return 'Queued'
+
+
 def job_assignments(job_ids):
     """{job_id: [assignment, ...]} -- one entry per ATTACK, in queue order.
 
@@ -2398,40 +2455,57 @@ def job_assignments(job_ids):
     freshly queued job can have no rows yet.
 
     Each assignment is a dict of {entry_id, task_id, position, keyspace, state,
-    chunkable}. entry_id is the ledger id, or the NEGATED JobTasks id for a
-    not-yet-queued row, so the two can never collide in a form submission.
+    chunkable, status}. entry_id is the ledger id, or the NEGATED JobTasks id for
+    a not-yet-queued row, so the two can never collide in a form submission.
+    'status' is the attack's derived status (derive_attack_status), collapsing
+    however many dispatch rows it has issued into the one word the UI shows.
     """
     job_ids = list(job_ids)
     if not job_ids:
         return {}
     out = {job_id: [] for job_id in job_ids}
+    by_ledger = {}
     for ledger in (JobTaskLedger.query
                    .filter(JobTaskLedger.job_id.in_(job_ids))
                    .order_by(JobTaskLedger.position.asc(), JobTaskLedger.id.asc())):
-        out[ledger.job_id].append({
+        entry = {
             'entry_id': ledger.id, 'task_id': ledger.task_id,
             'position': ledger.position, 'keyspace': ledger.keyspace,
             'state': ledger.state, 'chunkable': ledger.chunkable,
-        })
+            'status': None,
+        }
+        out[ledger.job_id].append(entry)
+        by_ledger[ledger.id] = (entry, ledger, [])
     ledgered = {job_id for job_id, entries in out.items() if entries}
 
     # No ledger for this job: either it has never been queued, or it was queued
     # by a pre-ledger server. Fall back to grouping the rows themselves, which is
     # what the old readers did -- a task's chunk rows collapse to one entry, and
     # a dynamic-wordlist task assigned twice stays two.
+    #
+    # The same pass collects each ledgered attack's row statuses. It is the same
+    # query either way, so the status costs no extra round trip -- which is what
+    # keeps the jobs list, rendering 20 of these, from going N+1.
     rows_by_job = {}
     for row in (JobTasks.query
                 .filter(JobTasks.job_id.in_(job_ids))
                 .order_by(JobTasks.id.asc())):
         if row.job_id in ledgered:
+            if row.ledger_id in by_ledger:
+                by_ledger[row.ledger_id][2].append(row.status)
             continue
         rows_by_job.setdefault(row.job_id, []).append(row)
+    for entry, ledger, statuses in by_ledger.values():
+        entry['status'] = derive_attack_status(
+            statuses, state=ledger.state, keyspace=ledger.keyspace,
+            keyspace_pos=ledger.keyspace_pos)
     for job_id, rows in rows_by_job.items():
         for position, (task_id, group) in enumerate(_group_assignments(rows)):
             out[job_id].append({
                 'entry_id': -group[0].id, 'task_id': task_id,
                 'position': position, 'keyspace': None,
                 'state': 'Unqueued', 'chunkable': False,
+                'status': derive_attack_status([r.status for r in group]),
             })
     return out
 

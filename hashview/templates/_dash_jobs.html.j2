@@ -136,7 +136,10 @@
     <div class="term-divider" style="margin-top:18px;">queue · {{ queued_jobs|length }} pending</div>
     <div class="card" style="margin-top:14px;">
         <table class="tbl queue-tbl">
-            <thead><tr><th>#</th><th>Job</th><th>Customer</th><th class="center">Tasks</th><th class="center">Priority</th><th>Owner</th></tr></thead>
+            {# Hashes sits between Tasks and Priority, centered and numeric, so it
+               lines up with the Recovered column of the running-job tables above
+               -- same unit (accounts in the hashfile) as that column's denominator. #}
+            <thead><tr><th>#</th><th>Job</th><th>Customer</th><th class="center">Tasks</th><th class="center qcol-hashes">Hashes</th><th class="center">Priority</th><th>Owner</th></tr></thead>
             <tbody>
                 {% for job in queued_jobs %}
                     {% set qt = namespace(v=attack_counts.get(job.id, 0) if attack_counts is defined else 0) %}
@@ -145,6 +148,10 @@
                         <td style="font-weight:500;">{{ job.name }}</td>
                         <td style="color:var(--text-dim);">{% for c in customers %}{% if c.id == job.customer_id %}{{ c.name }}{% endif %}{% endfor %}</td>
                         <td class="center num">{{ qt.v }}</td>
+                        {# A job can be queued with no hashfile yet; show the same
+                           centred dash the tables above use for an empty cell
+                           rather than a misleading 0. #}
+                        <td class="center num qcol-hashes">{% set hc = queued_hash_counts.get(job.id) if queued_hash_counts is defined else none %}{% if hc %}{{ hc | commafy }}{% else %}<span class="dash">&mdash;</span>{% endif %}</td>
                         <td class="center">{{ priority_pips(job.priority) }}</td>
                         <td class="mono" style="color:var(--text-dim);">{% for u in users %}{% if u.id == job.owner_id %}{{ u.first_name }} {{ u.last_name }}{% endif %}{% endfor %}</td>
                     </tr>

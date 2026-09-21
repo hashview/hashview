@@ -687,9 +687,14 @@ def test_the_dash_placeholder_rule_is_actually_served(app, client):
     login(client, make_admin())
 
     css = client.get("/").get_data(as_text=True)
-    rule = re.search(r'\.rj-tasks \.dash \{([^}]*)\}', css)
-    assert rule, "no .rj-tasks .dash rule served -- the dashes will not be centred"
-    body = rule.group(1)
+    # Matched as a selector LIST: the rule covers the running task tables and the
+    # queue table, which also emits a dash now (a queued job with no hashfile
+    # yet). Pinning one selector would let the other silently lose its styling.
+    rule = re.search(r'((?:[^{}]*\.dash\s*,\s*)*[^{}]*\.dash)\s*\{([^}]*)\}', css)
+    assert rule, "no .dash rule served -- the dashes will not be centred"
+    selector, body = rule.group(1), rule.group(2)
+    assert ".rj-tasks .dash" in selector, "the running task tables lost the rule"
+    assert ".queue-tbl .dash" in selector, "the queue table lost the rule"
     assert "text-align: center" in body      # centres it
     assert "display: block" in body          # ...regardless of the column's align
     assert "var(--text-mute)" in body        # one shade for all of them

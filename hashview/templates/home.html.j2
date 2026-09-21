@@ -23,7 +23,8 @@
    The markup emitting <span class="dash"> lives in _dash_jobs.html.j2 -- the
    two were separated once by a merge, leaving unstyled dashes behind, so
    test_dashboard_chunk_groups.py asserts this rule is actually served. */
-.rj-tasks .dash { display: block; text-align: center; color: var(--text-mute); }
+.rj-tasks .dash,
+.queue-tbl .dash { display: block; text-align: center; color: var(--text-mute); }
 /* Live recovery feed: show up to 100 rows but keep the viewport at ~10 rows and
    scroll the rest; the column header stays pinned while scrolling. The height cap
    lives on #dash-recovery (outside the polled fragment) so it survives each swap. */

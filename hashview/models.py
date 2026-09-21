@@ -237,11 +237,9 @@ class JobTasks(db.Model):
     # whole, un-chunked task.
     chunk_skip = db.Column(db.BigInteger, nullable=True)
     chunk_limit = db.Column(db.BigInteger, nullable=True)
-    # 255, not 64: a sub-mask is never longer than the task mask it came from
-    # (_expand_mask swaps a '?x' position for a 1-2 char literal) and hc_mask is
-    # String(50), so 64 is enough TODAY -- but that is an undocumented coupling
-    # between two tables, and a truncated mask is still a valid mask, so it would
-    # crack the wrong keyspace silently rather than erroring.
+    # 255, matching Tasks.hc_mask: a sub-mask is never longer than the task
+    # mask it came from (_expand_mask swaps a '?x' position for a 1-2 char
+    # literal).
     chunk_mask = db.Column(db.String(255), nullable=True)
     # The attack (JobTaskLedger) this row is a dispatch receipt for. NULL for a
     # row queued by a pre-ledger server; those keep dispatching the old way.
@@ -377,7 +375,12 @@ class Tasks(db.Model):
     j_rule = db.Column(db.String(25))
     k_rule = db.Column(db.String(25))
     rule_id = db.Column(db.Integer)
-    hc_mask = db.Column(db.String(50))
+    # 255, matching JobTasks.chunk_mask (see chunk_mask's comment): a mask is a
+    # sequence of '?x' placeholders (2 chars each) plus optional literals, and
+    # modes 27000/27100 (NetNTLMv1/v2 (NT), which crack the NT hash itself)
+    # force a full 32-position mask -- 64 characters -- which the old
+    # VARCHAR(50) rejected outright before it ever reached hashcat.
+    hc_mask = db.Column(db.String(255))
     # Opt-in to hashcat's --loopback (straight mode + rules only); see build_hashcat_command
     loopback = db.Column(db.Boolean, nullable=False, default=False)
 

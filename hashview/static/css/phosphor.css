@@ -33,6 +33,9 @@
   --red:         #ff5f56;
   --red-dim:     #4a2120;
   --cyan:        #4fd6e0;
+  /* seeded with the literal .badge.cyan / .flash-info hardcoded, so dark is
+     byte-identical; the light blocks below now have something to override. */
+  --cyan-dim:    #1f3d40;
 
   /* primary = phosphor (overridden by tweak) — default amber */
   --primary:        var(--amber);
@@ -56,6 +59,11 @@
 
   --radius: 6px;
   --radius-lg: 10px;
+
+  /* frosted sticky topbar. Same reason as --cyan-dim: this is exactly what
+     .topbar hardcoded, so dark does not move, and each light theme can finally
+     tint its own bar instead of wearing the near-black one. */
+  --topbar-bg: rgba(8, 11, 9, 0.82);
 
   --sidebar-w: 248px;
 }
@@ -100,20 +108,29 @@ html[data-theme="light-paper"] {
 
   --text:        #1c1b16;
   --text-dim:    #5c5647;
-  --text-faint:  #8a806690;
-  --text-mute:   #7a6f57;
+  /* opaque, never alpha: an alpha-blended ink collapses to ~2:1 on a pale
+     ground and effectively disappears. */
+  --text-faint:  #8a8066;
+  --text-mute:   #6b6049;
 
-  --green:       #2fae5b;
+  /* Semantic colours double as TEXT ink here -- status pills, ETAs, hash types,
+     agent temps -- so each is the INK step: dark enough to clear 4.5:1 on the
+     tinted grounds that accent text actually sits on, not merely on --surface.
+     The pale -dim tokens (borders) and the 8% color-mix fills are unaffected,
+     and --primary-rgb keeps the MID hue so tints, gradients and glows stay the
+     right colour rather than going muddy. */
+  --green:       #186433;
   --green-deep:  #1f7d40;
   --green-dim:   #cfe6d5;
-  --amber:       #b8901f;
+  --amber:       #7a5f12;
   --amber-deep:  #8a6c15;
   --amber-dim:   #efe2c0;
-  --red:         #c4362f;
+  --red:         #a52a24;
   --red-dim:     #f0d6d3;
-  --cyan:        #1f8f99;
+  --cyan:        #16646b;
+  --cyan-dim:    #cfe4e6;
 
-  --primary:      var(--amber);
+  --primary:      #7a5f12;
   --primary-deep: var(--amber-deep);
   --primary-dim:  var(--amber-dim);
   --primary-rgb:  184, 144, 31;
@@ -121,6 +138,8 @@ html[data-theme="light-paper"] {
   --glow-sm: none;
   --glow:    none;
   --glow-text: none;
+
+  --topbar-bg: rgba(246, 242, 230, 0.86);
 }
 html[data-theme="light-paper"] .scanlines { display: none; }
 
@@ -139,20 +158,27 @@ html[data-theme="light-invert"] {
 
   --text:        #14231a;
   --text-dim:    #4a5a4e;
-  --text-faint:  #7c8a7690;
+  --text-faint:  #7c8a76;
   --text-mute:   #5f6d5c;
 
-  --green:       #2fae5b;
+  /* Semantic colours double as TEXT ink here -- status pills, ETAs, hash types,
+     agent temps -- so each is the INK step: dark enough to clear 4.5:1 on the
+     tinted grounds that accent text actually sits on, not merely on --surface.
+     The pale -dim tokens (borders) and the 8% color-mix fills are unaffected,
+     and --primary-rgb keeps the MID hue so tints, gradients and glows stay the
+     right colour rather than going muddy. */
+  --green:       #186433;
   --green-deep:  #1f7d40;
   --green-dim:   #cfe6d5;
-  --amber:       #b8901f;
+  --amber:       #7a5f12;
   --amber-deep:  #8a6c15;
   --amber-dim:   #efe2c0;
-  --red:         #c4362f;
+  --red:         #a52a24;
   --red-dim:     #f0d6d3;
-  --cyan:        #1f8f99;
+  --cyan:        #16646b;
+  --cyan-dim:    #cfe4e6;
 
-  --primary:      var(--green);
+  --primary:      #186433;
   --primary-deep: var(--green-deep);
   --primary-dim:  var(--green-dim);
   --primary-rgb:  47, 174, 91;
@@ -160,6 +186,8 @@ html[data-theme="light-invert"] {
   --glow-sm:   0 0 3px rgba(var(--primary-rgb), 0.25);
   --glow:      0 0 6px rgba(var(--primary-rgb), 0.20);
   --glow-text: 0 0 4px rgba(var(--primary-rgb), 0.18);
+
+  --topbar-bg: rgba(251, 251, 246, 0.86);
 }
 html[data-theme="light-invert"] .scanlines { display: none; }
 
@@ -179,20 +207,27 @@ html[data-theme="light-clean"] {
 
   --text:        #111827;
   --text-dim:    #4b5563;
-  --text-faint:  #9ca3af90;
-  --text-mute:   #6b7280;
+  --text-faint:  #9ca3af;
+  --text-mute:   #5b6472;
 
-  --green:       #16a34a;
+  /* Semantic colours double as TEXT ink here -- status pills, ETAs, hash types,
+     agent temps -- so each is the INK step: dark enough to clear 4.5:1 on the
+     tinted grounds that accent text actually sits on, not merely on --surface.
+     The pale -dim tokens (borders) and the 8% color-mix fills are unaffected,
+     and --primary-rgb keeps the MID hue so tints, gradients and glows stay the
+     right colour rather than going muddy. */
+  --green:       #116330;
   --green-deep:  #15803d;
   --green-dim:   #dcfce7;
-  --amber:       #d97706;
+  --amber:       #8a4e06;
   --amber-deep:  #b45309;
   --amber-dim:   #fef3c7;
-  --red:         #dc2626;
+  --red:         #a81b1b;
   --red-dim:     #fee2e2;
-  --cyan:        #0891b2;
+  --cyan:        #0a6a80;
+  --cyan-dim:    #cfeef4;
 
-  --primary:      #2563eb;
+  --primary:      #1b46ad;
   --primary-deep: #1d4ed8;
   --primary-dim:  #dbeafe;
   --primary-rgb:  37, 99, 235;
@@ -201,10 +236,25 @@ html[data-theme="light-clean"] {
   --glow:    none;
   --glow-text: none;
 
+  --topbar-bg: rgba(255, 255, 255, 0.88);
+
   /* conventional dashboard: sans body instead of the console mono */
   --mono: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
 }
 html[data-theme="light-clean"] .scanlines { display: none; }
+
+/* On a pale ground the dark scrollbar, the white selection text and the
+   glowing caret all read as artifacts of the dark theme rather than design. */
+html[data-theme^="light"] ::selection {
+  background: rgba(var(--primary-rgb), 0.22);
+  color: var(--text);
+}
+html[data-theme^="light"] ::-webkit-scrollbar-thumb {
+  background: var(--border-bright);
+  border-color: var(--inset);
+}
+html[data-theme^="light"] ::-webkit-scrollbar-thumb:hover { background: var(--text-mute); }
+html[data-theme^="light"] .cursor-blink { box-shadow: none; }
 
 * { box-sizing: border-box; }
 
@@ -447,7 +497,7 @@ html[data-scanlines="off"] .scanlines { display: none; }
   gap: 16px;
   padding: 0 26px;
   height: 58px;
-  background: rgba(8,11,9,0.82);
+  background: var(--topbar-bg);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
 }
@@ -568,8 +618,8 @@ html[data-scanlines="off"] .scanlines { display: none; }
 .btn-ghost { background: transparent; border-color: transparent; color: var(--text-dim); }
 .btn-ghost:hover { background: var(--surface-2); color: var(--text); }
 .btn-sm { padding: 5px 10px; font-size: 12px; }
-.btn-danger { color: var(--red); border-color: var(--red-dim); background: rgba(255,95,86,.08); }
-.btn-danger:hover { background: rgba(255,95,86,.16); border-color: var(--red); }
+.btn-danger { color: var(--red); border-color: var(--red-dim); background: color-mix(in srgb, var(--red) 8%, transparent); }
+.btn-danger:hover { background: color-mix(in srgb, var(--red) 16%, transparent); border-color: var(--red); }
 .btn:disabled { opacity: .4; cursor: not-allowed; }
 
 .icon-btn {
@@ -612,12 +662,15 @@ html[data-scanlines="off"] .scanlines { display: none; }
   gap: 5px;
   white-space: nowrap;
 }
-.badge.green { color: var(--green); border-color: var(--green-dim); background: rgba(94,240,138,.07); }
-.badge.amber { color: var(--amber); border-color: var(--amber-dim); background: rgba(255,181,61,.07); }
-.badge.red   { color: var(--red);   border-color: var(--red-dim);   background: rgba(255,95,86,.07); }
+.badge.green { color: var(--green); border-color: var(--green-dim); background: color-mix(in srgb, var(--green) 8%, transparent); }
+.badge.amber { color: var(--amber); border-color: var(--amber-dim); background: color-mix(in srgb, var(--amber) 8%, transparent); }
+.badge.red   { color: var(--red);   border-color: var(--red-dim);   background: color-mix(in srgb, var(--red) 8%, transparent); }
 .badge.dim   { color: var(--text-dim); border-color: var(--border-bright); background: var(--surface-2); }
-.badge.cyan  { color: var(--cyan); border-color: #1f3d40; background: rgba(79,214,224,.07); }
+.badge.cyan  { color: var(--cyan); border-color: var(--cyan-dim); background: color-mix(in srgb, var(--cyan) 8%, transparent); }
 .badge.violet { color: #c9a0ff; border-color: #43306b; background: rgba(155,109,255,.08); }   /* Slack */
+/* No violet in the imported palettes -- the Slack pill is ours -- so it gets the
+   same ink-on-pale treatment by hand, or it stays a dark chip on a light page. */
+html[data-theme^="light"] .badge.violet { color: #5b2d91; border-color: #d9c9f0; background: rgba(91,45,145,.08); }
 
 /* progress */
 .progress {

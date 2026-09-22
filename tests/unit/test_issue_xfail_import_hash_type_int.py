@@ -1,4 +1,4 @@
-"""xfail regression tests for the hash_type int/str mismatch in issue #444.
+"""Regression tests for the hash_type int/str mismatch in issue #444 (FIXED).
 
 ``import_hashfilehashes`` (hashview/utils/utils.py:665) decides how to normalise
 an incoming hash by comparing ``hash_type`` against **string** literals. The web
@@ -37,10 +37,13 @@ stay unmatchable after a code fix and need a data migration (lowercase
 ``ciphertext``, recompute ``sub_ciphertext``) — tracked separately in #444, and
 deliberately not pinned to a shape here.
 
-Each test asserts the *correct* (post-fix) behavior and is
-``@pytest.mark.xfail(strict=True)``, so it XFAILs today and turns into a hard
-XPASS failure the moment the bug is fixed — the signal to drop the marker.
-The non-xfail tests are guard rails: behavior a fix must not regress.
+These were written as strict xfails asserting the *correct* (post-fix)
+behaviour, so that the fix would announce itself as a hard XPASS failure rather
+than sit unnoticed. That is what happened: `_classify_hashfile_line` and
+`import_hashfilehashes` now normalise `hash_type` to str on entry, all eleven
+XPASSed, and the markers came off with the fix. They stay here as ordinary
+regression tests -- the int path is the one the API uses, and nothing else in
+the suite crosses that boundary.
 """
 
 import json
@@ -171,7 +174,49 @@ def _crack_via_agent(client, crack_agent, api_user, customer, hashfile_id,
 
 
 # --------------------------------------------------------------------------
-# Guard rails — behavior a fix must preserve (not xfail)
+# The normalisation itself, tested where it lives
+# --------------------------------------------------------------------------
+#
+# Every other test here goes through import_hashfilehashes. These call the
+# parser directly, because that is the function that owns the normalisation and
+# it is callable without the importer -- so if the guard is ever moved back up
+# to the caller, these fail while everything else in the file still passes.
+
+
+@pytest.mark.parametrize("file_type, line, hash_type", [
+    ("hash_only", NT_UPPER, 1000),
+    ("user_hash", f"alice:{NT_UPPER}", 1000),
+    ("hash_only", "$DCC2$10240#bob#7f4e0b2a1c3d5e6f8a9b0c1d2e3f4a5b", 2100),
+    ("hash_only", "$krb5asrep$23$user@REALM:aabb$ccdd", 18200),
+])
+def test_the_parser_answers_the_same_for_an_int_and_a_str(file_type, line, hash_type):
+    """The invariant stated directly: the TYPE of hash_type cannot change the
+    row. The tests below pin the individual outcomes; this pins that the two
+    paths cannot diverge at all, including for a hash type nobody thought to
+    list."""
+    from hashview.utils.utils import _classify_hashfile_line
+
+    as_str = _classify_hashfile_line(line + "\n", file_type, str(hash_type), set())
+    as_int = _classify_hashfile_line(line + "\n", file_type, hash_type, set())
+
+    assert as_str == as_int, (
+        f"{file_type}/{hash_type} parses differently depending on whether "
+        "hash_type is a str or an int")
+
+
+def test_the_parser_normalises_the_hash_type_it_returns():
+    """The row carries the normalised value, so a caller that stores it (as
+    _import_chunk does) writes the same thing either way."""
+    from hashview.utils.utils import _classify_hashfile_line
+
+    _ciphertext, row_type, _username = _classify_hashfile_line(
+        NT_UPPER + "\n", "hash_only", 1000, set())
+
+    assert row_type == "1000"
+
+
+# --------------------------------------------------------------------------
+# Guard rails — behavior a fix must preserve
 # --------------------------------------------------------------------------
 
 
@@ -219,8 +264,6 @@ def test_hash_type_column_holds_an_integer_after_a_string_import(app, tmp_path):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True,
-                   reason="#444: utils.py:688 compares an int hash_type to strings, so hash_only NTLM is not lowercased")
 def test_hash_only_ntlm_is_lowercased_when_hash_type_is_an_int(app, tmp_path):
     _import_file(tmp_path, NT_UPPER + "\n", "hash_only", 1000)
 
@@ -228,8 +271,6 @@ def test_hash_only_ntlm_is_lowercased_when_hash_type_is_an_int(app, tmp_path):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True,
-                   reason="#444: utils.py:725 compares an int hash_type to strings, so user_hash NTLM is not lowercased")
 def test_user_hash_ntlm_is_lowercased_when_hash_type_is_an_int(app, tmp_path):
     _import_file(tmp_path, f"alice:{NT_UPPER}\n", "user_hash", 1000)
 
@@ -237,8 +278,6 @@ def test_user_hash_ntlm_is_lowercased_when_hash_type_is_an_int(app, tmp_path):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True,
-                   reason="#444: utils.py:711 compares an int hash_type to strings, so user_hash mysql41 is not lowercased")
 def test_user_hash_mysql41_is_lowercased_when_hash_type_is_an_int(app, tmp_path):
     """hash_type 300 takes its own branch (utils.py:711), distinct from the
     ``else`` at :720 that 1000 falls through to. Both are dead on the API path.
@@ -257,8 +296,6 @@ def test_user_hash_mysql41_is_lowercased_when_hash_type_is_an_int(app, tmp_path)
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True,
-                   reason="#444: utils.py:714 compares an int hash_type to '2100', so user_hash DCC2 is not normalised")
 def test_user_hash_dcc2_is_normalised_when_hash_type_is_an_int(app, tmp_path):
     """Only the ciphertext is pinned. The ``:714`` branch also sets
     ``username = line.split(':')[0]`` *after* rebinding ``line`` to the hash, so
@@ -273,8 +310,6 @@ def test_user_hash_dcc2_is_normalised_when_hash_type_is_an_int(app, tmp_path):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True,
-                   reason="#444: the API route passes hash_type as an int, so the uploaded ciphertext is stored verbatim")
 def test_api_upload_stores_ntlm_lowercased(client, app, api_user, customer):
     _api_upload(client, api_user, customer, NT_UPPER + "\n")
 
@@ -287,8 +322,6 @@ def test_api_upload_stores_ntlm_lowercased(client, app, api_user, customer):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True,
-                   reason="#444: the uppercase row has a different sub_ciphertext, so the import dedup misses the cracked corpus")
 def test_api_upload_instacracks_against_the_existing_corpus(client, app, api_user,
                                                             customer):
     """The same hash recovered by an earlier job must be reported as
@@ -302,8 +335,6 @@ def test_api_upload_instacracks_against_the_existing_corpus(client, app, api_use
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True,
-                   reason="#444: the agent reports lowercase ciphertexts, so md5(ciphertext) never matches the uppercase row")
 def test_agent_crack_report_marks_an_api_imported_hash_cracked(
         client, app, api_user, customer, crack_agent, monkeypatch):
     """The end-to-end failure: an API-imported hash is cracked by an agent and
@@ -322,8 +353,6 @@ def test_agent_crack_report_marks_an_api_imported_hash_cracked(
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True,
-                   reason="#444: the API-imported hash never flips to cracked, so its plaintext never enters the recovered corpus")
 def test_recovered_plaintext_reaches_the_dynamic_all_wordlist(
         client, app, api_user, customer, crack_agent, tmp_path, monkeypatch):
     """The reported symptom: crack a hash that was uploaded through the API and
@@ -343,8 +372,6 @@ def test_recovered_plaintext_reaches_the_dynamic_all_wordlist(
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True,
-                   reason="#444: the uppercase duplicate row is a second hash_type 1000 ciphertext, so it lands in the NTLM wordlist too")
 def test_dynamic_ntlm_wordlist_has_no_case_duplicates(client, app, api_user,
                                                       customer, tmp_path):
     """(DYNAMIC) All NTLM Hashes writes every hash_type 1000 ciphertext
@@ -366,8 +393,6 @@ def test_dynamic_ntlm_wordlist_has_no_case_duplicates(client, app, api_user,
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True,
-                   reason="#444: utils.py:743 compares an int hash_type to '18200', so the ':' split is skipped and the ciphertext is stored as the username")
 def test_kerberos_asrep_username_excludes_the_ciphertext(app, tmp_path):
     """An 18200 (AS-REP) line carries ``principal:ciphertext`` in its 4th
     ``$``-delimited field. Without the ``:`` split the whole tail — principal
@@ -380,8 +405,6 @@ def test_kerberos_asrep_username_excludes_the_ciphertext(app, tmp_path):
 
 
 @pytest.mark.security
-@pytest.mark.xfail(strict=True,
-                   reason="#444: utils.py:690/697 compare an int hash_type to '2100', so DCC2 is neither normalised nor given a username")
 def test_hash_only_dcc2_is_normalised_and_keeps_its_username(app, tmp_path):
     """DCC2 must be stored with hashcat's ``$DCC2$`` casing and the account name
     lifted out of the ciphertext, or the hash is unmatchable and the account is

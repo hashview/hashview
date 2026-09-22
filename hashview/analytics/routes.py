@@ -112,6 +112,49 @@ def _local_part(username):
     return username
 
 
+def _recovered_corpus(customer_id, hashfile_id):
+    """[(plaintext, username)] for every recovered account in scope, DECODED.
+
+    The decode is the load-bearing part. Plaintext that is not valid UTF-8 is
+    stored wrapped as ``$HEX[...]``, so anything comparing the raw column is
+    comparing an encoding rather than a password -- and will disagree with
+    anything that decoded first. Both readers of this corpus go through here so
+    that cannot happen between them.
+
+    DISTINCT because the Hashes -> HashfileHashes join is one-to-many: one
+    account whose hash lives in two hashfiles is two rows, and counting it twice
+    is what made the old exports disagree with the cards they came from.
+    """
+    return [(decode_hex_plain(plaintext), username)
+            for _hash_id, plaintext, username in
+            _scoped_hash_query(customer_id, hashfile_id, cracked=True)
+            .with_entities(Hashes.id, Hashes.plaintext, HashfileHashes.username)
+            .distinct().all()]
+
+
+def _username_is_password(username, plaintext):
+    """True when an account's password IS its username (issue #388).
+
+    THE definition, so the card and the fig8 export cannot answer it differently.
+    They did: the card compared ``_local_part(username).lower()`` against the
+    decoded plaintext, while the export compared ``username.split('\\')[1]``
+    against the raw column, case-sensitively. Four ways to disagree, all of them
+    dropping accounts from the file that the card had just counted:
+
+      * case      -- ``CORP\\Frank`` / ``frank`` is the same credential
+      * domain    -- ``[1]`` is the second component, so ``A\\B\\user`` compared
+                     ``B``; ``_local_part`` takes the last, which is the account
+      * delimiter -- the same off-by-one on the ``*`` form kerberos names use
+      * encoding  -- a ``$HEX[...]`` plaintext never equalled anything
+
+    Case-insensitive is the deliberate answer: a password that differs from the
+    username only in case is the same finding to whoever reads the report, and
+    listing it on the card while omitting it from the file is the worst of both.
+    """
+    local = _local_part(username) or ''
+    return bool(plaintext and local and local.lower() == plaintext.lower())
+
+
 def _char_classes(plaintext):
     """(has_lower, has_upper, has_digit, has_special) for a plaintext."""
     return (
@@ -368,11 +411,7 @@ def get_analytics():
     # the opposite direction. Hashes.id is selected only so the distinct applies
     # to the account identity rather than to (plaintext, username), which would
     # merge two same-named accounts in different domains.
-    corpus = [(decode_hex_plain(plaintext), username)
-              for _hash_id, plaintext, username in
-              _scoped_hash_query(customer_id, hashfile_id, cracked=True)
-              .with_entities(Hashes.id, Hashes.plaintext, HashfileHashes.username)
-              .distinct().all()]
+    corpus = _recovered_corpus(customer_id, hashfile_id)
     total_cracked = len(corpus)
 
     freq = Counter()
@@ -403,7 +442,7 @@ def get_analytics():
             class_counts[n_classes - 1] += 1
 
         local = _local_part(username) or ''
-        if pword and local and local.lower() == pword.lower():
+        if _username_is_password(username, pword):
             user_eq_pass.append({'u': username, 'p': pword})
 
         class_mask = (1 if lower else 0) | (2 if upper else 0) | (4 if digit else 0) | (8 if special else 0)
@@ -690,29 +729,23 @@ def analytics_download_fig8():
 
     filename += '.txt'
 
-    # Gather the usernames where password == username using the same logic as fig8_table
-    # Same helper as the page and the same scoping precedence; see the comment
-    # in analytics_download_hashes for what the hand-rolled version did wrong.
-    fig8_cracked_hashes = (_scoped_hash_query(customer_id, hashfile_id, cracked=True)
-                           .with_entities(Hashes.plaintext, HashfileHashes.username).all())
+    # Same corpus and same comparison as the card, which is the entire fix for
+    # #388: this route used to re-implement both and got both wrong, so accounts
+    # the card had just counted were missing from the file people hand to
+    # clients. _username_is_password documents each way they disagreed.
+    #
+    # One line per matching ACCOUNT, not per distinct name: the card's badge
+    # counts accounts, so collapsing two people who are both 'eve' in different
+    # domains would make the file disagree with the count all over again. Sorted
+    # only so the file is stable between runs.
+    fig8_usernames = sorted(
+        _local_part(username)
+        for plaintext, username in _recovered_corpus(customer_id, hashfile_id)
+        if _username_is_password(username, plaintext))
 
     def generate():
-        for entry in fig8_cracked_hashes:
-            if entry[1] and entry[0]:
-                # Decode username (handle possible domain delimiters)
-                raw_username = entry[1]
-                if '\\' in raw_username:
-                    username = raw_username.split('\\')[1]
-                elif '*' in raw_username:
-                    username = raw_username.split('*')[1]
-                else:
-                    username = raw_username
-
-                # Decode password
-                password = entry[0]
-
-                if username == password:
-                    yield f"{username}\n"
+        for entry in fig8_usernames:
+            yield f"{entry}\n"
 
     return Response(
         stream_with_context(generate()),

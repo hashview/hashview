@@ -355,10 +355,6 @@ def test_fig9_download_lists_the_accounts_that_share_a_password(client, stack_ur
     assert served == EXPECTED_SHARED_USERS
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG (issue #388): the username=password card compares case-insensitively while the fig8 "
-    "download compares exactly, so the card counts accounts the file omits. Remove this marker "
-    "once fig8 reuses _local_part() and the card's comparison."))
 def test_fig8_download_matches_the_username_equals_password_card(client, stack_url, seeded):
     """The username=password download must contain every account the card counts,
     including the case-differing one."""

@@ -69,16 +69,9 @@ def test_fig9_download_decodes_hex_username(app, client):
     assert "John" in body
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "issue #470: fig8 download's 'Decode password' comment "
-        "(hashview/analytics/routes.py ~774) is a no-op -- "
-        "password = entry[0] is a bare assignment -- so a $HEX[...]-wrapped "
-        "recovered plaintext never matches its (decoded) username and is "
-        "silently excluded from the username==password export."
-    ),
-)
+# Fixed with #388: the export reads _recovered_corpus, which decodes, instead of
+# the raw plaintext column. The "Decode password" comment this issue named was
+# attached to a bare assignment that decoded nothing.
 def test_fig8_download_decodes_hex_password_before_matching(app, client):
     admin = make_admin()
     login(client, admin)

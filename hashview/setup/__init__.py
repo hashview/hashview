@@ -28,6 +28,13 @@ from hashview.utils.utils import (
 SEED_WORDLIST_GZ = 'install/rockyou.txt.gz'
 SEED_RULE_GZ = 'install/best64.rule.gz'
 
+# The names those two seeds are stored under. They are how add_default_tasks
+# finds them, so they live in one place: a rename here that did not reach the
+# lookup would leave the starter tasks silently pointing at nothing, which is a
+# quieter version of the bug that made this a constant (#396).
+ROCKYOU_WORDLIST_NAME = 'Rockyou.txt'
+BEST64_RULE_NAME = 'Best64 Rule'
+
 
 def _seed_source(relative_path):
     """Absolute path to a shipped seed file, falling back to the bare path."""
@@ -59,10 +66,43 @@ def default_tasks_need_added(db :SQLAlchemy) -> bool:
 
 
 def add_default_tasks(db :SQLAlchemy):
+    """Seed the three starter tasks, resolving their wordlist and rule BY NAME.
+
+    The ids used to be written in as literals -- wl_id '2' and '3', rule_id '1'
+    -- which were right when three dynamic wordlists were seeded ahead of
+    Rockyou and have not been right since. _DYNAMIC_WORDLISTS yields NINE rows
+    today (four canonical plus five length buckets), so Rockyou lands at id 10
+    and the two tasks named after it pointed at "(DYNAMIC) All Usernames" and
+    "(DYNAMIC) All Customers" instead (#396). Those are empty placeholders on a
+    fresh install, so the first thing a new user is invited to run finished
+    successfully having tried nothing at all -- and said so.
+
+    A name is the only thing here that is actually stable. The insert order is
+    not, nothing enforced it, and the count it depended on has changed twice.
+
+    All-or-nothing on purpose. Seeding the wordlist and the rule is best-effort
+    (both are wrapped in try/except by the caller), so either can be absent.
+    default_tasks_need_added asks whether ANY task exists, so seeding just the
+    mask task here would close that gate forever and the two that matter would
+    never arrive. Adding none leaves the gate open for a later boot to finish
+    the job, and says why in the log each time.
+    """
+    rockyou = db.session.query(Wordlists).filter_by(
+        name=ROCKYOU_WORDLIST_NAME).first()
+    best64 = db.session.query(Rules).filter_by(name=BEST64_RULE_NAME).first()
+    if rockyou is None or best64 is None:
+        missing = ', '.join(
+            name for name, row in ((ROCKYOU_WORDLIST_NAME, rockyou),
+                                   (BEST64_RULE_NAME, best64)) if row is None)
+        current_app.logger.warning(
+            'Default tasks not seeded: %s missing. They will be retried on the '
+            'next startup once it exists.', missing)
+        return
+
     task = Tasks(
         name          = 'Rockyou Wordlist',
         owner_id      = '1',
-        wl_id         = '2',
+        wl_id         = rockyou.id,
         rule_id       = None,
         hc_attackmode = 0,
     )
@@ -71,8 +111,8 @@ def add_default_tasks(db :SQLAlchemy):
     task = Tasks(
         name          = 'Rockyou Wordlist + Best64 Rules',
         owner_id      = '1',
-        wl_id         = '3',
-        rule_id       = '1',
+        wl_id         = rockyou.id,
+        rule_id       = best64.id,
         hc_attackmode = 0,
     )
     db.session.add(task)
@@ -123,7 +163,7 @@ def add_default_rules(db :SQLAlchemy):
     rules_path = os.path.join(_control_dir('rules'), 'best64.rule')
     decompress_gz(_seed_source(SEED_RULE_GZ), rules_path)
     rule = Rules(
-        name     = 'Best64 Rule',
+        name     = BEST64_RULE_NAME,
         owner_id = 1,
         path     = rules_path,
         checksum = get_filehash(rules_path),
@@ -164,7 +204,7 @@ def add_default_static_wordlist(db :SQLAlchemy):
             open(wordlist_path, 'wb') as dst:
         shutil.copyfileobj(src, dst)
     wordlist = Wordlists(
-        name      = 'Rockyou.txt',
+        name      = ROCKYOU_WORDLIST_NAME,
         owner_id  = 1,
         type      = 'static',
         path      = wordlist_path,
@@ -424,8 +464,14 @@ def add_default_dynamic_wordlists(db :SQLAlchemy):
     """Ensure each canonical (DYNAMIC) wordlist exists; idempotent per name.
 
     Skips entries that are already in the DB so this can run safely on every
-    startup. The previous implementation always inserted all four rows,
-    which is why the gate had to be all-or-nothing.
+    startup. The previous implementation always inserted every row, which is why
+    the gate had to be all-or-nothing.
+
+    How many rows that is has changed twice and will change again:
+    _DYNAMIC_WORDLISTS is four literal entries plus however many
+    dynamic_password_length_wordlists() yields (five today). Nothing downstream
+    may depend on the count, or on the ids these take -- see add_default_tasks
+    for what happened when something did (#396).
     """
     for name, path in _DYNAMIC_WORDLISTS:
         if db.session.query(Wordlists).filter_by(name=name).first() is not None:

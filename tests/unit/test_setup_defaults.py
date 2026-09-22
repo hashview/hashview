@@ -56,7 +56,13 @@ def seeded(app, tmp_path, monkeypatch):
 
 # --- predicate / adder pairs -----------------------------------------------
 
-def test_default_tasks_added_once(app):
+def test_default_tasks_added_once(seeded):
+    # The wordlist and rule come first: the starter tasks resolve them BY NAME
+    # now (#396) and seed nothing at all if either is missing, rather than
+    # writing a task that points at whatever happens to hold that id.
+    add_default_static_wordlist(db)
+    add_default_rules(db)
+
     assert default_tasks_need_added(db) is True
     add_default_tasks(db)
     assert default_tasks_need_added(db) is False

@@ -983,13 +983,30 @@ def _classify_hashfile_line(line, file_type, hash_type, present_usernames):
     load-bearing and is preserved exactly as it was when each branch called
     import_hash_only inline. The pwdump branch likewise still overrides
     hash_type to '1000' for the row it emits, whatever was selected.
+
+    ``hash_type`` is normalised to str on the way in, and every comparison below
+    relies on that. The web upload passes a form field (str) while the API route
+    is declared ``<int:hash_type>`` and passes an int, so the branches that
+    compare against '1000'/'2100'/'300'/'1731'/'18200' silently did nothing on
+    the API path (#444). The headline casualty was the lowercasing: hashcat
+    reports hex hashes lowercased, so an NTLM ciphertext stored verbatim in
+    uppercase could never match the md5(ciphertext) lookup that ingests crack
+    results -- the hash was cracked and stayed cracked=0 forever.
+
+    Normalised to str rather than int on purpose: the sets and literals this
+    module already compares against (_KRB_PRINCIPAL_SALTED,
+    _NTLM_FAMILY_HASH_TYPES, _AD_HISTORY_HASH_TYPES, the pwdump branch's '1000')
+    are strings, as are the validate_* functions. Going the other way would mean
+    rewriting all of them. The Hashes.hash_type column is an Integer and accepts
+    either, which is exactly why this stayed invisible for so long.
     """
+    hash_type = str(hash_type)
     username = None
     if file_type == 'hash_only':
         # DCC2 is the one hash_only mode whose ciphertext carries a
         # username, so it is the one that can carry a '_history0' row
         # duplicating its account's current-password row (#412).
-        if str(hash_type) == '2100':
+        if hash_type == '2100':
             dcc2_fields = line.lower().rstrip().split('#')
             if len(dcc2_fields) > 1:
                 base = history_zero_base_name(dcc2_fields[1])
@@ -1019,11 +1036,11 @@ def _classify_hashfile_line(line, file_type, hash_type, present_usernames):
             # hash_type arrives as an int on the API path (routes.py takes
             # <int:hash_type>).
             candidate_username = line.split(':')[0]
-            if (str(hash_type) in _NTLM_FAMILY_HASH_TYPES
+            if (hash_type in _NTLM_FAMILY_HASH_TYPES
                     and is_machine_account(candidate_username)):
                 return _LINE_SKIP
             base = history_zero_base_name(candidate_username)
-            if (str(hash_type) in _AD_HISTORY_HASH_TYPES
+            if (hash_type in _AD_HISTORY_HASH_TYPES
                     and base is not None and base.strip().lower() in present_usernames):
                 return _LINE_SKIP
             if hash_type == '300' or hash_type == '1731':
@@ -1208,7 +1225,16 @@ def _present_usernames(hashfile_path, file_type, hash_type):
 
 
 def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
-    """Function to hashfile"""
+    """Import a hashfile's lines as Hashes + HashfileHashes rows.
+
+    ``hash_type`` may arrive as a str (web upload form field) or an int (the API
+    route is declared ``<int:hash_type>``). Neither helper below cares: each
+    normalises for itself, which is the property that matters, because both are
+    callable without going through here. Normalising a second time in this
+    function would be untestable -- remove it and every test still passes, which
+    is how a guard rots. Any future helper added to this path must do the same;
+    see _classify_hashfile_line for what went wrong when one did not (#444).
+    """
 
     # The file is read twice and streamed both times -- once to collect the
     # usernames the history filter needs, once to import. It used to be pulled

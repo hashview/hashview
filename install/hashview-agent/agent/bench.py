@@ -17,6 +17,35 @@ def parse_hc_extra_args(extra):
     except ValueError:
         return (extra or '').split()
 
+
+# Flags hashcat refuses outright in -b/--benchmark mode (it exits immediately
+# with e.g. "Can't change --hwmon-temp-abort in benchmark mode." and prints no
+# Speed line). HC_EXTRA_ARGS is meant for the real crack run, so an operator
+# setting one of these -- a reasonable thing to do for a cracking session --
+# would otherwise silently strand the agent: parse_benchmark_speed finds
+# nothing, no benchmark is ever reported, and the server's benchmark-first
+# gate re-asks every heartbeat forever.
+_BENCHMARK_INCOMPATIBLE_FLAGS = ('--hwmon-temp-abort',)
+
+
+def strip_benchmark_incompatible_args(argv):
+    """Drop HC_EXTRA_ARGS tokens hashcat rejects in benchmark mode.
+
+    Handles both '--flag=value' and '--flag value' forms.
+    """
+    cleaned = []
+    skip_next = False
+    for token in argv:
+        if skip_next:
+            skip_next = False
+            continue
+        name = token.split('=', 1)[0]
+        if name in _BENCHMARK_INCOMPATIBLE_FLAGS:
+            skip_next = '=' not in token
+            continue
+        cleaned.append(token)
+    return cleaned
+
 # Per-device benchmark line, e.g. "Speed.#1.........:  1234.5 MH/s (12.34ms) ...".
 # Match #<digit> only so the aggregate "Speed.#*" line is not double counted.
 _BENCH_SPEED_RE = re.compile(r'Speed\.#\d+\.*:\s*([0-9.]+)\s*([kMGTP]?)H/s', re.IGNORECASE)

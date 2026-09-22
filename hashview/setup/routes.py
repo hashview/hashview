@@ -1,5 +1,4 @@
 """Flask routes to handle Setup"""
-from datetime import datetime
 
 from flask import Blueprint, current_app, flash, redirect, render_template, url_for
 from flask_login import login_user
@@ -7,6 +6,7 @@ from flask_login import login_user
 from hashview.models import Settings, Users, db
 from hashview.setup import admin_pass_needs_changed, settings_needs_added
 from hashview.users.routes import bcrypt
+from hashview.utils.clock import utcnow
 
 from .forms import SetupAdminPassForm, SetupSettingsForm
 
@@ -23,7 +23,7 @@ def admin_pass_get():
     admin_user = db.session.query(Users).filter_by(id=1).first()
 
     login_user(admin_user, remember=False)
-    admin_user.last_login_utc = datetime.utcnow()
+    admin_user.last_login_utc = utcnow()
     db.session.commit()
 
     form = SetupAdminPassForm()

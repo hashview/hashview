@@ -14,11 +14,11 @@ import json
 
 from flask import Blueprint, request
 from packaging import version
-from sqlalchemy import func
 from sqlalchemy.ext.declarative import DeclarativeMeta
 
 import hashview
 from hashview.models import Agents, Users, db
+from hashview.utils.clock import utcnow
 
 api = Blueprint('api', __name__)
 
@@ -111,12 +111,14 @@ def update_heartbeat(uuid):
     agent = Agents.query.filter_by(uuid=uuid).first()
     if agent:
         agent.src_ip = request.remote_addr
-        # Stamp with the DATABASE's clock (func.now()) rather than a Python datetime.
-        # The heartbeat writer and the dashboard renderer can run in different process
-        # timezones (e.g. UTC vs the host's local time); using the single DB clock for
-        # both the write and the online/offline cutoff makes the comparison
-        # timezone-independent and stops live agents from being shown as offline.
-        agent.last_checkin = func.now()
+        # UTC, like every other timestamp (utils/clock.py). This used to be
+        # func.now() to dodge cross-process timezone skew, which worked but put
+        # this one column in the DATABASE's clock domain while the rest of the
+        # schema was in the app's -- and func.now() is not even one domain: it
+        # renders session-local now() on MySQL and always-UTC CURRENT_TIMESTAMP
+        # on SQLite. The comparison is timezone-independent now because both
+        # sides are UTC, not because both sides route through one server.
+        agent.last_checkin = utcnow()
         db.session.commit()
 
 def versionCheck(agent_version):

@@ -18,7 +18,7 @@
         {% for job in running_jobs %}
             {% set d = (job_dash.get(job.id) if job_dash is defined else none) or {'groups': [], 'hashfile_total': 0, 'tasks_total': 0, 'tasks_done': 0, 'tasks_running': 0, 'chunks_total': 0, 'chunks_done': 0, 'chunks_active': 0} %}
             {% if job.started_at %}
-                {% set job_elapsed = (datetime.now() - job.started_at).total_seconds() %}
+                {% set job_elapsed = job_elapsed_secs.get(job.id, 0) if job_elapsed_secs is defined else 0 %}
                 {% set job_remaining = (settings.max_runtime_jobs * 3600 - job_elapsed) if settings and settings.max_runtime_jobs else 0 %}
                 {% set job_remaining_abs = job_remaining if job_remaining > 0 else 0 %}
             {% endif %}

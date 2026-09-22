@@ -266,7 +266,7 @@
                             <td>{% if info and (info.type or info.mode) %}<span class="badge cyan" style="padding:4px 10px;" title="hashcat mode {{ info.mode }}">{{ info.type if info.type else info.mode }}</span>{% else %}<span style="color:var(--text-mute);">—</span>{% endif %}</td>
                             <td class="center num">{{ "{:,}".format(info.total) if info else 0 }}</td>
                             <td class="center num">{% if info %}<span style="color:{{ 'var(--primary)' if info.cracked else 'var(--text-mute)' }};">{{ "{:,}".format(info.cracked) }}</span> <span style="color:var(--text-mute);">({{ info.pct_str }})</span>{% else %}—{% endif %}</td>
-                            <td class="mono" style="color:var(--text-mute); font-size:11.5px;">{{ hashfile.uploaded_at.strftime('%b %d, %Y %H:%M') if hashfile.uploaded_at else '—' }}</td>
+                            <td class="mono" style="color:var(--text-mute); font-size:11.5px;">{{ localtime(hashfile.uploaded_at, 'datetime-full') }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>

@@ -477,7 +477,7 @@
                 {% for p in timeline %}
                     {% if loop.index0 % step == 0 or loop.last %}
                     {% set lx = 46 + (loop.index0 / ((n - 1) if n > 1 else 1) * 818) %}
-                    <text x="{{ lx | round(1) }}" y="192" text-anchor="middle" font-size="9.5" style="fill:var(--text-mute);font-family:var(--mono);">{{ p.label }}</text>
+                    <text x="{{ lx | round(1) }}" y="192" text-anchor="middle" font-size="9.5" style="fill:var(--text-mute);font-family:var(--mono);" data-hv-utc="{{ p.utc }}" data-fmt="short">{{ p.label }}</text>
                     {% endif %}
                 {% endfor %}
                 <polygon points="46,172 {{ pts | join(' ') }} {{ (46 + (818 if n > 1 else 0)) | round(1) }},172" fill="url(#tlFill)"></polygon>
@@ -505,7 +505,7 @@
                 {% for p in timeline %}
                     {% if loop.index0 % step == 0 or loop.last %}
                     {% set lx = 46 + (loop.index0 + 0.5) * bw %}
-                    <text x="{{ lx | round(1) }}" y="192" text-anchor="middle" font-size="9.5" style="fill:var(--text-mute);font-family:var(--mono);">{{ p.label }}</text>
+                    <text x="{{ lx | round(1) }}" y="192" text-anchor="middle" font-size="9.5" style="fill:var(--text-mute);font-family:var(--mono);" data-hv-utc="{{ p.utc }}" data-fmt="short">{{ p.label }}</text>
                     {% endif %}
                 {% endfor %}
                 {% for p in timeline %}

@@ -36,6 +36,7 @@ from hashview.models import (
     db,
 )
 from hashview.utils.audit import log_event
+from hashview.utils.clock import to_utc_iso
 
 
 @api.route('/v1/customers', methods=['GET'])
@@ -127,7 +128,10 @@ def v1_api_get_customer_hashfiles(customer_id):
             'name': hashfile.name,
             'customer_id': hashfile.customer_id,
             'owner_id': hashfile.owner_id,
-            'uploaded_at': hashfile.uploaded_at.isoformat() if hashfile.uploaded_at else None,
+            # to_utc_iso, not isoformat: a naive isoformat() emits no offset,
+            # so a consumer cannot tell UTC from local -- and the spec declares
+            # this field 'format: date-time' (RFC 3339), which REQUIRES one.
+            'uploaded_at': to_utc_iso(hashfile.uploaded_at),
             'hash_type': agg[2],
             'total_hashes': int(agg[0] or 0),
             'cracked_hashes': int(agg[1] or 0),

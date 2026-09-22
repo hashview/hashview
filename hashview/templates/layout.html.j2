@@ -387,6 +387,84 @@
         }
     }
 
+    // ---- local time -------------------------------------------------------
+    // Every timestamp reaches the browser as UTC in a <time datetime="...Z">,
+    // because the server cannot know the reader's timezone. This is where it
+    // becomes local -- the one place in the app that knows.
+    //
+    // Re-runnable on purpose: the dashboard swaps whole partials by innerHTML
+    // every few seconds, and freshly injected markup has never been through
+    // here. Every poller calls hvLocalizeTimes(box) after its swap, so pass a
+    // root to localise just that subtree.
+    var HV_TIME_FMT = {
+        'datetime':      { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' },
+        'datetime-sec':  { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' },
+        'datetime-full': { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' },
+        'date':          { year: 'numeric', month: '2-digit', day: '2-digit' },
+        'time':          { hour: '2-digit', minute: '2-digit', second: '2-digit' },
+        'short':         { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }
+    };
+
+    // "5m ago". Bounded at the top by a real date, because "412d ago" tells a
+    // reader nothing they can act on.
+    function hvRelative(then, now) {
+        var secs = Math.round((now - then) / 1000);
+        if (secs < 0) secs = 0;                       // clock skew: never "in 3s"
+        if (secs < 60) return secs + 's ago';
+        var m = Math.floor(secs / 60);
+        if (m < 60) return m + 'm ago';
+        var h = Math.floor(m / 60), rm = m % 60;
+        if (h < 24) return rm ? (h + 'h ' + rm + 'm ago') : (h + 'h ago');
+        var d = Math.floor(h / 24);
+        if (d < 30) return d + 'd ago';
+        return null;                                  // caller falls back to a date
+    }
+
+    window.hvLocalizeTimes = function (root) {
+        var scope = root || document;
+        var now = Date.now();
+        // <time datetime> is the semantic form for prose. data-hv-utc is the
+        // escape hatch for places that cannot host a <time> element -- SVG
+        // <text> in the server-built charts, mainly.
+        var nodes = scope.querySelectorAll('time.hv-time, [data-hv-utc]');
+        for (var i = 0; i < nodes.length; i++) {
+            var el = nodes[i];
+            var iso = el.getAttribute('datetime') || el.getAttribute('data-hv-utc');
+            if (!iso) continue;
+            var d = new Date(iso);
+            if (isNaN(d.getTime())) continue;         // leave the UTC fallback in place
+            var fmt = el.getAttribute('data-fmt') || 'datetime';
+            var text = null;
+            if (fmt === 'rel') {
+                text = hvRelative(d.getTime(), now);
+                if (text === null) { fmt = 'datetime-full'; }
+            }
+            if (text === null) {
+                try {
+                    text = d.toLocaleString(undefined, HV_TIME_FMT[fmt] || HV_TIME_FMT.datetime);
+                } catch (e) {
+                    text = d.toLocaleString();        // exotic locale/options: still local
+                }
+            }
+            el.textContent = text;
+            // The absolute instant stays reachable on hover, in the reader's
+            // own zone plus its name -- the thing a "2h ago" label loses.
+            if (!el.getAttribute('title')) {
+                try { el.setAttribute('title', d.toLocaleString() + ' (' +
+                      Intl.DateTimeFormat().resolvedOptions().timeZone + ')'); } catch (e) {}
+            }
+        }
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () { hvLocalizeTimes(); });
+    } else {
+        hvLocalizeTimes();
+    }
+    // Relative labels go stale on their own; absolute ones do not, but
+    // re-running is idempotent so one timer covers both.
+    setInterval(function () { hvLocalizeTimes(); }, 60000);
+
     // Disable a wizard step's Next/submit button until its form's required fields
     // are satisfied (native HTML5 constraint validation). Re-checks on every input
     // /change; server-side validation remains the source of truth.

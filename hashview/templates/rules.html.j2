@@ -75,7 +75,7 @@
                 {# a missing file makes the stored line count a claim about something that isn't there #}
                 <td class="mono num"><span style="color:{{ 'var(--text-mute)' if gone or not rule.size else 'var(--primary)' }};{% if rule.size and not gone %}text-shadow:var(--glow-text);{% endif %}"{% if gone %} title="Line count from the last time the file was seen"{% endif %}>{{ "{:,}".format(rule.size|int) }}</span></td>
                 <td class="mono" style="color:var(--text-dim);">{% for user in users %}{% if user.id == rule.owner_id %}{{ user.first_name }} {{ user.last_name }}{% endif %}{% endfor %}</td>
-                <td class="mono" style="color:var(--text-mute);font-size:11.5px;">{{ rule.last_updated }}</td>
+                <td class="mono" style="color:var(--text-mute);font-size:11.5px;">{{ localtime(rule.last_updated) }}</td>
                 <td class="center">
                     <div style="display:flex; gap:4px; justify-content:center;">
                         {% if gone %}
@@ -209,7 +209,7 @@
             <span style="flex:none; width:46px; height:46px; border-radius:11px; display:inline-flex; align-items:center; justify-content:center; color:var(--primary); border:1px solid var(--primary-dim); background:rgba(var(--primary-rgb),0.08);">{{ icon('rule', size=20) }}</span>
             <div style="line-height:1.4;">
                 <span class="mono" style="font-size:22px; color:var(--text);">{{ rcount(rule.size) }}<span style="font-size:12px; color:var(--text-mute);"> rules</span></span>
-                <div class="mono" style="font-size:11px; color:var(--text-mute); margin-top:3px;">uploaded {{ rule.last_updated.strftime('%Y-%m-%d') if rule.last_updated else '—' }}</div>
+                <div class="mono" style="font-size:11px; color:var(--text-mute); margin-top:3px;">uploaded {{ localtime(rule.last_updated, 'date') }}</div>
             </div>
             <span style="margin-left:auto; text-align:right; line-height:1;">
                 <span class="mono" style="font-size:22px; color:var(--primary); text-shadow:var(--glow-text);">{{ "{:,}".format(hits|int) }}</span>
@@ -220,7 +220,7 @@
         {# detail grid (no note) #}
         <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 18px 24px;">
             <div>{{ kv_label('Owner') }}<div><span class="badge dim">{{ rule_owner.get(rule.id, '—') if rule_owner is defined else '—' }}</span></div></div>
-            <div>{{ kv_label('Uploaded') }}<div class="mono" style="color:var(--text);">{{ rule.last_updated.strftime('%Y-%m-%d') if rule.last_updated else '—' }}</div></div>
+            <div>{{ kv_label('Uploaded') }}<div class="mono" style="color:var(--text);">{{ localtime(rule.last_updated, 'date') }}</div></div>
             <div>{{ kv_label('Rules') }}<div class="mono" style="color:var(--text);">{{ "{:,}".format(rule.size|int) }}</div></div>
             <div>{{ kv_label('Historical hits') }}<div><span class="mono" style="color:{{ 'var(--primary)' if hits else 'var(--text-mute)' }};{% if hits %}text-shadow:var(--glow-text);{% endif %}">{{ "{:,}".format(hits|int) }}</span> <span style="color:var(--text-dim);">passwords recovered</span></div></div>
             <div>{{ kv_label('Used by') }}<div style="color:var(--text);">{{ tcount | commafy }} task{{ '' if tcount == 1 else 's' }} · {{ jcount | commafy }} job{{ '' if jcount == 1 else 's' }}</div></div>

@@ -5,7 +5,6 @@ is present. Neither route is @login_required (they run pre-authentication); the
 setup before_request only forces /setup while the install is unconfigured, so it
 doesn't block these once setup is complete.
 """
-from datetime import datetime
 
 from flask import (
     Blueprint,
@@ -22,6 +21,7 @@ from hashview.auth.oauth import get_entra_client
 from hashview.auth.service import AzureLoginDenied, resolve_or_provision_azure_user
 from hashview.models import Settings, db
 from hashview.utils.audit import log_event
+from hashview.utils.clock import utcnow
 
 auth = Blueprint('auth', __name__)
 
@@ -99,7 +99,7 @@ def azure_callback():
         return redirect(url_for('users.login_get'))
 
     login_user(user, remember=False)
-    user.last_login_utc = datetime.utcnow()
+    user.last_login_utc = utcnow()
     db.session.commit()
     log_event('user.login', actor=(user.email_address, user.id), detail='via azure')
 

@@ -103,7 +103,7 @@
                     <span style="color:var(--text-mute);">—</span>
                     {% endif %}
                 </td>
-                <td class="mono" style="color:var(--text-mute);font-size:11.5px;">{{ hashfile.uploaded_at }}</td>
+                <td class="mono" style="color:var(--text-mute);font-size:11.5px;">{{ localtime(hashfile.uploaded_at) }}</td>
                 <td class="center">
                     <div style="display:flex; gap:4px; justify-content:center;">
                         <button type="button" class="icon-btn" title="Download" onclick="document.getElementById('dl-{{ hashfile.id }}').showModal()">{{ icon('download', size=15) }}</button>
@@ -240,7 +240,7 @@ function hvHfOpenBulkDel(){
                 <span style="display:inline-flex; align-items:center; gap:6px;">{{ icon('users', size=14) }} {{ j.owner }}</span>
                 <span style="display:inline-flex; align-items:center; gap:6px;">{{ icon('task', size=14) }} {{ j.tasks | commafy }} tasks</span>
                 <span style="display:inline-flex; align-items:center; gap:6px;">{{ icon('clock', size=14) }} {{ j.runtime }}</span>
-                <span style="margin-left:auto;">{{ j.date.strftime('%b %d %H:%M') if j.date else '—' }}</span>
+                <span style="margin-left:auto;">{{ localtime(j.date) }}</span>
             </div>
         </div>
         {% endfor %}

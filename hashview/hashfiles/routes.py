@@ -1,6 +1,5 @@
 """Flask routes to handle Hashfiles"""
 import io
-from datetime import datetime
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
@@ -19,6 +18,7 @@ from hashview.models import (
     db,
 )
 from hashview.utils.audit import log_event
+from hashview.utils.clock import utcnow
 from hashview.utils.utils import job_assignments, purge_orphaned_hashes, try_commit
 
 hashfiles = Blueprint('hashfiles', __name__)
@@ -112,7 +112,7 @@ def hashfiles_list():
     def _runtime(j):
         if not j.started_at:
             return '—'
-        end = j.ended_at or datetime.now()
+        end = j.ended_at or utcnow()
         secs = (end - j.started_at).total_seconds()
         secs = secs if secs > 0 else 0
         return '%dh %dm' % (int(secs // 3600), int((secs % 3600) // 60))

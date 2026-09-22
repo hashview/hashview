@@ -19,6 +19,7 @@ from flask_login import login_required
 from sqlalchemy import func
 
 from hashview.models import Customers, Hashes, HashfileHashes, Hashfiles, Jobs, Tasks, db
+from hashview.utils.clock import to_utc_iso
 from hashview.utils.utils import decode_hex_plain
 
 analytics = Blueprint('analytics', __name__)
@@ -520,7 +521,11 @@ def get_analytics():
         while bucket <= last:
             count = by_hour.get(bucket, 0)
             running += count
+            # Both: 'label' is the no-JS/UTC text, 'utc' is what the browser
+            # re-renders in the reader's zone (these are HOURLY buckets, so the
+            # timezone is the difference between a plausible axis and a wrong one).
             timeline.append({'label': bucket.strftime('%m/%d %H:%M'),
+                             'utc': to_utc_iso(bucket),
                              'count': count, 'cum': running})
             bucket += timedelta(hours=1)
 

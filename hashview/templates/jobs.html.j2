@@ -81,7 +81,7 @@
                 </td>
                 <td class="center">{{ priority_pips(job.priority) }}</td>
                 <td class="mono" style="color:var(--text-dim);"><div title="{{ ns.owner }}" style="max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ ns.owner }}</div></td>
-                <td class="mono" style="color:var(--text-mute);font-size:11.5px;">{{ job.created_at.strftime('%b %d %H:%M') if job.created_at else '—' }}</td>
+                <td class="mono" style="color:var(--text-mute);font-size:11.5px;">{{ localtime(job.created_at) }}</td>
                 <td class="center">
                     <div style="display:flex; gap:4px; justify-content:flex-end;">
                         {% if job.status == 'Ready' %}
@@ -187,7 +187,7 @@
             <div>{{ kv_label('Hash type') }}<div>{% if job_hash_type is defined and job_hash_type.get(job.id) %}<span class="badge cyan">{{ job_hash_type[job.id] }}</span>{% else %}<span style="color:var(--text-mute);">—</span>{% endif %}</div></div>
             <div>{{ kv_label('Priority') }}<div style="display:inline-flex; align-items:center; gap:9px;">{{ priority_pips(job.priority) }}<span class="mono" style="color:var(--text-dim);">{{ job.priority }}/5</span></div></div>
             <div>{{ kv_label('Tasks') }}{% set tc = job_task_count.get(job.id, 0) if job_task_count is defined else 0 %}<div style="color:var(--text);">{{ tc | commafy }} attack{{ '' if tc == 1 else 's' }} queued</div></div>
-            <div>{{ kv_label('Started') }}<div class="mono" style="color:var(--text);">{{ job.started_at.strftime('%b %d %H:%M') if job.started_at else 'Not started' }}</div></div>
+            <div>{{ kv_label('Started') }}<div class="mono" style="color:var(--text);">{{ localtime(job.started_at, empty='Not started') }}</div></div>
             <div>{{ kv_label('Runtime') }}<div class="mono" style="color:var(--text);">{{ job_runtime.get(job.id, '-') if job_runtime is defined else '-' }}</div></div>
         </div>
 
@@ -232,7 +232,7 @@
         </div>
     </div>
     <div class="hv-dialog-foot">
-        <span class="mono" style="font-size:11.5px; color:var(--text-mute); margin-right:auto;">created {{ job.created_at.strftime('%b %d %H:%M') if job.created_at else '—' }}</span>
+        <span class="mono" style="font-size:11.5px; color:var(--text-mute); margin-right:auto;">created {{ localtime(job.created_at) }}</span>
         <button class="btn" onclick="this.closest('dialog').close()">Close</button>
         <a class="btn btn-primary" href="{{ url_for('jobs.jobs_list_tasks', job_id=job.id) }}" role="button">{{ icon('arrowRight', size=15) }} Open job</a>
     </div>

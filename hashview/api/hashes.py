@@ -4,7 +4,6 @@ Carved out of routes.py per issue #441; pure code motion.
 """
 import os
 import secrets
-from datetime import datetime
 
 from flask import (
     current_app,
@@ -13,10 +12,6 @@ from flask import (
     request,
 )
 
-# The blueprint and the shared helpers now live in hashview/api/_shared.py
-# (issue #441). They are imported INTO this module's namespace rather than used
-# through it, so every reference here -- and every test that monkeypatches e.g.
-# hashview.api.routes.is_authorized -- keeps resolving exactly as before.
 from hashview.api._shared import (  # noqa: F401
     _ENCODER_DENYLIST,
     AlchemyEncoder,
@@ -35,6 +30,12 @@ from hashview.models import (
     Users,
     db,
 )
+
+# The blueprint and the shared helpers now live in hashview/api/_shared.py
+# (issue #441). They are imported INTO this module's namespace rather than used
+# through it, so every reference here -- and every test that monkeypatches e.g.
+# hashview.api.routes.is_authorized -- keeps resolving exactly as before.
+from hashview.utils.clock import utcnow
 from hashview.utils.utils import (
     get_cracked_hash_verifier,
     get_md5_hash,
@@ -191,7 +192,7 @@ def v1_api_hashes_import(hash_type):
                             # Mutate in the session; commit happens once after the loop.
                             record.plaintext = text_from_field(plaintext)
                             record.cracked = 1
-                            record.recovered_at = datetime.today()
+                            record.recovered_at = utcnow()
                             record.recovered_by = user.id
                             updated += 1
                     else:

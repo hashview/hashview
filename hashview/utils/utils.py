@@ -8,7 +8,6 @@ import os
 import re
 import secrets
 import struct
-from datetime import datetime
 
 import requests
 from flask import after_this_request, current_app, send_from_directory, url_for
@@ -44,6 +43,7 @@ from hashview.utils.chunking import (
     mask_keyspace,
     wordlist_amplifier,
 )
+from hashview.utils.clock import utcnow
 from hashview.utils.hashcat_modes import HASH_ONLY_AUTO_RULES
 
 # Hard cap on how many task assignments one task group may hold (one assignment
@@ -332,7 +332,7 @@ def restore_static_wordlist_file(src_path, wordlist):
     wordlist.size = size
     wordlist.checksum = get_filehash(dest_gz)     # checksum of the COMPRESSED file
     wordlist.byte_size = get_filesize(dest_gz)
-    wordlist.last_updated = datetime.today()
+    wordlist.last_updated = utcnow()
     return wordlist
 
 def ingest_static_wordlist_file(src_path, owner_id, name):
@@ -405,7 +405,7 @@ def notify_owner_of_cancellation(job, canceled_by, task=None, when=None):
         if owner is None or not owner.email_address:
             return False
 
-        when = when or datetime.now()
+        when = when or utcnow()
         actor = f'{canceled_by.first_name} {canceled_by.last_name}'.strip() \
             or canceled_by.email_address
         what = f'Task "{task.name}" on job "{job.name}"' if task is not None \
@@ -417,7 +417,10 @@ def notify_owner_of_cancellation(job, canceled_by, task=None, when=None):
             f'{what} was canceled by another user.\n'
             f'\n'
             f'  What:      {what}\n'
-            f'  Canceled:  {when.strftime("%Y-%m-%d %H:%M:%S")}\n'
+            # An inbox cannot run hvLocalizeTimes, so this one stays absolute
+            # and names its zone rather than rendering bare digits the reader
+            # would reasonably assume were local.
+            f'  Canceled:  {when.strftime("%Y-%m-%d %H:%M:%S")} UTC\n'
             f'  By:        {actor} <{canceled_by.email_address}>\n'
             f'\n'
             'You are receiving this because you own the job.\n'
@@ -1554,7 +1557,7 @@ def update_dynamic_wordlist(wordlist_id, dest_path=None):
         # update on-disk size (bytes of the uncompressed .txt)
         wordlist.byte_size = get_filesize(wordlist.path)
         # update last update
-        wordlist.last_updated = datetime.today()
+        wordlist.last_updated = utcnow()
         db.session.commit()
 
     return target_path
@@ -2408,7 +2411,7 @@ def _sync_job_ledger(job, assignments):
             min_slice=(-(-keyspace // max_chunks) if keyspace else 1),
             issued_count=len(task_rows), chunkable=bool(chunkable),
             fingerprint=(task_fingerprint(task, wl, wl2, rule) if task else None),
-            updated_at=datetime.now(),
+            updated_at=utcnow(),
         )
         db.session.add(ledger)
         db.session.flush()
@@ -2740,7 +2743,7 @@ def record_keyspace_measurement(ledger, keyspace, hc_major):
         ledger.state = 'Unmeasurable'
         ledger.closed_reason = reason
         ledger.rev = (ledger.rev or 0) + 1
-        ledger.updated_at = datetime.now()
+        ledger.updated_at = utcnow()
         db.session.commit()
         return False
 
@@ -2777,7 +2780,7 @@ def record_keyspace_measurement(ledger, keyspace, hc_major):
     ledger.state = 'Ready'
     ledger.measure_expires = None
     ledger.rev = (ledger.rev or 0) + 1
-    ledger.updated_at = datetime.now()
+    ledger.updated_at = utcnow()
     db.session.commit()
     return True
 
@@ -2864,7 +2867,7 @@ def close_ledger(job_id, reason, task_id=_UNSCOPED, ledger_id=_UNSCOPED,
         ledger.state = 'Closed'
         ledger.closed_reason = reason
         ledger.rev = (ledger.rev or 0) + 1
-        ledger.updated_at = datetime.now()
+        ledger.updated_at = utcnow()
     db.session.commit()
 
     if cancel_rows:
@@ -2969,7 +2972,7 @@ def issue_slice(job, ledger, agent_id, hash_type, target_seconds, row=None):
         target.chunk_keyspace = units
         target.agent_id = agent_id
         target.status = 'Running'
-        target.started_at = datetime.now()
+        target.started_at = utcnow()
 
         claimed = (db.session.query(JobTaskLedger)
                    .filter(JobTaskLedger.id == ledger.id,
@@ -2979,7 +2982,7 @@ def issue_slice(job, ledger, agent_id, hash_type, target_seconds, row=None):
                    .update({'keyspace_pos': end,
                             'issued_count': JobTaskLedger.issued_count + 1,
                             'rev': JobTaskLedger.rev + 1,
-                            'updated_at': datetime.now()},
+                            'updated_at': utcnow()},
                            synchronize_session=False))
         if claimed:
             db.session.commit()         # row and cursor commit together, or neither
@@ -3170,7 +3173,7 @@ def _append_late_ledger(job, row, position, issued=True):
         keyspace_pos=(1 if issued else 0), amp=1, min_slice=1,
         issued_count=(1 if issued else 0), chunkable=False,
         fingerprint=(task_fingerprint(task, wl, wl2, rule) if task else None),
-        updated_at=datetime.now(),
+        updated_at=utcnow(),
     )
     db.session.add(ledger)
     db.session.flush()
@@ -3247,7 +3250,7 @@ def finalize_job_if_complete(job_id, goal_met=False):
             return False
 
     outcome = _job_completion_outcome(rows, goal_met=goal_met)
-    ended_at = datetime.now()
+    ended_at = utcnow()
     # Only a Running/Queued job may be finalised. A job already Canceled (the
     # operator stopped it) or already terminal must not be rewritten by a late
     # status POST from an agent that was still finishing when the stop landed.
@@ -3300,7 +3303,7 @@ def _deliver_job_notifications(job, outcome, duration):
         claimed = (db.session.query(JobNotifications)
                    .filter(JobNotifications.id == job_notification.id,
                            JobNotifications.sent_at.is_(None))
-                   .update({'sent_at': datetime.now()}, synchronize_session=False))
+                   .update({'sent_at': utcnow()}, synchronize_session=False))
         db.session.commit()
         if not claimed:
             continue
@@ -3349,7 +3352,7 @@ def mark_job_running(job_id):
     """
     started = (db.session.query(Jobs)
                .filter(Jobs.id == job_id, Jobs.status == 'Queued')
-               .update({'status': 'Running', 'started_at': datetime.now(),
+               .update({'status': 'Running', 'started_at': utcnow(),
                         'ended_at': None}, synchronize_session=False))
     if started:
         db.session.commit()
@@ -3388,7 +3391,7 @@ def update_job_task_status(jobtask_id, status, finalize=True):
         return True
     if job.status == 'Queued':
         job.status = 'Running'
-        job.started_at = datetime.now()
+        job.started_at = utcnow()
         db.session.commit()
 
     if finalize:

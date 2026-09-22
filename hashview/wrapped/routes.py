@@ -5,6 +5,7 @@ from flask_login import current_user, login_required
 from sqlalchemy import func
 
 from hashview.models import Hashes, Tasks, Users, db
+from hashview.utils.clock import utcnow
 from hashview.utils.utils import decode_hex_plain
 
 wrapped = Blueprint('wrapped', __name__)
@@ -53,7 +54,7 @@ def wrapped_list():
     # Wrapped is a year-in-review. Until go-live it reports on the CURRENT
     # calendar year (so there's data to see while testing); switch this to
     # ``- 1`` (previous year) when it ships.
-    year = datetime.datetime.now().year
+    year = utcnow().year
     # Half-open datetime range [Jan 1 00:00 of `year`, Jan 1 00:00 next year):
     # using real datetime bounds (not 'YYYY-12-31' strings) so the whole of
     # Dec 31 — and the first instant of Jan 1 — are included.

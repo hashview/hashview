@@ -6,7 +6,6 @@ task-assignment modes (#351).
 Carved out of routes.py per issue #441; pure code motion.
 """
 import json
-from datetime import datetime
 
 from flask import (
     current_app,
@@ -15,10 +14,6 @@ from flask import (
     request,
 )
 
-# The blueprint and the shared helpers now live in hashview/api/_shared.py
-# (issue #441). They are imported INTO this module's namespace rather than used
-# through it, so every reference here -- and every test that monkeypatches e.g.
-# hashview.api.routes.is_authorized -- keeps resolving exactly as before.
 from hashview.api._shared import (  # noqa: F401
     _ENCODER_DENYLIST,
     AlchemyEncoder,
@@ -43,6 +38,12 @@ from hashview.models import (
     db,
 )
 from hashview.utils.audit import log_event
+
+# The blueprint and the shared helpers now live in hashview/api/_shared.py
+# (issue #441). They are imported INTO this module's namespace rather than used
+# through it, so every reference here -- and every test that monkeypatches e.g.
+# hashview.api.routes.is_authorized -- keeps resolving exactly as before.
+from hashview.utils.clock import utcnow
 from hashview.utils.utils import (
     MAX_TASKS_PER_GROUP,
     build_job_task_commands,
@@ -457,7 +458,7 @@ def v1_api_post_stop_job(job_id):
 
     try:
         job.status = 'Canceled'
-        job.ended_at = datetime.now()
+        job.ended_at = utcnow()
         # See jobs_stop: closing the ledgers is what stops fresh slices being
         # issued for an attack that has just been cancelled.
         close_ledger(job_id, 'job_stopped', cancel_rows=False)
@@ -505,7 +506,7 @@ def v1_api_post_start_job(job_id):
             })        
         if current_user.admin or job.owner_id == current_user.id:
             job.status = 'Queued'
-            job.queued_at = datetime.now()
+            job.queued_at = utcnow()
             build_job_task_commands(job)
 
             db.session.commit()

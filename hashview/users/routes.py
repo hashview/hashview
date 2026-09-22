@@ -1,6 +1,5 @@
 """Flask routes to handle Users"""
 import uuid
-from datetime import datetime
 from textwrap import dedent
 
 from flask import (
@@ -45,6 +44,7 @@ from hashview.users.forms import (
     UsersForm,
 )
 from hashview.utils.audit import log_event
+from hashview.utils.clock import utcnow
 from hashview.utils.form_limits import column_length
 from hashview.utils.utils import send_email, send_pushover, send_slack, try_commit
 
@@ -143,7 +143,7 @@ def login_post():
         return redirect(url_for('users.login_get'))
 
     login_user(user, remember=form.remember.data)
-    user.last_login_utc = datetime.utcnow()
+    user.last_login_utc = utcnow()
     db.session.commit()
     current_app.logger.info('Login is Complete with Success(User:%s).', user.email_address)
     log_event('user.login', actor=(user.email_address, user.id))

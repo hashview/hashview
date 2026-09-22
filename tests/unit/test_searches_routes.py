@@ -61,7 +61,9 @@ def test_get_rows_writes_hash_csv(app):
     str_io = io.StringIO()
     get_rows(str_io, [h], "hash", None, None)
     out = str_io.getvalue()
-    assert "Recovered At,Hash Type,Cipher Text,Plain Text" in out
+    # The header names its zone: the on-screen table localises to the viewer's
+    # timezone and a CSV cannot, so without the label the two silently disagree.
+    assert "Recovered At (UTC),Hash Type,Cipher Text,Plain Text" in out
     assert "1000" in out  # hash_type
     assert "cafe01" in out
     assert "pw2" in out

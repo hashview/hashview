@@ -1,7 +1,6 @@
 import json
 import os
 import secrets
-from datetime import datetime
 
 from flask import (
     Blueprint,
@@ -41,6 +40,7 @@ from hashview.models import (
     db,
 )
 from hashview.utils.audit import job_target, log_event
+from hashview.utils.clock import utcnow
 from hashview.utils.form_limits import column_length
 from hashview.utils.hashcat_modes import CUSTOM_HASH_TYPE
 from hashview.utils.utils import (
@@ -198,7 +198,7 @@ def jobs_list():
         # runtime: started -> ended (or now if running); total run time even if canceled;
         # '-' when the job never started (e.g. still queued)
         if job.started_at:
-            end = job.ended_at or datetime.now()
+            end = job.ended_at or utcnow()
             secs = (end - job.started_at).total_seconds()
             secs = secs if secs > 0 else 0
             job_runtime[job.id] = '%dh %dm' % (int(secs // 3600), int((secs % 3600) // 60))
@@ -1105,8 +1105,8 @@ def jobs_summary(job_id):
         # propagate the job priority to each task, and pre-build each task's
         # hashcat command so agents can pick up the work immediately.
         job.status = 'Queued'
-        job.queued_at = datetime.now()
-        job.updated_at = datetime.now()
+        job.queued_at = utcnow()
+        job.updated_at = utcnow()
         build_job_task_commands(job)
         db.session.commit()
 
@@ -1156,7 +1156,7 @@ def jobs_start(job_id):
                 flash('That job is already running or queued.', 'warning')
                 return redirect(url_for('jobs.jobs_list'))
             job.status = 'Queued'
-            job.queued_at = datetime.now()
+            job.queued_at = utcnow()
             build_job_task_commands(job)
 
             db.session.commit()
@@ -1187,7 +1187,7 @@ def jobs_stop(job_id):
     if current_user.admin or job.owner_id == current_user.id:
         if job.status == 'Running' or job.status == 'Queued':
             job.status = 'Canceled'
-            job.ended_at = datetime.now()
+            job.ended_at = utcnow()
 
             # Close the ledgers too. Cancelling only the rows leaves every attack
             # still mintable, so the next heartbeat issues a fresh slice of the

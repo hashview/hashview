@@ -1,6 +1,5 @@
 import os
 import secrets
-from datetime import datetime
 
 from flask import (
     Blueprint,
@@ -19,6 +18,7 @@ from werkzeug.utils import secure_filename
 from hashview.models import Hashes, Jobs, Rules, Tasks, Users, Wordlists, db
 from hashview.rules.forms import RuleContentForm, RuleRestoreForm, RulesForm
 from hashview.utils.audit import log_event
+from hashview.utils.clock import utcnow
 from hashview.utils.utils import (
     apply_name_filter,
     get_filehash,
@@ -334,7 +334,7 @@ def rules_restore(rule_id):
     rule.path = dest_path
     rule.size = get_linecount(dest_path)
     rule.checksum = get_filehash(dest_path)
-    rule.last_updated = datetime.today()
+    rule.last_updated = utcnow()
     if not try_commit(f'restore rule {rule_id}'):
         flash('Rule file could not be restored.', 'danger')
         return redirect(url_for('rules.rules_list'))

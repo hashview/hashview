@@ -7,6 +7,8 @@ from flask_apscheduler import APScheduler
 from flask_mail import Mail, Message
 from flask_sqlalchemy import SQLAlchemy
 
+from hashview.utils.clock import utcnow
+
 scheduler = APScheduler()
 
 
@@ -163,7 +165,7 @@ def _data_retention_cleanup_inner(db :SQLAlchemy, mailer :Mail, logger :Logger):
     """ description needed """
 
     import time
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     from pathlib import Path
     from textwrap import dedent
 
@@ -183,11 +185,11 @@ def _data_retention_cleanup_inner(db :SQLAlchemy, mailer :Mail, logger :Logger):
 
     try_send_email_ = partial(try_send_email, mailer=mailer)
 
-    logger.debug('I am retaining all the data: %s', datetime.now())
+    logger.debug('I am retaining all the data: %s', utcnow())
 
     setting = Settings.query.get('1')
     retention_period = setting.retention_period
-    filter_after = datetime.today() - timedelta(days = retention_period)
+    filter_after = utcnow() - timedelta(days = retention_period)
 
     # Remove job, job tasks and job notifications
     jobs = Jobs.query.filter(Jobs.created_at < filter_after).all()
@@ -380,23 +382,20 @@ def _agent_health_check_inner(db :SQLAlchemy, logger :Logger):
     ONE-shot alert per offline episode (no repeats while it stays down) and lets us
     fire a single "recovered" alert when it checks back in. Agents that never
     checked in are skipped — they never "went offline"."""
-    from datetime import datetime, timedelta
-
-    from sqlalchemy import text
+    from datetime import timedelta
 
     from hashview.models import Agents
     from hashview.utils.audit import log_event
     from hashview.utils.utils import get_agent_timeout_minutes, notify_admins
 
-    # Derive the cutoff from the DB clock (last_checkin is stamped with func.now()),
-    # so the comparison is timezone-independent regardless of this process's TZ.
-    try:
-        db_now = db.session.execute(text("SELECT NOW()")).scalar()
-        if isinstance(db_now, str):
-            db_now = datetime.strptime(db_now[:19], '%Y-%m-%d %H:%M:%S')
-    except Exception:
-        db_now = None
-    cutoff = (db_now or datetime.utcnow()) - timedelta(minutes=get_agent_timeout_minutes())
+    # One clock, so no cutoff negotiation. last_checkin is UTC like everything
+    # else, so "now minus the timeout" is just that -- no SELECT NOW(), no
+    # try/except, no fallback that silently changes clock domain when the query
+    # fails (#404). That fallback compared Python UTC against a DB-local column,
+    # so on a database behind UTC the cutoff landed hours ahead of every stored
+    # check-in and the whole fleet was declared offline at once, from one failed
+    # query, at exactly the moment the database was already unhealthy.
+    cutoff = utcnow() - timedelta(minutes=get_agent_timeout_minutes())
 
     for agent in Agents.query.filter(Agents.last_checkin.isnot(None)).all():
         offline = agent.last_checkin < cutoff
@@ -405,10 +404,10 @@ def _agent_health_check_inner(db :SQLAlchemy, logger :Logger):
             notify_admins(
                 'Agent offline: ' + str(agent.name),
                 'Hashview agent "' + str(agent.name) + '" has not checked in since '
-                + str(agent.last_checkin) + ' and is now considered offline.')
+                + str(agent.last_checkin) + " UTC and is now considered offline.")
             # System-generated event (no request actor) -> audit log.
             log_event('agent.offline', target=f'agent:{agent.id} {agent.name!r}',
-                      detail=f'last_checkin={agent.last_checkin}', actor=('system', None))
+                      detail=f'last_checkin={agent.last_checkin} UTC', actor=('system', None))
             agent.offline_notified = True
             db.session.commit()
         elif not offline and agent.offline_notified:
@@ -416,9 +415,9 @@ def _agent_health_check_inner(db :SQLAlchemy, logger :Logger):
             notify_admins(
                 'Agent recovered: ' + str(agent.name),
                 'Hashview agent "' + str(agent.name) + '" is back online (last check-in '
-                + str(agent.last_checkin) + ').')
+                + str(agent.last_checkin) + ' UTC).')
             log_event('agent.recovered', target=f'agent:{agent.id} {agent.name!r}',
-                      detail=f'last_checkin={agent.last_checkin}', actor=('system', None))
+                      detail=f'last_checkin={agent.last_checkin} UTC', actor=('system', None))
             agent.offline_notified = False
             db.session.commit()
 

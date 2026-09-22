@@ -114,7 +114,7 @@
             {{ icon('list', size=16) }}
             <div style="line-height:1.2;">
                 <h3 style="margin:0;">Audit event</h3>
-                <div class="mono" style="font-size:10px; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-mute); margin-top:3px;">{{ r.action_key }} · {{ r.ts }}</div>
+                <div class="mono" style="font-size:10px; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-mute); margin-top:3px;">{{ r.action_key }} · {{ r.ts_display }}</div>
             </div>
             <button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close" style="margin-left:auto;">{{ icon('x', size=15) }}</button>
         </div>
@@ -149,7 +149,7 @@
             <span style="color:var(--red); display:inline-flex;">{{ icon('flag', size=16) }}</span>
             <div style="line-height:1.2;">
                 <h3 style="margin:0;">Error event</h3>
-                <div class="mono" style="font-size:10px; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-mute); margin-top:3px;">server.error · {{ r.ts }}</div>
+                <div class="mono" style="font-size:10px; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-mute); margin-top:3px;">server.error · {{ r.ts_display }}</div>
             </div>
             <button class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Close" style="margin-left:auto;">{{ icon('x', size=15) }}</button>
         </div>

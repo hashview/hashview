@@ -35,8 +35,14 @@ args = parser.parse_args()
 logging.basicConfig(
     level=logging.DEBUG if args.debug else logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
+    datefmt='%Y-%m-%d %H:%M:%SZ',
 )
+# UTC, matching the server (hashview/__init__.py). An agent log line and a
+# server log line describing the same incident are the two halves of every
+# cracking-side investigation, and they are useless together if each is in
+# whatever timezone its own host happens to run. The trailing Z in datefmt
+# above says so on the line itself.
+logging.Formatter.converter = time.gmtime
 LOG = logging.getLogger('hashview-agent')
 
 # Build Config

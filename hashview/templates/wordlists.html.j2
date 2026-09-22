@@ -100,7 +100,7 @@
                         {% endif %}
                     {% endfor %}
                 </td>
-                <td class="mono" style="color:var(--text-mute);font-size:11.5px;">{{ wordlist.last_updated }}</td>
+                <td class="mono" style="color:var(--text-mute);font-size:11.5px;">{{ localtime(wordlist.last_updated) }}</td>
                 <td class="center">
                     <div style="display:flex; gap:4px; justify-content:center;">
                         {% if gone %}
@@ -159,7 +159,7 @@
                 </td>
                 <td class="mono num" style="color:var(--primary);">{{ "{:,}".format(wordlist.size) }}</td>
                 <td></td>
-                <td class="mono" style="color:var(--text-mute);font-size:11.5px;">{{ wordlist.last_updated }}</td>
+                <td class="mono" style="color:var(--text-mute);font-size:11.5px;">{{ localtime(wordlist.last_updated) }}</td>
                 <td class="center">
                     <div style="display:flex; gap:4px; justify-content:center;">
                         <a class="icon-btn" href="{{ url_for('wordlists.wordlists_download', wordlist_id=wordlist.id) }}" title="Download">{{ icon('download', size=15) }}</a>
@@ -463,7 +463,7 @@
             <span style="flex:none; width:46px; height:46px; border-radius:11px; display:inline-flex; align-items:center; justify-content:center; color:var(--primary); border:1px solid var(--primary-dim); background:rgba(var(--primary-rgb),0.08);">{{ icon('book', size=20) }}</span>
             <div style="line-height:1.4;">
                 <span class="mono" style="font-size:22px; color:var(--text);">{{ wcount(wordlist.size) }}<span style="font-size:12px; color:var(--text-mute);"> words</span></span>
-                <div class="mono" style="font-size:11px; color:var(--text-mute); margin-top:3px;">{{ size_on_disk }} on disk · uploaded {{ wordlist.last_updated.strftime('%Y-%m-%d') if wordlist.last_updated else '—' }}</div>
+                <div class="mono" style="font-size:11px; color:var(--text-mute); margin-top:3px;">{{ size_on_disk }} on disk · uploaded {{ localtime(wordlist.last_updated, 'date') }}</div>
             </div>
             <span style="margin-left:auto; text-align:right; line-height:1;">
                 <span class="mono" style="font-size:22px; color:var(--primary); text-shadow:var(--glow-text);">{{ "{:,}".format(hits|int) }}</span>
@@ -474,7 +474,7 @@
         {# detail grid #}
         <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 18px 24px;">
             <div>{{ kv_label('Owner') }}<div><span class="badge dim">{{ wl_owner.get(wordlist.id, '—') if wl_owner is defined else '—' }}</span></div></div>
-            <div>{{ kv_label('Uploaded') }}<div class="mono" style="color:var(--text);">{{ wordlist.last_updated.strftime('%Y-%m-%d') if wordlist.last_updated else '—' }}</div></div>
+            <div>{{ kv_label('Uploaded') }}<div class="mono" style="color:var(--text);">{{ localtime(wordlist.last_updated, 'date') }}</div></div>
             <div>{{ kv_label('Words') }}<div class="mono" style="color:var(--text);">{{ "{:,}".format(wordlist.size|int) }}</div></div>
             <div>{{ kv_label('Size on disk') }}<div class="mono" style="color:var(--text);">{{ size_on_disk }}</div></div>
             <div>{{ kv_label('Historical hits') }}<div><span class="mono" style="color:{{ 'var(--primary)' if hits else 'var(--text-mute)' }};{% if hits %}text-shadow:var(--glow-text);{% endif %}">{{ "{:,}".format(hits|int) }}</span> <span style="color:var(--text-dim);">passwords recovered</span></div></div>

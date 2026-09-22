@@ -71,25 +71,34 @@ def test_relative_time_units_and_pluralization():
 
 
 def _fixed_now(month, day, year=2026):
-    class _D(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return datetime(year, month, day, 12, 0, 0)
-    return _D
+    """A stand-in for main_routes.utcnow.
+
+    Patches the clock helper rather than the datetime class: every timestamp now
+    goes through hashview.utils.clock.utcnow, so that -- not datetime.now -- is
+    the seam. Patching the class still "worked" in the sense of not erroring,
+    which is exactly why it is worth naming: the stub would have been silently
+    ignored and the test would pass or fail on the real date.
+    """
+    return lambda: datetime(year, month, day, 12, 0, 0)
 
 
 def test_dashboard_flourish_autoplays_once_on_april_first(app, client):
-    """The dashboard flourish auto-runs only on April 1 (server time) and only
-    once per user per year (a cookie records that it has run)."""
+    """The dashboard flourish auto-runs only on April 1 (UTC) and only once per
+    user per year (a cookie records that it has run).
+
+    UTC, not server-local: every timestamp in the app is UTC now, and a flourish
+    that fired on the server's local April 1 would disagree with the dates on
+    everything around it.
+    """
     admin = make_admin()
     login(client, admin)
 
     # A normal day: no autoplay.
-    with mock.patch.object(main_routes, "datetime", _fixed_now(3, 15)):
+    with mock.patch.object(main_routes, "utcnow", _fixed_now(3, 15)):
         assert b"HV_DASH_AUTOPLAY" not in client.get("/").data
 
     # April 1, first visit: autoplay + a cookie is set.
-    with mock.patch.object(main_routes, "datetime", _fixed_now(4, 1)):
+    with mock.patch.object(main_routes, "utcnow", _fixed_now(4, 1)):
         resp = client.get("/")
         assert b"HV_DASH_AUTOPLAY = true" in resp.data
         assert "hv_dash=2026" in resp.headers.get("Set-Cookie", "")

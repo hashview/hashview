@@ -84,7 +84,7 @@
                 <td class="mono" style="color:var(--text-dim);">{{ t.task or '—' }}</td>
                 <td class="mono" style="color:var(--text-dim);">
                     {%- set hb = agent_age.get(agent.id) if agent_age is defined else none -%}
-                    {% if hb %}<span title="{{ agent.last_checkin }}">{{ hb }}</span>{% else %}<span style="color:var(--text-mute);">never</span>{% endif %}
+                    {% if hb %}<span>{{ hb }}</span>{% else %}<span style="color:var(--text-mute);">never</span>{% endif %}
                 </td>
                 <td class="center">
                     <div style="display:flex; gap:4px; justify-content:center;">
@@ -121,7 +121,7 @@
             <div style="color:var(--text-dim);">UUID</div><div class="mono" style="word-break:break-all;">{{ agent.uuid }}</div>
             <div style="color:var(--text-dim);">Current speed</div><div>{{ agent.benchmark or '—' }}</div>
             <div style="color:var(--text-dim);">CPUs / GPUs</div><div>{{ agent.cpu_count if agent.cpu_count is not none else '—' }} / {{ agent.gpu_count if agent.gpu_count is not none else '—' }}</div>
-            <div style="color:var(--text-dim);">Last heartbeat</div><div class="mono">{{ agent.last_checkin or 'never' }}</div>
+            <div style="color:var(--text-dim);">Last heartbeat</div><div class="mono">{{ localtime(agent.last_checkin, 'datetime-sec', empty='never') }}</div>
         </div>
         <div class="mono" style="font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-mute); margin-bottom:8px;">Benchmarks · hashcat -b</div>
         {% set bms = agent_benchmarks.get(agent.id) if agent_benchmarks is defined else none %}
@@ -134,7 +134,7 @@
                     <tr>
                         <td>{{ b.name or b.hash_type }}</td>
                         <td class="num">{{ b.speed }}</td>
-                        <td class="mono" style="color:var(--text-dim);">{{ b.updated_at }}</td>
+                        <td class="mono" style="color:var(--text-dim);">{{ localtime(b.updated_at) }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

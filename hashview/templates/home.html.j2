@@ -164,7 +164,7 @@
             .then(function (html) {
                 if (html == null) return;
                 var box = document.getElementById('dash-recovery');
-                if (box) { box.innerHTML = html; markFreshRecoveryRows(); }
+                if (box) { box.innerHTML = html; markFreshRecoveryRows(); hvLocalizeTimes(box); }
             })
             .catch(function () {});
     }
@@ -193,6 +193,7 @@
                     openState[d.getAttribute('data-job-id')] = d.open;
                 });
                 box.innerHTML = html;
+                hvLocalizeTimes(box);
                 box.querySelectorAll('details[data-job-id]').forEach(function (d) {
                     var id = d.getAttribute('data-job-id');
                     if (id in openState) { d.open = openState[id]; }
@@ -236,7 +237,7 @@
             .then(function (html) {
                 if (html == null) return;
                 var box = document.getElementById('dash-fleet');
-                if (box) { box.innerHTML = html; }
+                if (box) { box.innerHTML = html; hvLocalizeTimes(box); }
             })
             .catch(function () {});
     }

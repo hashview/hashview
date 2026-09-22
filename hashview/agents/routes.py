@@ -13,12 +13,12 @@ from flask import (
 )
 from flask_login import current_user, login_required
 from flask_wtf import FlaskForm
-from sqlalchemy import text
 
 import hashview
 from hashview.agents.forms import AgentsForm
 from hashview.models import AgentBenchmarks, Agents, JobTasks, db
 from hashview.utils.audit import log_event
+from hashview.utils.clock import utcnow
 from hashview.utils.hashcat_modes import (
     HASH_TYPE_CHOICES,
     KERBEROS_HASH_TYPE_CHOICES,
@@ -80,21 +80,23 @@ def _fmt_age(seconds):
 
 
 def _agent_ages(agents):
-    """Static relative 'last heartbeat' string per agent, measured against the DATABASE
-    clock (last_checkin is stamped with func.now()), so it's independent of this process's
-    timezone. The agents page isn't realtime, so this is computed once at render and shown
-    as a static value — it does not tick."""
-    try:
-        db_now = db.session.execute(text("SELECT NOW()")).scalar()
-    except Exception:
-        db_now = None
+    """Static relative 'last heartbeat' string per agent.
+
+    Both sides are UTC (utils/clock.py), so this no longer has to read the
+    database's clock to stay in one domain -- and no longer silently returns
+    None for every agent when that read fails, which is what the old
+    ``except: db_now = None`` did.
+
+    A relative age carries no timezone, which is why it stays server-rendered
+    while absolute times moved to the browser. It is computed once at render and
+    does not tick; the page is not realtime.
+    """
+    now = utcnow()
     out = {}
     for a in agents:
         try:
-            if a.last_checkin and db_now:
-                out[a.id] = _fmt_age((db_now - a.last_checkin).total_seconds())
-            else:
-                out[a.id] = None
+            out[a.id] = (_fmt_age((now - a.last_checkin).total_seconds())
+                         if a.last_checkin else None)
         except Exception:
             out[a.id] = None
     return out

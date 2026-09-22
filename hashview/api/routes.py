@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from flask import (
     current_app,
@@ -9,10 +9,6 @@ from flask import (
 )
 from sqlalchemy import func
 
-# The blueprint and the shared helpers now live in hashview/api/_shared.py
-# (issue #441). They are imported INTO this module's namespace rather than used
-# through it, so every reference here -- and every test that monkeypatches e.g.
-# hashview.api.routes.is_authorized -- keeps resolving exactly as before.
 from hashview.api._shared import (  # noqa: F401
     _ENCODER_DENYLIST,
     AlchemyEncoder,
@@ -44,6 +40,12 @@ from hashview.utils.audit import (
     job_task_target,
     log_event,
 )
+
+# The blueprint and the shared helpers now live in hashview/api/_shared.py
+# (issue #441). They are imported INTO this module's namespace rather than used
+# through it, so every reference here -- and every test that monkeypatches e.g.
+# hashview.api.routes.is_authorized -- keeps resolving exactly as before.
+from hashview.utils.clock import utcnow
 from hashview.utils.utils import (
     _job_hash_type,
     build_keyspace_command,
@@ -121,7 +123,7 @@ def _task_runtime_exceeded(job_id, task_id, max_hours):
     if not max_hours or max_hours <= 0:
         return False
     started = _parent_task_started_at(job_id, task_id)
-    return started is not None and started + timedelta(hours=max_hours) < datetime.now()
+    return started is not None and started + timedelta(hours=max_hours) < utcnow()
 
 
 def _audit_auto_cancel(event, job_id, task_id=None, cap=None):
@@ -222,7 +224,7 @@ def v1_api_set_agent_heartbeat():
                         src_ip = request.remote_addr,
                         uuid = uuid,
                         status = 'Pending',
-                        last_checkin = func.now())
+                        last_checkin = utcnow())
         db.session.add(new_agent)
         db.session.commit()
         message = {
@@ -304,7 +306,7 @@ def v1_api_set_agent_heartbeat():
 
                 # check if job has exceeded maximum runtime
                 job = Jobs.query.get(job_task.job_id)
-                if settings.max_runtime_jobs > 0 and job.started_at is not None and job.started_at + timedelta(hours=settings.max_runtime_jobs) < datetime.now():
+                if settings.max_runtime_jobs > 0 and job.started_at is not None and job.started_at + timedelta(hours=settings.max_runtime_jobs) < utcnow():
                     # Close every ledger of the job as well as its rows, or the
                     # next heartbeat starts issuing fresh slices of an attack the
                     # cap just stopped.
@@ -323,7 +325,7 @@ def v1_api_set_agent_heartbeat():
                                                    finalize=False)
 
                     job.status = 'Expired'
-                    job.ended_at = datetime.now()
+                    job.ended_at = utcnow()
                     db.session.commit()
 
                     message = {
@@ -438,7 +440,7 @@ def v1_api_set_agent_heartbeat():
                 (db.session.query(JobTaskLedger)
                  .filter(JobTaskLedger.state == 'Measuring',
                          JobTaskLedger.measure_expires.isnot(None),
-                         JobTaskLedger.measure_expires < datetime.now())
+                         JobTaskLedger.measure_expires < utcnow())
                  .update({'state': 'Unmeasurable', 'measured_by': None,
                           'measure_expires': None,
                           'closed_reason': 'measure_timed_out',
@@ -523,7 +525,7 @@ def v1_api_set_agent_heartbeat():
                                                        JobTaskLedger.rev == ledger.rev)
                                                .update({'state': 'Measuring',
                                                         'measured_by': agent.id,
-                                                        'measure_expires': datetime.now()
+                                                        'measure_expires': utcnow()
                                                         + timedelta(minutes=10),
                                                         'rev': JobTaskLedger.rev + 1},
                                                        synchronize_session=False))
@@ -551,7 +553,7 @@ def v1_api_set_agent_heartbeat():
                                            JobTasks.status == 'Queued')
                                    .update({'agent_id': agent.id,
                                             'status': 'Running',
-                                            'started_at': datetime.now()},
+                                            'started_at': utcnow()},
                                            synchronize_session=False))
                         db.session.commit()
                         if not claimed:
@@ -613,7 +615,7 @@ def v1_api_set_agent_heartbeat():
                                        JobTasks.status == 'Queued')
                                .update({'agent_id': agent.id,
                                         'status': 'Running',
-                                        'started_at': datetime.now()},
+                                        'started_at': utcnow()},
                                        synchronize_session=False))
                     db.session.commit()
                     if not claimed:
@@ -671,11 +673,11 @@ def v1_api_post_agent_benchmark():
         row = AgentBenchmarks.query.filter_by(agent_id=agent.id, hash_type=mode_i).first()
         if row:
             row.speed = speed_i
-            row.updated_at = datetime.now()
+            row.updated_at = utcnow()
         else:
             db.session.add(AgentBenchmarks(
                 agent_id=agent.id, hash_type=mode_i, speed=speed_i,
-                updated_at=datetime.now()))
+                updated_at=utcnow()))
     db.session.commit()
 
     # No re-planning step. Slices are sized when an agent claims one, from THAT
@@ -957,7 +959,7 @@ def v1_api_post_jobtask_crackfile_upload(job_task_id):
                 try:
                     record.plaintext = hexplain_to_text(encoded_plaintext)
                     record.cracked = 1
-                    record.recovered_at = datetime.today()
+                    record.recovered_at = utcnow()
                     record.task_id = job_task.task_id
                     record.recovered_by = job.owner_id
                     db.session.commit()

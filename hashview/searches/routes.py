@@ -96,7 +96,11 @@ def get_rows(str_io, results, kind, customers, hashfiles):
     """Write the search results to `str_io` as CSV rows (comma-delimited)."""
     writer = csv.writer(str_io)
     if kind == 'hash':
-        writer.writerow(['Recovered At', 'Hash Type', 'Cipher Text', 'Plain Text'])
+        # 'UTC' in the header: the on-screen table this mirrors renders in the
+        # viewer's timezone now (search.html.j2 uses localtime), and a CSV
+        # cannot. Without the label the two silently disagree by the reader's
+        # offset, which is worse than either answer on its own.
+        writer.writerow(['Recovered At (UTC)', 'Hash Type', 'Cipher Text', 'Plain Text'])
         for entry in results:
             if entry.cracked:
                 recovered = entry.recovered_at if entry.recovered_at else 'Before Jan 1st 2025'

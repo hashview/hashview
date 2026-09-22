@@ -1,12 +1,14 @@
 """Class file to manage loading of database"""
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from hashlib import sha512
 
 from authlib import jose
 from flask import current_app
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
+
+from hashview.utils.clock import utcnow
 
 db = SQLAlchemy()
 
@@ -33,7 +35,7 @@ class Users(db.Model, UserMixin):
     admin_notify_email          = db.Column(db.Boolean, nullable=False, default=True)
     admin_notify_pushover       = db.Column(db.Boolean, nullable=False, default=True)
     admin_notify_slack          = db.Column(db.Boolean, nullable=False, default=True)
-    last_login_utc    = db.Column(db.DateTime,   nullable=True,  default=datetime.utcnow)
+    last_login_utc    = db.Column(db.DateTime,   nullable=True,  default=utcnow)
     api_key           = db.Column(db.String(60), nullable=True)
     # Auth provenance: 'local' (password) or 'azure' (Entra ID SSO). The setup
     # admin (id=1) is always 'local'. azure_oid is the stable Entra object id,
@@ -73,7 +75,12 @@ class Users(db.Model, UserMixin):
 
         header = dict(alg='HS512')
 
-        issued_at = int(datetime.today().timestamp())
+        # An AWARE datetime, deliberately: .timestamp() on a naive one is
+        # interpreted as local time, so the old datetime.today().timestamp()
+        # was right only by accident -- and clock.utcnow() (naive UTC) would
+        # have been read as local and shifted the token's lifetime by the
+        # host's offset. Epoch seconds have no timezone; say so explicitly.
+        issued_at = int(datetime.now(UTC).timestamp())
         expiration_time = issued_at + expires_sec
         payload = dict(
             user_id = self.id,
@@ -188,8 +195,8 @@ class Jobs(db.Model):
     name = db.Column(db.String(50), nullable=False)
     # priority: 5 = highest, 1 = lowest
     priority = db.Column(db.Integer, nullable=False, default=3)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow)
     queued_at = db.Column(db.DateTime, nullable=True)
     # status: Running/Paused/Completed/Queued/Canceled/Ready/Expired/Incomplete
     #   Expired    -- exceeded Settings.max_runtime_jobs
@@ -261,7 +268,7 @@ class Hashfiles(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(256), nullable=False)        # can probably be reduced
-    uploaded_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    uploaded_at = db.Column(db.DateTime, nullable=False, default=utcnow)
     runtime = db.Column(db.Integer, default=0)
     customer_id = db.Column(db.Integer, nullable=False)
     owner_id = db.Column(db.Integer, nullable=False)
@@ -326,7 +333,7 @@ class AgentBenchmarks(db.Model):
     agent_id = db.Column(db.Integer, db.ForeignKey('agents.id'), nullable=False, index=True)
     hash_type = db.Column(db.Integer, nullable=False, index=True)
     speed = db.Column(db.BigInteger, nullable=False)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow)
     __table_args__ = (
         db.UniqueConstraint('agent_id', 'hash_type', name='uix_agent_hashtype'),
     )
@@ -334,7 +341,7 @@ class AgentBenchmarks(db.Model):
 class Rules(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
-    last_updated = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    last_updated = db.Column(db.DateTime, nullable=False, default=utcnow)
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     path = db.Column(db.String(256), nullable=False)
     size = db.Column(db.Integer, nullable=False, default=0)
@@ -351,7 +358,7 @@ class Wordlists(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(256), nullable=False)
-    last_updated = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    last_updated = db.Column(db.DateTime, nullable=False, default=utcnow)
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     type = db.Column(db.String(7))                          # Dynamic or Static
     path = db.Column(db.String(245), nullable=False)
@@ -519,10 +526,7 @@ class JobTaskLedger(db.Model):
     # -- a compare-and-swap that could write identical values would report 0 and
     # be misread as "lost the race".
     rev = db.Column(db.Integer, nullable=False, default=0)
-    # datetime.now(), not utcnow: every writer of this column uses naive LOCAL
-    # time, and mixing the two in one column is what produced the cross-process
-    # skew that made agents look offline (the last_checkin bug).
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow)
 
     __table_args__ = (
         db.UniqueConstraint('job_id', 'position', name='uix_ledger_job_position'),

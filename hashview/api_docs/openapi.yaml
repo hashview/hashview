@@ -1972,7 +1972,11 @@ components:
           type: string
           format: date-time
           nullable: true
-          description: ISO-8601 (a real timestamp, unlike the encoder-nulled fields).
+          description: >-
+            RFC 3339 UTC with an explicit `Z` (e.g. `2026-09-22T20:06:06Z`) -- a real
+            timestamp, unlike the encoder-nulled fields. Every timestamp Hashview
+            records is UTC; clients localise for display.
+          example: '2026-09-22T20:06:06Z'
         hash_type: {type: integer}
         total_hashes:
           type: integer
@@ -1996,7 +2000,11 @@ components:
           type: string
           format: date-time
           nullable: true
-          description: ISO-8601 (a real timestamp, unlike the encoder-nulled fields).
+          description: >-
+            RFC 3339 UTC with an explicit `Z` (e.g. `2026-09-22T20:06:06Z`) -- a real
+            timestamp, unlike the encoder-nulled fields. Every timestamp Hashview
+            records is UTC; clients localise for display.
+          example: '2026-09-22T20:06:06Z'
         hash_type:
           type: integer
           nullable: true

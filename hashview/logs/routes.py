@@ -22,6 +22,8 @@ from flask import (
 from flask_login import current_user, login_required
 
 from hashview.utils.audit import AUDIT_FILE, ERROR_FILE, logs_dir, read_log_entries
+from hashview.utils.clock import utcnow
+from hashview.utils.timefmt import template_localtime
 
 logs = Blueprint('logs', __name__)
 
@@ -54,14 +56,33 @@ _ENTITY_ICON = {
 }
 
 
+def _full_time(ts):
+    """The whole stamp as a localised <time>, for a detail-modal header.
+
+    The row's time cell is localised, so leaving the header on the raw ISO put
+    two different renderings of the SAME event side by side. The exact original
+    string is still one click away in the raw JSON block below it, which is
+    where a stamp with milliseconds and an offset actually belongs.
+    """
+    try:
+        return template_localtime(datetime.fromisoformat(ts), 'datetime-full')
+    except (ValueError, TypeError):
+        return ts or ''
+
+
 def _humanize(ts):
-    """('HH:MM:SS', 'Ns ago') from an ISO-8601 ts; ('ts', '') on parse error."""
+    """(<time> element, 'Ns ago') from an ISO-8601 ts; ('ts', '') on parse error.
+
+    The absolute half is a <time> the browser localises: this used to call
+    dt.astimezone(), which renders in the SERVER's zone -- fine on a laptop,
+    wrong for anyone reading the page from somewhere else. The relative half
+    stays server-rendered because "3m ago" is the same number everywhere.
+    """
     try:
         dt = datetime.fromisoformat(ts)
     except (ValueError, TypeError):
         return (ts or '', '')
-    local = dt.astimezone()
-    now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
+    now = datetime.now(dt.tzinfo) if dt.tzinfo else utcnow()
     secs = max(0, int((now - dt).total_seconds()))
     if secs < 60:
         rel = f'{secs}s ago'
@@ -71,7 +92,7 @@ def _humanize(ts):
         rel = f'{secs // 3600}h ago'
     else:
         rel = f'{secs // 86400}d ago'
-    return (local.strftime('%H:%M:%S'), rel)
+    return (template_localtime(dt, 'time'), rel)
 
 
 def _parse_target(target):
@@ -115,15 +136,20 @@ def _decorate_audit(entry):
         ename = entry.get('detail') or '—'
     t, rel = _humanize(entry.get('ts'))
     actor = entry.get('actor') or 'system'
+    # The RAW timestamp, not the rendered <time> element: t is markup now, and
+    # joining it in would put class names and attributes into the haystack --
+    # typing "hv" would match every row, and the visible time would not be
+    # searchable at all.
     search = ' '.join(str(x) for x in (
-        t, label, etype, ename, actor, entry.get('ip'), event)).lower()
+        entry.get('ts') or '', label, etype, ename, actor,
+        entry.get('ip'), event)).lower()
     return {
         'time': t, 'rel': rel, 'action': label, 'action_class': color,
         'entity_type': etype, 'entity_id': eid, 'entity_name': ename,
         'icon': _ENTITY_ICON.get(etype, 'list'),
         'actor': actor, 'actor_id': entry.get('actor_id'),
         'ip': entry.get('ip') or '—',
-        'ts': entry.get('ts') or '',
+        'ts': entry.get('ts') or '', 'ts_display': _full_time(entry.get('ts')),
         'outcome': entry.get('outcome') or '',
         'target': entry.get('target') or '', 'detail': entry.get('detail') or '',
         'action_key': verb, 'search': search,
@@ -143,12 +169,15 @@ def _decorate_error(entry):
     t, rel = _humanize(entry.get('ts'))
     actor = entry.get('actor') or 'system'
     traceback = entry.get('traceback') or ''
+    # Same reason as _decorate_audit above: t is markup now, so joining it in
+    # would put class names and attributes into the haystack and make every row
+    # match "time", "hv", "utc" or "fmt".
     search = ' '.join(str(x) for x in (
-        t, method, path, exc_class, exc_msg, actor)).lower()
+        entry.get('ts') or '', method, path, exc_class, exc_msg, actor)).lower()
     return {
         'time': t, 'rel': rel, 'method': method or 'GET', 'path': path or target,
         'exc_class': exc_class, 'exc_msg': exc_msg, 'actor': actor,
-        'ip': entry.get('ip') or '—', 'ts': entry.get('ts') or '',
+        'ip': entry.get('ip') or '—', 'ts': entry.get('ts') or '', 'ts_display': _full_time(entry.get('ts')),
         'location': _traceback_location(traceback),
         'traceback': traceback, 'search': search,
         'raw_json': json.dumps(entry, indent=2, ensure_ascii=False),

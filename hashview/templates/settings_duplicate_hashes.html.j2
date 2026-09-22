@@ -140,7 +140,7 @@
                     <td class="mono" style="font-size:11px;">
                         {% if row.cracked %}
                             <span style="color:var(--primary);">{{ row.plaintext }}</span>
-                            {% if row.recovered_at %}<br><span style="color:var(--text-mute);">{{ row.recovered_at }}</span>{% endif %}
+                            {% if row.recovered_at %}<br><span style="color:var(--text-mute);">{{ localtime(row.recovered_at) }}</span>{% endif %}
                         {% else %}<span style="color:var(--text-mute);">not cracked</span>{% endif %}
                     </td>
                     <td class="mono" style="font-size:11px; color:var(--text-dim);">

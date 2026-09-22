@@ -30,6 +30,7 @@ from hashview.utils.backup import (
     create_encrypted_db_backup,
     purge_stale_backups,
 )
+from hashview.utils.clock import utcnow
 from hashview.utils.dedupe import (
     classify_group,
     delete_orphaned_alerts,
@@ -430,7 +431,7 @@ def settings_backup():
         return jsonify({'status': 'error', 'msg': 'Backup failed — check the server logs.'}), 500
 
     token = os.path.basename(enc_path)
-    download_name = 'hashview-backup-' + datetime.utcnow().strftime('%Y%m%d-%H%M%S') + '.sql.gz.enc'
+    download_name = 'hashview-backup-' + utcnow().strftime('%Y%m%d-%H%M%S') + '.sql.gz.enc'
     instructions = [
         "Decrypt (you'll be prompted for the one-time password above):",
         "    openssl enc -d -aes-256-cbc -pbkdf2 -in " + download_name + " -out backup.sql.gz",

@@ -59,7 +59,7 @@
                         {% if entry.recovered_at == None %}
                             <i>Before Jan 1st 2025</i>
                         {% else %}
-                            {{ entry.recovered_at }}
+                            {{ localtime(entry.recovered_at) }}
                         {% endif %}
                     {% else %}
                         <i>unrecovered</i>

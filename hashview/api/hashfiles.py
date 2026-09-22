@@ -40,6 +40,7 @@ from hashview.models import (
     db,
 )
 from hashview.utils.audit import log_event
+from hashview.utils.clock import to_utc_iso
 from hashview.utils.utils import (
     import_hashfilehashes,
     send_generated_file,
@@ -354,7 +355,7 @@ def v1_api_get_hashfiles_by_hash_type(hash_type):
             'name': name,
             'customer_id': customer_id,
             'owner_id': owner_id,
-            'uploaded_at': uploaded_at.isoformat() if uploaded_at else None,
+            'uploaded_at': to_utc_iso(uploaded_at),
             'hash_type': hash_type,
             'total_hashes': int(total or 0),
             'cracked_hashes': int(cracked or 0),

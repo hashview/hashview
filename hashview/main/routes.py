@@ -22,6 +22,7 @@ from hashview.models import (
     db,
 )
 from hashview.utils.audit import job_task_target, log_event
+from hashview.utils.clock import utcnow
 from hashview.utils.utils import (
     agent_telemetry,
     close_ledger,
@@ -46,7 +47,7 @@ def _chart_data():
     `values` is a per-day count of cracked hashes; it drives both the line chart and
     the 'Recovered today' / 'Cracked this week' KPIs.
     """
-    today = datetime.now()
+    today = utcnow()
     labels = [(today - timedelta(days=i)).strftime("%b-%d") for i in range(6, -1, -1)]
 
     # One index-bounded query with a conditional SUM per rolling 24h window, instead
@@ -80,7 +81,7 @@ def _relative_time(dt):
     """
     if not dt:
         return '—'
-    secs = int((datetime.now() - dt).total_seconds())
+    secs = int((utcnow() - dt).total_seconds())
     if secs < 0:
         secs = 0
     if secs < 60:
@@ -431,7 +432,7 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
                 if starts:
                     deadline = min(starts) + timedelta(hours=max_runtime_tasks)
                     cancel_in = _short_duration(
-                        (deadline - datetime.now()).total_seconds())
+                        (deadline - utcnow()).total_seconds())
 
             task = tasks_by_id.get(task_id)
             groups.append({
@@ -509,6 +510,13 @@ def _jobs_ctx():
         'settings': settings,
         'datetime': datetime,
         'timedelta': timedelta,
+        # Elapsed is computed HERE, not in the template. _dash_jobs.html.j2 used
+        # to do `datetime.now() - job.started_at`, which silently became a
+        # local-vs-UTC subtraction the moment started_at moved to UTC -- off by
+        # the host's offset, on the dashboard's most-read number. A template
+        # reading a clock is the bug; passing it seconds is the fix.
+        'job_elapsed_secs': {job.id: (utcnow() - job.started_at).total_seconds()
+                             for job in running_jobs if job.started_at},
         'job_dash': _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
                                      agents_ctx['recovered_list'], agents_ctx['time_estimated_list'],
                                      max_runtime_tasks=(settings.max_runtime_tasks
@@ -522,7 +530,7 @@ def _jobs_ctx():
 def home():
     """Render the operations dashboard."""
     fig1_labels, fig1_values = _chart_data()
-    now = datetime.now()
+    now = utcnow()
     # Dashboard flourish: auto-runs once per user on the first visit of April 1
     # (server time); the cookie records it so it doesn't repeat that year.
     dash_autoplay = (now.month == 4 and now.day == 1

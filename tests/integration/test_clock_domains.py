@@ -1,28 +1,36 @@
-"""Clock-domain integration tests (issue #404).
+"""Clock-domain integration tests (issues #404, #522).
 
-Hashview stamps timestamps from two different clocks, and nothing in the schema
-marks which column belongs to which:
+Hashview records every timestamp in UTC, from one helper
+(``hashview/utils/clock.utcnow``). These tests exist because the SQLite unit
+suite structurally cannot prove that: SQLite renders ``func.now()`` as
+``CURRENT_TIMESTAMP``, which is already UTC, so a regression back to the
+database's clock would be invisible there. On MySQL ``func.now()`` is
+session-local, and the session timezone can be moved off UTC -- which is what
+makes the two distinguishable at all.
 
-* **Database clock** — ``Agents.last_checkin`` is written with ``func.now()``
-  (``hashview/api/routes.py:162``, and ``:297`` on registration). This is
-  deliberate: the comment at ``routes.py:157-161`` explains that the heartbeat
-  writer and the dashboard renderer can run in different process timezones, so
-  both the write and the offline cutoff go through the single DB clock.
-* **App-process clock** — ``Jobs.started_at`` / ``ended_at`` / ``queued_at`` and
-  ``JobTasks.started_at`` / ``updated_at`` are written with ``datetime.now()``
-  (``hashview/utils/utils.py:1263``, ``:1277``; ``hashview/api/routes.py:382``,
-  ``:495``, ``:568``, ``:572``, ``:1136``; ``hashview/jobs/routes.py:908``).
+What this file used to assert is worth recording, because it is the design that
+was replaced. Timestamps came from three clocks with nothing marking which
+column belonged to which:
 
-The SQLite unit suite cannot see any of this. SQLite has no ``NOW()``, so
-``SELECT NOW()`` always raises there and ``tests/unit/test_agent_health_check.py``
-only ever exercises the ``datetime.utcnow()`` *fallback* — against fixtures that
-are themselves stamped with ``utcnow()``. Both sides agree by construction, so
-the domain split is invisible. These tests run on a real MySQL/MariaDB backend
-where ``NOW()`` exists and the session timezone can be moved off UTC, which is
-what makes the two clocks distinguishable.
+  * ``Agents.last_checkin`` from ``func.now()``  -- the DATABASE's clock
+  * ``Jobs.*`` / ``JobTasks.*`` from ``datetime.now()`` -- the APP PROCESS's clock
+  * ``Users.last_login_utc`` from ``datetime.utcnow()`` -- UTC
+
+Each family was internally consistent, so nothing looked wrong until a
+comparison crossed between them -- which the agent-timeout fallback did (#404).
+When ``SELECT NOW()`` failed it compared Python UTC against a DB-local column,
+so on a database behind UTC the cutoff landed hours ahead of every stored
+check-in and the entire fleet was declared offline at once, from one failed
+query, at exactly the moment the database was already unhealthy.
+
+The fix was not to make the fallback agree with the database. It was to delete
+the second clock: with ``last_checkin`` in UTC the cutoff is just "now minus the
+timeout", there is nothing to read from the server and nothing to fall back to,
+and the ``SELECT NOW()`` / ``try`` / ``except`` construct is gone from all three
+places that carried a copy of it.
 
 Every test is marked ``mysql`` and uses ``mysql_session``, which skips when
-``HASHVIEW_TEST_DATABASE_URI`` is unset — a plain local ``pytest tests/`` run
+``HASHVIEW_TEST_DATABASE_URI`` is unset -- a plain local ``pytest tests/``
 collects and skips these, unchanged.
 """
 
@@ -30,7 +38,9 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import func, text
+from sqlalchemy import text
+
+from hashview.utils.clock import utcnow
 
 pytestmark = pytest.mark.mysql
 
@@ -102,39 +112,45 @@ def _agent(session, name, last_checkin=None, offline_notified=False):
 # ---------------------------------------------------------------------------
 # The documented invariant: last_checkin lives in the DB clock domain
 # ---------------------------------------------------------------------------
-def test_last_checkin_is_written_in_the_db_clock_domain(mysql_session):
-    """``func.now()`` stamps the DB clock, not the Python process clock.
+def test_the_heartbeat_writes_utc_not_the_database_clock(mysql_app, mysql_session):
+    """The inverted invariant. This test used to assert the opposite.
 
-    Locks the contract that ``hashview/api/routes.py:157-162`` relies on. With
-    the session timezone pushed 9 hours off UTC, a DB-clock write and a Python
-    ``utcnow()`` are ~9 hours apart, so this distinguishes the two rather than
-    passing trivially the way it would on a UTC box.
+    The session timezone is pushed 9 hours off UTC, so a DB-clock write and a
+    UTC one are ~9 hours apart and the assertion can actually tell them apart --
+    on a UTC box both would pass and the test would prove nothing.
     """
+    from hashview.api._shared import update_heartbeat
+
     with db_timezone(mysql_session, f"+{EAST_OFFSET_HOURS:02d}:00"):
         agent = _agent(mysql_session, "clock-domain-1")
-        agent.last_checkin = func.now()
+        agent.uuid = "clock-domain-1-uuid"
         mysql_session.flush()
+
+        # update_heartbeat reads request.remote_addr, so it needs a request
+        # context; the point of calling the real writer rather than assigning
+        # the column is that this test then covers the actual production path.
+        with mysql_app.test_request_context('/', environ_base={'REMOTE_ADDR': '10.0.0.9'}):
+            update_heartbeat(agent.uuid)
         mysql_session.refresh(agent)
 
+        assert abs(agent.last_checkin - utcnow()) < TOLERANCE, (
+            "last_checkin must be UTC; if this fails the heartbeat has gone "
+            "back to stamping whatever clock the database happens to run"
+        )
+
         db_now = mysql_session.execute(text("SELECT NOW()")).scalar()
-        assert abs(agent.last_checkin - db_now) < TOLERANCE, (
-            "last_checkin must agree with the DB clock it was stamped from"
-        )
-
-        # ...and must NOT be interpretable as a Python UTC timestamp.
-        drift_from_utc = abs(agent.last_checkin - datetime.utcnow())
-        assert drift_from_utc > timedelta(hours=EAST_OFFSET_HOURS - 1), (
-            "last_checkin should be in the DB's timezone, not Python UTC; if "
-            "this fails the heartbeat write has silently changed clock domains"
+        assert abs(agent.last_checkin - db_now) > timedelta(hours=EAST_OFFSET_HOURS - 1), (
+            "last_checkin tracks the DB clock again -- the exact coupling that "
+            "made the timeout comparison backend-dependent"
         )
 
 
-def test_agent_health_cutoff_tracks_db_clock_under_non_utc_tz(mysql_app, mysql_session, monkeypatch):
+def test_agent_health_is_indifferent_to_the_database_timezone(mysql_app, mysql_session, monkeypatch):
     """A freshly checked-in agent is not offline, whatever the DB timezone.
 
-    This is the primary (``SELECT NOW()``) path of ``_agent_health_check_inner``.
-    Both the cutoff and ``last_checkin`` come from the DB clock, so a non-UTC
-    server must make no difference.
+    Same guarantee as before, reached the other way round: the cutoff and the
+    column are both UTC, so the database's timezone is no longer an input to the
+    comparison at all rather than being an input that both sides happen to share.
     """
     import logging
 
@@ -154,7 +170,7 @@ def test_agent_health_cutoff_tracks_db_clock_under_non_utc_tz(mysql_app, mysql_s
 
     with db_timezone(mysql_session, f"-{WEST_OFFSET_HOURS:02d}:00"):
         agent = _agent(mysql_session, "clock-domain-2")
-        agent.last_checkin = func.now()      # fresh check-in, DB clock
+        agent.last_checkin = utcnow()        # fresh check-in, the one clock
         mysql_session.flush()
 
         _agent_health_check_inner(db, logging.getLogger("test-clock-domains"))
@@ -191,22 +207,13 @@ def broken_db_clock(monkeypatch, session):
         monkeypatch.undo()
 
 
-@pytest.mark.xfail(
-    reason="issue #404: when SELECT NOW() fails, hashview/scheduler.py:257 falls "
-           "back to datetime.utcnow() while last_checkin is still in the DB's "
-           "local timezone. On a DB behind UTC the cutoff lands hours ahead of "
-           "every stored check-in, so the whole fleet is declared offline at "
-           "once — triggered by one failed query, at exactly the moment the DB "
-           "is already unhealthy",
-    strict=False,
-)
-def test_fallback_does_not_declare_live_agents_offline(mysql_app, mysql_session, monkeypatch):
-    """The fallback cutoff must not misjudge a fresh agent on a non-UTC DB.
+def test_a_broken_db_clock_cannot_declare_live_agents_offline(mysql_app, mysql_session, monkeypatch):
+    """#404, from the direction that produced the fleet-wide alert.
 
-    Desired behaviour: an agent that checked in seconds ago is never offline,
-    even when the DB clock read fails. Today the fallback switches to Python UTC
-    while ``last_checkin`` stays DB-local, so on a DB behind UTC the comparison
-    at ``scheduler.py:260`` flags it — and every other agent — as offline.
+    ``broken_db_clock`` makes ``SELECT NOW()`` raise while every other query
+    keeps working -- the real failure the old ``except`` existed to absorb. The
+    sweep no longer reads that clock at all, so breaking it is now a no-op
+    rather than the trigger for declaring every agent offline at once.
     """
     import logging
 
@@ -225,7 +232,7 @@ def test_fallback_does_not_declare_live_agents_offline(mysql_app, mysql_session,
     mysql_session.flush()
 
     with db_timezone(mysql_session, f"-{WEST_OFFSET_HOURS:02d}:00"):
-        _agent(mysql_session, "clock-domain-3").last_checkin = func.now()
+        _agent(mysql_session, "clock-domain-3").last_checkin = utcnow()
         mysql_session.flush()
 
         with broken_db_clock(monkeypatch, mysql_session):
@@ -236,13 +243,6 @@ def test_fallback_does_not_declare_live_agents_offline(mysql_app, mysql_session,
     )
 
 
-@pytest.mark.xfail(
-    reason="issue #404: the same utcnow() fallback fails the other way on a DB "
-           "ahead of UTC — stored check-ins sit hours in the future relative to "
-           "the cutoff, so genuinely dead agents keep reading as online and the "
-           "offline alert never fires",
-    strict=False,
-)
 def test_fallback_still_detects_a_genuinely_dead_agent(mysql_app, mysql_session, monkeypatch):
     """A long-dead agent must still be detected when the DB clock read fails.
 
@@ -267,10 +267,11 @@ def test_fallback_still_detects_a_genuinely_dead_agent(mysql_app, mysql_session,
 
     with db_timezone(mysql_session, f"+{EAST_OFFSET_HOURS:02d}:00"):
         # Two hours stale against a 10-minute timeout: unambiguously offline.
-        stale = mysql_session.execute(
-            text("SELECT NOW() - INTERVAL 2 HOUR")
-        ).scalar()
-        _agent(mysql_session, "clock-domain-4").last_checkin = stale
+        # Seeded in UTC, deliberately, while the DB session sits 9 hours east --
+        # so if the sweep ever went back to reading the server's clock this
+        # agent would read as being in the future and the alert would vanish.
+        _agent(mysql_session, "clock-domain-4").last_checkin = (
+            utcnow() - timedelta(hours=2))
         mysql_session.flush()
 
         with broken_db_clock(monkeypatch, mysql_session):

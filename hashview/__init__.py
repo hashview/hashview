@@ -266,11 +266,16 @@ def create_app(testing=False, config_overrides=None):
             'handlers': ['wsgi']
         }
     })
+    # UTC, like every recorded timestamp. This used to .astimezone() into the
+    # host's local zone, which made a log line's time depend on which machine
+    # wrote it -- so correlating the app log against the audit log against a
+    # database timestamp meant knowing each writer's TZ. The +00:00 offset is
+    # kept rather than trimmed: an ISO timestamp with no offset is ambiguous,
+    # and that ambiguity is the whole bug class this change removes.
     logging.Formatter.formatTime = (
         lambda self, record, datefmt=None: \
             datetime.datetime
                 .fromtimestamp(record.created, datetime.UTC)
-                .astimezone()
                 .isoformat(sep="T", timespec="milliseconds")
     )
 
@@ -373,6 +378,16 @@ def create_app(testing=False, config_overrides=None):
     from hashview.utils.form_limits import template_maxlength
     app.jinja_env.globals['db_maxlength'] = template_maxlength
 
+    # localtime(dt) -> a <time> element the browser rewrites into the VIEWER's
+    # timezone. Every stored timestamp is UTC (utils/clock.py), so the server
+    # cannot know what to render: it has no idea where the person reading the
+    # page is. It emits the UTC instant plus a format name, and hvLocalizeTimes
+    # in layout.html.j2 does the conversion where the timezone is actually
+    # known. The server-rendered text inside the element is the no-JS fallback
+    # and is labelled UTC, so it is never silently wrong -- just not local.
+    from hashview.utils.timefmt import template_localtime
+    app.jinja_env.globals['localtime'] = template_localtime
+
     # Version-tagged static URLs: asset('css/x.css') -> /static/css/x.css?v=<ver>.
     # The version query lets the browser far-future-cache the file yet re-fetch it
     # after an upgrade (the URL changes when __version__ changes).
@@ -398,9 +413,7 @@ def create_app(testing=False, config_overrides=None):
         if not getattr(current_user, "is_authenticated", False):
             return {}
         try:
-            from datetime import datetime, timedelta
-
-            from sqlalchemy import text
+            from datetime import timedelta
 
             from hashview.models import (
                 Agents,
@@ -412,7 +425,6 @@ def create_app(testing=False, config_overrides=None):
                 Tasks,
                 Users,
                 Wordlists,
-                db,
             )
 
             # _hps/_fmt: the single source in utils (function-local import dodges a
@@ -421,21 +433,15 @@ def create_app(testing=False, config_overrides=None):
             from hashview.utils.utils import parse_hps as _hps
 
             agents = Agents.query.all()
-            # last_checkin is stamped with the database clock (api.update_heartbeat uses
-            # func.now()); derive the cutoff from that SAME clock so the comparison is
-            # independent of whatever timezone this web process runs in. Falls back to the
-            # process clock only if the DB time can't be read.
-            try:
-                db_now = db.session.execute(text("SELECT NOW()")).scalar()
-                if isinstance(db_now, str):
-                    db_now = datetime.strptime(db_now[:19], '%Y-%m-%d %H:%M:%S')
-            except Exception:
-                db_now = None
-            # Configurable per Settings.agent_timeout_minutes (default 60 = the old
-            # hardcoded 1-hour cutoff). function-local import dodges a load-time
-            # circular import on the package root (same as fmt_hps/parse_hps above).
+            # last_checkin is UTC like every other timestamp, so the cutoff is
+            # just "now minus the timeout" -- no DB clock read and no fallback
+            # that changes clock domain when it fails (#404). Configurable per
+            # Settings.agent_timeout_minutes (default 60). The function-local
+            # import dodges a load-time circular import on the package root
+            # (same as fmt_hps/parse_hps above).
+            from hashview.utils.clock import utcnow
             from hashview.utils.utils import get_agent_timeout_minutes
-            cutoff = (db_now or datetime.utcnow()) - timedelta(minutes=get_agent_timeout_minutes())
+            cutoff = utcnow() - timedelta(minutes=get_agent_timeout_minutes())
 
             # An agent is "up" when it's connected (recent check-in) and in a
             # running or idle/ready state; the speed total only counts agents actively

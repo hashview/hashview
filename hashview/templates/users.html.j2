@@ -44,7 +44,7 @@
                 <td class="center num">{{ jobs|selectattr('owner_id', 'equalto', user.id)|list|length | commafy }}</td>
                 <td style="color:var(--text-dim);">
                     {% if user.last_login_utc %}
-                        <span class="rel-time mono" data-ts="{{ user.last_login_utc.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="{{ user.last_login_utc.strftime('%a, %b. %d %Y %I:%M:%S %Z') }}">…</span>
+                        {{ localtime(user.last_login_utc, 'rel') }}
                     {% else %}
                         <span style="color:var(--text-mute);">Never</span>
                     {% endif %}
@@ -161,7 +161,7 @@
         {% endfor %}
     </div>
     <div class="hv-dialog-foot">
-        <span class="mono" style="margin-right:auto; color:var(--text-mute); font-size:11.5px;">last seen {% if user.last_login_utc %}<span class="rel-time" data-ts="{{ user.last_login_utc.strftime('%Y-%m-%dT%H:%M:%SZ') }}">…</span>{% else %}never{% endif %}</span>
+        <span class="mono" style="margin-right:auto; color:var(--text-mute); font-size:11.5px;">last seen {{ localtime(user.last_login_utc, 'rel', empty='never') }}</span>
         <button class="btn" onclick="this.closest('dialog').close()">Close</button>
     </div>
 </dialog>
@@ -397,31 +397,5 @@
 </script>
 {% endif %}
 
-<script>
-(function () {
-    // Render UTC timestamps as live relative times: "now", "12m ago", "1h 40m ago", "3d ago".
-    function hvRel(ts) {
-        var d = new Date(ts);
-        if (isNaN(d.getTime())) return '';
-        var s = Math.floor((Date.now() - d.getTime()) / 1000);
-        if (s < 0) s = 0;
-        if (s < 45) return 'now';
-        var m = Math.floor(s / 60);
-        if (m < 60) return m + 'm ago';
-        var h = Math.floor(m / 60), rm = m % 60;
-        if (h < 24) return rm ? (h + 'h ' + rm + 'm ago') : (h + 'h ago');
-        var dy = Math.floor(h / 24), rh = h % 24;
-        if (dy < 30) return rh ? (dy + 'd ' + rh + 'h ago') : (dy + 'd ago');
-        return Math.floor(dy / 30) + 'mo ago';
-    }
-    function tick() {
-        document.querySelectorAll('.rel-time').forEach(function (el) {
-            el.textContent = hvRel(el.getAttribute('data-ts'));
-        });
-    }
-    tick();
-    setInterval(tick, 60000);
-})();
-</script>
 
 {% endblock content %}

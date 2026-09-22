@@ -35,6 +35,27 @@ def test_parse_hc_extra_args_falls_back_on_unbalanced_quotes():
     assert bench.parse_hc_extra_args('-d 3 "oops') == ["-d", "3", '"oops']
 
 
+# --- strip_benchmark_incompatible_args --------------------------------------
+
+def test_strip_benchmark_incompatible_args_drops_equals_form():
+    assert bench.strip_benchmark_incompatible_args(
+        ["--hwmon-temp-abort=100", "-O"]) == ["-O"]
+
+
+def test_strip_benchmark_incompatible_args_drops_space_form_and_its_value():
+    assert bench.strip_benchmark_incompatible_args(
+        ["-d", "3,4", "--hwmon-temp-abort", "100", "-O"]) == ["-d", "3,4", "-O"]
+
+
+def test_strip_benchmark_incompatible_args_leaves_compatible_args_alone():
+    argv = ["-d", "3,4", "--force", "-O"]
+    assert bench.strip_benchmark_incompatible_args(argv) == argv
+
+
+def test_strip_benchmark_incompatible_args_empty_is_empty():
+    assert bench.strip_benchmark_incompatible_args([]) == []
+
+
 # --- parse_benchmark_speed --------------------------------------------------
 
 def test_parse_benchmark_speed_sums_per_device_with_units():

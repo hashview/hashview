@@ -239,6 +239,36 @@ def test_run_benchmark_report_survives_send_error_exception(monkeypatch):
     assert mock_send_error.call_count == 1
 
 
+def test_run_benchmark_strips_hwmon_temp_abort_from_extra_args(monkeypatch):
+    """HC_EXTRA_ARGS='--hwmon-temp-abort=N' must not reach the benchmark argv.
+
+    hashcat refuses that flag in -b mode ("Can't change --hwmon-temp-abort in
+    benchmark mode.") and exits with no Speed line, which used to strand the
+    agent: every mode came back speed=0 and got marked permanently
+    unsupported even though the hardware could run it fine.
+    """
+    from agent.config import Config
+    monkeypatch.setattr(Config, "HC_EXTRA_ARGS", "--hwmon-temp-abort=100", raising=False)
+
+    mock_proc = mock.MagicMock()
+    mock_proc.stdout = b"Speed.#1.........: 12345 H/s"
+    mock_proc.stderr = b""
+    mock_run = mock.MagicMock(return_value=mock_proc)
+    monkeypatch.setattr(agent_main.subprocess, "run", mock_run)
+
+    mock_send_error = mock.MagicMock()
+    monkeypatch.setattr(agent_main.api, "sendError", mock_send_error)
+    mock_report = mock.MagicMock()
+    monkeypatch.setattr(agent_main, "report_benchmark", mock_report)
+
+    agent_main.run_benchmark([1000])
+
+    argv = mock_run.call_args[0][0]
+    assert not any('hwmon-temp-abort' in token for token in argv)
+    assert mock_report.call_args[0][0] == {'1000': 12345}
+    assert mock_send_error.call_count == 0
+
+
 def test_run_benchmark_empty_modes_list(monkeypatch):
     """When hash_modes is empty or None, do nothing."""
     mock_send_error = mock.MagicMock()

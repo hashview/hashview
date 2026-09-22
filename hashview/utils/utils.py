@@ -1247,7 +1247,24 @@ def import_hashfilehashes(hashfile_id, hashfile_path, file_type, hash_type):
     pending = []
     with open(hashfile_path, encoding='utf-8', errors='surrogateescape') as file:
         for line in file:
-            if len(line) == 0:
+            # Skip blank and whitespace-only lines, matching the rule
+            # _validate_hashfile already applies -- so a file that PASSED
+            # validation cannot then blow up in here.
+            #
+            # This guard used to read `if len(line) == 0`, which is never true:
+            # iterating a file yields the newline with the line, so a blank line
+            # arrives as '\n' and only a zero-length string would match. It has
+            # been dead since it was written (it was `len(line) > 0` around a
+            # readlines() loop before #363 batched this, equally dead), and a
+            # trailing newline at the end of a hashfile is the overwhelmingly
+            # common case -- most editors add one.
+            #
+            # Downstream every format indexes fixed fields: pwdump, shadow,
+            # NetNTLM and kerberos all raise IndexError on '\n' (a 500 on the
+            # upload), user_hash aborts the whole file, and hash_only is worse
+            # than either -- it imports a row whose ciphertext is the empty
+            # string, silently, which then joins dedup and analytics forever.
+            if not line.strip():
                 continue
             row = _classify_hashfile_line(line, file_type, hash_type, present_usernames)
             if row is _LINE_ABORT:

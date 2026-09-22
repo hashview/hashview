@@ -45,11 +45,11 @@ a.btn:hover { text-decoration: none; }
   margin-bottom: 14px;
 }
 .flash + .flash { margin-top: -4px; }
-.flash-success { color: var(--green); border-color: var(--green-dim); background: rgba(94, 240, 138, 0.07); }
-.flash-danger  { color: var(--red);   border-color: var(--red-dim);   background: rgba(255, 95, 86, 0.07); }
-.flash-error   { color: var(--red);   border-color: var(--red-dim);   background: rgba(255, 95, 86, 0.07); }
-.flash-warning { color: var(--amber); border-color: var(--amber-dim); background: rgba(255, 181, 61, 0.07); }
-.flash-info    { color: var(--cyan);  border-color: #1f3d40;          background: rgba(79, 214, 224, 0.07); }
+.flash-success { color: var(--green); border-color: var(--green-dim); background: color-mix(in srgb, var(--green) 8%, transparent); }
+.flash-danger  { color: var(--red);   border-color: var(--red-dim);   background: color-mix(in srgb, var(--red) 8%, transparent); }
+.flash-error   { color: var(--red);   border-color: var(--red-dim);   background: color-mix(in srgb, var(--red) 8%, transparent); }
+.flash-warning { color: var(--amber); border-color: var(--amber-dim); background: color-mix(in srgb, var(--amber) 8%, transparent); }
+.flash-info    { color: var(--cyan);  border-color: var(--cyan-dim);  background: color-mix(in srgb, var(--cyan) 8%, transparent); }
 
 /* ---- WTForms validation errors ----
    Preserves the existing is-invalid / invalid-feedback contract,

@@ -161,3 +161,13 @@ api_key="user-api-key-
 # Gate: pytest.mark.docker_analytics, skipped unless HASHVIEW_DOCKER_BASE_URL set.
 # Test creates prefixed rows (zz-analytics-bugtest*) for teardown. Not a real credential.
 LOGIN_PASSWORD = "bugtest-password-123"
+
+# --- container image digest pins (CI supply-chain hardening) ---
+# Docker images in the CI workflows and test-harness compose files are pinned
+# by digest instead of by mutable tag, so a `sha256:` followed by 64 hex chars
+# now appears on every `image:` line and trips the high-entropy heuristic.
+# A registry digest is a public content address, not a credential: it is
+# printed by `docker manifest inspect` for anyone who can pull the image.
+# Anchored on `image:` and the `@sha256:` form so it cannot cover a bare
+# high-entropy string appearing anywhere else.
+image:\s*\S+@sha256:[0-9a-f]{64}

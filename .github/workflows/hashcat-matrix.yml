@@ -265,3 +265,163 @@ jobs:
             echo "Filed automatically by the hashcat Matrix workflow."
           } > /tmp/issue-body.md
           gh issue create --title "${title}" --body-file /tmp/issue-body.md
+
+  # Tier 4. The pinned and floating tiers both only ever see a RELEASE, so the
+  # earliest they can report a break is the day one ships -- by which point the
+  # change is already in users' hands. Mode 6800 is the worked example: master
+  # gave the LastPass format a fourth field and now rejects the three-field form
+  # every released hashcat accepts, and nothing here would have noticed until
+  # that landed in a tag.
+  #
+  # Master is not a release. It breaks, it gets rebased, and it moves daily, so
+  # this tier never gates anything: it builds from git, runs the same contracts,
+  # and opens an issue. A red X here is advance warning, not a defect report.
+  bleeding-edge:
+    name: "hashcat (git master)"
+    runs-on: ubuntu-latest
+    # A from-source build is several times the cost of unpacking a release.
+    timeout-minutes: 45
+    # Schedule and manual runs only, for the same reason the floating tier is:
+    # an upstream commit must never fail a PR that did not cause it.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    continue-on-error: true
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      # 3.13 rather than the 3.11 the other jobs use: hashcat master's own
+      # BUILD.md requires Python >= 3.13 to build, and this repo is tested on
+      # 3.13 too, so one interpreter serves the build and the test run.
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Install a build toolchain and a CPU OpenCL device
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential git \
+            p7zip-full pocl-opencl-icd ocl-icd-libopencl1
+
+      # Depth 1: the contract cares what master IS, not how it got there.
+      - name: Build hashcat from master
+        id: build
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/hashcat/hashcat.git "${RUNNER_TEMP}/hashcat-src"
+          cd "${RUNNER_TEMP}/hashcat-src"
+          commit="$(git rev-parse HEAD)"
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+          echo "short=${commit:0:12}" >> "$GITHUB_OUTPUT"
+          make -j"$(nproc)"
+          # A native Linux `make` produces ./hashcat; hashcat.bin is the
+          # cross-built binary-distribution target. Take whichever exists rather
+          # than assuming, so a change to the default target does not read as an
+          # interop break. libhashcat.so.N sits beside it and is found there.
+          if   [ -x ./hashcat ];     then bin="${PWD}/hashcat"
+          elif [ -x ./hashcat.bin ]; then bin="${PWD}/hashcat.bin"
+          else echo "::error::no hashcat binary after make"; ls -la; exit 1
+          fi
+          echo "bin=${bin}" >> "$GITHUB_OUTPUT"
+          "$bin" --version
+
+      - name: Capture machine-readable output
+        id: capture
+        run: |
+          tests/hashcat_matrix/capture.sh \
+            '${{ steps.build.outputs.bin }}' "${RUNNER_TEMP}/capture"
+          python tests/hashcat_matrix/summarize.py "${RUNNER_TEMP}/capture"
+
+      # Every assertion below is continue-on-error with an id, so one broken
+      # contract does not hide the state of the others -- the whole value of
+      # this tier is a complete picture of what master changed.
+      - name: Assert the interop contract against the live capture
+        id: contract
+        continue-on-error: true
+        run: |
+          rm -rf tests/fixtures/hashcat/master
+          mkdir -p tests/fixtures/hashcat/master
+          cp "${RUNNER_TEMP}"/capture/* tests/fixtures/hashcat/master/
+          python -m pytest tests/agent_unit/test_hashcat_contract.py -q -rxX -k master
+
+      - name: Assert --skip/--limit slice semantics
+        id: slices
+        continue-on-error: true
+        shell: bash
+        env:
+          HASHCAT_BIN: ${{ steps.build.outputs.bin }}
+        run: python -m pytest tests/hashcat_matrix -q -rs
+
+      # The one that would have caught 6800. Re-derives HASH_CASE_RULES against
+      # this binary: for every pinned mode it puts all three spellings of the
+      # hash to `hashcat --left` and checks the table reproduces the answer.
+      - name: Re-derive the hash-case table against master
+        id: hashcase
+        continue-on-error: true
+        shell: bash
+        env:
+          HASHCAT_BIN: ${{ steps.build.outputs.bin }}
+        run: |
+          python -m pytest tests/unit/test_hash_case_normalization.py -q -rs \
+            -k reproduces_hashcats_own_answer
+
+      - name: Upload capture
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: hashcat-capture-master-${{ steps.build.outputs.short }}
+          path: ${{ runner.temp }}/capture
+          retention-days: 30
+          if-no-files-found: warn
+
+      # Idempotent and self-updating: one long-lived issue per drift episode,
+      # commented with each new commit rather than refiled, so a weekly schedule
+      # does not open 52 issues about the same change.
+      - name: Report drift
+        if: always() && (steps.contract.outcome == 'failure' || steps.slices.outcome == 'failure' || steps.hashcase.outcome == 'failure')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Third-party data (an upstream commit id) stays in env rather than
+          # being interpolated into the script text.
+          COMMIT: ${{ steps.build.outputs.commit }}
+          CONTRACT: ${{ steps.contract.outcome }}
+          SLICES: ${{ steps.slices.outcome }}
+          HASHCASE: ${{ steps.hashcase.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="hashcat master has drifted from the interop contract"
+          {
+            echo "Built from hashcat master at \`${COMMIT}\`."
+            echo
+            echo "| Contract | Result |"
+            echo "|---|---|"
+            echo "| Agent parses --status-json / benchmark / outfile | ${CONTRACT} |"
+            echo "| --skip/--limit slice semantics | ${SLICES} |"
+            echo "| HASH_CASE_RULES reproduces hashcat's own spelling | ${HASHCASE} |"
+            echo
+            echo "[Run log and captured output](${RUN_URL})"
+            echo
+            echo "This is master, not a release, so nothing is broken for users"
+            echo "yet and no gate is red. It is advance warning that a shipped"
+            echo "hashcat will break one of these unless the change is reverted"
+            echo "upstream or absorbed here first."
+            echo
+            echo "Filed automatically by the hashcat Matrix workflow."
+          } > /tmp/master-drift.md
+          existing="$(gh issue list --state open --search "\"${title}\" in:title" \
+            --json number --jq '.[0].number // empty')"
+          if [ -n "${existing}" ]; then
+            gh issue comment "${existing}" --body-file /tmp/master-drift.md
+          else
+            gh issue create --title "${title}" --body-file /tmp/master-drift.md
+          fi

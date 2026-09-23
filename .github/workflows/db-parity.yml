@@ -27,18 +27,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    # Images are pinned by digest, not by tag. `mysql:8.0` is a moving target --
+    # it is repointed at every 8.0.x patch release -- so a tag-only reference
+    # means this job silently tests a different server than it did yesterday,
+    # and a parity failure cannot be told apart from an upstream image change.
+    # The tag in the comment is what the digest resolved to when it was pinned;
+    # to refresh, re-resolve it and say in the commit why.
     strategy:
       fail-fast: false
       matrix:
         include:
           - label: MariaDB 11
-            image: mariadb:11
+            image: mariadb@sha256:79d59758afc91b89b120b0a8904d637f5a3b3e1c4900f29b740d6d46c72fef68  # mariadb:11
             health_cmd: healthcheck.sh --connect --innodb_initialized
           - label: MySQL 8.0
-            image: mysql:8.0
+            image: mysql@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b  # mysql:8.0
             health_cmd: mysqladmin ping -h 127.0.0.1 --silent
           - label: MySQL 8.4 (LTS)
-            image: mysql:8.4
+            image: mysql@sha256:0744ee5ef89ce6ccfa13de3e579fe6b9e27f93dd70da9c06d2c908b1b193fb8d  # mysql:8.4
             health_cmd: mysqladmin ping -h 127.0.0.1 --silent
 
     services:
@@ -67,8 +73,8 @@ jobs:
       HASHVIEW_TEST_DATABASE_URI: "mysql+mysqlconnector://root:hashview@127.0.0.1:3306/hashview?charset=utf8mb4"
 
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.11"
           cache: pip

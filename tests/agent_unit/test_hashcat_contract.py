@@ -44,10 +44,22 @@ EXPECTED_PLAINTEXT = "password"
 EXPECTED_HASH = "8846f7eaee8fb117ad06bdd830b7586c"
 
 
+def _as_tuple(version):
+    """'7.1.10' -> (7, 1, 10). Numeric so ordering is by version rather than by
+    string, where '7.1.10' sorts before '7.1.2' and '10.0' before '7.0'. A
+    non-numeric component sorts last rather than raising, so an odd directory
+    name cannot break collection for every other version."""
+    parts = []
+    for part in version.split("."):
+        parts.append(int(part) if part.isdigit() else float("inf"))
+    return tuple(parts)
+
+
 def _versions():
     if not FIXTURE_ROOT.is_dir():
         return []
-    return sorted(p.name for p in FIXTURE_ROOT.iterdir() if p.is_dir())
+    return sorted((p.name for p in FIXTURE_ROOT.iterdir() if p.is_dir()),
+                  key=_as_tuple)
 
 
 def _param(version):
@@ -63,6 +75,22 @@ STATUS_VERSIONS = [_param(v) for v in _versions()]
 def test_fixtures_exist():
     """Guard: an empty fixture tree would make every test below vacuously pass."""
     assert _versions(), f"no hashcat fixtures under {FIXTURE_ROOT}"
+
+
+# Nothing below this is pinned, captured or claimed to work. 6.2.6 was dropped
+# from both CI matrices and its fixture directory deleted; this keeps it gone.
+MATRIX_FLOOR = (7, 0)
+
+
+def test_the_matrix_floor_is_7_0():
+    """A fixture directory is what makes a version part of the offline contract,
+    so a stray 6.x directory would quietly put a version back under test that
+    CI no longer downloads or verifies. Compared as integer tuples, not as
+    strings: '10.0' sorts before '7.0' lexically, which would let a future
+    hashcat 10 read as below the floor."""
+    below = [v for v in _versions() if _as_tuple(v) < MATRIX_FLOOR]
+    assert not below, (
+        f"fixtures below the {MATRIX_FLOOR[0]}.{MATRIX_FLOOR[1]} floor: {below}")
 
 
 # --- contract 1: --status-json ---------------------------------------------

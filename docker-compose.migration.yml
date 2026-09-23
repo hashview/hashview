@@ -4,7 +4,7 @@
 # and app-dev are built by the runner and tagged hashview:main / hashview:dev.
 services:
   db:
-    image: "mysql:8"
+    image: mysql@sha256:0744ee5ef89ce6ccfa13de3e579fe6b9e27f93dd70da9c06d2c908b1b193fb8d  # mysql:8
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     environment:
       MYSQL_DATABASE: hashview
@@ -23,7 +23,7 @@ services:
       start_period: 30s
 
   db-fresh:
-    image: "mysql:8"
+    image: mysql@sha256:0744ee5ef89ce6ccfa13de3e579fe6b9e27f93dd70da9c06d2c908b1b193fb8d  # mysql:8
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     environment:
       MYSQL_DATABASE: hashview

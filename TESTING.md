@@ -481,8 +481,8 @@ binary (never a mock) and asserts, across all AES-mode Kerberos types
 - round-trip equality between `normalize_kerberos_hash` and the live binary's
   own normalized form (via `--left`)
 
-The CI job runs this suite against five pinned hashcat releases (6.2.6, 7.0.0,
-7.1.0, 7.1.1, 7.1.2), fetched and sha256-verified by
+The CI job runs this suite against four pinned hashcat releases (7.0.0, 7.1.0,
+7.1.1, 7.1.2), fetched and sha256-verified by
 `tests/hashcat_interop/fetch_hashcat.sh`, on a CPU-only OpenCL device (`pocl`).
 It only triggers on changes to `hashview/utils/utils.py`,
 `tests/hashcat_interop/**`, or the workflow itself.
@@ -570,6 +570,19 @@ goes blank. Its status assertions are strict `xfail` and its matrix leg is
 holding CI red.
 
 **If you run hashcat 7.0.0 in production, upgrade to 7.1.0 or later.**
+
+### The matrix floor is 7.0
+
+Nothing below 7.0 is pinned, tested or claimed to work. 6.2.6 was dropped from
+both matrices along with its fixture directory; `test_the_matrix_floor_is_7_0`
+in `tests/agent_unit/test_hashcat_contract.py` fails if a 6.x fixture comes
+back, so the floor is enforced rather than remembered.
+
+This narrows what CI proves, not what the code does: there is no minimum-version
+gate anywhere in the agent or the server, so a 6.x binary will still run and is
+simply unverified. Historical `verified against hashcat 6.2.6` notes in
+docstrings stay as written — they record where a fact was established, which is
+still true, and re-deriving them against 7.x is separate work.
 
 ### Running the live tests locally
 

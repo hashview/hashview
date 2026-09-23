@@ -1,0 +1,866 @@
+{
+ "0": {
+  "canon": "8743b52063cd84097a65d1633f5c74f5",
+  "name": "MD5"
+ },
+ "10": {
+  "canon": "3d83c8e717ff0e7ecfe187f088d69954:343141",
+  "name": "md5($pass.$salt)"
+ },
+ "100": {
+  "canon": "b89eaac7e61417341b710b727768294d0e6a277b",
+  "name": "SHA1"
+ },
+ "1000": {
+  "canon": "b4b9b02e6f09a9bd760f388b67351e2b",
+  "name": "NTLM"
+ },
+ "10100": {
+  "canon": "583e6f51e52ba296:2:4:47356410265714355482333327356688",
+  "name": "SipHash"
+ },
+ "10420": {
+  "canon": "$pdf$1*2*40*-1*0*16*01221086741440841668371056103222*32*27c3fecef6d46a78eb61b8b4dbc690f5f8a2912bbb9afc842c12d79481568b74*32*0000000000000000000000000000000000000000000000000000000000000000:6a8aedccb7",
+  "name": "PDF 1.1 - 1.3 (Acrobat 2 - 4), collider #2"
+ },
+ "10800": {
+  "canon": "07371af1ca1fca7c6941d2399f3610f1e392c56c6d73fddffe38f18c430a2817028dae1ef09ac683b62148a2c8757f42",
+  "name": "SHA2-384"
+ },
+ "10810": {
+  "canon": "ca1c843a7a336234baf9db2e10bc38824ce523402fbd7741286b1602bdf6cb869a45289bb9fb706bd404b9f3842ff729:2746460797049820734631508",
+  "name": "sha384($pass.$salt)"
+ },
+ "10820": {
+  "canon": "63f63d7f82d4a4cb6b9ff37a6bc7c5ec39faaf9c9078551f5cbf7960e76ded87b643d37ac53c45bc544325e7ff83a1f2:93362",
+  "name": "sha384($salt.$pass)"
+ },
+ "10830": {
+  "canon": "3516a589d2ed4071bf5e36f22e11212b3ad9050b9094b23067103d51e99dcb25c4dc397dba8034fed11a8184acfbb699:577730514588712",
+  "name": "sha384(utf16le($pass).$salt)"
+ },
+ "10840": {
+  "canon": "316e93ea8e04de3e5a909c53d36923a31a16c1b9e89b44201d6082f87ca49c5bca53cad65f685207db3ea2ccc7ca40f8:700067651",
+  "name": "sha384($salt.utf16le($pass))"
+ },
+ "10870": {
+  "canon": "48e61d68e93027fae35d405ed16cd01b6f1ae66267833b4a7aa1759e45bab9bba652da2e4c07c155a3d8cf1d81f3a7e8",
+  "name": "sha384(utf16le($pass))"
+ },
+ "11": {
+  "canon": "b78f863f2c67410c41e617f724e22f34:89384528665349271307465505333378",
+  "name": "Joomla < 2.5.18"
+ },
+ "110": {
+  "canon": "848952984db93bdd2d0151d4ecca6ea44fcf49e3:30007548152",
+  "name": "sha1($pass.$salt)"
+ },
+ "1100": {
+  "canon": "c896b3c6963e03c86ade3a38370bbb09:54161084332",
+  "name": "Domain Cached Credentials (DCC), MS Cache"
+ },
+ "11000": {
+  "canon": "f22cade043e7214200206dbffca49fd9:27167508161455764247627144160038845437138252877014827848",
+  "name": "PrestaShop"
+ },
+ "11100": {
+  "canon": "$postgres$postgres*74402844*4e7fabaaf34d780c4a5822d28ee1c83e",
+  "name": "PostgreSQL CRAM (MD5)"
+ },
+ "112": {
+  "canon": "63ec5f6113843f5d229e2d49c068d983a9670d02:57677783202322766743",
+  "name": "Oracle S: Type (Oracle 11+)"
+ },
+ "11200": {
+  "canon": "$mysqlna$2576670568531371763643101056213751754328*5e4be686a3149a12847caa9898247dcc05739601",
+  "name": "MySQL CRAM (SHA1)"
+ },
+ "11500": {
+  "canon": "c762de4a:00000000",
+  "name": "CRC32"
+ },
+ "11600": {
+  "canon": "$7z$0$14$0$$11$33363437353138333138300000000000$2365089182$16$12$d00321533b483f54a523f624a5f63269",
+  "name": "7-Zip"
+ },
+ "11700": {
+  "canon": "57e9e50caec93d72e9498c211d6dc4f4d328248b48ecf46ba7abfa874f666e36",
+  "name": "GOST R 34.11-2012 (Streebog) 256-bit, big-endian"
+ },
+ "11750": {
+  "canon": "0f71c7c82700c9094ca95eee3d804cc283b538bec49428a9ef8da7b34effb3ba:08151337",
+  "name": "HMAC-Streebog-256 (key = $pass), big-endian"
+ },
+ "11760": {
+  "canon": "d5c6b874338a492ac57ddc6871afc3c70dcfd264185a69d84cf839a07ef92b2c:08151337",
+  "name": "HMAC-Streebog-256 (key = $salt), big-endian"
+ },
+ "11800": {
+  "canon": "5d5bdba48c8f89ee6c0a0e11023540424283e84902de08013aeeb626e819950bb32842903593a1d2e8f71897ff7fe72e17ac9ba8ce1d1d2f7e9c4359ea63bdc3",
+  "name": "GOST R 34.11-2012 (Streebog) 512-bit, big-endian"
+ },
+ "11850": {
+  "canon": "be4555415af4a05078dcf260bb3c0a35948135df3dbf93f7c8b80574ceb0d71ea4312127f839b7707bf39ccc932d9e7cb799671183455889e8dde3738dfab5b6:08151337",
+  "name": "HMAC-Streebog-512 (key = $pass), big-endian"
+ },
+ "11860": {
+  "canon": "bebf6831b3f9f958acb345a88cb98f30cb0374cff13e6012818487c8dc8d5857f23bca2caed280195ad558b8ce393503e632e901e8d1eb2ccb349a544ac195fd:08151337",
+  "name": "HMAC-Streebog-512 (key = $salt), big-endian"
+ },
+ "12": {
+  "canon": "93a8cf6a7d43e3b5bcd2dc6abb3e02c6:27032153220030464358344758762807",
+  "name": "PostgreSQL"
+ },
+ "120": {
+  "canon": "a428863972744b16afef28e0087fc094b44bb7b1:465727565",
+  "name": "sha1($salt.$pass)"
+ },
+ "121": {
+  "canon": "d27c0a627a45db487af161fcc3a4005d88eb8a1f:25551135",
+  "name": "SMF (Simple Machines Forum) > v1.1"
+ },
+ "122": {
+  "canon": "86586886b8bd3c379d2e176243a7225e6aae969d293fe9a9",
+  "name": "macOS v10.4, macOS v10.5, macOS v10.6"
+ },
+ "12200": {
+  "canon": "$ecryptfs$0$1$4207883745556753$567daa975114206c",
+  "name": "eCryptfs"
+ },
+ "12300": {
+  "canon": "8F75FBD166AFDB6D7587DAB89C2F15672AAC031C5B0B5E65C0835FB130555F6FF4E0E5764976755558112246FFF306450C22F6B7746B9E9831ED97B373992F9157436180438417080374881414745255",
+  "name": "Oracle T: Type (Oracle 12+)"
+ },
+ "124": {
+  "canon": "sha1$fe76b$02d5916550edf7fc8c886f044887f4b1abf9b013",
+  "name": "Django (SHA-1)"
+ },
+ "125": {
+  "canon": "83377286015bcebb857b23b94331e2b316b6ecbe9fbf26c4fc",
+  "name": "ArubaOS"
+ },
+ "12500": {
+  "canon": "$RAR3$*0*45109af8ab5f297a*adbf6c5385d7a40373e8f77d7b89d317",
+  "name": "RAR3-hp"
+ },
+ "12600": {
+  "canon": "3f3473a071b1fb955544e80c81853ca0f1e4f9ee4ca3bf4d2a8a10b5ef5be1f6:6058321484538505215534207835727413038041028036676832416353152201",
+  "name": "ColdFusion 10+"
+ },
+ "12900": {
+  "canon": "15738301074686823451275227041071157383010746868234512752270410712bc4be900bf96ccf43c9852fff49b5f5874a9f6e7bf301686fa6d98286de151f15738301074686823451275227041071",
+  "name": "Android FDE (Samsung DEK)"
+ },
+ "130": {
+  "canon": "0a9e4591f539a77cd3af67bae207d250bc86bac6:23240710432",
+  "name": "sha1(utf16le($pass).$salt)"
+ },
+ "1300": {
+  "canon": "e4fa1555ad877bf0ec455483371867200eee89550a93eff2f95a6198",
+  "name": "SHA2-224"
+ },
+ "13000": {
+  "canon": "$rar5$16$38466361001011015181344360681307$15$00000000000000000000000000000000$8$cc7a30583e62676a",
+  "name": "RAR5"
+ },
+ "131": {
+  "canon": "0x0100778883860000000000000000000000000000000000000000eda3604e067a06f2732b05b9cb90b8a710996939",
+  "name": "MSSQL (2000)"
+ },
+ "132": {
+  "canon": "0x010045083578bf13a6e30ca29c40e540813772754d54a5ffd325",
+  "name": "MSSQL (2005)"
+ },
+ "13200": {
+  "canon": "$axcrypt$*1*10467*9a7cd609bb262c738d9f0e4977039b94*ecbe0fd05a96fd2099d88a92eebb76c59d6837dfe55b3631",
+  "name": "AxCrypt 1"
+ },
+ "13300": {
+  "canon": "$axcrypt_sha1$b89eaac7e61417341b710b727768294d",
+  "name": "AxCrypt 1 in-memory SHA1"
+ },
+ "13400": {
+  "canon": "$keepass$*2*24569*0*c40432355cce7348c48053ceea0a28e7d18859c4ea47e3a799c6300861f64b95*265dafcc42e1537ff42e97e1e283c70014133be0fe2d420b4d24c6d57c9d2207*a00e20a852694c15aabb074d61b902fa*48dd553fb96f7996635f2414bfe6a1a8429ef0ffb71a1752abbef31853172c35*a44ae659958ad7fae8c8952cb83f3cf03fec2371ce22a8bf7fac1e687af2f249*1*64*5a26ea376cc5afc955104c334571d30486acbac512a94b75ca82a9e31dd97bf7",
+  "name": "KeePass 1 (AES/Twofish) and KeePass 2 (AES)"
+ },
+ "13800": {
+  "canon": "060a4a94cb2263bcefe74705bd0efe7643d09c2bc25fc69f6a32c1b8d5a5d0d9:4647316184156410832507278642444030512402463246148636510356103432440257733102761444262383653100802140838605535187005586063548643765207865344068042278454875021452355870320020868064506248840047414683714173748364871633802572014845467035357710118327480707136422",
+  "name": "Windows Phone 8+ PIN/password"
+ },
+ "13900": {
+  "canon": "058c1c3773340c8563421e2b17e60eb7c916787e:827500576",
+  "name": "OpenCart"
+ },
+ "140": {
+  "canon": "03b83421e2aa6d872d1f8dee001dc226ef01722b:818436",
+  "name": "sha1($salt.utf16le($pass))"
+ },
+ "1400": {
+  "canon": "127e6fbfe24a750e72930c220a8e138275656b8e5d8f48a98c3c92df2caba935",
+  "name": "SHA2-256"
+ },
+ "14000": {
+  "canon": "53b325182924b356:1412781058343178",
+  "name": "DES (PT = $salt, key = $pass)"
+ },
+ "1410": {
+  "canon": "5bb7456f43e3610363f68ad6de82b8b96f3fc9ad24e9d1f1f8d8bd89638db7c0:12480864321",
+  "name": "sha256($pass.$salt)"
+ },
+ "14100": {
+  "canon": "4c29eea59d8db1e7:7428288455525516",
+  "name": "3DES (PT = $salt, key = $pass)"
+ },
+ "1420": {
+  "canon": "816d1ded1d621873595048912ea3405d9d42afd3b57665d9f5a2db4d89720854:36176620",
+  "name": "sha256($salt.$pass)"
+ },
+ "1430": {
+  "canon": "b2d0db162e30dfef1bfd606689a3acbc213c47ef3fd11968394191886075249d:32002",
+  "name": "sha256(utf16le($pass).$salt)"
+ },
+ "1440": {
+  "canon": "84ebe1bc3d59919a8c4f9337d66bd163661586c828b24b8067a27a6dc4228c64:05662",
+  "name": "sha256($salt.utf16le($pass))"
+ },
+ "14400": {
+  "canon": "fcdc7ec700b887e8eaebf94c2ec52aebb5521223:63038426024388230227",
+  "name": "sha1(CX)"
+ },
+ "1450": {
+  "canon": "b435ffbacea34d5eb0dbc4d69a92f0152f2cf4cd364d34c2ece322ca22d8b334:21217",
+  "name": "HMAC-SHA256 (key = $pass)"
+ },
+ "14500": {
+  "canon": "$cryptoapi$9$2$03000000000000000000000000000000$00000000000000000000000000000000$d1d20e91a8f2e18881dc79369d8af761",
+  "name": "Linux Kernel Crypto API (2.4)"
+ },
+ "1460": {
+  "canon": "8b9472281c36c3a693703de0e0f1ffab8fc0ecdd3bc5ead04c76dd74ef431e49:70108387805",
+  "name": "HMAC-SHA256 (key = $salt)"
+ },
+ "1470": {
+  "canon": "9e9283e633f4a7a42d3abc93701155be8afe5660da24c8758e7d3533e2f2dc82",
+  "name": "sha256(utf16le($pass))"
+ },
+ "14800": {
+  "canon": "$itunes_backup$*10*17a3b858e79bc273be43a9f113b71efe7ec8e7e401396b350180b4592ef45db67ffef7b2d64329a5*10000*2721336781705041205314422175267631184867*1000*99fafc983e732998adb9fadc162a2e382143f115",
+  "name": "iTunes backup >= 10.0"
+ },
+ "14900": {
+  "canon": "7090b6b9:04223875",
+  "name": "Skip32 (PT = $salt, key = $pass)"
+ },
+ "150": {
+  "canon": "02b256705348a28b1d6c0f063907979f7e0c82f8:10323",
+  "name": "HMAC-SHA1 (key = $pass)"
+ },
+ "15000": {
+  "canon": "bfa9fe5a404faff8b0d200385e26b783a163e475869336029d3ebaccaf02b5f16e4949279e8a33b942ab647f8f19a83dbe89a6d39dd6d8f84812de7d2e556767:6422386434050716105781561510557063652302782465168686858312232148",
+  "name": "FileZilla Server >= 0.9.55"
+ },
+ "15300": {
+  "canon": "$DPAPImk$1*1*S-15-21-466364039-425773974-453930460-1925*des3*sha1*24000*b038489dee5ad04e3e3cab4d957258b5*208*cb9b5b7d96a0d2a00305ca403d3fd9c47c561e35b4b2cf3aebfd1d3199a6481d56972be7ebd6c291b199e6f1c2ffaee91978706737e9b1209e6c7d3aa3d8c3c3e38ad1ccfa39400d62c2415961c17fd0bd6b0f7bbd49cc1de1a394e64b7237f56244238da8d37d78",
+  "name": "DPAPI masterkey file v1 (context 1 and 2)"
+ },
+ "15310": {
+  "canon": "$DPAPImk$1*3*S-15-21-407415836-404165111-436049749-1915*des3*sha1*14825*3e86e7d8437c4d5582ff668a83632cb2*208*96ad763b59e67c9f5c3d925e42bbe28a1412b919d1dc4abf03b2bed4c5c244056c14931d94d441117529b7171dfd6ebbe6eecf5d958b65574c293778fbadb892351cc59d5c65d65d2fcda73f5b056548a4a5550106d03d0c39d3cca7e5cdc0d521f48ac9e51cecc5",
+  "name": "DPAPI masterkey file v1 (context 3)"
+ },
+ "15400": {
+  "canon": "$chacha20$*0400000000000003*16*0200000000000001*5152535455565758*6b05fe554b0bc3b3",
+  "name": "ChaCha20"
+ },
+ "15600": {
+  "canon": "$ethereum$p*1024*38353131353831333338313138363430*a8b4dfe92687dbc0afeb5dae7863f18964241e96b264f09959903c8c924583fc*0a9252861d1e235994ce33dbca91c98231764d8ecb4950015a8ae20d6415b986",
+  "name": "Ethereum Wallet, PBKDF2-HMAC-SHA256"
+ },
+ "15700": {
+  "canon": "$ethereum$s*262144*8*1*3134313837333434333838303231333633373433323633373534333136363537*73da7f80ec3bd4f2a128c3a815cfb4d576ecb1a9b47024c902e62ea926f7795b*910e0f8dc1f7ba41959e1089bb769f3e919109591913cc33ba03953d7a905efd",
+  "name": "Ethereum Wallet, SCRYPT"
+ },
+ "160": {
+  "canon": "8d7cb4d4a27a438059bb83a34d1e6cc439669168:2134817",
+  "name": "HMAC-SHA1 (key = $salt)"
+ },
+ "16200": {
+  "canon": "$ASN$*1*20000*80771171105233481004850004085037*d04b17af7f6b184346aad3efefe8bec0987ee73418291a41",
+  "name": "Apple Secure Notes"
+ },
+ "16600": {
+  "canon": "$electrum$1*44358283104603165383613672586868*c43a6632d9f59364f74c395a03d8c2ea",
+  "name": "Electrum Wallet (Salt-Type 1-3)"
+ },
+ "16700": {
+  "canon": "$fvde$1$16$84286044060108438487434858307513$20000$f1620ab93192112f0a23eea89b5d4df065661f974b704191",
+  "name": "FileVault 2"
+ },
+ "16900": {
+  "canon": "$ansible$0*0*6b761adc6faeb0cc0bf197d3d4a4a7d3f1682e4b169cae8fa6b459b3214ed41e*426d313c5809d4a80a4b9bc7d4823070*d8bad190c7fbc7c3cb1c60a27abfb0ff59d6fb73178681c7454d94a0f56a4360",
+  "name": "Ansible Vault"
+ },
+ "170": {
+  "canon": "b9798556b741befdbddcbf640d1dd59d19b1e193",
+  "name": "sha1(utf16le($pass))"
+ },
+ "1700": {
+  "canon": "82a9dda829eb7f8ffe9fbe49e45d47d2dad9664fbb7adf72492e3c81ebd3e29134d9bc12212bf83c6840f10e8246b9db54a4859b7ccd0123d86e5872c1e5082f",
+  "name": "SHA2-512"
+ },
+ "1710": {
+  "canon": "3f749c84d00c6f94a6651b5c195c71dacae08f3cea6fed760232856cef701f7bf60d7f38a587f69f159d4e4cbe00435aeb9c8c0a4927b252d76a744e16e87e91:388026522082",
+  "name": "sha512($pass.$salt)"
+ },
+ "1720": {
+  "canon": "efc5dd0e4145970917abdc311e1d4e23ba0afa9426d960cb28569f4d585cb031af5c936f57fbcb0a08368a1b302573cf582100d40bd7c632f3d8aecd1a1a8eb1:812",
+  "name": "sha512($salt.$pass)"
+ },
+ "1722": {
+  "canon": "07543781b07e905f6f947db8ae305c248b9e12f509b41097e852e2f450e824790e677ea7397b8a9a552b1c19ecf6a6e1dd3844fa5ee5db23976962859676f7d2fb85ca94",
+  "name": "macOS v10.7"
+ },
+ "1730": {
+  "canon": "eefb67342d62a5d8ac84e8ae89d0f157f03749bd0427c80637003a4760feefdb36cbe11ba35ab2015b3691e2e83803178c986aa85f29e6f56938b469a31ccd7a:6576666",
+  "name": "sha512(utf16le($pass).$salt)"
+ },
+ "17300": {
+  "canon": "412ef78534ba6ab0e9b1607d3e9767a25c1ea9d5e83176b4c2817a6c",
+  "name": "SHA3-224"
+ },
+ "1731": {
+  "canon": "0x02003788006711b2e74e7d8cb4be96b1d187c962c5591a02d5a6ae81b3a4a094b26b7877958b26733e45016d929a756ed30d0a5ee65d3ce1970f9b7bf946e705c595f07625b1",
+  "name": "MSSQL (2012, 2014)"
+ },
+ "1740": {
+  "canon": "ce77bf8a8ca9b9cf0ed67edde58ed7fafd4542ce1378fc8bd87b05656ebf92e5711517d5930c18de93a71990e77e1037423e5b64c2f293be7d859d7b6921622e:1512373",
+  "name": "sha512($salt.utf16le($pass))"
+ },
+ "17400": {
+  "canon": "d60fcf6585da4e17224f58858970f0ed5ab042c3916b76b0b828e62eaf636cbd",
+  "name": "SHA3-256"
+ },
+ "1750": {
+  "canon": "138c00f17a1a0363f274817c91118f019aff09f937bfdaea844280a0c0e7811267cc4735d967d8640eed1218268c1c4a76fec8f7aa551491b353829f3a654270:885142",
+  "name": "HMAC-SHA512 (key = $pass)"
+ },
+ "17500": {
+  "canon": "983ba28532cc6320d04f20fa485bcedb38bddb666eca5f1e5aa279ff1c6244fe5f83cf4bbf05b95ff378dd2353617221",
+  "name": "SHA3-384"
+ },
+ "1760": {
+  "canon": "7d02921299935179d509e6dd4f3d0f2944e3451ea9de3af16baead6a7297e5653577d2473a0fff743d9fe78a89bd49296114319989dc7e7870fc7f62bc96accb:114",
+  "name": "HMAC-SHA512 (key = $salt)"
+ },
+ "17600": {
+  "canon": "7c2dc1d743735d4e069f3bda85b1b7e9172033dfdd8cd599ca094ef8570f3930c3f2c0b7afc8d6152ce4eaad6057a2ff22e71934b3a3dd0fb55a7fc84a53144e",
+  "name": "SHA3-512"
+ },
+ "1770": {
+  "canon": "79bba09eb9354412d0f2c037c22a777b8bf549ab12d49b77d5b25faa839e4378d8f6fa11aceb6d9413977ae5ad5d011568bad2de4f998d75fd4ce916eda83697",
+  "name": "sha512(utf16le($pass))"
+ },
+ "17700": {
+  "canon": "e1dfad9bafeae6ef15f5bbb16cf4c26f09f5f1e7870581962fc84636",
+  "name": "Keccak-224"
+ },
+ "17800": {
+  "canon": "203f88777f18bb4ee1226627b547808f38d90d3e106262b5de9ca943b57137b6",
+  "name": "Keccak-256"
+ },
+ "17900": {
+  "canon": "5804b7ada5806ba79540100e9a7ef493654ff2a21d94d4f2ce4bf69abda5d94bf03701fe9525a15dfdc625bfbd769701",
+  "name": "Keccak-384"
+ },
+ "18000": {
+  "canon": "2fbf5c9080f0a704de2e915ba8fdae6ab00bbc026b2c1c8fa07da1239381c6b7f4dfd399bf9652500da723694a4c719587dd0219cb30eabe61210a8ae4dc0b03",
+  "name": "Keccak-512"
+ },
+ "18300": {
+  "canon": "$fvde$2$16$58778104701476542047675521040224$20000$39602e86b7cea4a34f4ff69ff6ed706d68954ee474de1d2a9f6a6f2d24d172001e484c1d4eaa237d",
+  "name": "Apple File System (APFS)"
+ },
+ "18500": {
+  "canon": "888a2ffcb3854fba0321110c5d0d434ad1aa2880",
+  "name": "sha1(md5(md5($pass)))"
+ },
+ "18700": {
+  "canon": "29937c08",
+  "name": "Java Object hashCode()"
+ },
+ "19300": {
+  "canon": "630d2e918ab98e5fad9c61c0e4697654c4c16d73:18463812876898603420835420139870031762867:4449516425193605979760642927684590668549584534278112685644182848763890902699756869283142014018311837025441092624864168514500447147373198033271040848851687108629922695275682773136540885737874252666804716579965812709728589952868736177317883550827482248620334",
+  "name": "sha1($salt1.$pass.$salt2)"
+ },
+ "19500": {
+  "canon": "d7d5ea3e09391da412b653ae6c8d7431ec273ea2:238769868762:8962783556527653675",
+  "name": "Ruby on Rails Restful-Authentication"
+ },
+ "19800": {
+  "canon": "$krb5pa$17$hashcat$HASHCATDOMAIN.COM$a17776abe5383236c58582f515843e029ecbff43706d177651b7b6cdb2713b17597ddb35b1c9c470c281589fd1d51cca125414d19e40e333",
+  "name": "Kerberos 5, etype 17, Pre-Auth"
+ },
+ "19900": {
+  "canon": "$krb5pa$18$hashcat$HASHCATDOMAIN.COM$96c289009b05181bfd32062962740b1b1ce5f74eb12e0266cde74e81094661addab08c0c1a178882c91a0ed89ae4e0e68d2820b9cce69770",
+  "name": "Kerberos 5, etype 18, Pre-Auth"
+ },
+ "20": {
+  "canon": "57ab8499d08c59a7211c77f557bf9425:4247",
+  "name": "md5($salt.$pass)"
+ },
+ "200": {
+  "canon": "7196759210defdc0",
+  "name": "MySQL323"
+ },
+ "20500": {
+  "canon": "f1eff5c0368d10311dcfc419",
+  "name": "PKZIP Master Key"
+ },
+ "20510": {
+  "canon": "f1eff5c0368d10311dcfc419",
+  "name": "PKZIP Master Key (6 byte optimization)"
+ },
+ "20710": {
+  "canon": "bfede293ecf6539211a7305ea218b9f3f608953130405cda9eaba6fb6250f824:7218532375810603",
+  "name": "sha256(sha256($pass).$salt)"
+ },
+ "20711": {
+  "canon": "$SHA$7218532375810603$bfede293ecf6539211a7305ea218b9f3f608953130405cda9eaba6fb6250f824",
+  "name": "AuthMe sha256"
+ },
+ "20720": {
+  "canon": "bae9edada8358fcebcd811f7d362f46277fb9d488379869fba65d79701d48b8b:869dc2ed80187919",
+  "name": "sha256($salt.sha256($pass))"
+ },
+ "20800": {
+  "canon": "74ee1fae245edd6f27bf36efc3604942479fceefbadab5dc5c0b538c196eb0f1",
+  "name": "sha256(md5($pass))"
+ },
+ "20900": {
+  "canon": "100b3a4fc1dc8d60d9bf40688d8b740a",
+  "name": "md5(sha1($pass).md5($pass).sha1($pass))"
+ },
+ "21": {
+  "canon": "e983672a03adcc9767b24584338eb378:00",
+  "name": "osCommerce, xt:Commerce"
+ },
+ "21000": {
+  "canon": "caec04bdf7c17f763a9ec7439f7c9abda112f1bfc9b1bb684fef9b6142636979b9896cfc236896d821a69a961a143dd19c96d59777258201f1bbe5ecc2a2ecf5",
+  "name": "BitShares v0.x - sha512(sha512_bin(pass))"
+ },
+ "21100": {
+  "canon": "aade80a61c6e3cd3cac614f47c1991e0a87dd028:6",
+  "name": "sha1(md5($pass.$salt))"
+ },
+ "21200": {
+  "canon": "e69b7a7fe1bf2ad9ef116f79551ee919:baa038987e582431a6d",
+  "name": "md5(sha1($salt).md5($pass))"
+ },
+ "21300": {
+  "canon": "799dc7d9aa4d3f404cc21a4936dbdcde:68617368636174",
+  "name": "md5($salt.sha1($salt.$pass))"
+ },
+ "21400": {
+  "canon": "0cc1b58a543f372327aa0281e97ab56e345267ee46feabf7709515debb7ec43c",
+  "name": "sha256(sha256_bin($pass))"
+ },
+ "21420": {
+  "canon": "5934ea4d670c13a71155faba42056b2525f71bdc9215d31108990c11bf3d98e3:9269771356270099311432765354522635185291064175409115041569",
+  "name": "sha256($salt.sha256_bin($pass))"
+ },
+ "21600": {
+  "canon": "pbkdf2(1000,20,sha512)$744943$c5f8cdef76e3327c908d8d96d4abdb3d8caba14c",
+  "name": "Web2py pbkdf2-sha512"
+ },
+ "22100": {
+  "canon": "$bitlocker$1$16$6f972989ddc209f1eccf07313a7266a2$1048576$12$3a33a8eaff5e6f81d907b591$60$316b0f6d4cb445fb056f0e3e0633c413526ff4481bbf588917b70a4e8f8075f5ceb45958a800b42cb7ff9b7f5e17c6145bf8561ea86f52d3592059fb",
+  "name": "BitLocker"
+ },
+ "22300": {
+  "canon": "755a8ce4e0cf0baee41d714aa35c9fca803106608f718f973eab006578285007:11265",
+  "name": "sha256($salt.$pass.$salt)"
+ },
+ "22400": {
+  "canon": "$aescrypt$1*efc648908ca7ec727f37f3316dfd885c*eff5c87a35545406a57b56de57bd0554*3a66401271aec08cbd10cf2070332214093a33f36bd0dced4a4bb09fab817184*6a3c49fea0cafb19190dc4bdadb787e73b1df244c51780beef912598bd3bdf7e",
+  "name": "AES Crypt (SHA256)"
+ },
+ "22500": {
+  "canon": "$multibit$1*e5912fe5c84af3d5*5f0391c219e8ef62c06505b1f6232858f5bcaa739c2b471d45dd0bd8345334de",
+  "name": "MultiBit Classic .key (MD5)"
+ },
+ "22700": {
+  "canon": "$multibit$2*2e311aa2cc5ec99f7073cacc8a2d1938*e3ad782e7f92d66a3cdfaec43a46be29*5d1cabd4f4a50ba125f88c47027fff9b",
+  "name": "MultiBit HD (scrypt)"
+ },
+ "23": {
+  "canon": "d04d74780881019341915c70d914db29:0675841",
+  "name": "Skype"
+ },
+ "23100": {
+  "canon": "$keychain$*74cd1efd49e54a8fdc8750288801e09fa26a33b1*66001ad4e0498dc7*5a084b7314971b728cb551ac40b2e50b7b5bd8b8496b902efe7af07538863a45394ead8399ec581681f7416003c49cc7",
+  "name": "Apple Keychain"
+ },
+ "23200": {
+  "canon": "$xmpp-scram$0$4096$45$353835323736323530353932363531393630313632353634313335323434323038393931323138373138343134$6d5b543b985dc6c0645da3c83d114fce121aa51d",
+  "name": "XMPP SCRAM PBKDF2-SHA1"
+ },
+ "23300": {
+  "canon": "$iwork$2$1$1$4000$b31b7320d1e7a5ee$01f54d6f9e5090eb16fef2b05f8242bc$69561c985268326b7353fb22c3685a378341127557bd2bbea1bd10afb31f2127344707b662a2c29480c32b8b93dea0538327f604e5aa8733be83af25f370f7ac",
+  "name": "Apple iWork"
+ },
+ "23900": {
+  "canon": "$bcve$3$08$234b8182cee7098b$35c12ef76a1e88175c4c222da3558310a0075bc7a06ecf46746d149c02a81fb8a97637d1103d2e13ddd5deaf982889594b18c12d7ca18a54875c5da4a47f90ae615ab94b8e3ed9e3c793d872a1b5ac35cfdb66c221d6d0853e9ff2e0f4435b43",
+  "name": "BestCrypt v3 Volume Encryption"
+ },
+ "24": {
+  "canon": "e983672a03adcc9767b24584338eb378:00",
+  "name": "SolarWinds Serv-U"
+ },
+ "24300": {
+  "canon": "94520b02c04e79e08a75a84c2a6e3ed4e3874fe8:ThisIsATestSalt",
+  "name": "sha1($salt.sha1($pass.$salt))"
+ },
+ "24600": {
+  "canon": "SQLCIPHER*1*64000*25548249195677404156261816261456*85b5e156e1cf1e0be5e9f4217186817b*33435c230bbc7989bbd027630e3f47cd",
+  "name": "SQLCipher"
+ },
+ "24700": {
+  "canon": "66a75cb059",
+  "name": "Stuffit5"
+ },
+ "25000": {
+  "canon": "$SNMPv3$0$45889431$30818f0201033011020409242fc0020300ffe304010102010304383036041180001f88808106d566db57fd600000000002011002020118040a6d61747269785f4d4435040c0000000000000000000000000400303d041180001f88808106d566db57fd60000000000400a226020411f319300201000201003018301606082b06010201010200060a2b06010401bf0803020a$80001f88808106d566db57fd6000000000$1b37c3ea872731f922959e90",
+  "name": "SNMPv3 HMAC-MD5-96/HMAC-SHA1-96"
+ },
+ "25100": {
+  "canon": "$SNMPv3$1$45889431$30818f0201033011020409242fc0020300ffe304010102010304383036041180001f88808106d566db57fd600000000002011002020118040a6d61747269785f4d4435040c0000000000000000000000000400303d041180001f88808106d566db57fd60000000000400a226020411f319300201000201003018301606082b06010201010200060a2b06010401bf0803020a$80001f88808106d566db57fd6000000000$1b37c3ea872731f922959e90",
+  "name": "SNMPv3 HMAC-MD5-96"
+ },
+ "25200": {
+  "canon": "$SNMPv3$2$45889431$30818f02010330110204371780f3020300ffe304010102010304383036041180001f88808106d566db57fd600000000002011002020118040a6d61747269785f534841040c0000000000000000000000000400303d041180001f88808106d566db57fd60000000000400a2260204073557d50201000201003018301606082b06010201010200060a2b06010401bf0803020a$80001f88808106d566db57fd6000000000$81f14f1930589f26f6755f6b",
+  "name": "SNMPv3 HMAC-SHA1-96"
+ },
+ "25400": {
+  "canon": "$pdf$2*3*128*-3904*1*16*631ed33746e50fba5caf56bcc39e09c6*32*5f9d0e4f0b39835dace0d306c40cd6b700000000000000000000000000000000*32*842103b0a0dc886db9223b94afe2d7cd63389079b61986a4fcf70095ad630c24",
+  "name": "PDF 1.4 - 1.6 (Acrobat 5 - 8) - user and owner pass"
+ },
+ "25700": {
+  "canon": "b69e7687:05094309",
+  "name": "MurmurHash"
+ },
+ "25900": {
+  "canon": "$knx-ip-secure-device-authentication-code$*3033*fa7c0d787a9467c209f0a6e7cf16069ed704f3959dce19e45d7935c0a91bce41*f927640d9bbe9a4b0b74dd3289ad41ec",
+  "name": "KNX IP Secure - Device Authentication Code"
+ },
+ "2600": {
+  "canon": "a936af92b0ae20b1ff6c3347a72e5fbe",
+  "name": "md5(md5($pass))"
+ },
+ "26000": {
+  "canon": "$mozilla$*3DES*b735d19e6cadb5136376a98c2369f22819d08c79*2b36961682200a877f7d5550975b614acc9fefe3*f03f3575fd5bdbc9e32232316eab7623",
+  "name": "Mozilla key3.db"
+ },
+ "26100": {
+  "canon": "$mozilla$*AES*5add91733b9b13310ea79a4b38de5c3f797c3bf1*54c17e2a8a066cbdc55f2080c5e9f02ea3954d712cb34b4547f5186548f46512*10000*040e4b5a00f993e63f67a34f6cfc5704*eae9c6c003e6d1b2aa8aa21630838808",
+  "name": "Mozilla key4.db"
+ },
+ "2611": {
+  "canon": "28f9975808ae2bdc5847b1cda26033ea:308",
+  "name": "vBulletin < v3.8.5"
+ },
+ "2612": {
+  "canon": "$PHPS$30353031383437363132$f02b0b2f25e5754edb04522c346ba243",
+  "name": "PHPS"
+ },
+ "26401": {
+  "canon": "e7a32f3210455cc044f26117c4612aab:86046627772965328523223752173724",
+  "name": "AES-128-ECB NOKDF (PT = $salt, key = $pass)"
+ },
+ "26402": {
+  "canon": "2995e91b798ef51232a91579edb1d176:49869364034411376791729962721320",
+  "name": "AES-192-ECB NOKDF (PT = $salt, key = $pass)"
+ },
+ "26403": {
+  "canon": "264a4248c9522cb74d33fe26cb596895:61270210011294880287232432636227",
+  "name": "AES-256-ECB NOKDF (PT = $salt, key = $pass)"
+ },
+ "26500": {
+  "canon": "$uido$77889b1bca161ce876d976a102c7bf82$3090545724551425617156367874312887832777$50000$2d4c86b71c0c04129a47c6468e2437d1fecd88e232a7b15112d5364682dc391dbbbb921cf6e02664",
+  "name": "iPhone passcode (UID key + System Keybag)"
+ },
+ "26700": {
+  "canon": "$SNMPv3$3$45889431$308197020103301102047aa1a79e020300ffe30401010201030440303e041180001f88808106d566db57fd600000000002011002020118040e6d61747269785f5348412d3232340410000000000000000000000000000000000400303d041180001f88808106d566db57fd60000000000400a2260204272f76620201000201003018301606082b06010201010200060a2b06010401bf0803020a$80001f88808106d566db57fd6000000000$2f7a3891dd2e27d3f567e4d6d0257962",
+  "name": "SNMPv3 HMAC-SHA224-128"
+ },
+ "2711": {
+  "canon": "0844fbb2fdeda31884a7a45ec2010bb6:324410183853308365427804872426",
+  "name": "vBulletin >= v3.8.5"
+ },
+ "27200": {
+  "canon": "3999d08db95797891ec77f07223ca81bf43e1be2:5dcc47b04c49d3c8e1b9e4ec367fddeed21b7b85",
+  "name": "Ruby on Rails Restful Auth (one round, no sitekey)"
+ },
+ "27400": {
+  "canon": "$vmx$0$10000$264bbab02fdf7c1a793651120bec3723$cbb368564d8dfb99f509d4922f4693413f3816af713f0e76bc2409ff9336935d",
+  "name": "VMware VMX (PBKDF2-HMAC-SHA1 + AES-256-CBC)"
+ },
+ "27500": {
+  "canon": "$vbox$0$260000$fcc37189521686699a43e49514b91f159306be108b98895666583cd15c3e206b$8$288c3957db47e7c3dff2f7932121eb3395d21ab76b9cf3de2dc660310a25e7ad$20000$8847cd90f8acef74bae41155392908780eebb1d16452aa09b2f7b6cd7d8a4096$9f4d615b484f95c73944a98f392a3ce04f93403e8bb6257e6b6c854273d3a08a",
+  "name": "VirtualBox (PBKDF2-HMAC-SHA256 & AES-128-XTS)"
+ },
+ "27600": {
+  "canon": "$vbox$0$160000$54aff69fca91c20b3b15618c6732c4a2f953dd88690cd4cc731569b6b80b5572$16$cfb003087e0c618afa9ad7e44adcd97517f039e0424dedb46db8affbb73cd064019abae19ee5e4f5b05b626e6bc5d7da65c61a5f94d7bcac521c388276e5358b$20000$2e5729055136168eea79cb3f1765450a35ab7540125f2ca2a46924a99fd0524d$b28d1db1cabe99ca989a405c33a27beeb9c0683b8b4b54b0e0d85f712f64d89c",
+  "name": "VirtualBox (PBKDF2-HMAC-SHA256 & AES-256-XTS)"
+ },
+ "27700": {
+  "canon": "$multibit$3*16384*8*1*7523cb5482e81b81*91780fd49b81a782ab840157a69ba7996d81270eaf456c850f314fc1787d9b0b",
+  "name": "MultiBit Classic .wallet (scrypt)"
+ },
+ "27800": {
+  "canon": "23e93f65:00000000",
+  "name": "MurmurHash3"
+ },
+ "27900": {
+  "canon": "5e23d60f:00000000",
+  "name": "CRC32C"
+ },
+ "28000": {
+  "canon": "65c1f848fe38cce6:4260950400318054",
+  "name": "CRC64Jones"
+ },
+ "2811": {
+  "canon": "022f7e02b3314f7d0968f73c00ba759f:67588",
+  "name": "MyBB 1.2+, IPB2+ (Invision Power Board)"
+ },
+ "28800": {
+  "canon": "$krb5db$17$test$TEST.LOCAL$1c41586d6c060071e08186ee214e725e",
+  "name": "Kerberos 5, etype 17, DB"
+ },
+ "28900": {
+  "canon": "$krb5db$18$test$TEST.LOCAL$266b5a53a6d663c3f69174f3309acada8e467c097c7973699f86286a6cf1a6c7",
+  "name": "Kerberos 5, etype 18, DB"
+ },
+ "30": {
+  "canon": "1169500a7dfece72e1f7fc9c9410867a:687430237020",
+  "name": "md5(utf16le($pass).$salt)"
+ },
+ "300": {
+  "canon": "fcf7c1b8749cf99d88e5f34271d636178fb5d130",
+  "name": "MySQL4.1/MySQL5"
+ },
+ "30000": {
+  "canon": "md5$84143$7f51edecfa6fb401a0b5e63d33fc8c0e",
+  "name": "Python Werkzeug MD5 (HMAC-MD5 (key = $salt))"
+ },
+ "30120": {
+  "canon": "sha256$70108387805$8b9472281c36c3a693703de0e0f1ffab8fc0ecdd3bc5ead04c76dd74ef431e49",
+  "name": "Python Werkzeug SHA256 (HMAC-SHA256 (key = $salt))"
+ },
+ "3100": {
+  "canon": "792FCB0AE31D8489:7284616727",
+  "name": "Oracle H: Type (Oracle 7+)"
+ },
+ "3500": {
+  "canon": "9882d0778518b095917eb589f6998441",
+  "name": "md5(md5(md5($pass)))"
+ },
+ "3710": {
+  "canon": "a3aa0ae2b4a102a9974cdf40edeabee0:242812778074",
+  "name": "md5($salt.md5($pass))"
+ },
+ "3711": {
+  "canon": "$B$2152187716$8c8b39c3602b194eeeb6cac78eea2742",
+  "name": "MediaWiki B type"
+ },
+ "3800": {
+  "canon": "78274b1105fb8a7c415b43ffe35ec4a9:6",
+  "name": "md5($salt.$pass.$salt)"
+ },
+ "3910": {
+  "canon": "d8281daba5da597503d12fe31808b4a7:283053",
+  "name": "md5(md5($pass).md5($salt))"
+ },
+ "40": {
+  "canon": "23a8a90599fc5d0d15265d4d3b565f6e:58802707",
+  "name": "md5($salt.utf16le($pass))"
+ },
+ "4010": {
+  "canon": "82422514daaa8253be0aa43f3e263af5:7530326651137",
+  "name": "md5($salt.md5($salt.$pass))"
+ },
+ "4110": {
+  "canon": "45b1005214e2d9472a7ad681578b2438:64268771004",
+  "name": "md5($salt.md5($pass.$salt))"
+ },
+ "4300": {
+  "canon": "b8c385461bb9f9d733d3af832cf60b27",
+  "name": "md5(strtoupper(md5($pass)))"
+ },
+ "4400": {
+  "canon": "288496df99b33f8f75a7ce4837d1b480",
+  "name": "md5(sha1($pass))"
+ },
+ "4410": {
+  "canon": "bc8319c0220bff8a0d7f5d703114a725:34659348756345251",
+  "name": "md5(sha1($pass).$salt)"
+ },
+ "4500": {
+  "canon": "3db9184f5da4e463832b086211af8d2314919951",
+  "name": "sha1(sha1($pass))"
+ },
+ "4510": {
+  "canon": "9138d472fce6fe50e2a32da4eec4ecdc8860f4d5:hashcat1",
+  "name": "sha1(sha1($pass).$salt)"
+ },
+ "4520": {
+  "canon": "59b80a295392eedb677ca377ad7bf3487928df96:136472340404074825440760227553028141804855170538",
+  "name": "sha1($salt.sha1($pass))"
+ },
+ "4521": {
+  "canon": "c18e826af2a78c7b9b7261452613233417e65817:28246535720688452723483475753333",
+  "name": "Redmine"
+ },
+ "4522": {
+  "canon": "9038129c474caa3f0de56f38db84033d0fe1d4b8:365563602032",
+  "name": "PunBB"
+ },
+ "4700": {
+  "canon": "92d85978d884eb1d99a51652b1139c8279fa8663",
+  "name": "sha1(md5($pass))"
+ },
+ "4710": {
+  "canon": "53c724b7f34f09787ed3f1b316215fc35c789504:hashcat1",
+  "name": "sha1(md5($pass).$salt)"
+ },
+ "4711": {
+  "canon": "53c724b7f34f09787ed3f1b316215fc35c789504:hashcat1",
+  "name": "Huawei sha1(md5($pass).$salt)"
+ },
+ "4900": {
+  "canon": "75d280ca9a0c2ee18729603104ead576d9ca6285:347070",
+  "name": "sha1($salt.$pass.$salt)"
+ },
+ "50": {
+  "canon": "e28e4e37e972a945e464b5226053bac0:40",
+  "name": "HMAC-MD5 (key = $pass)"
+ },
+ "5000": {
+  "canon": "05ac0c544060af48f993f9c3cdf2fc03937ea35b:232725102020",
+  "name": "sha1(sha1($salt.$pass.$salt))"
+ },
+ "5100": {
+  "canon": "8743b52063cd8409",
+  "name": "Half MD5"
+ },
+ "5800": {
+  "canon": "3edde1eb9e6679ccbc1ff3c417e8a475a2d2e279:7724368582277760",
+  "name": "Samsung Android Password/PIN"
+ },
+ "60": {
+  "canon": "7f51edecfa6fb401a0b5e63d33fc8c0e:84143",
+  "name": "HMAC-MD5 (key = $salt)"
+ },
+ "600": {
+  "canon": "$BLAKE2$296c269e70ac5f0095e6fb47693480f0f7b97ccd0307f5c3bfa4df8f5ca5c9308a0e7108e80a0a9c0ebb715e8b7109b072046c6cd5e155b4cfd2f27216283b1e",
+  "name": "BLAKE2b-512"
+ },
+ "6000": {
+  "canon": "012cb9b334ec1aeb71a9c8ce85586082467f7eb6",
+  "name": "RIPEMD-160"
+ },
+ "6100": {
+  "canon": "7ca8eaaaa15eaa4c038b4c47b9313e92da827c06940e69947f85bc0fbef3eb8fd254da220ad9e208b6b28f6bb9be31dd760f1fdb26112d83f87d96b416a4d258",
+  "name": "Whirlpool"
+ },
+ "6800": {
+  "canon": "82dbb8ccc9c7ead8c38a92a6b5740f94:500:pmix@trash-mail.com",
+  "name": "LastPass + LastPass sniffed"
+ },
+ "6900": {
+  "canon": "df226c2c6dcb1d995c0299a33a084b201544293c31fc3d279530121d36bbcea9",
+  "name": "GOST R 34.11-94"
+ },
+ "70": {
+  "canon": "2303b15bfa48c74a74758135a0df1201",
+  "name": "md5(utf16le($pass))"
+ },
+ "7300": {
+  "canon": "3437343735333336383831353232323433383333303236303337333338363232303135383237333638363532373231343030313131333838323734373138363632343133333335353030353633373533333133313530363533303738343334313330303630343633333237373037383537333630303233303830303437323838333237313438363238343434383831363634323431333430383735323038:f4b376e25868751fc0264f573ff1fe50b65ce5a2",
+  "name": "IPMI2 RAKP HMAC-SHA1"
+ },
+ "7401": {
+  "canon": "$mysql$A$005*F9CC98CE08892924F50A213B6BC571A2C11778C5*625479393559393965414D45316477456B484F41316E64484742577A2E3162785353526B7554584647562F",
+  "name": "MySQL $A$ (sha256crypt)"
+ },
+ "7500": {
+  "canon": "$krb5pa$23$user$realm$salt$5cbb0c882a2b26956e81644edbdb746326f4f5f0e947144fb3095dffe4b4b03e854fc1d631323632303636373330383333353630",
+  "name": "Kerberos 5, etype 23, AS-REQ Pre-Auth"
+ },
+ "7700": {
+  "canon": "027642760180$77EC38630C08DF8D",
+  "name": "SAP CODVN B (BCODE)"
+ },
+ "7701": {
+  "canon": "027642760180$77EC386300000000",
+  "name": "SAP CODVN B (BCODE) from RFC_READ_TABLE"
+ },
+ "7800": {
+  "canon": "604020408266$32837BA7B97672BA4E5AC74767A4E6E1AE802651",
+  "name": "SAP CODVN F/G (PASSCODE)"
+ },
+ "7801": {
+  "canon": "604020408266$32837BA7B97672BA4E5A00000000000000000000",
+  "name": "SAP CODVN F/G (PASSCODE) from RFC_READ_TABLE"
+ },
+ "8100": {
+  "canon": "1130725275da09ca13254957f2314a639818d44c37ef6d558",
+  "name": "Citrix NetScaler (SHA1)"
+ },
+ "8400": {
+  "canon": "7f8d1951fe48ae3266980c2979c141f60e4415e5:5037864764153886517871426607441768004150",
+  "name": "WBB3 (Woltlab Burning Board)"
+ },
+ "8500": {
+  "canon": "$racf$*8481*6095E8FCA59F8E3E",
+  "name": "RACF"
+ },
+ "8600": {
+  "canon": "3dd2e1e5ac03e230243d58b8c5ada076",
+  "name": "Lotus Notes/Domino 5"
+ },
+ "900": {
+  "canon": "afe04867ec7a3845145579a95f72eca7",
+  "name": "MD4"
+ },
+ "9400": {
+  "canon": "$office$*2007*20*128*16*18410007331073848057180885845227*944c70a5ee6e5ab2a6a86ff54b5f621a*e6650f1f2630c27fd8fc0f5e56e2e01f99784b9f",
+  "name": "MS Office 2007"
+ },
+ "9500": {
+  "canon": "$office$*2010*100000*128*16*34170046140146368675746031258762*de5bc114991bb3a5679a6e24320bdb09*1b72a4ddffba3dcd5395f6a5ff75b126cb832b733c298e86162028ca47a235a9",
+  "name": "MS Office 2010"
+ },
+ "9600": {
+  "canon": "$office$*2013*100000*256*16*67805436882475302087847656644837*0c392d3b9ca889656d1e615c54f9f3c9*612b79e33b96322c3253fc8a0f314463cd76bc4efe1352f7efffca0f374f7e4b",
+  "name": "MS Office 2013"
+ },
+ "9700": {
+  "canon": "$oldoffice$0*55045061647456688860411218030058*e7e24d163fbd743992d4b8892bf3f2f7*493410dbc832557d3fe1870ace8397e2",
+  "name": "MS Office <= 2003 $0/$1, MD5 + RC4"
+ },
+ "9720": {
+  "canon": "$oldoffice$0*55045061647456688860411218030058*e7e24d163fbd743992d4b8892bf3f2f7*493410dbc832557d3fe1870ace8397e2:91b2e062b9",
+  "name": "MS Office <= 2003 $0/$1, MD5 + RC4, collider #2"
+ },
+ "9800": {
+  "canon": "$oldoffice$3*83328705222323020515404251156288*2855956a165ff6511bc7f4cd77b9e101*941861655e73a09c40f7b1e9dfd0c256ed285acd",
+  "name": "MS Office <= 2003 $3/$4, SHA1 + RC4"
+ },
+ "9820": {
+  "canon": "$oldoffice$3*83328705222323020515404251156288*2855956a165ff6511bc7f4cd77b9e101*941861655e73a09c40f7b1e9dfd0c256ed285acd:b8f63619ca",
+  "name": "MS Office <= 2003 $3, SHA1 + RC4, collider #2"
+ },
+ "9900": {
+  "canon": "22527bee5c29ce95373c4e0f359f079b",
+  "name": "Radmin2"
+ }
+}

@@ -252,20 +252,49 @@ def test_shadow_never_raises_and_imports_username(app, username, salt, crypt):
     assert ciphertexts[0].startswith(f"$6${salt}$")
 
 
-# --- invariant 5: hash_only non-1000 round-trips without mutation -----------
+# --- invariant 5: hash_only stores hashcat's own canonical case -------------
 
-# hash types where the parser does NOT lowercase (i.e. not 300/1000/1731) and
-# does not special-case ('2100'). Mixed-case hex digests must round-trip
-# verbatim.
+# A recovered hash is matched back to its row by an exact md5 of the stored
+# ciphertext, so the stored form has to be the one hashcat echoes. hashcat
+# parses hex case-insensitively and re-emits it lower case, so for every mode
+# HASH_CASE_RULES marks as one all-hex digest the import must store the digest
+# folded down -- and must not otherwise alter it.
 @pytest.mark.security
 @PROPERTY_SETTINGS
 @given(
     digest=st.text(alphabet="0123456789abcdefABCDEF", min_size=32, max_size=64),
     hash_type=st.sampled_from(["0", "100", "1400", "1700"]),
 )
-def test_hash_only_non_1000_round_trips_unmutated(app, digest, hash_type):
-    """For non-NTLM/SHA1 hash types, hash_only import must store the exact
-    input (case preserved, no mutation)."""
+def test_hash_only_all_hex_modes_stored_in_hashcats_case(app, digest, hash_type):
+    """For modes whose whole ciphertext is one hex digest, hash_only import
+    must store the digest lower-cased -- the form hashcat's outfile, potfile
+    and --show all report -- with nothing but the case changed."""
+    hashfile_id = _make_user_and_hashfile()
+    _import_text(digest + "\n", hashfile_id, file_type="hash_only", hash_type=hash_type)
+
+    ciphertexts = _imported_ciphertexts(hashfile_id)
+    assert digest.lower() in ciphertexts, (
+        f"{digest!r} not stored in hashcat's case: {ciphertexts!r}"
+    )
+    # case is the only thing the fold is allowed to touch
+    assert [c.lower() for c in ciphertexts] == [digest.lower()]
+
+
+# --- invariant 6: modes outside the table are never mutated -----------------
+
+# The fold is table-driven precisely so it cannot reach modes where it would be
+# wrong. These carry OPTS_TYPE_HASH_COPY: hashcat echoes the line it was given
+# byte for byte, so a hex-looking value here must survive verbatim -- which a
+# blanket .lower() would have destroyed.
+@pytest.mark.security
+@PROPERTY_SETTINGS
+@given(
+    digest=st.text(alphabet="0123456789abcdefABCDEF", min_size=32, max_size=64),
+    hash_type=st.sampled_from(["501", "7100", "11400", "12700", "16400"]),
+)
+def test_hash_only_untabled_modes_round_trip_unmutated(app, digest, hash_type):
+    """A mode absent from HASH_CASE_RULES must keep the behaviour it had
+    before: hash_only import stores the exact input, case included."""
     hashfile_id = _make_user_and_hashfile()
     _import_text(digest + "\n", hashfile_id, file_type="hash_only", hash_type=hash_type)
 

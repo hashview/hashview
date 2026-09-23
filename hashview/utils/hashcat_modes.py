@@ -11,6 +11,9 @@ spec table used by hashview.utils.utils.validate_hash_only_hashfile. Specs:
                       '$pkzip$'/'$pkzip2$', both of which hashcat accepts)
   ('litprefix', t)  -> must start with the literal uppercase token (e.g. 'SCRYPT')
 Only fixed-shape parts are constrained, so legitimate hashes are not rejected.
+
+Also provides HASH_CASE_RULES, the per-mode case normalisation applied at import
+by hashview.utils.utils.normalize_hash_case -- see the comment above the table.
 """
 
 CUSTOM_HASH_TYPE = 'custom'   # sentinel select value for a manually-entered mode; never persisted to the DB
@@ -829,6 +832,346 @@ HASH_ONLY_AUTO_RULES = {
     '29542': ('prefix', '$luks$'),
     '29543': ('prefix', '$luks$'),
     '29700': ('prefix', '$keepass$'),
+}
+
+
+# Per-mode case normalisation, so a stored hash is spelled the way hashcat will
+# spell it back. Consumed by hashview.utils.utils.normalize_hash_case, which
+# carries the why; in short, hashcat parses hex case-insensitively and re-emits
+# it through a lower-case table, so an upper-case paste is cracked and then never
+# matches the md5(ciphertext) lookup that ingests the crack.
+#
+# Value is (span, case). The span says WHICH PART of the line to fold, and every
+# one but 'line' is applied only if that part is pure hex -- folding hex cannot
+# change the value a hash denotes, which is what makes this safe to do in bulk:
+#
+#   'all'             the whole ciphertext is one hex digest
+#   ('after', marker) hex follows a fixed marker the line must start with ('0x')
+#   ('head', sep)     the digest runs from the start to the first `sep`
+#   ('tail', sep)     the digest runs from the last `sep` to the end
+#   'fields'          several hex fields, every one of them folded
+#   'line'            fold everything, salt included (hashcat's OPTS_TYPE_ST_LOWER)
+#
+# Derived from hashcat 6.2.6 and verified against it: for each mode, every
+# re-cased spelling of its own example hash was put to `hashcat --left` (which
+# prints exactly what the outfile, potfile and --show print) and the rule kept
+# only if it reproduced hashcat's answer for all of them. Three groups of modes
+# are therefore absent, and keep the behaviour every mode had before -- stored
+# exactly as uploaded:
+#
+#   * hashcat echoes the line verbatim (OPTS_TYPE_HASH_COPY) -- 501, 7100, 10600,
+#     10700, 10900, 11300, 11400, 11900, 12000, 12001, 12100, 12700, 15200, 16400;
+#   * the format carries a free-text field hashcat hands back untouched, which
+#     'fields' would fold if it ever held a hex-looking value ('deadbeef' is a
+#     plausible account name) -- 13100, 18200, 19600, 19700 (the Kerberos
+#     principal and realm) and 28700 (the AWS region and service). The Kerberos
+#     ones have normalize_kerberos_hash on their own file_type in any case;
+#   * hashcat refuses a re-cased hash outright, so there was nothing to measure
+#     -- 8000 (Sybase ASE) among them, which will not load upper-case hex at all.
+HASH_CASE_RULES = {
+    # the whole ciphertext is one hex digest
+    '0': ('all', 'lower'),            # MD5
+    '70': ('all', 'lower'),           # md5(utf16le($pass))
+    '100': ('all', 'lower'),          # SHA1
+    '122': ('all', 'lower'),          # macOS v10.4, macOS v10.5, macOS v10.6
+    '125': ('all', 'lower'),          # ArubaOS
+    '170': ('all', 'lower'),          # sha1(utf16le($pass))
+    '200': ('all', 'lower'),          # MySQL323
+    '300': ('all', 'lower'),          # MySQL4.1/MySQL5
+    '900': ('all', 'lower'),          # MD4
+    '1000': ('all', 'lower'),         # NTLM
+    '1300': ('all', 'lower'),         # SHA2-224
+    '1400': ('all', 'lower'),         # SHA2-256
+    '1470': ('all', 'lower'),         # sha256(utf16le($pass))
+    '1700': ('all', 'lower'),         # SHA2-512
+    '1722': ('all', 'lower'),         # macOS v10.7
+    '1770': ('all', 'lower'),         # sha512(utf16le($pass))
+    '2600': ('all', 'lower'),         # md5(md5($pass))
+    '3500': ('all', 'lower'),         # md5(md5(md5($pass)))
+    '4300': ('all', 'lower'),         # md5(strtoupper(md5($pass)))
+    '4400': ('all', 'lower'),         # md5(sha1($pass))
+    '4500': ('all', 'lower'),         # sha1(sha1($pass))
+    '4700': ('all', 'lower'),         # sha1(md5($pass))
+    '5100': ('all', 'lower'),         # Half MD5
+    '6000': ('all', 'lower'),         # RIPEMD-160
+    '6100': ('all', 'lower'),         # Whirlpool
+    '6900': ('all', 'lower'),         # GOST R 34.11-94
+    '8100': ('all', 'lower'),         # Citrix NetScaler (SHA1)
+    '8600': ('all', 'lower'),         # Lotus Notes/Domino 5
+    '9900': ('all', 'lower'),         # Radmin2
+    '10800': ('all', 'lower'),        # SHA2-384
+    '10870': ('all', 'lower'),        # sha384(utf16le($pass))
+    '11700': ('all', 'lower'),        # GOST R 34.11-2012 (Streebog) 256-bit, big-en
+    '11800': ('all', 'lower'),        # GOST R 34.11-2012 (Streebog) 512-bit, big-en
+    '12300': ('all', 'upper'),        # Oracle T: Type (Oracle 12+)
+    '12900': ('all', 'lower'),        # Android FDE (Samsung DEK)
+    '17300': ('all', 'lower'),        # SHA3-224
+    '17400': ('all', 'lower'),        # SHA3-256
+    '17500': ('all', 'lower'),        # SHA3-384
+    '17600': ('all', 'lower'),        # SHA3-512
+    '17700': ('all', 'lower'),        # Keccak-224
+    '17800': ('all', 'lower'),        # Keccak-256
+    '17900': ('all', 'lower'),        # Keccak-384
+    '18000': ('all', 'lower'),        # Keccak-512
+    '18500': ('all', 'lower'),        # sha1(md5(md5($pass)))
+    '18700': ('all', 'lower'),        # Java Object hashCode()
+    '20500': ('all', 'lower'),        # PKZIP Master Key
+    '20510': ('all', 'lower'),        # PKZIP Master Key (6 byte optimization)
+    '20800': ('all', 'lower'),        # sha256(md5($pass))
+    '20900': ('all', 'lower'),        # md5(sha1($pass).md5($pass).sha1($pass))
+    '21000': ('all', 'lower'),        # BitShares v0.x - sha512(sha512_bin(pass))
+    '21400': ('all', 'lower'),        # sha256(sha256_bin($pass))
+    '24700': ('all', 'lower'),        # Stuffit5
+
+    # hex behind a fixed marker ('0x…')
+    '131': (('after', '0x'), 'lower'),   # MSSQL (2000)
+    '132': (('after', '0x'), 'lower'),   # MSSQL (2005)
+    '600': (('after', '$BLAKE2$'), 'lower'),   # BLAKE2b-512
+    '1731': (('after', '0x'), 'lower'),  # MSSQL (2012, 2014)
+    '13300': (('after', '$axcrypt_sha1$'), 'lower'),  # AxCrypt 1 in-memory SHA1
+
+    # leading digest, up to the first separator; the rest is echoed verbatim
+    '10': (('head', ':'), 'lower'),   # md5($pass.$salt)
+    '11': (('head', ':'), 'lower'),   # Joomla < 2.5.18
+    '12': (('head', ':'), 'lower'),   # PostgreSQL
+    '20': (('head', ':'), 'lower'),   # md5($salt.$pass)
+    '21': (('head', ':'), 'lower'),   # osCommerce, xt:Commerce
+    '23': (('head', ':'), 'lower'),   # Skype
+    '24': (('head', ':'), 'lower'),   # SolarWinds Serv-U
+    '30': (('head', ':'), 'lower'),   # md5(utf16le($pass).$salt)
+    '40': (('head', ':'), 'lower'),   # md5($salt.utf16le($pass))
+    '50': (('head', ':'), 'lower'),   # HMAC-MD5 (key = $pass)
+    '60': (('head', ':'), 'lower'),   # HMAC-MD5 (key = $salt)
+    '110': (('head', ':'), 'lower'),  # sha1($pass.$salt)
+    '112': (('head', ':'), 'lower'),  # Oracle S: Type (Oracle 11+)
+    '120': (('head', ':'), 'lower'),  # sha1($salt.$pass)
+    '130': (('head', ':'), 'lower'),  # sha1(utf16le($pass).$salt)
+    '140': (('head', ':'), 'lower'),  # sha1($salt.utf16le($pass))
+    '150': (('head', ':'), 'lower'),  # HMAC-SHA1 (key = $pass)
+    '160': (('head', ':'), 'lower'),  # HMAC-SHA1 (key = $salt)
+    '1410': (('head', ':'), 'lower'),  # sha256($pass.$salt)
+    '1420': (('head', ':'), 'lower'),  # sha256($salt.$pass)
+    '1430': (('head', ':'), 'lower'),  # sha256(utf16le($pass).$salt)
+    '1440': (('head', ':'), 'lower'),  # sha256($salt.utf16le($pass))
+    '1450': (('head', ':'), 'lower'),  # HMAC-SHA256 (key = $pass)
+    '1460': (('head', ':'), 'lower'),  # HMAC-SHA256 (key = $salt)
+    '1710': (('head', ':'), 'lower'),  # sha512($pass.$salt)
+    '1720': (('head', ':'), 'lower'),  # sha512($salt.$pass)
+    '1730': (('head', ':'), 'lower'),  # sha512(utf16le($pass).$salt)
+    '1740': (('head', ':'), 'lower'),  # sha512($salt.utf16le($pass))
+    '1750': (('head', ':'), 'lower'),  # HMAC-SHA512 (key = $pass)
+    '1760': (('head', ':'), 'lower'),  # HMAC-SHA512 (key = $salt)
+    '2611': (('head', ':'), 'lower'),  # vBulletin < v3.8.5
+    '2711': (('head', ':'), 'lower'),  # vBulletin >= v3.8.5
+    '2811': (('head', ':'), 'lower'),  # MyBB 1.2+, IPB2+ (Invision Power Board)
+    '3100': (('head', ':'), 'upper'),  # Oracle H: Type (Oracle 7+)
+    '3710': (('head', ':'), 'lower'),  # md5($salt.md5($pass))
+    '3800': (('head', ':'), 'lower'),  # md5($salt.$pass.$salt)
+    '3910': (('head', ':'), 'lower'),  # md5(md5($pass).md5($salt))
+    '4010': (('head', ':'), 'lower'),  # md5($salt.md5($salt.$pass))
+    '4110': (('head', ':'), 'lower'),  # md5($salt.md5($pass.$salt))
+    '4410': (('head', ':'), 'lower'),  # md5(sha1($pass).$salt)
+    '4510': (('head', ':'), 'lower'),  # sha1(sha1($pass).$salt)
+    '4520': (('head', ':'), 'lower'),  # sha1($salt.sha1($pass))
+    '4521': (('head', ':'), 'lower'),  # Redmine
+    '4522': (('head', ':'), 'lower'),  # PunBB
+    '4710': (('head', ':'), 'lower'),  # sha1(md5($pass).$salt)
+    '4711': (('head', ':'), 'lower'),  # Huawei sha1(md5($pass).$salt)
+    '4900': (('head', ':'), 'lower'),  # sha1($salt.$pass.$salt)
+    '5000': (('head', ':'), 'lower'),  # sha1(sha1($salt.$pass.$salt))
+    '5800': (('head', ':'), 'lower'),  # Samsung Android Password/PIN
+    '6800': (('head', ':'), 'lower'),  # LastPass + LastPass sniffed
+    '8400': (('head', ':'), 'lower'),  # WBB3 (Woltlab Burning Board)
+    '10100': (('head', ':'), 'lower'),  # SipHash
+    '10810': (('head', ':'), 'lower'),  # sha384($pass.$salt)
+    '10820': (('head', ':'), 'lower'),  # sha384($salt.$pass)
+    '10830': (('head', ':'), 'lower'),  # sha384(utf16le($pass).$salt)
+    '10840': (('head', ':'), 'lower'),  # sha384($salt.utf16le($pass))
+    '11000': (('head', ':'), 'lower'),  # PrestaShop
+    '11500': (('head', ':'), 'lower'),  # CRC32
+    '11750': (('head', ':'), 'lower'),  # HMAC-Streebog-256 (key = $pass), big-endian
+    '11760': (('head', ':'), 'lower'),  # HMAC-Streebog-256 (key = $salt), big-endian
+    '11850': (('head', ':'), 'lower'),  # HMAC-Streebog-512 (key = $pass), big-endian
+    '11860': (('head', ':'), 'lower'),  # HMAC-Streebog-512 (key = $salt), big-endian
+    '12600': (('head', ':'), 'lower'),  # ColdFusion 10+
+    '13800': (('head', ':'), 'lower'),  # Windows Phone 8+ PIN/password
+    '13900': (('head', ':'), 'lower'),  # OpenCart
+    '14000': (('head', ':'), 'lower'),  # DES (PT = $salt, key = $pass)
+    '14100': (('head', ':'), 'lower'),  # 3DES (PT = $salt, key = $pass)
+    '14400': (('head', ':'), 'lower'),  # sha1(CX)
+    '14900': (('head', ':'), 'lower'),  # Skip32 (PT = $salt, key = $pass)
+    '15000': (('head', ':'), 'lower'),  # FileZilla Server >= 0.9.55
+    '19300': (('head', ':'), 'lower'),  # sha1($salt1.$pass.$salt2)
+    '19500': (('head', ':'), 'lower'),  # Ruby on Rails Restful-Authentication
+    '20710': (('head', ':'), 'lower'),  # sha256(sha256($pass).$salt)
+    '20720': (('head', ':'), 'lower'),  # sha256($salt.sha256($pass))
+    '21100': (('head', ':'), 'lower'),  # sha1(md5($pass.$salt))
+    '21200': (('head', ':'), 'lower'),  # md5(sha1($salt).md5($pass))
+    '21300': (('head', ':'), 'lower'),  # md5($salt.sha1($salt.$pass))
+    '21420': (('head', ':'), 'lower'),  # sha256($salt.sha256_bin($pass))
+    '22300': (('head', ':'), 'lower'),  # sha256($salt.$pass.$salt)
+    '24300': (('head', ':'), 'lower'),  # sha1($salt.sha1($pass.$salt))
+    '25700': (('head', ':'), 'lower'),  # MurmurHash
+    '26401': (('head', ':'), 'lower'),  # AES-128-ECB NOKDF (PT = $salt, key = $pass)
+    '26402': (('head', ':'), 'lower'),  # AES-192-ECB NOKDF (PT = $salt, key = $pass)
+    '26403': (('head', ':'), 'lower'),  # AES-256-ECB NOKDF (PT = $salt, key = $pass)
+    '27200': (('head', ':'), 'lower'),  # Ruby on Rails Restful Auth (one round, no si
+    '27800': (('head', ':'), 'lower'),  # MurmurHash3
+    '27900': (('head', ':'), 'lower'),  # CRC32C
+    '28000': (('head', ':'), 'lower'),  # CRC64Jones
+
+    # trailing digest, after the last separator
+    '124': (('tail', '$'), 'lower'),  # Django (SHA-1)
+    '2612': (('tail', '$'), 'lower'),  # PHPS
+    '3711': (('tail', '$'), 'lower'),  # MediaWiki B type
+    '7300': (('tail', ':'), 'lower'),  # IPMI2 RAKP HMAC-SHA1
+    '7401': (('tail', '*'), 'upper'),  # MySQL $A$ (sha256crypt)
+    '7500': (('tail', '$'), 'lower'),  # Kerberos 5, etype 23, AS-REQ Pre-Auth
+    '7700': (('tail', '$'), 'upper'),  # SAP CODVN B (BCODE)
+    '7701': (('tail', '$'), 'upper'),  # SAP CODVN B (BCODE) from RFC_READ_TABLE
+    '7800': (('tail', '$'), 'upper'),  # SAP CODVN F/G (PASSCODE)
+    '7801': (('tail', '$'), 'upper'),  # SAP CODVN F/G (PASSCODE) from RFC_READ_TABLE
+    '8500': (('tail', '*'), 'upper'),  # RACF
+    '9820': (('tail', ':'), 'lower'),  # MS Office <= 2003 $3, SHA1 + RC4, collider #
+    '11100': (('tail', '*'), 'lower'),  # PostgreSQL CRAM (MD5)
+    '11200': (('tail', '*'), 'lower'),  # MySQL CRAM (SHA1)
+    '11600': (('tail', '$'), 'lower'),  # 7-Zip
+    '12200': (('tail', '$'), 'lower'),  # eCryptfs
+    '13000': (('tail', '$'), 'lower'),  # RAR5
+    '14500': (('tail', '$'), 'lower'),  # Linux Kernel Crypto API (2.4)
+    '15300': (('tail', '*'), 'lower'),  # DPAPI masterkey file v1 (context 1 and 2)
+    '15310': (('tail', '*'), 'lower'),  # DPAPI masterkey file v1 (context 3)
+    '15400': (('tail', '*'), 'lower'),  # ChaCha20
+    '15600': (('tail', '*'), 'lower'),  # Ethereum Wallet, PBKDF2-HMAC-SHA256
+    '15700': (('tail', '*'), 'lower'),  # Ethereum Wallet, SCRYPT
+    '16200': (('tail', '*'), 'lower'),  # Apple Secure Notes
+    '16600': (('tail', '*'), 'lower'),  # Electrum Wallet (Salt-Type 1-3)
+    '16700': (('tail', '$'), 'lower'),  # FileVault 2
+    '18300': (('tail', '$'), 'lower'),  # Apple File System (APFS)
+    '18400': (('tail', '*'), 'lower'),  # Open Document Format (ODF) 1.2 (SHA-256, AES
+    '19800': (('tail', '$'), 'lower'),  # Kerberos 5, etype 17, Pre-Auth
+    '19900': (('tail', '$'), 'lower'),  # Kerberos 5, etype 18, Pre-Auth
+    '20011': (('tail', '*'), 'lower'),  # DiskCryptor SHA512 + XTS 512 bit
+    '20012': (('tail', '*'), 'lower'),  # DiskCryptor SHA512 + XTS 1024 bit
+    '20013': (('tail', '*'), 'lower'),  # DiskCryptor SHA512 + XTS 1536 bit
+    '20711': (('tail', '$'), 'lower'),  # AuthMe sha256
+    '21600': (('tail', '$'), 'lower'),  # Web2py pbkdf2-sha512
+    '22911': (('tail', '$'), 'lower'),  # RSA/DSA/EC/OpenSSH Private Keys ($0$)
+    '22921': (('tail', '$'), 'lower'),  # RSA/DSA/EC/OpenSSH Private Keys ($6$)
+    '22931': (('tail', '$'), 'lower'),  # RSA/DSA/EC/OpenSSH Private Keys ($1, $3$)
+    '22941': (('tail', '$'), 'lower'),  # RSA/DSA/EC/OpenSSH Private Keys ($4$)
+    '22951': (('tail', '$'), 'lower'),  # RSA/DSA/EC/OpenSSH Private Keys ($5$)
+    '23200': (('tail', '$'), 'lower'),  # XMPP SCRAM PBKDF2-SHA1
+    '28800': (('tail', '$'), 'lower'),  # Kerberos 5, etype 17, DB
+    '28900': (('tail', '$'), 'lower'),  # Kerberos 5, etype 18, DB
+    '30000': (('tail', '$'), 'lower'),  # Python Werkzeug MD5 (HMAC-MD5 (key = $salt))
+    '30120': (('tail', '$'), 'lower'),  # Python Werkzeug SHA256 (HMAC-SHA256 (key = $
+
+    # several hex fields, all of them folded
+    '8800': ('fields', 'lower'),      # Android FDE <= 4.3
+    '9400': ('fields', 'lower'),      # MS Office 2007
+    '9500': ('fields', 'lower'),      # MS Office 2010
+    '9600': ('fields', 'lower'),      # MS Office 2013
+    '9700': ('fields', 'lower'),      # MS Office <= 2003 $0/$1, MD5 + RC4
+    '9720': ('fields', 'lower'),      # MS Office <= 2003 $0/$1, MD5 + RC4, collider
+    '9800': ('fields', 'lower'),      # MS Office <= 2003 $3/$4, SHA1 + RC4
+    '10420': ('fields', 'lower'),     # PDF 1.1 - 1.3 (Acrobat 2 - 4), collider #2
+    '12500': ('fields', 'lower'),     # RAR3-hp
+    '13200': ('fields', 'lower'),     # AxCrypt 1
+    '13400': ('fields', 'lower'),     # KeePass 1 (AES/Twofish) and KeePass 2 (AES)
+    '14800': ('fields', 'lower'),     # iTunes backup >= 10.0
+    '15900': ('fields', 'lower'),     # DPAPI masterkey file v2 (context 1 and 2)
+    '15910': ('fields', 'lower'),     # DPAPI masterkey file v2 (context 3)
+    '16300': ('fields', 'lower'),     # Ethereum Pre-Sale Wallet, PBKDF2-HMAC-SHA256
+    '16900': ('fields', 'lower'),     # Ansible Vault
+    '18600': ('fields', 'lower'),     # Open Document Format (ODF) 1.1 (SHA-1, Blowf
+    '18900': ('fields', 'lower'),     # Android Backup
+    '21700': ('fields', 'lower'),     # Electrum Wallet (Salt-Type 4)
+    '21800': ('fields', 'lower'),     # Electrum Wallet (Salt-Type 5)
+    '22100': ('fields', 'lower'),     # BitLocker
+    '22400': ('fields', 'lower'),     # AES Crypt (SHA256)
+    '22500': ('fields', 'lower'),     # MultiBit Classic .key (MD5)
+    '22600': ('fields', 'lower'),     # Telegram Desktop < v2.1.14 (PBKDF2-HMAC-SHA1
+    '22700': ('fields', 'lower'),     # MultiBit HD (scrypt)
+    '23100': ('fields', 'lower'),     # Apple Keychain
+    '23300': ('fields', 'lower'),     # Apple iWork
+    '23500': ('fields', 'lower'),     # AxCrypt 2 AES-128
+    '23600': ('fields', 'lower'),     # AxCrypt 2 AES-256
+    '23900': ('fields', 'lower'),     # BestCrypt v3 Volume Encryption
+    '24410': ('fields', 'lower'),     # PKCS#8 Private Keys (PBKDF2-HMAC-SHA1 + 3DES
+    '24420': ('fields', 'lower'),     # PKCS#8 Private Keys (PBKDF2-HMAC-SHA256 + 3D
+    '24500': ('fields', 'lower'),     # Telegram Desktop >= v2.1.14 (PBKDF2-HMAC-SHA
+    '24600': ('fields', 'lower'),     # SQLCipher
+    '25000': ('fields', 'lower'),     # SNMPv3 HMAC-MD5-96/HMAC-SHA1-96
+    '25100': ('fields', 'lower'),     # SNMPv3 HMAC-MD5-96
+    '25200': ('fields', 'lower'),     # SNMPv3 HMAC-SHA1-96
+    '25400': ('fields', 'lower'),     # PDF 1.4 - 1.6 (Acrobat 5 - 8) - user and own
+    '25900': ('fields', 'lower'),     # KNX IP Secure - Device Authentication Code
+    '26000': ('fields', 'lower'),     # Mozilla key3.db
+    '26100': ('fields', 'lower'),     # Mozilla key4.db
+    '26500': ('fields', 'lower'),     # iPhone passcode (UID key + System Keybag)
+    '26700': ('fields', 'lower'),     # SNMPv3 HMAC-SHA224-128
+    '26800': ('fields', 'lower'),     # SNMPv3 HMAC-SHA256-192
+    '26900': ('fields', 'lower'),     # SNMPv3 HMAC-SHA384-256
+    '27300': ('fields', 'lower'),     # SNMPv3 HMAC-SHA512-384
+    '27400': ('fields', 'lower'),     # VMware VMX (PBKDF2-HMAC-SHA1 + AES-256-CBC)
+    '27500': ('fields', 'lower'),     # VirtualBox (PBKDF2-HMAC-SHA256 & AES-128-XTS
+    '27600': ('fields', 'lower'),     # VirtualBox (PBKDF2-HMAC-SHA256 & AES-256-XTS
+    '27700': ('fields', 'lower'),     # MultiBit Classic .wallet (scrypt)
+    '28100': ('fields', 'lower'),     # Windows Hello PIN/Password
+    '29200': ('fields', 'lower'),     # Radmin3
+    '29311': ('fields', 'lower'),     # TrueCrypt RIPEMD160 + XTS 512 bit
+    '29312': ('fields', 'lower'),     # TrueCrypt RIPEMD160 + XTS 1024 bit
+    '29313': ('fields', 'lower'),     # TrueCrypt RIPEMD160 + XTS 1536 bit
+    '29321': ('fields', 'lower'),     # TrueCrypt SHA512 + XTS 512 bit
+    '29322': ('fields', 'lower'),     # TrueCrypt SHA512 + XTS 1024 bit
+    '29323': ('fields', 'lower'),     # TrueCrypt SHA512 + XTS 1536 bit
+    '29331': ('fields', 'lower'),     # TrueCrypt Whirlpool + XTS 512 bit
+    '29332': ('fields', 'lower'),     # TrueCrypt Whirlpool + XTS 1024 bit
+    '29333': ('fields', 'lower'),     # TrueCrypt Whirlpool + XTS 1536 bit
+    '29341': ('fields', 'lower'),     # TrueCrypt RIPEMD160 + XTS 512 bit + boot-mod
+    '29342': ('fields', 'lower'),     # TrueCrypt RIPEMD160 + XTS 1024 bit + boot-mo
+    '29343': ('fields', 'lower'),     # TrueCrypt RIPEMD160 + XTS 1536 bit + boot-mo
+    '29411': ('fields', 'lower'),     # VeraCrypt RIPEMD160 + XTS 512 bit
+    '29412': ('fields', 'lower'),     # VeraCrypt RIPEMD160 + XTS 1024 bit
+    '29413': ('fields', 'lower'),     # VeraCrypt RIPEMD160 + XTS 1536 bit
+    '29421': ('fields', 'lower'),     # VeraCrypt SHA512 + XTS 512 bit
+    '29422': ('fields', 'lower'),     # VeraCrypt SHA512 + XTS 1024 bit
+    '29423': ('fields', 'lower'),     # VeraCrypt SHA512 + XTS 1536 bit
+    '29431': ('fields', 'lower'),     # VeraCrypt Whirlpool + XTS 512 bit
+    '29432': ('fields', 'lower'),     # VeraCrypt Whirlpool + XTS 1024 bit
+    '29433': ('fields', 'lower'),     # VeraCrypt Whirlpool + XTS 1536 bit
+    '29441': ('fields', 'lower'),     # VeraCrypt RIPEMD160 + XTS 512 bit + boot-mod
+    '29442': ('fields', 'lower'),     # VeraCrypt RIPEMD160 + XTS 1024 bit + boot-mo
+    '29443': ('fields', 'lower'),     # VeraCrypt RIPEMD160 + XTS 1536 bit + boot-mo
+    '29451': ('fields', 'lower'),     # VeraCrypt SHA256 + XTS 512 bit
+    '29452': ('fields', 'lower'),     # VeraCrypt SHA256 + XTS 1024 bit
+    '29453': ('fields', 'lower'),     # VeraCrypt SHA256 + XTS 1536 bit
+    '29461': ('fields', 'lower'),     # VeraCrypt SHA256 + XTS 512 bit + boot-mode
+    '29462': ('fields', 'lower'),     # VeraCrypt SHA256 + XTS 1024 bit + boot-mode
+    '29463': ('fields', 'lower'),     # VeraCrypt SHA256 + XTS 1536 bit + boot-mode
+    '29471': ('fields', 'lower'),     # VeraCrypt Streebog-512 + XTS 512 bit
+    '29472': ('fields', 'lower'),     # VeraCrypt Streebog-512 + XTS 1024 bit
+    '29473': ('fields', 'lower'),     # VeraCrypt Streebog-512 + XTS 1536 bit
+    '29481': ('fields', 'lower'),     # VeraCrypt Streebog-512 + XTS 512 bit + boot-
+    '29482': ('fields', 'lower'),     # VeraCrypt Streebog-512 + XTS 1024 bit + boot
+    '29483': ('fields', 'lower'),     # VeraCrypt Streebog-512 + XTS 1536 bit + boot
+    '29511': ('fields', 'lower'),     # LUKS v1 SHA-1 + AES
+    '29512': ('fields', 'lower'),     # LUKS v1 SHA-1 + Serpent
+    '29513': ('fields', 'lower'),     # LUKS v1 SHA-1 + Twofish
+    '29521': ('fields', 'lower'),     # LUKS v1 SHA-256 + AES
+    '29522': ('fields', 'lower'),     # LUKS v1 SHA-256 + Serpent
+    '29523': ('fields', 'lower'),     # LUKS v1 SHA-256 + Twofish
+    '29531': ('fields', 'lower'),     # LUKS v1 SHA-512 + AES
+    '29532': ('fields', 'lower'),     # LUKS v1 SHA-512 + Serpent
+    '29533': ('fields', 'lower'),     # LUKS v1 SHA-512 + Twofish
+    '29541': ('fields', 'lower'),     # LUKS v1 RIPEMD-160 + AES
+    '29542': ('fields', 'lower'),     # LUKS v1 RIPEMD-160 + Serpent
+    '29543': ('fields', 'lower'),     # LUKS v1 RIPEMD-160 + Twofish
+
+    # the whole line folds, salt included (hashcat sets OPTS_TYPE_ST_LOWER)
+    '121': ('line', 'lower'),         # SMF (Simple Machines Forum) > v1.1
+    '1100': ('line', 'lower'),        # Domain Cached Credentials (DCC), MS Cache
 }
 
 

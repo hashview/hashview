@@ -44,7 +44,7 @@ from hashview.utils.chunking import (
     wordlist_amplifier,
 )
 from hashview.utils.clock import utcnow
-from hashview.utils.hashcat_modes import HASH_ONLY_AUTO_RULES
+from hashview.utils.hashcat_modes import HASH_CASE_RULES, HASH_ONLY_AUTO_RULES
 
 # Hard cap on how many task assignments one task group may hold (one assignment
 # = one id in the ordered JSON list stored in task_groups.tasks). This is the
@@ -952,6 +952,104 @@ def normalize_kerberos_hash(line, hash_type):
     return '$'.join(parts[:5] + [field.lower() for field in parts[5:]])
 
 
+# A hex span can be case-folded without changing the hash it denotes, which is
+# what makes HASH_CASE_RULES safe to apply. Anything that is not pure hex is left
+# alone even when a rule names it -- see normalize_hash_case.
+_PURE_HEX_RE = re.compile(r'^[0-9a-fA-F]+$')
+
+# One hex field of a multi-field hash, for the 'fields' span. The lookarounds
+# keep the match off a fragment of a base64 blob that merely starts with hex
+# characters, and the 8-character floor keeps it off a short numeric field that
+# has no case to fold anyway.
+_HEX_FIELD_RE = re.compile(r'(?<![A-Za-z0-9+/=])[0-9a-fA-F]{8,}(?![A-Za-z0-9+/=])')
+
+
+def normalize_hash_case(ciphertext, hash_type):
+    """Return a hash in the case hashcat will echo it back in.
+
+    hashcat parses every hex field case-insensitively -- there is one hex parser,
+    ``hex_convert()`` in its src/convert.c, and ``(c & 15) + (c >> 6) * 9`` folds
+    'A' and 'a' to the same nibble -- and then re-emits it through
+    ``u8_to_hex``/``u32_to_hex``/``u64_to_hex``, whose table is the literal
+    ``'0'..'9','a'..'f'``. So a hash pasted in upper case is accepted, cracked,
+    and reported back in LOWER case.
+
+    That is fatal here rather than cosmetic. A recovered hash is matched to its
+    row by an exact md5 of the stored ciphertext (the lookup in
+    hashview/api/routes.py that ingests an agent's upload), so a ciphertext
+    stored in a case hashcat will not reproduce can never be matched: the hash is
+    cracked, the upload finds nothing, and the row stays cracked=0 for ever. This
+    is #444 reached by a different route -- there it was an int/str comparison
+    skipping the fold, here it is the fold only ever having covered four modes.
+
+    Not a blanket ``.lower()``, for three reasons, each of which would corrupt
+    hashes that are correct today:
+
+    * nine modes emit UPPER case (``snprintf("%08X")`` or an explicit
+      ``uppercase()``): 3100, 7401, 7700/7701, 7800/7801, 8500, 12300, 15500;
+    * fourteen modes carry ``OPTS_TYPE_HASH_COPY`` and echo the line you gave
+      them byte for byte, so any fold is wrong: 501, 7100, 10600, 10700, 10900,
+      11300, 11400, 11900, 12000, 12001, 12100, 12700, 15200, 16400;
+    * a salt hashcat stores as text is echoed verbatim, so folding it changes the
+      hash -- the same trap ``normalize_kerberos_hash`` exists to avoid for the
+      principal-salted etypes.
+
+    So this is table-driven, and the table only contains modes whose rule was
+    verified as a fixed point of hashcat's own encoder. A mode that is not in it
+    is returned unchanged, exactly as before.
+    """
+    rule = HASH_CASE_RULES.get(str(hash_type))
+    if rule is None:
+        return ciphertext
+    span, case = rule
+    fold = str.lower if case == 'lower' else str.upper
+
+    if span == 'line':
+        return fold(ciphertext)
+    if span == 'fields':
+        # Formats carrying several hex fields, all of which hashcat folds. Only
+        # granted to modes where every other field is a literal hashcat itself
+        # chose ('sha1', 'aes', 'cbc-essiv:sha256') rather than free text, so
+        # there is nothing here that could hold a hex-looking value hashcat would
+        # hand back verbatim -- a Kerberos principal, say, which is why those
+        # modes are absent from the table.
+        return _HEX_FIELD_RE.sub(lambda m: fold(m.group(0)), ciphertext)
+
+    # Spans are delimited, never fixed-length: several of these modes carry a
+    # variable-length blob (a Kerberos edata2, an office/PDF payload), and a rule
+    # pinned to the length of hashcat's published example would fold only the
+    # last N characters of a longer one and leave the front of it alone -- a hash
+    # half-folded is worse than one left alone, because it is a fixed point of
+    # nothing.
+    if span == 'all':
+        start, end = 0, len(ciphertext)
+    elif span[0] == 'after':                  # fixed marker, e.g. MSSQL's '0x'
+        # Matched, not assumed: an MSSQL hash pasted without its '0x' is all hex
+        # from the first character, and folding from offset 2 regardless would
+        # leave the first two digits behind -- half a hash, a fixed point of
+        # nothing. A line without the marker is not the shape this rule is for.
+        if not ciphertext.startswith(span[1]):
+            return ciphertext
+        start, end = len(span[1]), len(ciphertext)
+    elif span[0] == 'head':                   # up to the first separator
+        end = ciphertext.find(span[1])
+        start = 0
+    else:                                     # ('tail', sep): after the last one
+        start = ciphertext.rfind(span[1]) + 1
+        end = len(ciphertext)
+
+    # A line that does not have the shape the rule was derived for -- a truncated
+    # hash, a missing separator, a mode picked by hand for a file of something
+    # else -- comes through untouched rather than folded on a guess. So does one
+    # whose span is not hex after all: folding that could change the value.
+    if start < 0 or end < 0 or start >= end or end > len(ciphertext):
+        return ciphertext
+    piece = ciphertext[start:end]
+    if not _PURE_HEX_RE.match(piece):
+        return ciphertext
+    return ciphertext[:start] + fold(piece) + ciphertext[end:]
+
+
 # Hashfile import is batched. It used to run one SELECT + INSERT + commit per
 # new hash inside import_hash_only, plus another INSERT + commit for every
 # hashfile_hashes row -- roughly 2N commits for N hashes, each forcing an InnoDB
@@ -1015,21 +1113,16 @@ def _classify_hashfile_line(line, file_type, hash_type, present_usernames):
                 base = history_zero_base_name(dcc2_fields[1])
                 if base is not None and base.strip().lower() in present_usernames:
                     return _LINE_SKIP
-        # forcing lower casing of hash as hashcat will return lower cased version of the has and we want to match what we imported.
-        if hash_type in ('300', '1731', '1000'):
-            ciphertext = line.lower().rstrip()
-        elif hash_type == '2100':
+        # Store the hash in the case hashcat will echo back, or the crack can
+        # never be matched to it. DCC2 stays spelled out here rather than going
+        # through normalize_hash_case: hashcat lower-cases the iteration count,
+        # username and digest but re-emits the '$DCC2$' tag upper-cased, which is
+        # not one of the table's spans.
+        if hash_type == '2100':
             line = line.lower().rstrip()
             line = line.replace('$dcc2$', '$DCC2$')
-            ciphertext = line
-        else:
-            ciphertext = line.rstrip()
-        # extract username from dcc2 hash
-        if hash_type == '2100':
-            username = line.split('#')[1]
-        else:
-            username = None
-        return ciphertext, hash_type, username
+            return line, hash_type, line.split('#')[1]
+        return normalize_hash_case(line.rstrip(), hash_type), hash_type, None
     elif file_type == 'user_hash':
         if ':' in line:
             # NTDS dumps are routinely cut down to 'user:nthash', so AD
@@ -1046,25 +1139,25 @@ def _classify_hashfile_line(line, file_type, hash_type, present_usernames):
             if (hash_type in _AD_HISTORY_HASH_TYPES
                     and base is not None and base.strip().lower() in present_usernames):
                 return _LINE_SKIP
-            if hash_type == '300' or hash_type == '1731':
-                ciphertext = line.lower().rstrip()
-                username = line.split(':')[0]
-            elif hash_type == '2100':
+            if hash_type == '2100':
+                # As in the hash_only branch: the '$DCC2$' tag comes back
+                # upper-cased, so this one is not table-driven. `username` is
+                # read off the rebound `line` and so ends up being the whole
+                # ciphertext -- wrong, pre-existing on this path and on the UI
+                # path both, and deliberately left as it was here (#444's
+                # test pins it); it is a username bug, not a casing one.
                 line = line.split(':', 1)[1].rstrip()
                 line = line.lower()
                 line = line.replace('$dcc2$', '$DCC2$')
-                ciphertext = line
-                username = line.split(':')[0]
-            else:
-                # hashcat emits hex hashes (e.g. NTLM) lowercased, so store
-                # them lowercased too -- otherwise the md5(ciphertext) lookup
-                # on crack upload misses (mirrors the hash_only path above).
-                hash_value = line.split(':', 1)[1].rstrip()
-                if hash_type in ('300', '1731', '1000'):
-                    hash_value = hash_value.lower()
-                ciphertext = hash_value
-                username = line.split(':')[0]
-            return ciphertext, hash_type, username
+                return line, hash_type, line.split(':')[0]
+            # Only the hash field is stored, and in the case hashcat will echo
+            # back. 300/1731 used to take a branch that lower-cased the whole
+            # line and stored THAT as the ciphertext, username included, so a
+            # MySQL or MSSQL hash imported as 'user:hash' was stored as
+            # 'user:hash' and could never match a crack (#445).
+            hash_value = line.split(':', 1)[1].rstrip()
+            return (normalize_hash_case(hash_value, hash_type), hash_type,
+                    candidate_username)
         return _LINE_ABORT
     elif file_type == 'shadow':
         return line.split(':')[1], hash_type, line.split(':')[0]

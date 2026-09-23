@@ -389,6 +389,24 @@ def test_dcc2_keeps_its_uppercase_tag():
 
 # --- the authority check -----------------------------------------------------
 
+# A refusal is skipped rather than failed because which hashes a build will load
+# is itself version-dependent, and mode 6800 is the worked example. Every
+# released hashcat through 7.1.2 takes the three-field LastPass form pinned in
+# the JSON:
+#
+#     <hex>:<iterations>:<email>
+#
+# Unreleased master (seen on v7.1.2-754-g61d346f11) added a fourth field and
+# rejects the three-field form outright -- "Separator unmatched near
+# 'pmix@trash-mail.com' (expected ':')" -- so its own example is now:
+#
+#     <hex>:<iterations>:<email>:<hex>
+#
+# The pinned vector is therefore correct for every hashcat that has actually
+# shipped, and 7.1.2 is still the newest release. When the next one lands, the
+# floating tier of the hashcat matrix will file an issue; re-derive 6800 then,
+# and note that a second hex field means its rule needs re-checking too, since
+# 'head' only ever folds up to the first colon.
 @pytest.mark.hashcat_matrix
 def test_the_table_reproduces_hashcats_own_answer(tmp_path):
     """Everything above pins what the table does. This pins that what it does is

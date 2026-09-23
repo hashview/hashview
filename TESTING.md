@@ -584,6 +584,33 @@ simply unverified. Historical `verified against hashcat 6.2.6` notes in
 docstrings stay as written — they record where a fact was established, which is
 still true, and re-deriving them against 7.x is separate work.
 
+### Advertised flags vs accepted flags
+
+`build_hashcat_command` emits a fixed set of flags, and the contract checks two
+different claims about them:
+
+| List (`tests/hashcat_matrix/summarize.py`) | Claim | Checked by |
+|---|---|---|
+| `ADVERTISED_FLAGS` | appears in `--help` | the offline contract, against the committed capture |
+| `ACCEPTED_ONLY_FLAGS` | still parses, but is no longer documented | `tests/hashcat_matrix/test_flag_acceptance.py`, by running the binary |
+
+Everything in either list is also probed for acceptance. Only the advertised
+ones additionally have to show up in `--help`.
+
+The split exists because those two claims came apart. hashcat `083046e7` retired
+workload profiles and dropped `-w` from `--help` while keeping it, in upstream's
+words, "accepted and ignored". Checking advertisement alone got that backwards
+in both directions: a documentation edit read as an interop break, while a flag
+quietly becoming a hard error -- the thing that would actually kill every job at
+launch -- would not have been caught at all.
+
+The acceptance probe runs each flag bare and looks for hashcat's own phrase
+`unrecognized option`, rather than checking the exit status. A known flag given
+a bad value also exits non-zero but complains about the *value*, so matching the
+phrase is what lets one probe cover flags that take an argument and flags that
+do not. It carries a negative control: if hashcat ever changes that wording, the
+control fails rather than the whole contract silently passing.
+
 ### Running the live tests locally
 
 Needs a CPU OpenCL runtime (`pocl-opencl-icd`, plus `ocl-icd-libopencl1` for the ICD loader) and `p7zip-full`:

@@ -166,8 +166,27 @@ def test_outfile_is_hash_colon_hexplain(version):
 # --- contract 4: flag acceptance -------------------------------------------
 
 @pytest.mark.parametrize("version", ALL_VERSIONS)
-def test_binary_advertises_every_flag_the_server_emits(version):
+def test_binary_advertises_every_documented_flag_the_server_emits(version):
+    """Only ADVERTISED_FLAGS, not every flag the command builder emits.
+
+    What Hashview depends on is that its command runs, and --help is only a
+    proxy for that. The proxy broke once already: hashcat retired workload
+    profiles and dropped -w from --help while still accepting it, which is a
+    documentation change this assertion reported as an interop break. Flags in
+    that state live in ACCEPTED_ONLY_FLAGS and are checked by actually running
+    the binary -- see tests/hashcat_matrix/test_flag_acceptance.py."""
     summary = json.loads((FIXTURE_ROOT / version / "summary.json")
                          .read_text(encoding="utf-8"))
-    missing = sorted(set(summarize.REQUIRED_FLAGS) - set(summary["advertised_flags"]))
+    missing = sorted(set(summarize.ADVERTISED_FLAGS) - set(summary["advertised_flags"]))
     assert not missing, f"hashcat {version} no longer advertises: {missing}"
+
+
+def test_the_two_flag_lists_stay_disjoint_and_complete():
+    """A flag in both lists would be checked twice and mean nothing; a flag in
+    neither is emitted by the command builder and verified by nothing at all,
+    which is the failure mode this split could quietly introduce."""
+    advertised = set(summarize.ADVERTISED_FLAGS)
+    accepted_only = set(summarize.ACCEPTED_ONLY_FLAGS)
+    assert not advertised & accepted_only, (
+        f"flags in both lists: {sorted(advertised & accepted_only)}")
+    assert advertised | accepted_only == set(summarize.REQUIRED_FLAGS)

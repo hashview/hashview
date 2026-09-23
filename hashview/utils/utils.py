@@ -3689,6 +3689,31 @@ _HASH_ONLY_RULES = {
     '1700':  (re.compile(r'^[0-9a-fA-F]{128}$'), '128 hex characters (SHA-512)'),
     '18000': (re.compile(r'^[0-9a-fA-F]{128}$'), '128 hex characters (Keccak-512)'),
     '122':   (re.compile(r'^[0-9a-fA-F]{48}$'),  '48 hex characters (macOS 10.4-10.6 salted SHA1)'),
+    # MSSQL: '0x' + a 2-byte version tag + 4-byte salt + the digest(s). These are
+    # the three modes a user is most likely to pick the wrong one of -- they are
+    # the same product, and 131/132 even share the 0x0100 tag, so LENGTH is the
+    # only thing separating those two. Verified against hashcat v6.2.6 rather
+    # than derived from the format docs: the '0x' is mandatory and must be
+    # lowercase ('0X...' and a bare '0100...' are both refused), while the hex
+    # digits are case-insensitive. The matrix of all nine (contents, declared)
+    # pairs was run through hashcat and only the diagonal loads, so these rules
+    # reproduce its behaviour exactly instead of approximating it.
+    #
+    # The auto-generator could not cover these: its ('hex', N) spec needs the
+    # whole string to be hex, which the leading '0x' breaks, and its prefix
+    # specs were written for '$name$' tags.
+    '131':   (re.compile(r'^0x0100[0-9a-fA-F]{88}$'),
+              "'0x0100' + 8 hex salt + 80 hex digest, 94 chars (MSSQL 2000)"),
+    '132':   (re.compile(r'^0x0100[0-9a-fA-F]{48}$'),
+              "'0x0100' + 8 hex salt + 40 hex digest, 54 chars (MSSQL 2005)"),
+    '1731':  (re.compile(r'^0x0200[0-9a-fA-F]{136}$'),
+              "'0x0200' + 8 hex salt + 128 hex digest, 142 chars (MSSQL 2012/2014)"),
+    # Same family of shape, same gap in the generator: a lowercase '0x' tag the
+    # hex spec cannot express. Probed the same way -- the tag is literal and
+    # case-sensitive ('0xC007' is refused), the digits are not, and 84/88 chars
+    # are both refused, so the length is exact.
+    '8000':  (re.compile(r'^0xc007[0-9a-fA-F]{80}$'),
+              "'0xc007' + 16 hex salt + 64 hex digest, 86 chars (Sybase ASE)"),
     # salted raw: <hash_hex>:<salt> (salt lenient)
     '10':    (re.compile(r'^[0-9a-fA-F]{32}:.+$'),  'md5 hash:salt (32 hex, colon, salt)'),
     '20':    (re.compile(r'^[0-9a-fA-F]{32}:.+$'),  'md5 salt:hash (32 hex, colon, salt)'),

@@ -17,7 +17,7 @@ conftest.
 import pytest
 
 from hashview.models import Hashes, HashfileHashes, Hashfiles, Users, db
-from hashview.utils.utils import import_hashfilehashes
+from hashview.utils.utils import get_md5_hash, import_hashfilehashes
 
 
 def _make_user_and_hashfile() -> int:
@@ -135,9 +135,18 @@ def test_netntlm_filters_machine_accounts_and_uppercases_username(app, tmp_path)
 
 
 @pytest.mark.security
-def test_hash_only_non_1000_preserves_case(app, tmp_path):
-    """For hash_type=0 (MD5), import should preserve the input as-is (no
-    lowercasing — that's reserved for NTLM/SHA1)."""
+def test_hash_only_md5_is_lowercased_like_every_other_hex_mode(app, tmp_path):
+    """This used to assert the opposite -- that mode 0 kept whatever case was
+    uploaded, "lowercasing being reserved for NTLM/SHA1". That premise was wrong.
+    hashcat has one hex parser and one hex emitter: it accepts either case and
+    reports in lower case for mode 0 exactly as it does for 1000. So an
+    upper-case MD5 was stored upper-case, cracked, and then never matched the
+    md5(ciphertext) lookup that ingests the crack -- the row stayed uncracked for
+    ever. Four modes were folded before; 0 was not one of them.
+
+    See tests/unit/test_hash_case_normalization.py for the table this now goes
+    through and how each mode's rule was verified against hashcat.
+    """
     hashfile_id = _make_user_and_hashfile()
     path = tmp_path / "md5.txt"
     path.write_text("5F4DCC3B5AA765D61D8327DEB882CF99\n")  # md5("password")
@@ -155,7 +164,10 @@ def test_hash_only_non_1000_preserves_case(app, tmp_path):
         .all()
     )
     assert len(rows) == 1
-    assert rows[0].ciphertext == "5F4DCC3B5AA765D61D8327DEB882CF99"
+    assert rows[0].ciphertext == "5f4dcc3b5aa765d61d8327deb882cf99"
+    assert rows[0].sub_ciphertext == get_md5_hash(
+        "5f4dcc3b5aa765d61d8327deb882cf99"), (
+        "the lookup key an agent's upload will be matched against")
 
 
 @pytest.mark.security

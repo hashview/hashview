@@ -42,7 +42,7 @@ from pathlib import Path
 
 import pytest
 
-from hashview.utils.hashcat_modes import HASH_CASE_RULES
+from hashview.utils.hashcat_modes import HASH_CASE_RULES, HASH_TYPE_CHOICES
 from hashview.utils.utils import (
     _classify_hashfile_line,
     get_md5_hash,
@@ -162,6 +162,177 @@ def test_kerberos_principal_salted_modes_keep_their_case():
         assert rule[0] != 'line', f'mode {mode} would have its principal folded'
 
 
+# Modes carrying a field hashcat hands back untouched that could plausibly hold
+# a hex-looking value: a Kerberos principal or realm ('deadbeef' is a legal
+# account name), an AWS region/service. A 'fields' rule would fold it and make
+# the hash unmatchable, so these are excluded from the table outright.
+FREE_TEXT_FIELD_MODES = {'13100', '18200', '19600', '19700', '28700'}
+
+
+@pytest.mark.parametrize('mode', sorted(FREE_TEXT_FIELD_MODES))
+def test_free_text_field_modes_are_absent_from_the_table(mode):
+    """The module docstring promises these are left out. Assert it rather than
+    trusting the prose -- the weaker 'no line rule' check above passes
+    vacuously for a mode that is absent, and would still admit a 'fields' rule
+    that folds the very principal it exists to protect."""
+    assert mode not in HASH_CASE_RULES
+
+
+def test_a_fields_rule_leaves_a_base64_blob_alone():
+    """The 'fields' span folds every hex field it finds. A base64 payload can
+    open with characters that are all hex, so the field pattern is bounded on
+    both sides -- a blob must survive with its case intact."""
+    blob = 'DeadBeefCafe+Babe/QQ=='
+    folded = normalize_hash_case(f'$office$*2007*20*128*16*ABCDEF0123456789*{blob}',
+                                 '9400')
+    assert blob in folded, f'base64 payload was folded: {folded}'
+
+
+# --- invariants that must hold for every rule in the table -------------------
+
+ALL_SPELLINGS = (str.lower, str.upper, str.swapcase)
+
+
+def _spellings(mode):
+    """Every re-cased spelling of a mode's pinned canonical hash."""
+    canon, span = VECTORS[mode]['canon'], HASH_CASE_RULES[mode][0]
+    span = span if isinstance(span, str) else tuple(span)
+    return [_recase(canon, span, how) for how in ALL_SPELLINGS]
+
+
+@pytest.mark.parametrize('mode', sorted(VECTORS))
+def test_the_fold_only_ever_changes_case(mode):
+    """A fold may re-spell a hash; it may never rewrite one. Compare with case
+    erased on both sides: that catches a rule whose span arithmetic drops,
+    duplicates or reorders characters, which the equality against `canon`
+    alone would report only as an opaque inequality."""
+    for spelling in _spellings(mode):
+        folded = normalize_hash_case(spelling, mode)
+        assert folded.lower() == spelling.lower(), (
+            f'mode {mode}: fold changed more than case, '
+            f'{spelling!r} -> {folded!r}')
+        assert len(folded) == len(spelling)
+
+
+@pytest.mark.parametrize('mode', sorted(VECTORS))
+def test_the_fold_is_idempotent(mode):
+    """The stored form has to be a FIXED POINT of hashcat's encoder -- that is
+    the entire premise, since the crack comes back through the encoder again.
+    A rule that folds only part of its span is a fixed point of nothing, and
+    re-folding its own output is the cheapest way to catch that."""
+    for spelling in _spellings(mode):
+        once = normalize_hash_case(spelling, mode)
+        assert normalize_hash_case(once, mode) == once, (
+            f'mode {mode}: fold is not a fixed point of itself')
+
+
+@pytest.mark.parametrize('mode', sorted(HASH_CASE_RULES))
+def test_every_rule_in_the_table_is_well_formed(mode):
+    """A malformed span silently does nothing (an unknown mode key) or raises
+    at import time on a real upload. Neither shows up in a test that only
+    exercises the 216 modes with a pinned vector, and 76 rules have none."""
+    span, case = HASH_CASE_RULES[mode]
+    assert case in ('lower', 'upper'), f'mode {mode}: bad case {case!r}'
+    if isinstance(span, str):
+        assert span in ('all', 'fields', 'line'), f'mode {mode}: bad span {span!r}'
+    else:
+        kind, sep = span
+        assert kind in ('after', 'head', 'tail'), f'mode {mode}: bad span {kind!r}'
+        assert isinstance(sep, str) and sep, f'mode {mode}: empty separator'
+
+
+@pytest.mark.parametrize('mode', sorted(HASH_CASE_RULES))
+def test_no_rule_can_fold_its_own_separator(mode):
+    """'head' and 'tail' locate their span by searching for the separator, and
+    then fold across it. A separator with a letter in it would be re-cased by
+    its own fold, so the next pass would find it somewhere else and fold a
+    different span -- the hash would never settle. Today's separators are
+    ':', '$' and '*', which have no case; letter-bearing markers are already
+    in use ('$BLAKE2$'), so this is a live hazard for the next rule, not a
+    hypothetical one. ('after' markers sit outside the folded span.)"""
+    span, _case = HASH_CASE_RULES[mode]
+    if isinstance(span, str) or span[0] == 'after':
+        return
+    sep = span[1]
+    assert sep.lower() == sep.upper(), (
+        f'mode {mode}: separator {sep!r} has case, so the fold would move it')
+
+
+def test_every_tabled_mode_is_a_hash_type_hashview_offers():
+    """A typo'd mode key is invisible: the lookup just misses and the hash is
+    stored as typed, which is exactly the bug this table exists to fix."""
+    offered = {value for value, _label in HASH_TYPE_CHOICES if value}
+    unknown = sorted(set(HASH_CASE_RULES) - offered, key=str)
+    assert not unknown, f'rules for modes hashview does not offer: {unknown}'
+
+
+def test_every_pinned_vector_has_a_rule():
+    """The JSON pins hashcat's canonical output. A vector whose rule was
+    dropped would stop being checked rather than start failing."""
+    orphans = sorted(set(VECTORS) - set(HASH_CASE_RULES), key=str)
+    assert not orphans, f'vectors with no rule: {orphans}'
+
+
+def test_every_span_shape_is_exercised_by_a_pinned_vector():
+    """Offline, the unit suite only ever runs the rules that have a vector. If
+    a whole span shape had none, that code path would be pinned by nothing but
+    the opt-in live-hashcat test."""
+    def shape(mode):
+        span, case = HASH_CASE_RULES[mode]
+        return (span if isinstance(span, str) else span[0], case)
+
+    unexercised = {shape(m) for m in HASH_CASE_RULES} - {shape(m) for m in VECTORS}
+    assert not unexercised, f'span shapes with no pinned vector: {sorted(unexercised)}'
+
+
+# --- the import paths, not just the helper -----------------------------------
+
+@pytest.mark.parametrize('mode', ['0', '100', '1400', '1700', '1000', '900'])
+def test_an_uppercase_import_yields_the_key_the_crack_will_carry(mode):
+    """End of the chain, and the only thing that actually mattered: the agent
+    uploads hashcat's lower-case spelling, and the row is found by an exact
+    md5 of the stored ciphertext. Whatever case was pasted, that key has to
+    come out the same."""
+    digest = '8846f7eaee8fb117ad06bdd830b7586c'
+    keys = set()
+    for spelling in (digest, digest.upper(), digest.swapcase()):
+        ciphertext, _, _ = _classify_hashfile_line(
+            spelling + '\n', 'hash_only', mode, set())
+        keys.add(get_md5_hash(ciphertext))
+    assert keys == {get_md5_hash(digest)}, (
+        f'mode {mode}: pasted case still changes the lookup key')
+
+
+def test_a_user_hash_import_yields_the_same_key_as_the_bare_hash():
+    """#445: the 300/1731 branch stored 'user:hash' as the ciphertext, so the
+    same hash imported two ways produced two different lookup keys."""
+    digest = 'FCF7C1B8749CF99D88E5F34271D636178FB5D130'
+    bare, _, _ = _classify_hashfile_line(digest + '\n', 'hash_only', '300', set())
+    paired, _, username = _classify_hashfile_line(
+        f'alice:{digest}\n', 'user_hash', '300', set())
+    assert get_md5_hash(bare) == get_md5_hash(paired)
+    assert username == 'alice'
+
+
+def test_pwdump_import_stores_the_nt_hash_in_hashcats_case():
+    ciphertext, hash_type, username = _classify_hashfile_line(
+        'alice:1001:aad3b435b51404eeaad3b435b51404ee:'
+        '8846F7EAEE8FB117AD06BDD830B7586C:::\n', 'pwdump', '1000', set())
+    assert ciphertext == '8846f7eaee8fb117ad06bdd830b7586c'
+    assert (hash_type, username) == ('1000', 'alice')
+
+
+def test_shadow_import_is_deliberately_not_folded():
+    """A crypt string is base64-ish (crypt's own './0-9A-Za-z'), so its case
+    carries value and hashcat echoes it back byte for byte. This path takes no
+    rule on purpose -- pinned so nobody 'completes' the fix by adding one."""
+    crypt = '$6$SaltSalt$AbCdEf0123456789.GhIjKl'
+    ciphertext, _, username = _classify_hashfile_line(
+        f'alice:{crypt}:18000:0:99999:7:::\n', 'shadow', '1800', set())
+    assert ciphertext == crypt
+    assert username == 'alice'
+
+
 # --- lines that do not have the shape the rule was derived for ---------------
 
 def test_an_unknown_mode_is_returned_untouched():
@@ -234,6 +405,8 @@ def test_the_table_reproduces_hashcats_own_answer(tmp_path):
 
     path, pot = tmp_path / 'h.txt', tmp_path / 'h.pot'
     mismatches = []
+    verified = set()
+    refused = set()
     for mode in sorted(VECTORS, key=int):
         canon, span = VECTORS[mode]['canon'], HASH_CASE_RULES[mode][0]
         span = span if isinstance(span, str) else tuple(span)
@@ -247,14 +420,38 @@ def test_the_table_reproduces_hashcats_own_answer(tmp_path):
                  str(pot), '--quiet'], capture_output=True, timeout=60)
             lines = [out for out in proc.stdout.decode('utf-8', 'replace').splitlines()
                      if out.strip()]
-            if not lines:
-                continue                   # hashcat refused this spelling
+            # hashcat refused this spelling. It reports a parse failure on
+            # STDOUT, not stderr ("Hash parsing error ... / No hashes loaded."),
+            # so a non-zero exit is the only reliable way to tell a refusal
+            # from an answer -- reading lines[-1] regardless compares the table
+            # against an error message and reports it as a casing mismatch.
+            if proc.returncode != 0 or not lines:
+                refused.add(mode)
+                continue
+            # One hash in, one line out. Anything else means this is not the
+            # echo we think it is, so do not silently treat the last line as
+            # hashcat's canonical form.
+            if len(lines) != 1:
+                mismatches.append(
+                    f'{mode}: expected one echoed hash, hashcat printed '
+                    f'{len(lines)} lines: {lines[:3]!r}')
+                continue
+            verified.add(mode)
             stored = normalize_hash_case(spelling, mode)
-            if stored != lines[-1]:
+            if stored != lines[0]:
                 mismatches.append(
                     f'{mode}: hashview stores {stored[:60]!r}, '
-                    f'hashcat prints {lines[-1][:60]!r}')
+                    f'hashcat prints {lines[0][:60]!r}')
 
     assert not mismatches, (
         'these would be stored in a form hashcat never reports, so their cracks '
         'could not be matched:\n  ' + '\n  '.join(mismatches[:20]))
+
+    # Skipping a refusal is right -- which hashes a given build will load varies
+    # by version, and this runs against five of them. Skipping ALL of them is a
+    # broken harness (wrong binary, no OpenCL device, every run erroring out),
+    # and without this the test would pass green having checked nothing.
+    assert len(verified) > len(VECTORS) * 0.8, (
+        f'only {len(verified)} of {len(VECTORS)} modes were actually checked '
+        f'against this binary; it refused {len(refused)}. This is a broken '
+        f'harness, not a passing test. Refused: {sorted(refused, key=int)[:20]}')

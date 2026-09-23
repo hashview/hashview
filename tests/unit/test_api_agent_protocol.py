@@ -7,7 +7,7 @@ routes). Cookie domain must equal the test SERVER_NAME (localhost.test).
 """
 
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import hashview
 from hashview.models import (
@@ -24,6 +24,7 @@ from hashview.models import (
     Users,
     db,
 )
+from hashview.utils.clock import utcnow
 
 DOMAIN = "localhost.test"
 
@@ -77,7 +78,7 @@ def _set_agent_cookies(client, uuid):
 
 
 def _hours_ago(h):
-    return datetime.now() - timedelta(hours=h)
+    return utcnow() - timedelta(hours=h)
 
 
 def _job_running():

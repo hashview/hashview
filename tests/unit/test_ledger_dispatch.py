@@ -13,7 +13,7 @@ attack again.
 """
 
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 
@@ -35,6 +35,7 @@ from hashview.models import (
     Wordlists,
     db,
 )
+from hashview.utils.clock import utcnow
 from hashview.utils.utils import build_job_task_commands, job_assignments
 
 DOMAIN = "localhost.test"
@@ -83,7 +84,7 @@ def _seed(task_count=1, job_status="Running"):
     db.session.add(rule)
     db.session.commit()
     job = Jobs(name="j", owner_id=user.id, customer_id=cust.id, hashfile_id=hf.id,
-               status=job_status, priority=3, started_at=datetime.now())
+               status=job_status, priority=3, started_at=utcnow())
     db.session.add(job)
     db.session.commit()
     tasks = []
@@ -650,7 +651,7 @@ def _finish_long_ago(entry, hours_ago=13):
     entry.keyspace_pos = entry.keyspace or 1
     for row in JobTasks.query.filter_by(ledger_id=entry.id).all():
         row.status = "Completed"
-        row.started_at = datetime.now() - timedelta(hours=hours_ago)
+        row.started_at = utcnow() - timedelta(hours=hours_ago)
     db.session.commit()
 
 
@@ -722,7 +723,7 @@ def test_an_over_cap_live_attack_is_closed_and_the_queue_continues(app, client):
     for row in JobTasks.query.filter_by(ledger_id=first.id).all():
         row.status = "Queued"
         row.agent_id = None
-        row.started_at = datetime.now() - timedelta(hours=13)
+        row.started_at = utcnow() - timedelta(hours=13)
     db.session.commit()
     _waiting_and_unstarted(second)
     _agent("a", speed=1000)

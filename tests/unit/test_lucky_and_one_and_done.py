@@ -16,7 +16,6 @@ the parent autouse fixtures (Playwright live_server) are skipped.
 """
 
 import json
-from datetime import datetime
 
 import pytest
 
@@ -31,6 +30,7 @@ from hashview.models import (
     Tasks,
     Users,
 )
+from hashview.utils.clock import utcnow
 from hashview.utils.utils import get_md5_hash
 
 
@@ -311,7 +311,7 @@ def test_one_and_done_cancels_remaining_tasks_when_hash_recovered(
     db_session.add_all([t1, t2])
     db_session.commit()
 
-    started_at = datetime.now()   # a datetime object (SQLite rejects strings in DateTime cols)
+    started_at = utcnow()   # a datetime object (SQLite rejects strings in DateTime cols)
 
     job = Jobs(
         name="J",

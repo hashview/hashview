@@ -14,6 +14,7 @@ Uses the in-memory SQLite app from tests/unit/conftest.py.
 from datetime import datetime
 
 from hashview.models import Hashes, Users, db
+from hashview.utils.clock import utcnow
 
 
 def _login(client, user):
@@ -71,7 +72,7 @@ def _seed(uid1, uid2, uid3, year):
 
 
 def test_wrapped_renders_with_accurate_math(app, client):
-    year = datetime.now().year
+    year = utcnow().year
     u1 = _user("Jane", "Mercer", "j.mercer@example.com")
     u2 = _user("Rick", "Vance", "r.vance@example.com")
     u3 = _user("Sam", "Okafor", "s.okafor@example.com")
@@ -107,7 +108,7 @@ def test_wrapped_renders_with_accurate_math(app, client):
 def test_wrapped_hex_plaintext_decoded_for_length(app, client):
     """$HEX[..] plaintexts are hex-decoded before length ranking + display, so
     the wrapper length never inflates the ranking."""
-    year = datetime.now().year
+    year = utcnow().year
     u = _user("Hex", "Decoder", "h.decoder@example.com")
     _login(client, u)
     token = "DECODED_LONGEST_VALUE"               # 21 real chars
@@ -124,7 +125,7 @@ def test_wrapped_hex_plaintext_decoded_for_length(app, client):
 def test_wrapped_single_user_no_zero_division(app, client):
     """Regression: only the current user has data -> no ZeroDivisionError, and
     a lone cracker is 'top 100%' (rank 1 of 1)."""
-    year = datetime.now().year
+    year = utcnow().year
     u1 = _user("Solo", "Cracker", "solo@example.com")
     _login(client, u1)
     _hash(1000, "onlyone", u1.id, datetime(year, 3, 3, 9, 0))

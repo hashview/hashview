@@ -12,6 +12,7 @@ from hashview.models import (
     Tasks,
     db,
 )
+from hashview.utils.clock import utcnow
 from hashview.utils.utils import get_md5_hash
 from tests.unit.helpers import login, make_admin, make_customer, make_user
 
@@ -37,7 +38,7 @@ def _seed_recovered(admin, *, delta, plaintext, username):
     """A cracked hash recovered `delta` ago, wired into the recovery feed."""
     h = Hashes(sub_ciphertext=get_md5_hash(plaintext[::-1]), ciphertext=plaintext[::-1], hash_type=1000,
                cracked=True, plaintext=plaintext,
-               recovered_at=datetime.now() - delta, recovered_by=admin.id)
+               recovered_at=utcnow() - delta, recovered_by=admin.id)
     db.session.add(h)
     db.session.commit()
     db.session.add(HashfileHashes(hash_id=h.id, hashfile_id=1, username=username))
@@ -58,7 +59,7 @@ def test_recovery_feed_time_is_relative(app, client):
 
 
 def test_relative_time_units_and_pluralization():
-    now = datetime.now()
+    now = utcnow()
     rt = main_routes._relative_time
     assert rt(now - timedelta(seconds=1)) == "1 second ago"
     assert rt(now - timedelta(seconds=30)) == "30 seconds ago"
@@ -299,7 +300,7 @@ def test_api_docs_swagger_self_hosted(app, client):
 def test_chart_data_buckets_by_rolling_day(app):
     """_chart_data buckets cracked hashes into the 7 rolling 24h windows. Pin the
     counts so the single-query rewrite keeps the exact per-window semantics."""
-    now = datetime.now()
+    now = utcnow()
     # 2 recovered ~12h ago (today bucket, index 6), 1 ~36h ago (yesterday, index 5),
     # 1 ~8 days ago (outside the 7-day window -> counted in no bucket).
     seed = [now - timedelta(hours=12), now - timedelta(hours=12),

@@ -946,3 +946,36 @@ def test_delete_of_an_unreferenced_missing_row_succeeds(app, client, tmp_path):
     resp = client.post(f"/wordlists/delete/{wl_id}", follow_redirects=True)
     assert b"already gone from disk" in resp.data
     assert Wordlists.query.get(wl_id) is None
+
+
+# --- the workload profile is gone from both builders -------------------------
+
+@pytest.mark.parametrize("attackmode", [0, 1, 6, 7])
+def test_build_hashcat_command_asks_for_no_workload_profile(app, tmp_path, attackmode):
+    """hashcat 083046e7 retired workload profiles. -w and --workload-profile are
+    still accepted, so a reintroduced -w would run perfectly well and simply
+    stop meaning anything -- which is exactly why nothing else here would catch
+    it coming back.
+
+    Nothing pinned either side of this before: every existing assertion on
+    build_hashcat_command is a substring check for a path, so the flag block
+    could have been changed in any direction without a test noticing.
+    """
+    user = _make_user()
+    src = tmp_path / "hc.txt"
+    src.write_bytes(b"a\nb\n")
+    wl = ingest_static_wordlist_file(str(src), user.id, "HCList")
+    db.session.add(wl)
+    db.session.commit()
+    job, task = _setup_job_for_wordlist(user, wl, attackmode=attackmode)
+    if attackmode in (6, 7):
+        task.hc_mask = "?d?d"
+        db.session.commit()
+
+    cmd = build_hashcat_command(job.id, task.id)
+
+    assert "-w" not in cmd, f"workload profile flag is back: {cmd}"
+    assert "--workload-profile" not in cmd
+    # -O is unrelated and must survive; this test must not pass by the builder
+    # having stopped emitting its flag block altogether.
+    assert "-O" in cmd

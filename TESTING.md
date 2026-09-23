@@ -638,6 +638,12 @@ in both directions: a documentation edit read as an interop break, while a flag
 quietly becoming a hard error -- the thing that would actually kill every job at
 launch -- would not have been caught at all.
 
+`ACCEPTED_ONLY_FLAGS` is **empty today**. `-w` was its only member, and
+`build_hashcat_command` no longer emits it, so it belongs in neither list. The
+bucket is kept rather than deleted because the distinction is the point and the
+next upstream retirement will need somewhere to go that is not a red build. A
+flag belongs there only while the command builder still emits it.
+
 The acceptance probe runs each flag bare and looks for hashcat's own phrase
 `unrecognized option`, rather than checking the exit status. A known flag given
 a bad value also exits non-zero but complains about the *value*, so matching the

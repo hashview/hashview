@@ -82,19 +82,22 @@ def test_the_probe_can_tell_an_unknown_flag_apart():
         f"exist, so the acceptance probe proves nothing. Output: {output.strip()[:200]}")
 
 
-def test_the_retired_flags_really_are_undocumented_somewhere():
-    """ACCEPTED_ONLY_FLAGS is an exemption from the --help check, so it should
-    hold flags that actually need one. A flag that is still advertised
-    everywhere belongs in ADVERTISED_FLAGS, where it gets the stronger
-    assertion; leaving it here quietly weakens the contract.
-
-    Not asserted per-version: -w IS still advertised on every release, and only
-    master has dropped it. This just pins that the list is not empty and that
-    everything in it is at least accepted, so the exemption is never a
-    dumping ground for a flag nobody checked.
-    """
-    assert summarize.ACCEPTED_ONLY_FLAGS, (
-        "ACCEPTED_ONLY_FLAGS is empty; fold it away and drop the exemption "
-        "rather than leaving an unused escape hatch in the contract")
+def test_anything_claiming_the_help_exemption_is_at_least_accepted():
+    """ACCEPTED_ONLY_FLAGS is an exemption from the --help check, so nothing may
+    sit in it unverified -- that would be a flag checked by nothing at all,
+    which is worse than the proxy this split replaced. Empty today, and this
+    passes vacuously; it exists for the next flag upstream retires."""
     for flag in summarize.ACCEPTED_ONLY_FLAGS:
-        assert _UNKNOWN not in _probe(flag).lower()
+        assert _UNKNOWN not in _probe(flag).lower(), (
+            f"{flag} is exempt from the --help check and is not accepted "
+            f"either, so nothing is verifying it")
+
+
+def test_the_command_builder_no_longer_asks_for_a_workload_profile():
+    """hashcat 083046e7 retired workload profiles, so -w is dead weight in a
+    command the agent runs verbatim. Pinned because nothing else would notice
+    it coming back: the flag is still accepted, so a reintroduced -w would run
+    perfectly well and simply stop meaning anything."""
+    assert "-w" not in summarize.REQUIRED_FLAGS, (
+        "-w is back in the flag contract; build_hashcat_command should not be "
+        "emitting it")

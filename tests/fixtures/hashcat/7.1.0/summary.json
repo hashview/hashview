@@ -15,8 +15,7 @@
     "-j",
     "-k",
     "-m",
-    "-r",
-    "-w"
+    "-r"
   ],
   "benchmark_speed_lines": 1,
   "device_keys": [

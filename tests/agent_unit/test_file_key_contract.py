@@ -66,7 +66,7 @@ agent_main = _load_agent_main()
 def _command(job_id, key):
     """An argv shaped exactly as build_hashcat_command emits it."""
     return json.dumps([
-        '@HASHCATBINPATH@', '-m', '1000', '-a', '0', '-O', '-w', '3',
+        '@HASHCATBINPATH@', '-m', '1000', '-a', '0', '-O',
         '--potfile-path', f'control/outfiles/hc_potfile_{job_id}_{key}.pot',
         '--outfile', f'control/outfiles/hc_cracked_{job_id}_{key}.txt',
         '--outfile-format', '1,3', '--status', '--status-timer=15',

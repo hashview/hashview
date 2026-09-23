@@ -50,7 +50,7 @@ def _load_agent_main():
 
 agent_main = _load_agent_main()
 
-COMMAND = json.dumps(['@HASHCATBINPATH@', '-O', '-w', '3', '-m', '0', '-a', '3',
+COMMAND = json.dumps(['@HASHCATBINPATH@', '-O', '-m', '0', '-a', '3',
                       '?a?a?a?a?a?a', '--keyspace'])
 
 

@@ -2210,8 +2210,19 @@ def build_hashcat_command(job_id, task_id, chunk=None, job_task_id=None):
     # metacharacters in them cannot be interpreted — the agent runs this with
     # shell=False (issue #297). Element 0 stays the @HASHCATBINPATH@ placeholder
     # the agent expands to its configured binary (+ HC_EXTRA_ARGS) at run time.
+    # No -w. hashcat 083046e7 retired workload profiles: -w and
+    # --workload-profile are still accepted, but ignored, and every run now gets
+    # what profile 3 used to ask for. Passing a flag that upstream has stopped
+    # honouring is dead weight in a command the agent has to run verbatim.
+    #
+    # Worth being clear about the cost, because it is not zero yet: on a RELEASED
+    # hashcat (7.1.2 and earlier) profiles still work, and the default is 2
+    # (12 ms kernel runtime) where this used to ask for 3 (96 ms). Until the
+    # retirement ships in a release, dropping this trades throughput for desktop
+    # responsiveness on every agent. It converges on the old behaviour the moment
+    # a release carries 083046e7.
     argv = [hc_binpath,
-            '-O', '-w', '3',
+            '-O',
             '--session', session,
             '-m', str(hash_type),
             '--potfile-path', potfile,
@@ -2803,8 +2814,12 @@ def build_keyspace_command(job_id, task_id):
                      if wordlist else '')
     mask_tokens = mask_argv(task.hc_mask)
 
+    # No -w here either, and on this path it never mattered: --keyspace only
+    # counts candidates, so it launches no kernel for a workload profile to
+    # size. See the note in build_hashcat_command for the cracking path, where
+    # the flag did do something on a released hashcat.
     argv = ['@HASHCATBINPATH@',  # nosec B105 - placeholder token, not a password
-            '-O', '-w', '3',
+            '-O',
             '-m', str(hashes_entry.hash_type),
             '-a', str(task.hc_attackmode)]
     argv += mask_tokens

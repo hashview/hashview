@@ -36,13 +36,13 @@ ADVERTISED_FLAGS = [
     "--loopback", "--hex-salt", "-a", "-r", "-j", "-k",
 ]
 
-# Accepted by the parser but no longer documented. hashcat 083046e7 retired
-# workload profiles: -w and --workload-profile are, in upstream's own words,
-# "accepted and ignored, though the options no longer appear in --help".
-# build_hashcat_command still emits -w 3, which is harmless -- profile 3's
-# launch budget is what every run now gets -- so the flag must keep being
-# accepted, and no longer has to be advertised.
-ACCEPTED_ONLY_FLAGS = ["-w"]
+# Accepted by the parser but no longer documented. Empty right now, and kept
+# rather than deleted because the distinction is the point: -w lived here for
+# exactly as long as build_hashcat_command emitted a flag hashcat had stopped
+# documenting, and the next retirement upstream will need somewhere to go that
+# is not a red build. A flag belongs here only while the command builder still
+# emits it; -w does not any more, so it is in neither list.
+ACCEPTED_ONLY_FLAGS = []
 
 # Everything the command builder can emit, both kinds together.
 REQUIRED_FLAGS = ADVERTISED_FLAGS + ACCEPTED_ONLY_FLAGS

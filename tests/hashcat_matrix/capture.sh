@@ -30,7 +30,7 @@ printf '8846f7eaee8fb117ad06bdd830b7586c\n' > "${work}/hashes.txt"
   > "${outdir}/benchmark.txt" 2>>"${outdir}/stderr.txt" </dev/null
 
 # Crack: the exact flag set build_hashcat_command emits for attack mode 0.
-"${hcbin}" -O -w 3 --session capture -m 1000 \
+"${hcbin}" -O --session capture -m 1000 \
   --potfile-path "${work}/capture.pot" \
   --status --status-timer=1 \
   --outfile-format 1,3 --outfile "${outdir}/outfile.txt" \

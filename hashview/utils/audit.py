@@ -110,7 +110,8 @@ def resolve_actor():
         if getattr(current_user, 'is_authenticated', False):
             return (getattr(current_user, 'email_address', None),
                     getattr(current_user, 'id', None))
-    except Exception:  # nosec B110 - actor lookup is best-effort; fall through to api_key/anonymous
+    # B110: actor lookup is best-effort; fall through to api_key/anonymous
+    except Exception:  # nosec B110
         pass
     # 2) api_key cookie
     try:
@@ -120,7 +121,8 @@ def resolve_actor():
             user = Users.query.filter_by(api_key=uuid).first()
             if user:
                 return (user.email_address, user.id)
-    except Exception:  # nosec B110 - actor lookup is best-effort; fall through to anonymous
+    # B110: actor lookup is best-effort; fall through to anonymous
+    except Exception:  # nosec B110
         pass
     # 3) anonymous / unauthenticated
     return (None, None)
@@ -173,7 +175,8 @@ def log_event(event, target=None, outcome='success', detail=None, actor=None):
             'detail': detail,
         }
         logging.getLogger(AUDIT_LOGGER).info(event, extra={'audit': payload})
-    except Exception:  # nosec B110 - audit logging must never break a request
+    # B110: audit logging must never break a request
+    except Exception:  # nosec B110
         # Logging must never break a request.
         pass
 
@@ -201,7 +204,8 @@ def pool_snapshot():
             if callable(probe):
                 snapshot[name] = probe()
         return snapshot
-    except Exception:   # nosec B110 - diagnostics must never break error logging
+    # B110: diagnostics must never break error logging
+    except Exception:  # nosec B110
         return None
 
 
@@ -255,7 +259,8 @@ def _on_request_exception(sender, exception, **extra):
             exc_info=exception,
             extra={'audit': entry},
         )
-    except Exception:  # nosec B110 - the error-logger must not itself raise during exception handling
+    # B110: the error-logger must not itself raise during exception handling
+    except Exception:  # nosec B110
         pass
 
 

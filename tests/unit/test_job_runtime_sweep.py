@@ -16,7 +16,7 @@ that, and pin the thing a sweep makes newly possible to get wrong: two callers
 (the sweep and a heartbeat) expiring the same job at the same moment.
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from hashview.models import (
     Agents,
@@ -30,6 +30,7 @@ from hashview.models import (
     db,
 )
 from hashview.scheduler import _job_runtime_check_inner
+from hashview.utils.clock import utcnow
 from hashview.utils.utils import expire_job_over_runtime
 
 _LOG = logging.getLogger("test-job-runtime")
@@ -65,7 +66,7 @@ def _job(owner, hours_ago=5, status="Running", name="capped", with_row=True,
     customer = Customers.query.first() or Customers(name="Cap Customer")
     db.session.add(customer)
     db.session.commit()
-    started = None if hours_ago is None else datetime.now() - timedelta(hours=hours_ago)
+    started = None if hours_ago is None else utcnow() - timedelta(hours=hours_ago)
     job = Jobs(name=name, status=status, customer_id=customer.id, owner_id=owner.id,
                priority=3, started_at=started,
                processing_seconds=processed_seconds)
@@ -308,7 +309,7 @@ def test_working_jobs_are_credited_one_interval_per_sweep(app):
 
     # A later sweep credits another interval. Backdate the marker to stand in for
     # the interval actually elapsing between the two.
-    Jobs.query.get(job.id).last_counted_at = datetime.now() - timedelta(minutes=5)
+    Jobs.query.get(job.id).last_counted_at = utcnow() - timedelta(minutes=5)
     db.session.commit()
     _job_runtime_check_inner(db, _LOG)
     assert Jobs.query.get(job.id).processing_seconds == 2 * JOB_RUNTIME_SWEEP_SECONDS
@@ -396,7 +397,7 @@ def test_re_running_a_job_starts_its_clock_over(app):
     _settings(max_runtime_jobs=1)
     job, _task, _row = _job(owner, status="Queued", processed_seconds=5 * 3600,
                             row_status="Queued")
-    Jobs.query.get(job.id).last_counted_at = datetime.now()
+    Jobs.query.get(job.id).last_counted_at = utcnow()
     db.session.commit()
 
     assert mark_job_running(job.id) is True

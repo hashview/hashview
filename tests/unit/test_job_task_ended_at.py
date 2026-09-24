@@ -16,7 +16,7 @@ Two properties, and the second is the one that will actually break:
   previous attempt describes a stretch of time this one never ran.
 """
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from hashview.models import (
     Agents,
@@ -32,6 +32,7 @@ from hashview.models import (
     Users,
     db,
 )
+from hashview.utils.clock import utcnow
 from hashview.utils.utils import update_job_task_status
 from tests.unit.helpers import login, make_admin
 
@@ -65,7 +66,7 @@ def _job_and_row(owner, status="Running", hours_ago=1, job_status="Running"):
     customer = Customers.query.first() or Customers(name="Ended Customer")
     db.session.add(customer)
     db.session.commit()
-    started = datetime.now() - timedelta(hours=hours_ago)
+    started = utcnow() - timedelta(hours=hours_ago)
     job = Jobs(name="ended-job", status=job_status, customer_id=customer.id,
                owner_id=owner.id, priority=3, started_at=started,
                hashfile_id=_hashfile(owner, customer).id)
@@ -161,7 +162,7 @@ def test_retiring_a_stranded_row_stamps_it(app):
 
     owner = _owner()
     agent = Agents(name="dead", src_ip="127.0.0.1", uuid="d" * 32, status="Idle",
-                   last_checkin=datetime.utcnow() - timedelta(hours=5))
+                   last_checkin=utcnow() - timedelta(hours=5))
     db.session.add(agent)
     db.session.commit()
     _job, _task, row = _job_and_row(owner, job_status="Canceled")
@@ -169,7 +170,7 @@ def test_retiring_a_stranded_row_stamps_it(app):
     db.session.commit()
 
     _reclaim_stranded_job_tasks(db, logging.getLogger("t"),
-                                datetime.utcnow() - timedelta(minutes=10))
+                                utcnow() - timedelta(minutes=10))
 
     assert JobTasks.query.get(row.id).status == "Canceled"
     assert JobTasks.query.get(row.id).ended_at is not None
@@ -189,16 +190,16 @@ def test_reclaiming_a_row_clears_it(app):
 
     owner = _owner()
     agent = Agents(name="gone", src_ip="127.0.0.1", uuid="g" * 32, status="Idle",
-                   last_checkin=datetime.utcnow() - timedelta(hours=5))
+                   last_checkin=utcnow() - timedelta(hours=5))
     db.session.add(agent)
     db.session.commit()
     _job, _task, row = _job_and_row(owner, job_status="Running")
     row.agent_id = agent.id
-    row.ended_at = datetime.now() - timedelta(hours=2)      # a stale leftover
+    row.ended_at = utcnow() - timedelta(hours=2)      # a stale leftover
     db.session.commit()
 
     _reclaim_stranded_job_tasks(db, logging.getLogger("t"),
-                                datetime.utcnow() - timedelta(minutes=10))
+                                utcnow() - timedelta(minutes=10))
 
     requeued = JobTasks.query.get(row.id)
     assert requeued.status == "Queued"
@@ -214,7 +215,7 @@ def test_deleting_an_agent_clears_it_on_the_rows_it_held(app, client):
     db.session.commit()
     _job, _task, row = _job_and_row(admin)
     row.agent_id = agent.id
-    row.ended_at = datetime.now() - timedelta(hours=2)
+    row.ended_at = utcnow() - timedelta(hours=2)
     db.session.commit()
 
     client.post(f"/agents/delete/{agent.id}", follow_redirects=False)
@@ -233,7 +234,7 @@ def test_re_queueing_a_job_clears_it(app):
                             max_runtime_tasks=0, enabled_chunking=False))
     db.session.commit()
     job, _task, row = _job_and_row(owner, status="Completed")
-    row.ended_at = datetime.now() - timedelta(hours=2)
+    row.ended_at = utcnow() - timedelta(hours=2)
     db.session.commit()
 
     build_job_task_commands(job)
@@ -258,7 +259,7 @@ def test_a_ledger_row_minted_for_an_agent_starts_with_no_end_time(app):
     db.session.add(customer)
     db.session.commit()
     job = Jobs(name="mint", status="Running", customer_id=customer.id,
-               owner_id=owner.id, priority=3, started_at=datetime.now(),
+               owner_id=owner.id, priority=3, started_at=utcnow(),
                hashfile_id=_hashfile(owner, customer).id)
     task = Tasks(name="mint-task", owner_id=owner.id, hc_attackmode=3,
                  hc_mask="?d?d?d?d")
@@ -270,7 +271,7 @@ def test_a_ledger_row_minted_for_an_agent_starts_with_no_end_time(app):
     db.session.add(ledger)
     db.session.commit()
     row = JobTasks(job_id=job.id, task_id=task.id, status="Queued", priority=3,
-                   ledger_id=ledger.id, ended_at=datetime.now() - timedelta(hours=3))
+                   ledger_id=ledger.id, ended_at=utcnow() - timedelta(hours=3))
     db.session.add(row)
     agent = Agents(name="minter", src_ip="127.0.0.1", uuid="m" * 32, status="Idle")
     db.session.add(agent)

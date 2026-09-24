@@ -180,6 +180,10 @@ def test_the_job_runtime_cap_expires_the_job_and_its_tasks(app, db_session,
     _db.session.commit()
     job, task, row = _job_with_running_task(owner, hours_ago=3)
     row.agent_id = agent.id
+    # The cap reads Jobs.processing_seconds now, not wall-clock since
+    # started_at: three hours in the system means nothing if the fleet was
+    # elsewhere for all of them. Credit the job three hours of actual work.
+    job.processing_seconds = 3 * 3600
     _db.session.commit()
 
     client.set_cookie('uuid', 'b' * 32, domain='localhost.test')

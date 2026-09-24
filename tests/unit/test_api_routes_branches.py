@@ -419,7 +419,8 @@ def test_heartbeat_working_agent_job_runtime_exceeded_cancels_job(
     # Job started 2 hours ago (exceeds 1-hour limit)
     old_start = utcnow() - timedelta(hours=2)
     job = Jobs(name="hb-job5", status="Running", hashfile_id=hf.id,
-               customer_id=cust.id, owner_id=admin_user.id, started_at=old_start)
+               customer_id=cust.id, owner_id=admin_user.id, started_at=old_start,
+               processing_seconds=2 * 3600)
     _db.session.add(job)
     _db.session.commit()
     jt = JobTasks(job_id=job.id, task_id=1, status="Running",

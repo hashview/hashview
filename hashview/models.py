@@ -206,6 +206,22 @@ class Jobs(db.Model):
     status = db.Column(db.String(20), nullable=False)
     started_at = db.Column(db.DateTime, nullable=True)
     ended_at = db.Column(db.DateTime, nullable=True)
+    # Seconds this job has actually been PROCESSING, accrued one sweep interval
+    # at a time by the JOB_RUNTIME job whenever at least one of its tasks is
+    # running. This -- not ended_at minus started_at -- is what
+    # Settings.max_runtime_jobs is measured against.
+    #
+    # The difference is a job that gets starved. A higher-priority job takes the
+    # whole fleet, this one sits with no agent on it, and wall-clock keeps
+    # counting anyway: it blows a cap it was never given the chance to spend.
+    # Time nobody spent working on it now costs it nothing.
+    processing_seconds = db.Column(db.Integer, nullable=False, default=0,
+                                   server_default='0')
+    # When the accrual above last credited this job. Two sweeps firing inside one
+    # interval -- which the debug reloader's second scheduler instance does by
+    # construction -- must not both credit it, and a fixed increment has no way
+    # to notice that on its own.
+    last_counted_at = db.Column(db.DateTime, nullable=True)
     hashfile_id = db.Column(db.Integer, nullable=True)
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
@@ -225,6 +241,17 @@ class JobTasks(db.Model):
     #              or its job exceeded Settings.max_runtime_jobs
     status = db.Column(db.String(50), nullable=False)
     started_at = db.Column(db.DateTime, nullable=True)      # These defaults should be changed
+    # Stamped when the row reaches a terminal status (Completed/Canceled/Expired)
+    # and cleared whenever it is re-queued or re-claimed, so [started_at,
+    # ended_at] describes THIS attempt and nothing else.
+    #
+    # Nothing reads it yet. It exists so a job's ACTIVE time can be derived as
+    # the union of its rows' intervals -- merge the overlaps, sum what is left --
+    # rather than as wall-clock since the job started. The two differ by however
+    # long a higher-priority job starved this one, which is time no agent spent
+    # on it and which the runtime cap should arguably not count. A sum of
+    # intervals would be wrong in the other direction: chunks run in parallel.
+    ended_at = db.Column(db.DateTime, nullable=True)
     agent_id = db.Column(db.Integer, db.ForeignKey('agents.id'))
     # Chunking: each dispatched slice is its own JobTasks row. chunk_no is a
     # 1-based issue counter within the attack.

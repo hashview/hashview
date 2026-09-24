@@ -231,6 +231,9 @@ def agents_delete(agent_id):
             # that kept this run's timestamp would let Settings.max_runtime_tasks
             # cancel the task as soon as another agent picked it up.
             jt.started_at = None
+            # Same reason, other end: this row is going back on the queue, so the
+            # previous attempt's interval must not follow it there.
+            jt.ended_at = None
         jt.agent_id = None
     AgentBenchmarks.query.filter_by(agent_id=agent_id).delete(synchronize_session=False)
 

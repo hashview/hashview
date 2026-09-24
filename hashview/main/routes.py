@@ -511,13 +511,16 @@ def _jobs_ctx():
         'settings': settings,
         'datetime': datetime,
         'timedelta': timedelta,
-        # Elapsed is computed HERE, not in the template. _dash_jobs.html.j2 used
-        # to do `datetime.now() - job.started_at`, which silently became a
-        # local-vs-UTC subtraction the moment started_at moved to UTC -- off by
-        # the host's offset, on the dashboard's most-read number. A template
-        # reading a clock is the bug; passing it seconds is the fix.
-        'job_elapsed_secs': {job.id: (utcnow() - job.started_at).total_seconds()
-                             for job in running_jobs if job.started_at},
+        # Elapsed/left track the SAME clock the runtime cap is enforced on:
+        # Jobs.processing_seconds -- time a job was actually being worked, accrued
+        # a sweep interval at a time -- NOT wall-clock since started_at. Wall-clock
+        # here would count a starved job down to "0 left" while it kept running,
+        # because its processing time lags the wall by however long it waited for
+        # an agent (see expire_job_over_runtime, which caps on the same counter).
+        # Computed HERE, not in the template: a template doing `utcnow() -
+        # started_at` would be a local-vs-UTC subtraction once started_at is UTC.
+        'job_elapsed_secs': {job.id: (job.processing_seconds or 0)
+                             for job in running_jobs},
         'job_dash': _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
                                      agents_ctx['recovered_list'], agents_ctx['time_estimated_list'],
                                      max_runtime_tasks=(settings.max_runtime_tasks

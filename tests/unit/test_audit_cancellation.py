@@ -186,14 +186,16 @@ def test_task_runtime_cap_is_audited_as_a_system_action(audit_app):
 
 def test_job_runtime_cap_is_audited_as_a_system_action(audit_app):
     """max_runtime_jobs."""
-    from hashview.api.routes import _audit_auto_cancel
+    # Moved to utils when the JOB_RUNTIME sweep needed it too: the scheduler has
+    # no business importing an api blueprint to record a cancellation.
+    from hashview.utils.utils import audit_auto_cancel
 
     with audit_app.app_context():
         owner = _admin()
         _agent_and_settings(max_runtime_jobs=3)
         job, _task, _jt = _running_job(owner, started_hours_ago=9)
 
-        _audit_auto_cancel("job.auto_cancel", job.id, cap="max_runtime_jobs")
+        audit_auto_cancel("job.auto_cancel", job.id, cap="max_runtime_jobs")
 
         events = _events(audit_app, "job.auto_cancel")
         assert events, "a job killed by max_runtime_jobs wrote no audit entry"
@@ -210,6 +212,7 @@ def test_auditing_never_blocks_the_cap_from_being_enforced(audit_app, monkeypatc
     failure to apply it.
     """
     from hashview.api import routes as api_routes
+    from hashview.utils import audit as audit_mod
 
     with audit_app.app_context():
         owner = _admin()
@@ -219,7 +222,9 @@ def test_auditing_never_blocks_the_cap_from_being_enforced(audit_app, monkeypatc
         def _boom(*args, **kwargs):
             raise RuntimeError("audit sink is down")
 
-        monkeypatch.setattr(api_routes, "log_event", _boom)
+        # Patched at the source module: audit_auto_cancel resolves log_event at
+        # call time, so patching the caller's namespace would no longer reach it.
+        monkeypatch.setattr(audit_mod, "log_event", _boom)
         api_routes._cancel_task_group(job.id, task.id)
 
         assert JobTasks.query.get(job_task.id).status == "Expired", (

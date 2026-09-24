@@ -2394,6 +2394,9 @@ def _job_hash_type(job):
 def _set_job_task_command(job, row, spec, chunk_no=None, chunk_total=None):
     """Stamp a JobTasks row with its queue state, chunk slice, and built command."""
     row.status = 'Queued'
+    # A re-queued row is a NEW attempt: last run's end time would otherwise sit
+    # there describing an interval that has nothing to do with this one.
+    row.ended_at = None
     row.priority = job.priority
     row.chunk_no = chunk_no
     # Every stamped row carries a truthy chunk_total: the real count for a chunk,
@@ -3066,6 +3069,7 @@ def issue_slice(job, ledger, agent_id, hash_type, target_seconds, row=None):
         target.agent_id = agent_id
         target.status = 'Running'
         target.started_at = utcnow()
+        target.ended_at = None
 
         claimed = (db.session.query(JobTaskLedger)
                    .filter(JobTaskLedger.id == ledger.id,
@@ -3182,6 +3186,116 @@ JOBTASK_TERMINAL_STATUSES = ('Completed', 'Canceled', 'Expired')
 # on the reason close_ledger is already given, so the two cap call sites need no
 # new argument and no other caller can accidentally mint an Expired row.
 _RUNTIME_CAP_REASONS = ('runtime_cap', 'job_runtime_cap')
+
+
+def audit_auto_cancel(event, job_id, task_id=None, cap=None):
+    """Record a cancellation the SYSTEM performed, with the cap that caused it.
+
+    Actor is explicit. When this fires inside an agent heartbeat there IS a
+    request context, but resolve_actor() returns (None, None) there -- the uuid
+    cookie is an agent uuid and matches no user's api_key -- which would make an
+    automatic cancellation read as an anonymous user action. From the scheduler
+    there is no request context at all, which would do the same thing.
+
+    Best-effort and never fatal: an audit write must not be able to stop a
+    runtime cap from being enforced. log_event already swallows its own errors;
+    this guards the name lookups it is given.
+    """
+    from flask import current_app
+
+    from hashview.utils.audit import (
+        SYSTEM_ACTOR,
+        job_target,
+        job_task_target,
+        log_event,
+    )
+    try:
+        job = Jobs.query.get(job_id)
+        if job is None:
+            return
+        settings = Settings.current()
+        hours = getattr(settings, cap, None) if settings else None
+        detail = f'{cap} exceeded ({hours}h)' if hours else f'{cap} exceeded'
+        if task_id is None:
+            target = job_target(job)
+        else:
+            target = job_task_target(job, task=Tasks.query.get(task_id),
+                                     task_id=task_id)
+        log_event(event, target=target, detail=detail, actor=SYSTEM_ACTOR)
+    except Exception:   # nosec B110 - auditing must never block enforcement
+        current_app.logger.exception('Could not audit the automatic cancellation.')
+
+
+def expire_job_over_runtime(job, max_runtime_hours, now=None):
+    """Expire ``job`` if it has outlived Settings.max_runtime_jobs. True if it did.
+
+    ONE implementation, called from two places that must not drift: the agent
+    heartbeat, which evaluates the cap for the job it is about to hand work to,
+    and the JOB_RUNTIME sweep, which evaluates it for every running job whether
+    or not anyone is asking. The heartbeat alone is not enough -- it only ever
+    reaches a job an agent is actively being dispatched to, so a job whose agents
+    have all moved on to something higher-priority is not checked again until
+    they come back, and sits on the dashboard in the meantime looking alive.
+
+    The job's status is claimed FIRST, by conditional UPDATE, and everything else
+    follows from whether that claim won. Two reasons, and the second is not
+    obvious:
+
+    * It settles the race. The sweep and a heartbeat can reach the same job at
+      the same moment, and the debug reloader runs two scheduler instances in two
+      processes. Exactly one caller claims it, so ended_at is stamped once and
+      one audit entry is written. It is also the ONLY check that the job is still
+      live -- an already-Completed or already-Canceled job simply fails to claim
+      -- so there is no second status guard above to drift away from it.
+    * Closing the ledger first does not work. close_ledger terminates the job's
+      rows and then calls finalize_job_if_complete, which -- with every row now
+      terminal -- rolls the job up to Completed. A claim made after that finds
+      nothing in ('Queued', 'Running') to update, and the job a runtime cap just
+      stopped is recorded as having finished normally. Claiming first makes that
+      roll-up a no-op, because it claims on the same two statuses.
+
+    Closing the ledger is what actually stops the work, so it still has to
+    happen: cancelling rows alone leaves the attack mintable and the next
+    heartbeat issues slice N+1, cancels it, issues N+2, forever. It is safe to do
+    after the claim because dispatch skips any job not in ('Queued', 'Running'),
+    so an Expired job cannot be handed a slice in the window between the two.
+
+    The cap is measured against Jobs.processing_seconds -- time the job was
+    actually being worked, credited one sweep interval at a time by
+    scheduler._accrue_processing_time -- and NOT against wall-clock since
+    job.started_at. The difference is a job that gets starved: a higher-priority
+    job takes the whole fleet, this one sits with no agent on it, and under
+    wall-clock it blows a cap it was never given the chance to spend. Under this
+    clock, time nobody spent working on it costs it nothing.
+
+    Worth stating plainly, because it is the trade: a job can now outlive its cap
+    in wall-clock terms by an unbounded margin. That is the intended answer --
+    "should this have been killed hours ago?" is no when it was waiting rather
+    than running -- but it does mean max_runtime_jobs no longer bounds how long a
+    job can sit in the system, only how much of the fleet's time it can consume.
+    """
+    if not max_runtime_hours or max_runtime_hours <= 0:
+        return False
+    if job is None:
+        return False
+    now = now or utcnow()
+    if (job.processing_seconds or 0) < max_runtime_hours * 3600:
+        return False
+
+    claimed = (db.session.query(Jobs)
+               .filter(Jobs.id == job.id, Jobs.status.in_(('Queued', 'Running')))
+               .update({'status': 'Expired', 'ended_at': now},
+                       synchronize_session=False))
+    db.session.commit()
+    if not claimed:
+        return False
+
+    # Terminates the job's still-active rows as 'Expired' too (close_ledger keys
+    # the terminal status on the reason it is given), so the rows say what
+    # stopped them rather than a generic cancellation.
+    close_ledger(job.id, 'job_runtime_cap')
+    audit_auto_cancel('job.auto_cancel', job.id, cap='max_runtime_jobs')
+    return True
 
 
 def queue_late_assignments(job_id):
@@ -3442,11 +3556,18 @@ def mark_job_running(job_id):
     concurrent heartbeat cannot double-stamp started_at, and clear ended_at,
     which is otherwise left over from the previous run of a re-queued job.
     Returns True if this call was the one that started it.
+
+    The processing clock is reset here for the same reason: re-running a job is
+    a new run, and it gets the whole of max_runtime_jobs to spend. Carrying the
+    previous run's credit over would expire the re-run before it began, which is
+    the cap's most confusing possible failure -- a job that dies instantly and
+    reports a runtime it did not have.
     """
     started = (db.session.query(Jobs)
                .filter(Jobs.id == job_id, Jobs.status == 'Queued')
                .update({'status': 'Running', 'started_at': utcnow(),
-                        'ended_at': None}, synchronize_session=False))
+                        'ended_at': None, 'processing_seconds': 0,
+                        'last_counted_at': None}, synchronize_session=False))
     if started:
         db.session.commit()
     return bool(started)
@@ -3467,6 +3588,13 @@ def update_job_task_status(jobtask_id, status, finalize=True):
 
     jobtask.status = status
     if status in JOBTASK_TERMINAL_STATUSES:
+        # When this attempt stopped. Paired with started_at so the row describes a
+        # closed interval; see JobTasks.ended_at for what that is for. Stamped for
+        # every terminal status, not just Completed -- an attempt that was
+        # cancelled or expired still occupied an agent for exactly as long as it
+        # ran, and a runtime derived from intervals that silently omit those is
+        # not a runtime.
+        jobtask.ended_at = utcnow()
         # Clear the assigned agent's stale hashcat status BEFORE nulling agent_id.
         # Nulling first made the lookup Agents.query.get(None) -> None, so the agent
         # was never found and kept its stale hc_status forever (issue #237). The

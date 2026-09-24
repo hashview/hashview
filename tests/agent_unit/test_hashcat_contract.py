@@ -8,16 +8,6 @@ machine-readable surface fails here rather than silently blanking the dashboard
 
 Assertions are structural, never value-exact: speeds, timestamps and device
 names differ per machine.
-
-Versions in KNOWN_BROKEN_STATUS_JSON are xfail(strict=True) -- strict because
-the fixture is committed and the defect is deterministic, so an XPASS means the
-fixture was regenerated wrongly or a parser started tolerating broken JSON, and
-that must fail loudly rather than quietly rot the canary. hashcat 7.0.0
-emits structurally INVALID JSON from --status-json: each device object closes
-with a stray '}' instead of a ',' before the "power" key, so json.loads fails
-on every status line (upstream issue #4393). 7.1.0 fixed it. On 7.0.0 the agent
-would therefore report no status at all, silently. It is kept in the matrix as
-a canary proving these tests detect a real break.
 """
 import importlib.util
 import json
@@ -36,8 +26,6 @@ _SUMMARIZE_PATH = REPO_ROOT / "tests" / "hashcat_matrix" / "summarize.py"
 _spec = importlib.util.spec_from_file_location("hv_hc_summarize", _SUMMARIZE_PATH)
 summarize = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(summarize)
-
-KNOWN_BROKEN_STATUS_JSON = {"7.0.0"}
 
 # The plaintext capture.sh cracks, and its NTLM hash.
 EXPECTED_PLAINTEXT = "password"
@@ -62,14 +50,10 @@ def _versions():
                   key=_as_tuple)
 
 
-def _param(version):
-    marks = [pytest.mark.xfail(reason="hashcat 7.0.0 emits invalid --status-json (upstream #4393)",
-                               strict=True)] if version in KNOWN_BROKEN_STATUS_JSON else []
-    return pytest.param(version, marks=marks)
-
-
 ALL_VERSIONS = [pytest.param(v) for v in _versions()]
-STATUS_VERSIONS = [_param(v) for v in _versions()]
+# No pinned version currently emits broken --status-json, so the status-contract
+# tests run the same set; kept as a separate name for those tests below.
+STATUS_VERSIONS = ALL_VERSIONS
 
 
 def test_fixtures_exist():
@@ -77,17 +61,19 @@ def test_fixtures_exist():
     assert _versions(), f"no hashcat fixtures under {FIXTURE_ROOT}"
 
 
-# Nothing below this is pinned, captured or claimed to work. 6.2.6 was dropped
-# from both CI matrices and its fixture directory deleted; this keeps it gone.
-MATRIX_FLOOR = (7, 0)
+# Nothing below this is pinned, captured or claimed to work. 6.2.6 and 7.0.0
+# were both dropped from the CI matrices and their fixture directories deleted;
+# this keeps them gone. Bump it in the same commit that raises the matrix.
+MATRIX_FLOOR = (7, 1)
 
 
-def test_the_matrix_floor_is_7_0():
+def test_no_fixture_sits_below_the_matrix_floor():
     """A fixture directory is what makes a version part of the offline contract,
-    so a stray 6.x directory would quietly put a version back under test that
+    so a stray old directory would quietly put a version back under test that
     CI no longer downloads or verifies. Compared as integer tuples, not as
     strings: '10.0' sorts before '7.0' lexically, which would let a future
-    hashcat 10 read as below the floor."""
+    hashcat 10 read as below the floor. Note (7, 0, 0) > (7, 0), so a bare
+    7.0 floor would not have excluded the 7.0.0 fixture this commit deletes."""
     below = [v for v in _versions() if _as_tuple(v) < MATRIX_FLOOR]
     assert not below, (
         f"fixtures below the {MATRIX_FLOOR[0]}.{MATRIX_FLOOR[1]} floor: {below}")
@@ -166,8 +152,27 @@ def test_outfile_is_hash_colon_hexplain(version):
 # --- contract 4: flag acceptance -------------------------------------------
 
 @pytest.mark.parametrize("version", ALL_VERSIONS)
-def test_binary_advertises_every_flag_the_server_emits(version):
+def test_binary_advertises_every_documented_flag_the_server_emits(version):
+    """Only ADVERTISED_FLAGS, not every flag the command builder emits.
+
+    What Hashview depends on is that its command runs, and --help is only a
+    proxy for that. The proxy broke once already: hashcat retired workload
+    profiles and dropped -w from --help while still accepting it, which is a
+    documentation change this assertion reported as an interop break. Flags in
+    that state live in ACCEPTED_ONLY_FLAGS and are checked by actually running
+    the binary -- see tests/hashcat_matrix/test_flag_acceptance.py."""
     summary = json.loads((FIXTURE_ROOT / version / "summary.json")
                          .read_text(encoding="utf-8"))
-    missing = sorted(set(summarize.REQUIRED_FLAGS) - set(summary["advertised_flags"]))
+    missing = sorted(set(summarize.ADVERTISED_FLAGS) - set(summary["advertised_flags"]))
     assert not missing, f"hashcat {version} no longer advertises: {missing}"
+
+
+def test_the_two_flag_lists_stay_disjoint_and_complete():
+    """A flag in both lists would be checked twice and mean nothing; a flag in
+    neither is emitted by the command builder and verified by nothing at all,
+    which is the failure mode this split could quietly introduce."""
+    advertised = set(summarize.ADVERTISED_FLAGS)
+    accepted_only = set(summarize.ACCEPTED_ONLY_FLAGS)
+    assert not advertised & accepted_only, (
+        f"flags in both lists: {sorted(advertised & accepted_only)}")
+    assert advertised | accepted_only == set(summarize.REQUIRED_FLAGS)

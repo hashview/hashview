@@ -10,12 +10,13 @@ directly (Expired by the job cap, Canceled by an operator) and never reaches the
 roll-up, so 'Incomplete' now means only "created but never queued".
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 
 from hashview.models import Jobs, JobTasks, Settings, Tasks, Users
 from hashview.models import db as _db
+from hashview.utils.clock import utcnow
 from hashview.utils.utils import (
     JOBTASK_ACTIVE_STATUSES,
     JOBTASK_TERMINAL_STATUSES,
@@ -39,13 +40,13 @@ def _job_with_running_task(owner, hours_ago=5):
     customer = make_customer(name='Expiry Customer')
     job = Jobs(name='capped', status='Running', customer_id=customer.id,
                owner_id=owner.id, priority=3,
-               started_at=datetime.now() - timedelta(hours=hours_ago))
+               started_at=utcnow() - timedelta(hours=hours_ago))
     task = Tasks(name='long-task', owner_id=owner.id, hc_attackmode=3,
                  hc_mask='?d?d?d?d')
     _db.session.add_all([job, task])
     _db.session.commit()
     row = JobTasks(job_id=job.id, task_id=task.id, status='Running',
-                   started_at=datetime.now() - timedelta(hours=hours_ago))
+                   started_at=utcnow() - timedelta(hours=hours_ago))
     _db.session.add(row)
     _db.session.commit()
     return job, task, row

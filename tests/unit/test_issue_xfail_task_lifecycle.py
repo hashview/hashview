@@ -17,7 +17,6 @@ Infra/fixtures come from tests/unit/conftest.py (``app``, ``client``,
 
 import inspect
 import json
-from datetime import datetime
 
 import pytest
 
@@ -34,6 +33,7 @@ from hashview.models import (
     Users,
     db,
 )
+from hashview.utils.clock import utcnow
 from hashview.utils.utils import build_hashcat_command, get_md5_hash
 
 DOMAIN = "localhost.test"
@@ -80,7 +80,7 @@ def test_canceled_task_clears_agent_assignment(app, client):
 
     job = Jobs(name="J139", owner_id=admin.id, customer_id=cust.id,
                hashfile_id=hf.id, status="Running", limit_recovered=False,
-               started_at=datetime.now())
+               started_at=utcnow())
     db.session.add(job)
     db.session.commit()
     task = Tasks(name="T139", owner_id=admin.id, hc_attackmode=0)
@@ -88,12 +88,12 @@ def test_canceled_task_clears_agent_assignment(app, client):
     db.session.commit()
 
     agent = Agents(name="agent139", src_ip="1.1.1.1", uuid="uuid-139",
-                   status="Working", last_checkin=datetime.now())
+                   status="Working", last_checkin=utcnow())
     db.session.add(agent)
     db.session.commit()
 
     jt = JobTasks(job_id=job.id, task_id=task.id, status="Canceled",
-                  agent_id=agent.id, started_at=datetime.now())
+                  agent_id=agent.id, started_at=utcnow())
     db.session.add(jt)
     db.session.commit()
     jt_id = jt.id
@@ -163,17 +163,17 @@ def test_all_hashes_cracked_completes_running_tasks(app, client):
 
     job = Jobs(name="J130", owner_id=admin.id, customer_id=cust.id,
                hashfile_id=hf.id, status="Running", limit_recovered=False,
-               started_at=datetime.now())
+               started_at=utcnow())
     db.session.add(job)
     db.session.commit()
 
     agent = Agents(name="agent130", src_ip="1.1.1.1", uuid="uuid-130",
-                   status="Authorized", last_checkin=datetime.now())
+                   status="Authorized", last_checkin=utcnow())
     db.session.add(agent)
     db.session.commit()
 
     jt = JobTasks(job_id=job.id, task_id=task.id, status="Running",
-                  agent_id=agent.id, started_at=datetime.now())
+                  agent_id=agent.id, started_at=utcnow())
     db.session.add(jt)
     db.session.commit()
     jt_id = jt.id
@@ -238,7 +238,7 @@ def test_hc_cracked_filename_unique_per_jobtask(app):
 
     job = Jobs(name="J64", owner_id=admin.id, customer_id=cust.id,
                hashfile_id=hf.id, status="Running", limit_recovered=False,
-               started_at=datetime.now())
+               started_at=utcnow())
     db.session.add(job)
     db.session.commit()
 

@@ -25,6 +25,7 @@ from hashview.models import (
     Users,
     db,
 )
+from hashview.utils.clock import utcnow
 
 
 def _seed_running_job():
@@ -494,15 +495,15 @@ def test_auto_cancel_counts_down_from_the_earliest_chunk_start(app, db_session):
     any single chunk's started_at would under-report the parent's elapsed time
     and the column would disagree with the reaper that acts on it.
     """
-    from datetime import datetime, timedelta
+    from datetime import timedelta
 
     from hashview.main.routes import _job_task_groups
     job, task_a, _ = _seed_running_job()
     rows = JobTasks.query.filter_by(job_id=job.id, task_id=task_a.id).all()
     # Oldest chunk started 1h ago, a later one 5m ago: the cap follows the oldest.
-    rows[0].started_at = datetime.now() - timedelta(hours=1)
+    rows[0].started_at = utcnow() - timedelta(hours=1)
     for r in rows[1:]:
-        r.started_at = datetime.now() - timedelta(minutes=5)
+        r.started_at = utcnow() - timedelta(minutes=5)
     db.session.commit()
 
     dash = _job_task_groups([job], JobTasks.query.filter_by(job_id=job.id).all(),
@@ -530,12 +531,12 @@ def test_auto_cancel_is_absent_when_the_cap_is_disabled(app, db_session):
 def test_auto_cancel_floors_at_zero_rather_than_going_negative(app, db_session):
     """Past its deadline the honest reading is "any moment now", not "-4m": the
     reaper cancels on the next heartbeat."""
-    from datetime import datetime, timedelta
+    from datetime import timedelta
 
     from hashview.main.routes import _job_task_groups
     job, task_a, _ = _seed_running_job()
     for r in JobTasks.query.filter_by(job_id=job.id, task_id=task_a.id).all():
-        r.started_at = datetime.now() - timedelta(hours=10)
+        r.started_at = utcnow() - timedelta(hours=10)
     db.session.commit()
 
     dash = _job_task_groups([job], JobTasks.query.filter_by(job_id=job.id).all(),

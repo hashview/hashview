@@ -14,11 +14,38 @@ import sys
 from pathlib import Path
 
 # Flags build_hashcat_command (hashview/utils/utils.py) can emit.
-REQUIRED_FLAGS = [
-    "-O", "-w", "--session", "-m", "--potfile-path", "--status",
+#
+# Two lists, not one, because "hashcat documents this flag" and "hashcat still
+# accepts this flag" are different claims and they have now come apart. What
+# Hashview actually depends on is the second one: the command it builds has to
+# run. Advertisement in --help is only ever a proxy for that, and checking a
+# proxy means a purely cosmetic upstream edit reads as an interop break while a
+# flag quietly becoming a hard error would not be caught until a job died.
+#
+# ADVERTISED_FLAGS is still checked against the text of --help, which is all an
+# offline fixture can support. ACCEPTED_ONLY_FLAGS is exempt from that and is
+# probed by actually invoking the binary -- see
+# tests/hashcat_matrix/test_flag_acceptance.py. Every flag in either list is
+# probed; only the advertised ones additionally have to appear in --help.
+
+# Documented, and expected to stay documented. A flag vanishing from --help here
+# is worth a human looking, even when it still works.
+ADVERTISED_FLAGS = [
+    "-O", "--session", "-m", "--potfile-path", "--status",
     "--status-timer", "--outfile-format", "--outfile", "--skip", "--limit",
     "--loopback", "--hex-salt", "-a", "-r", "-j", "-k",
 ]
+
+# Accepted by the parser but no longer documented. hashcat 083046e7 retired
+# workload profiles: -w and --workload-profile are, in upstream's own words,
+# "accepted and ignored, though the options no longer appear in --help".
+# build_hashcat_command still emits -w 3, which is harmless -- profile 3's
+# launch budget is what every run now gets -- so the flag must keep being
+# accepted, and no longer has to be advertised.
+ACCEPTED_ONLY_FLAGS = ["-w"]
+
+# Everything the command builder can emit, both kinds together.
+REQUIRED_FLAGS = ADVERTISED_FLAGS + ACCEPTED_ONLY_FLAGS
 
 # Top-level keys that hashcat_status (install/hashview-agent/agent/status.py) reads.
 # The summary is diffed across machines in CI, so it must contain only

@@ -27,7 +27,7 @@ Covers the gaps NOT already exercised by tests/unit/test_api_endpoints.py:
 
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 
@@ -48,6 +48,7 @@ from hashview.models import (
 from hashview.models import (
     db as _db,
 )
+from hashview.utils.clock import utcnow
 from hashview.utils.utils import get_md5_hash
 from tests.unit.helpers import make_wordlist_with_file
 
@@ -384,7 +385,7 @@ def test_heartbeat_working_agent_task_runtime_exceeded_cancels_task(
     _db.session.add(job)
     _db.session.commit()
     # started_at is far in the past so it exceeds max_runtime_tasks=1 hour
-    old_start = datetime.now() - timedelta(hours=2)
+    old_start = utcnow() - timedelta(hours=2)
     jt = JobTasks(job_id=job.id, task_id=1, status="Running",
                   agent_id=authorized_agent.id, started_at=old_start)
     _db.session.add(jt)
@@ -415,17 +416,15 @@ def test_heartbeat_working_agent_job_runtime_exceeded_cancels_job(
     hf = Hashfiles(name="hb-hf5", customer_id=cust.id, owner_id=admin_user.id)
     _db.session.add(hf)
     _db.session.commit()
-    # Two hours of credited PROCESSING time against a 1-hour cap. Wall-clock
-    # since started_at no longer decides this: a job that sat waiting for the
-    # fleet has not used any of its allowance.
-    old_start = datetime.now() - timedelta(hours=2)
+    # Job started 2 hours ago (exceeds 1-hour limit)
+    old_start = utcnow() - timedelta(hours=2)
     job = Jobs(name="hb-job5", status="Running", hashfile_id=hf.id,
                customer_id=cust.id, owner_id=admin_user.id, started_at=old_start,
                processing_seconds=2 * 3600)
     _db.session.add(job)
     _db.session.commit()
     jt = JobTasks(job_id=job.id, task_id=1, status="Running",
-                  agent_id=authorized_agent.id, started_at=datetime.now())
+                  agent_id=authorized_agent.id, started_at=utcnow())
     _db.session.add(jt)
     _db.session.commit()
 
@@ -452,7 +451,7 @@ def test_heartbeat_working_agent_with_hc_status_updates_benchmark(
     _db.session.add(job)
     _db.session.commit()
     jt = JobTasks(job_id=job.id, task_id=1, status="Running",
-                  agent_id=authorized_agent.id, started_at=datetime.now())
+                  agent_id=authorized_agent.id, started_at=utcnow())
     _db.session.add(jt)
     _db.session.commit()
 

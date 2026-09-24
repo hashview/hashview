@@ -75,9 +75,10 @@ def _relative_time(dt):
     """Human 'N <unit> ago' for the recovery feed's Time column.
 
     Under 24h shows the largest fitting unit (seconds / minutes / hours); at or
-    beyond 24h shows days. ``dt`` is the naive local ``recovered_at`` (set with
-    datetime.today()), so it is compared against a naive local ``now`` from the
-    same host.
+    beyond 24h shows days. ``dt`` is the naive UTC ``recovered_at``, compared
+    against ``utcnow()`` -- both sides are the one clock, so this is correct
+    whatever timezone the server runs in. It is not a local time, and seeding it
+    from ``datetime.now()`` is the bug this docstring used to describe.
     """
     if not dt:
         return '—'

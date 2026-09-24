@@ -481,7 +481,7 @@ binary (never a mock) and asserts, across all AES-mode Kerberos types
 - round-trip equality between `normalize_kerberos_hash` and the live binary's
   own normalized form (via `--left`)
 
-The CI job runs this suite against four pinned hashcat releases (7.0.0, 7.1.0,
+The CI job runs this suite against three pinned hashcat releases (7.1.0,
 7.1.1, 7.1.2), fetched and sha256-verified by
 `tests/hashcat_interop/fetch_hashcat.sh`, on a CPU-only OpenCL device (`pocl`).
 It only triggers on changes to `hashview/utils/utils.py`,
@@ -593,29 +593,57 @@ HASHCAT_BIN=/tmp/hc-src/hashcat ./.venv/bin/python -m pytest \
   tests/hashcat_matrix tests/unit/test_hash_case_normalization.py -q -rs
 ```
 
-`7.0.0` is in the matrix deliberately. It emits structurally invalid
-`--status-json`: each device object closes with a stray `}` instead of a `,`
-before the `"power"` key, so every status line fails `json.loads` (upstream
-issue #4393, fixed in 7.1.0). Because `hashcatParser` swallows unparseable
-lines, an agent running 7.0.0 reports no status at all and the dashboard simply
-goes blank. Its status assertions are strict `xfail` and its matrix leg is
-`continue-on-error`, so it demonstrates the tests catch a real break without
-holding CI red.
+The matrix covers `7.1.0`, `7.1.1` and `7.1.2`. Older releases (`6.2.6`,
+`7.0.0`) are no longer tested. In particular `7.0.0` emitted structurally
+invalid `--status-json` -- each device object closed with a stray `}` instead
+of a `,` before the `"power"` key, so every status line failed `json.loads`
+(upstream issue #4393, fixed in 7.1.0). Because `hashcatParser` swallows
+unparseable lines, an agent running 7.0.0 reports no status at all and the
+dashboard simply goes blank.
 
-**If you run hashcat 7.0.0 in production, upgrade to 7.1.0 or later.**
+**Run hashcat 7.1.0 or later.**
 
-### The matrix floor is 7.0
+### The matrix floor is 7.1
 
-Nothing below 7.0 is pinned, tested or claimed to work. 6.2.6 was dropped from
-both matrices along with its fixture directory; `test_the_matrix_floor_is_7_0`
-in `tests/agent_unit/test_hashcat_contract.py` fails if a 6.x fixture comes
-back, so the floor is enforced rather than remembered.
+Nothing below 7.1 is pinned, tested or claimed to work. 6.2.6 and 7.0.0 were
+dropped from both matrices along with their fixture directories;
+`test_no_fixture_sits_below_the_matrix_floor` in
+`tests/agent_unit/test_hashcat_contract.py` fails if either comes back, so the
+floor is enforced rather than remembered. Raising the matrix again means raising
+`MATRIX_FLOOR` in the same commit, or the guard silently stops guarding.
 
 This narrows what CI proves, not what the code does: there is no minimum-version
 gate anywhere in the agent or the server, so a 6.x binary will still run and is
 simply unverified. Historical `verified against hashcat 6.2.6` notes in
 docstrings stay as written — they record where a fact was established, which is
 still true, and re-deriving them against 7.x is separate work.
+
+### Advertised flags vs accepted flags
+
+`build_hashcat_command` emits a fixed set of flags, and the contract checks two
+different claims about them:
+
+| List (`tests/hashcat_matrix/summarize.py`) | Claim | Checked by |
+|---|---|---|
+| `ADVERTISED_FLAGS` | appears in `--help` | the offline contract, against the committed capture |
+| `ACCEPTED_ONLY_FLAGS` | still parses, but is no longer documented | `tests/hashcat_matrix/test_flag_acceptance.py`, by running the binary |
+
+Everything in either list is also probed for acceptance. Only the advertised
+ones additionally have to show up in `--help`.
+
+The split exists because those two claims came apart. hashcat `083046e7` retired
+workload profiles and dropped `-w` from `--help` while keeping it, in upstream's
+words, "accepted and ignored". Checking advertisement alone got that backwards
+in both directions: a documentation edit read as an interop break, while a flag
+quietly becoming a hard error -- the thing that would actually kill every job at
+launch -- would not have been caught at all.
+
+The acceptance probe runs each flag bare and looks for hashcat's own phrase
+`unrecognized option`, rather than checking the exit status. A known flag given
+a bad value also exits non-zero but complains about the *value*, so matching the
+phrase is what lets one probe cover flags that take an argument and flags that
+do not. It carries a negative control: if hashcat ever changes that wording, the
+control fails rather than the whole contract silently passing.
 
 ### Running the live tests locally
 

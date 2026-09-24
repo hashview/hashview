@@ -29,7 +29,7 @@ moments when a task has no materialised row at all, and an absence test reads
 that as "done".
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 
@@ -47,6 +47,7 @@ from hashview.models import (
     Wordlists,
     db,
 )
+from hashview.utils.clock import utcnow
 from hashview.utils.utils import finalize_job_if_complete, update_job_task_status
 
 pytestmark = pytest.mark.security
@@ -75,7 +76,7 @@ def _seed(task_count=2, job_status="Running"):
     db.session.commit()
     job = Jobs(name="j", owner_id=user.id, customer_id=cust.id, hashfile_id=hf.id,
                status=job_status, priority=3,
-               started_at=datetime.now() - timedelta(seconds=120))
+               started_at=utcnow() - timedelta(seconds=120))
     db.session.add(job)
     db.session.commit()
     rows = []
@@ -213,7 +214,7 @@ def test_a_canceled_job_is_not_rewritten_by_a_late_completion(app, db_session):
     resurrect it as Completed."""
     job, rows, _ = _seed(task_count=1)
     job.status = "Canceled"
-    job.ended_at = datetime.now()
+    job.ended_at = utcnow()
     db.session.commit()
     stopped_at = Jobs.query.get(job.id).ended_at
 

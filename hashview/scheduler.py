@@ -529,30 +529,71 @@ def _catalog_alert_lines(rows, task_ids_by_id, kind):
 
 
 def _catalog_task_references(rule_ids, wordlist_ids):
-    """(rule_id -> {task ids}, wordlist_id -> {task ids}) in two batched queries.
+    """(rule_id -> {task ids}, wordlist_id -> {task ids}) — see utils.
 
-    Which tasks reference a row is the field that decides the admin's next move:
-    an unreferenced stale row is housekeeping, one behind a queued job is an
-    incident. wl_id_2 counts -- a combinator task's second wordlist is a real
-    reference (see build_hashcat_command)."""
-    from sqlalchemy import or_
+    Thin wrapper over utils.catalog_task_references, which the /v1 listings and
+    the UI also use, so the sweep can never disagree with what an operator was
+    shown about which rows are referenced. Imported at call time, like the rest
+    of this module's hashview imports, to keep the scheduler importable without
+    the app."""
+    from hashview.utils.utils import catalog_task_references
 
-    from hashview.models import Tasks
+    return catalog_task_references(rule_ids, wordlist_ids)
 
-    by_rule, by_wordlist = {}, {}
-    if rule_ids:
-        for task_id, rule_id in Tasks.query.with_entities(
-                Tasks.id, Tasks.rule_id).filter(Tasks.rule_id.in_(rule_ids)).all():
-            by_rule.setdefault(rule_id, set()).add(task_id)
-    if wordlist_ids:
-        for task_id, wl_id, wl_id_2 in Tasks.query.with_entities(
-                Tasks.id, Tasks.wl_id, Tasks.wl_id_2).filter(
-                    or_(Tasks.wl_id.in_(wordlist_ids),
-                        Tasks.wl_id_2.in_(wordlist_ids))).all():
-            for candidate in (wl_id, wl_id_2):
-                if candidate in wordlist_ids:
-                    by_wordlist.setdefault(candidate, set()).add(task_id)
-    return by_rule, by_wordlist
+
+def _catalog_prune_candidates(stale_rules, stale_wordlists,
+                              healthy_rules=0, healthy_wordlists=0):
+    """(rules, wordlists) safe to delete outright: stranded AND unreferenced (#494).
+
+    ``stale_*`` are rows whose file is gone and whose admins were already told in
+    an earlier sweep. Of those, the ones no task references are debris: excluded
+    from new tasks, skipped by the agent's sync, 404 on download, and impossible
+    to restore without a file nobody has. Nothing else in the schema points at a
+    rule/wordlist row -- Hashes attribution hangs off Tasks -- so deleting one
+    that no task names loses nothing.
+
+    A referenced row is deliberately left alone whatever its state: choosing
+    between restore and delete there means deciding the fate of the task, which
+    is an operator's call, not a scheduler's.
+
+    ``healthy_*`` is how many rows of that kind DO resolve on disk, and a kind
+    with none of them is not pruned at all. This is the second rail, and it
+    covers what the isdir circuit breaker cannot see: a control directory that
+    exists and is EMPTY. A fresh named volume on redeploy, a bind-mount typo, a
+    restore that brought the database back but not the files -- each strands the
+    whole catalog at once while every isdir check passes. Without this, that is
+    one hour from "wrong volume attached" to "the catalog is gone", and
+    remounting the right volume then produces files whose rows no longer exist.
+    When not one file of a kind is there, the disk is the thing to distrust.
+
+    Judged per kind, because control/rules and control/wordlists are separate
+    mounts on plenty of installs. Dynamic wordlists do not count as healthy:
+    their file is never read, so its presence says nothing about the mount.
+
+    The cost is that a catalog whose every row is stranded is never pruned
+    automatically, however genuine the loss. That is the right way to be wrong:
+    the alert still names every row, and deleting them by hand stays available.
+
+    Returns two empty lists when the prune is disarmed, so the caller's "is there
+    anything to do" guard stays a single expression."""
+    from hashview.utils.utils import catalog_prune_armed
+
+    if not (stale_rules or stale_wordlists):
+        return [], []
+    if not catalog_prune_armed():
+        return [], []
+
+    if not healthy_rules:
+        stale_rules = []
+    if not healthy_wordlists:
+        stale_wordlists = []
+    if not (stale_rules or stale_wordlists):
+        return [], []
+
+    by_rule, by_wordlist = _catalog_task_references(
+        {r.id for r in stale_rules}, {w.id for w in stale_wordlists})
+    return ([r for r in stale_rules if not by_rule.get(r.id)],
+            [w for w in stale_wordlists if not by_wordlist.get(w.id)])
 
 
 def _catalog_health_check_inner(db :SQLAlchemy, logger :Logger):
@@ -595,25 +636,45 @@ def _catalog_health_check_inner(db :SQLAlchemy, logger :Logger):
                          path)
             return
 
-    missing_rules, restored_rules = [], []
+    # `stale_*` is the prune candidate pool: file gone AND the admins were
+    # already told in an EARLIER sweep. A row moves from missing_* to stale_*
+    # only after a full sweep interval, which is what keeps the prune from ever
+    # being the first thing an operator hears about a row (#494).
+    missing_rules, restored_rules, stale_rules = [], [], []
+    healthy_rules = 0                  # rows whose file IS there; see the prune rail
     for rule in Rules.query.all():
         if rule_file_missing(rule):
-            if not rule.file_missing_notified:
+            if rule.file_missing_notified:
+                stale_rules.append(rule)
+            else:
                 missing_rules.append(rule)
-        elif rule.file_missing_notified:
-            restored_rules.append(rule)
+        else:
+            healthy_rules += 1
+            if rule.file_missing_notified:
+                restored_rules.append(rule)
 
-    missing_wordlists, restored_wordlists = [], []
+    missing_wordlists, restored_wordlists, stale_wordlists = [], [], []
+    healthy_wordlists = 0
     # Dynamic rows are filtered out by wordlist_file_missing (their file is a
-    # regenerable cache), so they can never enter either list.
+    # regenerable cache), so they can never enter any of these lists -- and they
+    # do not count as healthy either, since nothing ever reads that file.
     for wordlist in Wordlists.query.all():
         if wordlist_file_missing(wordlist):
-            if not wordlist.file_missing_notified:
+            if wordlist.file_missing_notified:
+                stale_wordlists.append(wordlist)
+            else:
                 missing_wordlists.append(wordlist)
-        elif wordlist.file_missing_notified:
-            restored_wordlists.append(wordlist)
+        else:
+            if (getattr(wordlist, 'type', None) or '').lower() != 'dynamic':
+                healthy_wordlists += 1
+            if wordlist.file_missing_notified:
+                restored_wordlists.append(wordlist)
 
-    if not (missing_rules or missing_wordlists or restored_rules or restored_wordlists):
+    pruned_rules, pruned_wordlists = _catalog_prune_candidates(
+        stale_rules, stale_wordlists, healthy_rules, healthy_wordlists)
+
+    if not (missing_rules or missing_wordlists or restored_rules or restored_wordlists
+            or pruned_rules or pruned_wordlists):
         logger.info('CatalogHealthCheck: no catalog file changes to report.')
         return
 
@@ -695,6 +756,54 @@ def _catalog_health_check_inner(db :SQLAlchemy, logger :Logger):
             log_event('wordlist.file_restored', target=f'wordlist:{wordlist.id} {wordlist.name!r}',
                       detail=f'path={wordlist.path}', actor=('system', None))
             wordlist.file_missing_notified = False
+
+    if pruned_rules or pruned_wordlists:
+        # Its own message, for the same reason the restored alert is: this one
+        # needs no operator action at all, and "3 missing, 2 removed" is a
+        # Pushover title nobody can act on.
+        total = len(pruned_rules) + len(pruned_wordlists)
+        body = [
+            'These Hashview rule/wordlist entries had no file on disk and were not',
+            'referenced by any task, so they have been removed from the catalog.',
+            'They were reported as missing in an earlier sweep. Nothing else needs doing.',
+            '',
+        ]
+        # {} for the task map is correct here and NOT the bug fixed in the
+        # restored branch: being referenced by zero tasks is the precondition
+        # for appearing in this list at all, so "not referenced by any task" is
+        # the true line rather than a default that hides a real reference.
+        if pruned_rules:
+            body.append('Rules:')
+            body += _catalog_alert_lines(pruned_rules, {}, 'rule')
+            body.append('')
+        if pruned_wordlists:
+            body.append('Wordlists:')
+            body += _catalog_alert_lines(pruned_wordlists, {}, 'wordlist')
+            body.append('')
+        body += [
+            'Turn this off under Settings -> General -> "Clean up stranded catalog',
+            'entries" if you would rather remove them by hand.',
+        ]
+        logger.info('CatalogHealthCheck: removing %d orphaned catalog entr%s.',
+                    total, 'y' if total == 1 else 'ies')
+        try:
+            notify_admins(
+                'Hashview: %d orphaned catalog entr%s removed' % (total, 'y' if total == 1 else 'ies'),
+                '\n'.join(body))
+        except Exception:
+            logger.exception(
+                'CatalogHealthCheck: prune notification partially failed; removing anyway.')
+        # The audit event is written BEFORE the delete and carries the path,
+        # because once the row is gone this line is the only record that it ever
+        # existed -- and the only way to tell a prune from a hand-deletion.
+        for rule in pruned_rules:
+            log_event('rule.pruned', target=f'rule:{rule.id} {rule.name!r}',
+                      detail=f'path={rule.path} tasks=0', actor=('system', None))
+            db.session.delete(rule)
+        for wordlist in pruned_wordlists:
+            log_event('wordlist.pruned', target=f'wordlist:{wordlist.id} {wordlist.name!r}',
+                      detail=f'path={wordlist.path} tasks=0', actor=('system', None))
+            db.session.delete(wordlist)
 
     # One commit for the whole batch: the alert is aggregated, so the batch is
     # the unit of work. Committing before the send would risk latching rows the

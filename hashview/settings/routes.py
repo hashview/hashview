@@ -158,6 +158,7 @@ def settings_list():
             settings.max_runtime_tasks = hashview_form.max_runtime_tasks.data
             settings.agent_timeout_minutes = hashview_form.agent_timeout_minutes.data
             settings.enabled_job_weights = hashview_form.enabled_job_weights.data
+            settings.catalog_prune_orphans = hashview_form.catalog_prune_orphans.data
             settings.enabled_chunking = hashview_form.enabled_chunking.data
             settings.chunk_target_duration = hashview_form.chunk_target_duration.data
             settings.email_enabled = hashview_form.email_enabled.data
@@ -203,6 +204,7 @@ def settings_list():
             hashview_form.max_runtime_tasks.data = settings.max_runtime_tasks
             hashview_form.agent_timeout_minutes.data = settings.agent_timeout_minutes
             hashview_form.enabled_job_weights.data = settings.enabled_job_weights
+            hashview_form.catalog_prune_orphans.data = settings.catalog_prune_orphans
             hashview_form.enabled_chunking.data = settings.enabled_chunking
             hashview_form.chunk_target_duration.data = settings.chunk_target_duration
             hashview_form.email_enabled.data = settings.email_enabled

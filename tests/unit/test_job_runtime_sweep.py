@@ -108,6 +108,25 @@ def test_a_job_nobody_is_asking_about_is_expired(app):
     assert Jobs.query.get(job.id).ended_at is not None
 
 
+def test_the_scheduled_wrapper_pushes_its_own_context_and_runs(app):
+    """The scheduled entrypoint job_runtime_check(app) pushes its own app context
+    and runs the sweep. It must be handed the REAL app object -- the scheduler
+    fires jobs with no active context, so a current_app proxy would raise inside
+    ``with app.app_context()``. Everything else drives _job_runtime_check_inner
+    directly; this is the one test of the wrapper the scheduler actually calls.
+    """
+    from hashview.scheduler import job_runtime_check
+
+    owner = _owner()
+    _settings(max_runtime_jobs=1)
+    job, _task, row = _job(owner, hours_ago=5)
+
+    job_runtime_check(app)
+
+    assert Jobs.query.get(job.id).status == "Expired"
+    assert JobTasks.query.get(row.id).status == "Expired"
+
+
 def test_the_attack_is_closed_so_nothing_is_minted_afterwards(app):
     # Cancelling rows without closing the ledger is the infinite-mint bug: the
     # next heartbeat issues slice N+1, the cap cancels it, N+2 is issued...

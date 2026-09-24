@@ -31,27 +31,16 @@ jobs:
     name: "hashcat ${{ matrix.version }}"
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # 7.0.0 emits structurally invalid --status-json (stray '}' before "power"
-    # in each device object; upstream issue #4393, fixed in 7.1.0). It stays in
-    # the matrix as a canary proving the contract tests detect a real break,
-    # but must not hold CI red.
-    continue-on-error: ${{ matrix.blocking == false }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - version: "7.0.0"
-            sha256: "19e126642e1db7902125072dce539c53485c721735325a747bd03e8af3135d78"
-            blocking: false
           - version: "7.1.0"
             sha256: "37be13b2dfdd1da7a3f68847ff817a22c144fc8d76170f51aae412e8b3ee24fd"
-            blocking: true
           - version: "7.1.1"
             sha256: "e09f88233ae8a88e0e60d68c20e4f5094d9122af533a7d186a45d8d55d08f3a0"
-            blocking: true
           - version: "7.1.2"
             sha256: "80db0316387794ce9d14ed376da75b8a7742972485b45db790f5f8260307ff98"
-            blocking: true
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
@@ -256,7 +245,6 @@ jobs:
             echo '```yaml'
             echo "          - version: \"${VERSION}\""
             echo "            sha256: \"${sha_text}\""
-            echo "            blocking: true"
             echo '```'
             echo
             echo "and commit a fixture directory for it (see TESTING.md,"

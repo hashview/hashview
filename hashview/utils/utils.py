@@ -426,7 +426,8 @@ def notify_owner_of_cancellation(job, canceled_by, task=None, when=None):
             'You are receiving this because you own the job.\n'
         )
         return send_email(owner, subject, body)
-    except Exception:   # nosec B110 - notifying the owner must never block a stop
+    # B110: notifying the owner must never block a stop
+    except Exception:  # nosec B110
         current_app.logger.exception('Could not notify the job owner of a cancellation.')
         return False
 
@@ -2153,7 +2154,8 @@ def build_hashcat_command(job_id, task_id, chunk=None, job_task_id=None):
     un-chunked, pre-existing naming).
     """
 
-    hc_binpath = '@HASHCATBINPATH@'  # nosec B105 - placeholder token, not a password
+    # B105: placeholder token, not a password
+    hc_binpath = '@HASHCATBINPATH@'  # nosec B105
     task = Tasks.query.get(task_id)
     job = Jobs.query.get(job_id)
     rules_file = Rules.query.get(task.rule_id)
@@ -2803,7 +2805,8 @@ def build_keyspace_command(job_id, task_id):
                      if wordlist else '')
     mask_tokens = mask_argv(task.hc_mask)
 
-    argv = ['@HASHCATBINPATH@',  # nosec B105 - placeholder token, not a password
+    # B105: placeholder token, not a password
+    argv = ['@HASHCATBINPATH@',  # nosec B105
             '-O', '-w', '3',
             '-m', str(hashes_entry.hash_type),
             '-a', str(task.hc_attackmode)]
@@ -3222,7 +3225,8 @@ def audit_auto_cancel(event, job_id, task_id=None, cap=None):
             target = job_task_target(job, task=Tasks.query.get(task_id),
                                      task_id=task_id)
         log_event(event, target=target, detail=detail, actor=SYSTEM_ACTOR)
-    except Exception:   # nosec B110 - auditing must never block enforcement
+    # B110: auditing must never block enforcement
+    except Exception:  # nosec B110
         current_app.logger.exception('Could not audit the automatic cancellation.')
 
 

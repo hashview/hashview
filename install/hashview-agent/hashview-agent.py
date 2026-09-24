@@ -158,7 +158,7 @@ def hashcat_version():
         from agent.bench import parse_hashcat_version
         from agent.config import Config
         try:
-            # nosec B603 - fixed argv (no shell); the binary is the operator-set
+            # B603: fixed argv (no shell); the binary is the operator-set
             # Config.HC_BIN_PATH.
             proc = subprocess.run([Config.HC_BIN_PATH, '--version'],  # nosec B603
                                   capture_output=True, timeout=60)
@@ -634,7 +634,8 @@ def build_hashcat_argv(command):
     extra = parse_hc_extra_args(getattr(Config, 'HC_EXTRA_ARGS', ''))
     argv = []
     for token in json.loads(command):
-        if token == '@HASHCATBINPATH@':  # nosec B105 - placeholder token, not a password
+        # B105: placeholder token, not a password
+        if token == '@HASHCATBINPATH@':  # nosec B105
             argv.append(Config.HC_BIN_PATH)
             argv.extend(extra)
         else:
@@ -676,7 +677,7 @@ def run_hashcat(argv, output_file):
     which monitor_hashcat tails (replaces the old '<cmd> | tee <file>' pipe)."""
     try:
         with open(output_file, 'wb') as out:
-            # nosec B603 - shell=False; argv[0] is the operator-set HC_BIN_PATH and
+            # B603: shell=False; argv[0] is the operator-set HC_BIN_PATH and
             # every other element is a server-built token passed literally to hashcat.
             proc = subprocess.Popen(argv, shell=False, stdout=out,  # nosec B603
                                     stderr=subprocess.PIPE)
@@ -733,7 +734,7 @@ def run_benchmark(hash_modes):
     for mode in hash_modes or []:
         LOG.info('Benchmarking hash mode %s...', mode)
         try:
-            # nosec B603 - fixed argv (no shell); binary is the operator-set
+            # B603: fixed argv (no shell); binary is the operator-set
             # Config.HC_BIN_PATH and args are local config / numeric hash modes.
             proc = subprocess.run(  # nosec B603
                 [Config.HC_BIN_PATH, *hc_args, '-b', '-m', str(mode)],
@@ -806,7 +807,7 @@ def run_keyspace(ledger_id, command):
 
     LOG.info('Measuring the keyspace for attack %s...', ledger_id)
     try:
-        # nosec B603 - fixed argv (no shell); built by the server from stored task
+        # B603: fixed argv (no shell); built by the server from stored task
         # fields and run with shell=False.
         proc = subprocess.run(argv, capture_output=True,  # nosec B603
                               timeout=KEYSPACE_TIMEOUT)

@@ -31,6 +31,12 @@ jobs:
         run: pip install "bandit[toml]==1.9.4"
       - name: bandit (vs baseline)
         run: bandit -r hashview install/hashview-agent -c pyproject.toml -b .bandit-baseline.json
+      # Bandit matches baseline entries on (file, test ID, message) and ignores the
+      # line number, so an entry whose code was fixed does not go inert — it becomes
+      # a standing file-scoped exemption for that test ID. This step fails when the
+      # baseline holds findings that no longer reproduce, so it cannot drift again.
+      - name: bandit baseline is not stale
+        run: python scripts/check_bandit_baseline.py
 
   # pip-audit: fail on dependencies with known CVEs (PyPI / OSV advisory DB).
   pip-audit:

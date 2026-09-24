@@ -552,13 +552,46 @@ depends on the flags `build_hashcat_command` emits. None of that is a stable
 API, and `hashcatParser` swallows unparseable status lines, so drift would
 otherwise surface as a blank dashboard rather than an error.
 
-Three tiers guard it:
+Four tiers guard it:
 
 | Tier | What runs | When |
 |---|---|---|
 | Offline contract tests | `tests/agent_unit/test_hashcat_contract.py` runs the real parsers over committed captures in `tests/fixtures/hashcat/<version>/` | every PR, in `unit-tests.yml` |
 | Pinned matrix | `.github/workflows/hashcat-matrix.yml` downloads each pinned release, captures fresh output, re-runs the contract, and checks `--skip`/`--limit` slicing | weekly, on dispatch, and on PRs touching the agent or the chunking/command builder |
 | Floating release check | Same, for any release newer than the matrix; opens an issue instead of failing | weekly and on dispatch |
+| Bleeding edge (git master) | Builds hashcat from master, runs the contract, the slice tests, and re-derives `HASH_CASE_RULES` against it; comments on one long-lived issue instead of failing | weekly and on dispatch |
+
+### The bleeding-edge tier
+
+The first three tiers only ever see a **release**, so the earliest any of them
+can report a break is the day one ships — by which point the change is already
+in users' hands. Mode 6800 is the worked example: master gave the LastPass
+format a fourth field and now rejects the three-field form every released
+hashcat accepts, and nothing here would have noticed until it landed in a tag.
+
+So this tier builds from git and runs the same assertions, plus one the others
+do not: `test_the_table_reproduces_hashcats_own_answer`, which puts all three
+spellings of every pinned hash to `hashcat --left` and checks `HASH_CASE_RULES`
+still reproduces hashcat's own answer. That is the check 6800 tripped.
+
+It never gates anything. Master breaks, gets rebased, and moves daily, so the
+job is `continue-on-error`, runs only on the schedule and on dispatch, and each
+assertion is `continue-on-error` with an id so one break does not hide the state
+of the others. On drift it comments on a single long-lived issue rather than
+filing a new one, so a weekly schedule cannot open 52 issues about one change.
+
+**A red X here is advance warning, not a defect report.** Nothing is broken for
+users until the change reaches a release. Build requirements come from hashcat's
+own `BUILD.md`, which is why this job uses Python 3.13 where the others use 3.11.
+
+Run it yourself:
+
+```bash
+git clone --depth 1 https://github.com/hashcat/hashcat.git /tmp/hc-src
+make -C /tmp/hc-src -j"$(nproc)"
+HASHCAT_BIN=/tmp/hc-src/hashcat ./.venv/bin/python -m pytest \
+  tests/hashcat_matrix tests/unit/test_hash_case_normalization.py -q -rs
+```
 
 `7.0.0` is in the matrix deliberately. It emits structurally invalid
 `--status-json`: each device object closes with a stray `}` instead of a `,`
@@ -583,6 +616,33 @@ gate anywhere in the agent or the server, so a 6.x binary will still run and is
 simply unverified. Historical `verified against hashcat 6.2.6` notes in
 docstrings stay as written — they record where a fact was established, which is
 still true, and re-deriving them against 7.x is separate work.
+
+### Advertised flags vs accepted flags
+
+`build_hashcat_command` emits a fixed set of flags, and the contract checks two
+different claims about them:
+
+| List (`tests/hashcat_matrix/summarize.py`) | Claim | Checked by |
+|---|---|---|
+| `ADVERTISED_FLAGS` | appears in `--help` | the offline contract, against the committed capture |
+| `ACCEPTED_ONLY_FLAGS` | still parses, but is no longer documented | `tests/hashcat_matrix/test_flag_acceptance.py`, by running the binary |
+
+Everything in either list is also probed for acceptance. Only the advertised
+ones additionally have to show up in `--help`.
+
+The split exists because those two claims came apart. hashcat `083046e7` retired
+workload profiles and dropped `-w` from `--help` while keeping it, in upstream's
+words, "accepted and ignored". Checking advertisement alone got that backwards
+in both directions: a documentation edit read as an interop break, while a flag
+quietly becoming a hard error -- the thing that would actually kill every job at
+launch -- would not have been caught at all.
+
+The acceptance probe runs each flag bare and looks for hashcat's own phrase
+`unrecognized option`, rather than checking the exit status. A known flag given
+a bad value also exits non-zero but complains about the *value*, so matching the
+phrase is what lets one probe cover flags that take an argument and flags that
+do not. It carries a negative control: if hashcat ever changes that wording, the
+control fails rather than the whole contract silently passing.
 
 ### Running the live tests locally
 

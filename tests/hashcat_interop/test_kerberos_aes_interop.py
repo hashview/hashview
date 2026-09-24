@@ -70,7 +70,7 @@ PASSWORD_HEX = PASSWORD.encode().hex()
 # getting as far as parsing (missing OpenCL device, missing library, a
 # rejected flag) -- both look identical on returncode and outfile-absence
 # alone. Tolerant of the exact wording since only 7.1.2 is testable locally
-# and this must also hold for 6.2.6/7.0.0/7.1.0/7.1.1.
+# and this must also hold for 7.1.0/7.1.1.
 _PARSE_ERROR_RE = re.compile(r"Hash parsing error|Separator unmatched")
 
 

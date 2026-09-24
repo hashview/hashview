@@ -481,7 +481,7 @@ binary (never a mock) and asserts, across all AES-mode Kerberos types
 - round-trip equality between `normalize_kerberos_hash` and the live binary's
   own normalized form (via `--left`)
 
-The CI job runs this suite against four pinned hashcat releases (7.0.0, 7.1.0,
+The CI job runs this suite against three pinned hashcat releases (7.1.0,
 7.1.1, 7.1.2), fetched and sha256-verified by
 `tests/hashcat_interop/fetch_hashcat.sh`, on a CPU-only OpenCL device (`pocl`).
 It only triggers on changes to `hashview/utils/utils.py`,
@@ -593,16 +593,15 @@ HASHCAT_BIN=/tmp/hc-src/hashcat ./.venv/bin/python -m pytest \
   tests/hashcat_matrix tests/unit/test_hash_case_normalization.py -q -rs
 ```
 
-`7.0.0` is in the matrix deliberately. It emits structurally invalid
-`--status-json`: each device object closes with a stray `}` instead of a `,`
-before the `"power"` key, so every status line fails `json.loads` (upstream
-issue #4393, fixed in 7.1.0). Because `hashcatParser` swallows unparseable
-lines, an agent running 7.0.0 reports no status at all and the dashboard simply
-goes blank. Its status assertions are strict `xfail` and its matrix leg is
-`continue-on-error`, so it demonstrates the tests catch a real break without
-holding CI red.
+The matrix covers `7.1.0`, `7.1.1` and `7.1.2`. Older releases (`6.2.6`,
+`7.0.0`) are no longer tested. In particular `7.0.0` emitted structurally
+invalid `--status-json` -- each device object closed with a stray `}` instead
+of a `,` before the `"power"` key, so every status line failed `json.loads`
+(upstream issue #4393, fixed in 7.1.0). Because `hashcatParser` swallows
+unparseable lines, an agent running 7.0.0 reports no status at all and the
+dashboard simply goes blank.
 
-**If you run hashcat 7.0.0 in production, upgrade to 7.1.0 or later.**
+**Run hashcat 7.1.0 or later.**
 
 ### The matrix floor is 7.0
 

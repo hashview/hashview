@@ -35,7 +35,7 @@ collects and skips these, unchanged.
 """
 
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 from sqlalchemy import text
@@ -290,7 +290,7 @@ def test_job_timestamps_are_app_clock_not_db_clock(mysql_session, job_owner):
     """``Jobs.started_at`` is stamped from the app process, not the DB.
 
     The runtime caps at ``hashview/api/routes.py:249`` and ``:376`` compare
-    ``started_at`` against ``datetime.now()``, so both sides must stay in the
+    ``started_at`` against ``utcnow()``, so both sides must stay in the
     app-process domain. This pins that: if a future change moves ``started_at``
     to ``func.now()`` those caps silently skew by the DB's UTC offset, which is
     the latent half of #404.
@@ -301,19 +301,19 @@ def test_job_timestamps_are_app_clock_not_db_clock(mysql_session, job_owner):
     with db_timezone(mysql_session, f"+{EAST_OFFSET_HOURS:02d}:00"):
         job = Jobs(name="clock-domain-job", owner_id=user.id,
                    customer_id=customer.id, status="Queued")
-        job.started_at = datetime.now()          # the production idiom
+        job.started_at = utcnow()                # the production idiom
         mysql_session.add(job)
         mysql_session.flush()
         mysql_session.refresh(job)
 
-        assert abs(job.started_at - datetime.now()) < TOLERANCE, (
+        assert abs(job.started_at - utcnow()) < TOLERANCE, (
             "started_at must round-trip in the app-process clock domain"
         )
 
         db_now = mysql_session.execute(text("SELECT NOW()")).scalar()
         assert abs(job.started_at - db_now) > timedelta(hours=EAST_OFFSET_HOURS - 1), (
             "started_at unexpectedly matches the DB clock; the runtime caps in "
-            "api/routes.py compare it against datetime.now() and would now skew"
+            "api/routes.py compare it against utcnow() and would now skew"
         )
 
 
@@ -330,10 +330,10 @@ def test_runtime_cap_is_self_consistent_under_non_utc_db(mysql_session, job_owne
     with db_timezone(mysql_session, f"-{WEST_OFFSET_HOURS:02d}:00"):
         fresh = Jobs(name="cap-fresh", owner_id=user.id,
                      customer_id=customer.id, status="Running")
-        fresh.started_at = datetime.now() - timedelta(hours=max_hours - 1)
+        fresh.started_at = utcnow() - timedelta(hours=max_hours - 1)
         expired = Jobs(name="cap-expired", owner_id=user.id,
                        customer_id=customer.id, status="Running")
-        expired.started_at = datetime.now() - timedelta(hours=max_hours + 1)
+        expired.started_at = utcnow() - timedelta(hours=max_hours + 1)
         mysql_session.add_all([fresh, expired])
         mysql_session.flush()
         mysql_session.refresh(fresh)
@@ -341,7 +341,7 @@ def test_runtime_cap_is_self_consistent_under_non_utc_db(mysql_session, job_owne
 
         def over_cap(job):
             # The expression from hashview/api/routes.py:249.
-            return job.started_at + timedelta(hours=max_hours) < datetime.now()
+            return job.started_at + timedelta(hours=max_hours) < utcnow()
 
         assert over_cap(fresh) is False, "a job inside its runtime cap was expired early"
         assert over_cap(expired) is True, "a job past its runtime cap was not expired"

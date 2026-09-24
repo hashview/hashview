@@ -23,7 +23,6 @@ Three holes, all of which let one agent's work be corrupted by another:
 """
 
 import json
-from datetime import datetime
 
 import pytest
 
@@ -42,6 +41,7 @@ from hashview.models import (
     Users,
     db,
 )
+from hashview.utils.clock import utcnow
 
 DOMAIN = "localhost.test"
 pytestmark = pytest.mark.security
@@ -76,7 +76,7 @@ def _seed(rows=1, status="Queued"):
     db.session.add(task)
     db.session.commit()
     job = Jobs(name="j", owner_id=user.id, customer_id=cust.id, hashfile_id=hf.id,
-               status="Running", priority=3, started_at=datetime.now())
+               status="Running", priority=3, started_at=utcnow())
     db.session.add(job)
     db.session.commit()
     made = []

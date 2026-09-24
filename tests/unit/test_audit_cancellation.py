@@ -15,13 +15,14 @@ actor is 'system', not merely that an entry appeared.
 
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 
 from hashview.models import Agents, Jobs, JobTasks, Settings, Tasks, Users
 from hashview.models import db as _db
 from hashview.utils.audit import AUDIT_FILE, configure_audit_logging, logs_dir
+from hashview.utils.clock import utcnow
 
 pytestmark = pytest.mark.security
 
@@ -70,13 +71,13 @@ def _running_job(owner, *, started_hours_ago=0):
     customer = make_customer(name="Cancel Customer")
     job = Jobs(name="cancel-me", status="Running", customer_id=customer.id,
                owner_id=owner.id, priority=3,
-               started_at=datetime.now() - timedelta(hours=started_hours_ago))
+               started_at=utcnow() - timedelta(hours=started_hours_ago))
     task = Tasks(name="cancel-task", owner_id=owner.id, hc_attackmode=3,
                  hc_mask="?d?d?d?d")
     _db.session.add_all([job, task])
     _db.session.commit()
     job_task = JobTasks(job_id=job.id, task_id=task.id, status="Running",
-                        started_at=datetime.now() - timedelta(hours=started_hours_ago))
+                        started_at=utcnow() - timedelta(hours=started_hours_ago))
     _db.session.add(job_task)
     _db.session.commit()
     return job, task, job_task
@@ -253,7 +254,7 @@ def test_owner_is_emailed_when_an_admin_stops_their_job(audit_app, client):
         # Everything an owner needs to act: what, when, and who.
         assert job.name in msg.body
         assert admin.email_address in msg.body
-        assert datetime.now().strftime('%Y-%m-%d') in msg.body
+        assert utcnow().strftime('%Y-%m-%d') in msg.body
 
 
 def test_owner_is_emailed_when_an_admin_cancels_one_of_their_tasks(audit_app, client):

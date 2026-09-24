@@ -39,6 +39,13 @@ def _python_files():
     return [p for p in APP.rglob('*.py') if 'control' not in p.parts]
 
 
+TESTS = pathlib.Path('tests')
+
+# This file compares the two clocks against each other, so naming the local one
+# is the whole point here and nowhere else under tests/.
+TEST_CLOCK_EXEMPT = {'tests/unit/test_utc_timestamps.py'}
+
+
 # --- the clock itself --------------------------------------------------------
 
 def test_utcnow_is_naive_utc():
@@ -100,6 +107,47 @@ def test_no_module_writes_a_timestamp_from_the_local_clock():
     assert not offenders, (
         'these read a clock that is not utcnow(), so their timestamps follow the '
         'process timezone:\n  ' + '\n  '.join(offenders))
+
+
+def test_no_test_seeds_a_timestamp_from_the_local_clock():
+    """The same guard, pointed at the suite itself.
+
+    Every DateTime column is naive UTC and the app compares against utcnow(), so
+    a test that seeds datetime.now() only agrees with the code it tests on a
+    machine set to UTC. CI runs UTC, which is precisely why this rots: the suite
+    stays green here and fails on a contributor's laptop, and the further from
+    UTC the worse it gets. Thirty-four seeds had drifted this way before anyone
+    noticed, because nothing was watching.
+
+    Only the LOCAL-clock spellings, unlike the app-side guard above.
+    ``datetime.utcnow()`` is deprecated but still naive UTC, so a test using it
+    is untidy rather than wrong, and folding that into this assertion would
+    bury a real timezone bug in a pile of deprecation cleanup.
+    """
+    offenders = []
+    for path in sorted(TESTS.rglob('*.py')):
+        if str(path) in TEST_CLOCK_EXEMPT:
+            continue
+        source = path.read_text(encoding='utf-8')
+        code = '\n'.join(re.sub(r'#.*$', '', line) for line in source.splitlines())
+        code = re.sub(r'"""(?:.|\n)*?"""', '', code)          # drop docstrings
+        for pattern in (r'\bdatetime\.now\(\s*\)', r'\bdatetime\.today\('):
+            for m in re.finditer(pattern, code):
+                line = code[:m.start()].count('\n') + 1
+                offenders.append(f'{path}:{line} {m.group(0)}')
+    assert not offenders, (
+        'these seed a test timestamp from the local clock, so they only pass on '
+        'a machine set to UTC -- use utcnow():\n  ' + '\n  '.join(offenders))
+
+
+def test_the_local_clock_guards_are_actually_looking_at_something():
+    """Both guards walk a directory tree and assert an empty list. A wrong root,
+    a renamed folder or a bad glob would make them pass having read no files at
+    all, which is the one failure mode a green assertion cannot show you."""
+    assert len(_python_files()) > 20, 'the app-side guard found almost no files'
+    assert len(list(TESTS.rglob('*.py'))) > 20, 'the test-side guard found almost no files'
+    assert all(p.exists() for p in map(pathlib.Path, CLOCK_EXEMPT | TEST_CLOCK_EXEMPT)), (
+        'an exemption names a file that no longer exists, so it silently covers nothing')
 
 
 def test_no_column_is_stamped_from_the_database_clock():

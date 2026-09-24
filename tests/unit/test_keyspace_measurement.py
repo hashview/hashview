@@ -36,6 +36,7 @@ from hashview.models import (
     Wordlists,
     db,
 )
+from hashview.utils.clock import utcnow
 from hashview.utils.utils import (
     build_job_task_commands,
     build_keyspace_command,
@@ -262,7 +263,7 @@ def test_an_agent_with_no_hashcat_version_runs_the_attack_whole(app, client):
 def test_a_measurement_that_never_comes_back_falls_back_to_a_whole_run(app, client):
     """A lease that expires must not stall the attack forever: Measuring blocks
     dispatch, so retrying indefinitely would mean the work never runs."""
-    from datetime import datetime, timedelta
+    from datetime import timedelta
 
     job, task, ledger = _seed()
     _running(job)
@@ -272,7 +273,7 @@ def test_a_measurement_that_never_comes_back_falls_back_to_a_whole_run(app, clie
     assert _beat(client, "capable")["msg"] == "KEYSPACE"
 
     stale = JobTaskLedger.query.get(ledger.id)
-    stale.measure_expires = datetime.now() - timedelta(minutes=1)
+    stale.measure_expires = utcnow() - timedelta(minutes=1)
     db.session.commit()
 
     body = _beat(client, "capable")

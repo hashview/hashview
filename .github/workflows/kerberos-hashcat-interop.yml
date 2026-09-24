@@ -5,8 +5,12 @@ name: Kerberos Hashcat Interop
 # (SPN handling, hex casing, echo format) doesn't silently break recovery.
 # See tests/hashcat_interop/ and TESTING.md.
 
+# `pull_request` covers every branch that has a PR open, so `push` is scoped to the
+# long-lived branches. An unscoped `push` next to `pull_request` runs this whole
+# workflow twice on a single PR-branch commit, once per event.
 on:
   push:
+    branches: [main, "v*-dev"]
     paths:
       - "hashview/utils/utils.py"
       - "tests/hashcat_interop/**"

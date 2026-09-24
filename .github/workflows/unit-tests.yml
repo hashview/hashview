@@ -1,6 +1,12 @@
 name: Unit Tests
 
-on: [push, pull_request]
+# `pull_request` covers every branch that has a PR open, so `push` is scoped to the
+# long-lived branches. An unscoped `push` next to `pull_request` runs this whole
+# workflow twice on a single PR-branch commit, once per event.
+on:
+  push:
+    branches: [main, "v*-dev"]
+  pull_request:
 
 permissions:
   contents: read

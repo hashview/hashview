@@ -2617,8 +2617,8 @@ def derive_attack_status(chunk_statuses, state=None, keyspace=None,
       is the more specific fact: the runtime cap is what stopped this attack, and
       an operator looking at a capped job needs to see that rather than a generic
       cancellation.
-    * All rows Completed -> 'Completed'; anything else (e.g. a stray 'Importing')
-      falls back to 'Queued'.
+    * All rows Completed -> 'Completed'; any other status the roll-up does not
+      model falls back to 'Queued'.
 
     `state`/`keyspace`/`keyspace_pos` are the ledger's; pass state=None for an
     attack that has no ledger row (queued by a pre-ledger server, or not yet
@@ -3171,10 +3171,7 @@ def build_job_task_commands(job):
 # (which selects status == 'Queued'), so leaving it out of this set let a job
 # roll up to Completed with a task that never ran a single candidate.
 # finalize_job_if_complete queues those rows rather than hanging on them.
-#
-# 'Importing' is written nowhere in the server or the agent today, but an agent
-# can POST any status string to /v1/jobtask/status, so it stays honoured.
-JOBTASK_ACTIVE_STATUSES = ('Running', 'Queued', 'Not Started', 'Importing')
+JOBTASK_ACTIVE_STATUSES = ('Running', 'Queued', 'Not Started')
 
 # Terminal statuses: a row in one of these owes no more compute. 'Expired' joins
 # Completed and Canceled here -- it must NEVER be added to the active set above,

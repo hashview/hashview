@@ -94,7 +94,7 @@ def v1_api_get_admin_settings():
     return jsonify(message)
 
 # Active chunk statuses -- work that is in flight or still pending for a task.
-_ACTIVE_JOBTASK_STATUSES = ('Running', 'Queued', 'Not Started', 'Importing')
+_ACTIVE_JOBTASK_STATUSES = ('Running', 'Queued', 'Not Started')
 
 
 def _parent_task_started_at(job_id, task_id):

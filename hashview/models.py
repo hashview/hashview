@@ -236,7 +236,7 @@ class JobTasks(db.Model):
     task_id = db.Column(db.Integer, nullable=False, index=True)
     priority = db.Column(db.Integer, nullable=False, default=3)
     command = db.Column(db.String(1024))
-    # status: Running/Paused/Not Started/Completed/Queued/Canceled/Expired/Importing
+    # status: Running/Not Started/Completed/Queued/Canceled/Expired
     #   Expired -- the (job, task) group exceeded Settings.max_runtime_tasks,
     #              or its job exceeded Settings.max_runtime_jobs
     status = db.Column(db.String(50), nullable=False)

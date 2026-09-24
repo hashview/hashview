@@ -639,7 +639,7 @@ def stop_task(job_id, task_id):
         # attack stays mintable and simply re-appears on the next heartbeat.
         if not close_ledger(job_id, 'canceled', task_id=task_id):
             for jt in JobTasks.query.filter_by(job_id=job_id, task_id=task_id).all():
-                if jt.status in ('Running', 'Queued', 'Not Started', 'Importing'):
+                if jt.status in ('Running', 'Queued', 'Not Started'):
                     update_job_task_status(jt.id, 'Canceled')
         log_event('task.cancel', target=job_task_target(job, task_id=task_id),
                   detail='stopped by user from the dashboard')

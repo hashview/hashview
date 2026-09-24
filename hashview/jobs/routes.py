@@ -44,6 +44,7 @@ from hashview.utils.clock import utcnow
 from hashview.utils.form_limits import column_length
 from hashview.utils.hashcat_modes import CUSTOM_HASH_TYPE
 from hashview.utils.utils import (
+    JOBTASK_ACTIVE_STATUSES,
     apply_name_filter,
     build_job_task_commands,
     close_ledger,
@@ -820,7 +821,7 @@ def jobs_remove_task(job_id, task_id):
                               JobTasks.ledger_id.is_(None)))
                   .all())
         for jt in doomed:
-            if jt.status in ('Running', 'Queued', 'Not Started', 'Importing'):
+            if jt.status in ('Running', 'Queued', 'Not Started'):
                 update_job_task_status(jt.id, 'Canceled', finalize=False)
             db.session.delete(jt)
         db.session.delete(target)
@@ -851,7 +852,7 @@ def jobs_remove_all_tasks(job_id):
     # does: that is what clears the holding agent's hc_status and stops it
     # reporting against a row that no longer exists.
     for job_task in JobTasks.query.filter_by(job_id=job_id).all():
-        if job_task.status in ('Running', 'Queued', 'Not Started', 'Importing'):
+        if job_task.status in ('Running', 'Queued', 'Not Started'):
             update_job_task_status(job_task.id, 'Canceled', finalize=False)
         db.session.delete(job_task)
     # The ledger goes too. Deleting only the rows left every ledger orphaned, and
@@ -1194,6 +1195,12 @@ def jobs_stop(job_id):
             # job that was just stopped -- one burned per agent per beat, forever.
             close_ledger(job_id, 'job_stopped', cancel_rows=False)
             for job_task in job_tasks:
+                # Only cancel work that still owes compute. A task that already
+                # reached a terminal state (Completed / Expired / Canceled) keeps
+                # its status -- stopping the job must not rewrite what already
+                # finished into a cancellation.
+                if job_task.status not in JOBTASK_ACTIVE_STATUSES:
+                    continue
                 job_task.status = 'Canceled'
                 job_task.agent_id = None
                 job_task.ended_at = utcnow()

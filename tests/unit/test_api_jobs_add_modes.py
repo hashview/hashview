@@ -579,6 +579,34 @@ def test_stop_cancels_the_job_and_its_tasks(client, admin_user):
 
 
 @pytest.mark.security
+def test_stop_preserves_finished_tasks_and_cancels_active(client, admin_user):
+    """Stopping a job cancels only rows that still owe compute. A task that
+    already Completed or Expired keeps its status -- the stop must not rewrite
+    finished work into a cancellation (only JOBTASK_ACTIVE_STATUSES flip)."""
+    job = _running_job(admin_user)  # seeds one 'Queued' row
+    running = JobTasks(job_id=job.id, task_id=1, status="Running")
+    completed = JobTasks(job_id=job.id, task_id=1, status="Completed")
+    expired = JobTasks(job_id=job.id, task_id=1, status="Expired")
+    not_started = JobTasks(job_id=job.id, task_id=1, status="Not Started")
+    _db.session.add_all([running, completed, expired, not_started])
+    _db.session.commit()
+    ids = {"running": running.id, "completed": completed.id,
+           "expired": expired.id, "not_started": not_started.id}
+    _auth(client, admin_user.api_key)
+
+    assert _body(client.post(f"/v1/jobs/stop/{job.id}"))["status"] == 200
+
+    # Terminal rows are left exactly as they were.
+    assert JobTasks.query.get(ids["completed"]).status == "Completed"
+    assert JobTasks.query.get(ids["expired"]).status == "Expired"
+    # Active rows (incl. the seeded Queued one) are canceled.
+    assert JobTasks.query.get(ids["running"]).status == "Canceled"
+    assert JobTasks.query.get(ids["not_started"]).status == "Canceled"
+    assert all(jt.status in ("Canceled", "Completed", "Expired")
+               for jt in JobTasks.query.filter_by(job_id=job.id))
+
+
+@pytest.mark.security
 def test_stop_clears_the_agent_so_work_is_not_redispatched(client, admin_user):
     job = _running_job(admin_user, agent_id=None)
     jt = JobTasks.query.filter_by(job_id=job.id).first()

@@ -4,7 +4,8 @@
 #
 # Mirrors the GitHub Actions workflows so failures are caught on your machine
 # instead of after a push:
-#   .github/workflows/lint.yml        -> ruff, bandit (vs baseline), pip-audit, openapi
+#   .github/workflows/lint.yml        -> ruff, bandit (vs baseline + freshness),
+#                                        pip-audit, openapi
 #   .github/workflows/pylint.yml      -> pylint (rules + fail-under from .pylintrc)
 #   .github/workflows/unit-tests.yml  -> tests/unit/ (in-memory SQLite, no DB)
 #   .github/workflows/e2e.yml         -> docker-compose Playwright harness  (opt-in: --e2e)
@@ -100,6 +101,12 @@ run_gate "ruff" "ruff" \
 # 2. Bandit — SAST vs committed baseline; only NEW findings fail. Matches lint.yml.
 run_gate "bandit (vs baseline)" "bandit" \
   bandit -r hashview install/hashview-agent -c pyproject.toml -b .bandit-baseline.json -q
+
+# 2b. Bandit baseline freshness — a baseline entry whose code was fixed stays a
+#     file-scoped exemption for its test ID, so a regression of that class would
+#     pass gate 2 silently. Fails when any entry no longer reproduces (#426).
+run_gate "bandit baseline freshness" "bandit" \
+  python3 scripts/check_bandit_baseline.py
 
 # 3. OpenAPI — structural validation of the committed spec. Matches lint.yml.
 run_gate "openapi spec" "openapi-spec-validator" \

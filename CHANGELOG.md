@@ -57,7 +57,7 @@ Notable changes will be documented here
 - Every figure in that table is a download link: click a total for those hashes, Recovered for `hash:plaintext` of the cracked ones, or Unrecovered for the hashes still outstanding. Each file holds exactly as many lines as the figure that linked to it. Exports are admin-only, audited, and streamed in primary-key pages so a full-corpus download doesn't buffer in the server's memory
 
 **hashcat Version Interoperability CI**
-- Added a hashcat version interoperability CI matrix: offline contract tests run Hashview's status/benchmark/outfile/flag parsers over committed captures from five hashcat releases on every PR, and a scheduled workflow re-runs them against the real binaries plus a live `--skip`/`--limit` slice check, filing an issue when a newer hashcat release appears.
+- Added a hashcat version interoperability CI matrix: offline contract tests run Hashview's status/benchmark/outfile/flag parsers over committed captures from three pinned hashcat releases (7.1.0, 7.1.1, 7.1.2) on every PR, and a scheduled workflow re-runs them against the real binaries plus a live `--skip`/`--limit` slice check, filing an issue when a newer hashcat release appears.
 
 **Agent Management**
 - Configurable agent heartbeat timeout, with scheduled alerts when an agent goes offline or recovers

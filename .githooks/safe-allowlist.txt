@@ -171,3 +171,22 @@ LOGIN_PASSWORD = "bugtest-password-123"
 # Anchored on `image:` and the `@sha256:` form so it cannot cover a bare
 # high-entropy string appearing anywhere else.
 image:\s*\S+@sha256:[0-9a-f]{64}
+
+# --- .bandit-baseline.json false positives ---
+# For every finding the bandit baseline embeds the source excerpt that
+# triggered it, plus links to the matching CWE entry and bandit plugin page.
+# These are bandit's own output fields, rewritten whenever the baseline is
+# regenerated (see scripts/check_bandit_baseline.py).
+#
+# The B105 record for the setup wizard quotes the installer's default-password
+# constant, which already lives in hashview/setup/__init__.py and is documented
+# as the value to change on first login. Anchored on the JSON "code" field and
+# on the constant's own name, so it cannot cover an arbitrary assignment.
+# Each pattern is written to match its own line here too, since this file's
+# diff is scanned like any other.
+"code": ".*DEFAULT_PASSWORD = 'hashview'
+# Public reference URLs carried in the same records. Anchored on the JSON field
+# that holds each one and on the documentation host, so neither can cover an
+# internal hostname.
+"link": "https://cwe.mitre.org/data/definitions/
+"more_info": "https://bandit.readthedocs.io/

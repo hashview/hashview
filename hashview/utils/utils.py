@@ -8,7 +8,6 @@ import os
 import re
 import secrets
 import struct
-from datetime import datetime
 
 import requests
 from flask import after_this_request, current_app, send_from_directory, url_for
@@ -3279,7 +3278,7 @@ def expire_job_over_runtime(job, max_runtime_hours, now=None):
         return False
     if job is None:
         return False
-    now = now or datetime.now()
+    now = now or utcnow()
     if (job.processing_seconds or 0) < max_runtime_hours * 3600:
         return False
 
@@ -3595,7 +3594,7 @@ def update_job_task_status(jobtask_id, status, finalize=True):
         # cancelled or expired still occupied an agent for exactly as long as it
         # ran, and a runtime derived from intervals that silently omit those is
         # not a runtime.
-        jobtask.ended_at = datetime.now()
+        jobtask.ended_at = utcnow()
         # Clear the assigned agent's stale hashcat status BEFORE nulling agent_id.
         # Nulling first made the lookup Agents.query.get(None) -> None, so the agent
         # was never found and kept its stale hc_status forever (issue #237). The

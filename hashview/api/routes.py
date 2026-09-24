@@ -33,12 +33,6 @@ from hashview.models import (
     Settings,
     db,
 )
-from hashview.utils.audit import (
-    SYSTEM_ACTOR,
-    job_target,
-    job_task_target,
-    log_event,
-)
 
 # The blueprint and the shared helpers now live in hashview/api/_shared.py
 # (issue #441). They are imported INTO this module's namespace rather than used

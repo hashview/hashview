@@ -453,7 +453,6 @@ def _reclaim_stranded_job_tasks(db :SQLAlchemy, logger :Logger, cutoff):
     reclaimed row that kept a timestamp from the run that stranded it would make
     Settings.max_runtime_tasks cancel the task the moment it was picked back up.
     """
-    from datetime import datetime
 
     from hashview.models import Agents, Jobs, JobTasks
 
@@ -476,7 +475,7 @@ def _reclaim_stranded_job_tasks(db :SQLAlchemy, logger :Logger, cutoff):
             (db.session.query(JobTasks)
              .filter(JobTasks.id == job_task.id, JobTasks.status == 'Running')
              .update({'status': 'Canceled', 'agent_id': None,
-                      'ended_at': datetime.now()},
+                      'ended_at': utcnow()},
                      synchronize_session=False))
             db.session.commit()
             continue
@@ -794,11 +793,11 @@ def _accrue_processing_time(db :SQLAlchemy, logger :Logger):
 
     Returns the number of jobs credited.
     """
-    from datetime import datetime, timedelta
+    from datetime import timedelta
 
     from hashview.models import Jobs, JobTasks
 
-    now = datetime.now()
+    now = utcnow()
     # Half an interval of slack: a sweep that fires a little late still credits,
     # a duplicate firing on the heels of the first does not.
     floor = now - timedelta(seconds=JOB_RUNTIME_SWEEP_SECONDS / 2)

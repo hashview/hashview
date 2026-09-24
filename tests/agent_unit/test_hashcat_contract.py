@@ -61,17 +61,19 @@ def test_fixtures_exist():
     assert _versions(), f"no hashcat fixtures under {FIXTURE_ROOT}"
 
 
-# Nothing below this is pinned, captured or claimed to work. 6.2.6 was dropped
-# from both CI matrices and its fixture directory deleted; this keeps it gone.
-MATRIX_FLOOR = (7, 0)
+# Nothing below this is pinned, captured or claimed to work. 6.2.6 and 7.0.0
+# were both dropped from the CI matrices and their fixture directories deleted;
+# this keeps them gone. Bump it in the same commit that raises the matrix.
+MATRIX_FLOOR = (7, 1)
 
 
-def test_the_matrix_floor_is_7_0():
+def test_no_fixture_sits_below_the_matrix_floor():
     """A fixture directory is what makes a version part of the offline contract,
-    so a stray 6.x directory would quietly put a version back under test that
+    so a stray old directory would quietly put a version back under test that
     CI no longer downloads or verifies. Compared as integer tuples, not as
     strings: '10.0' sorts before '7.0' lexically, which would let a future
-    hashcat 10 read as below the floor."""
+    hashcat 10 read as below the floor. Note (7, 0, 0) > (7, 0), so a bare
+    7.0 floor would not have excluded the 7.0.0 fixture this commit deletes."""
     below = [v for v in _versions() if _as_tuple(v) < MATRIX_FLOOR]
     assert not below, (
         f"fixtures below the {MATRIX_FLOOR[0]}.{MATRIX_FLOOR[1]} floor: {below}")

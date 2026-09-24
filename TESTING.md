@@ -603,12 +603,14 @@ dashboard simply goes blank.
 
 **Run hashcat 7.1.0 or later.**
 
-### The matrix floor is 7.0
+### The matrix floor is 7.1
 
-Nothing below 7.0 is pinned, tested or claimed to work. 6.2.6 was dropped from
-both matrices along with its fixture directory; `test_the_matrix_floor_is_7_0`
-in `tests/agent_unit/test_hashcat_contract.py` fails if a 6.x fixture comes
-back, so the floor is enforced rather than remembered.
+Nothing below 7.1 is pinned, tested or claimed to work. 6.2.6 and 7.0.0 were
+dropped from both matrices along with their fixture directories;
+`test_no_fixture_sits_below_the_matrix_floor` in
+`tests/agent_unit/test_hashcat_contract.py` fails if either comes back, so the
+floor is enforced rather than remembered. Raising the matrix again means raising
+`MATRIX_FLOOR` in the same commit, or the guard silently stops guarding.
 
 This narrows what CI proves, not what the code does: there is no minimum-version
 gate anywhere in the agent or the server, so a 6.x binary will still run and is

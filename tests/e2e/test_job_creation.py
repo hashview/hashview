@@ -76,14 +76,21 @@ def test_job_creation_flow(page, live_server, login):
     expect(
         page.get_by_role("heading", name=re.compile(r"Assign Hashes"))
     ).to_be_visible()
-    # Existing-hashfile picker is now a radio-row table under the "Use existing" tab.
+    # Existing-hashfile picker is a checkbox-row table under the "Use existing" tab.
     page.locator("#tab-existing").click()
-    radio = page.locator(
+    checkbox = page.locator(
         f"#pane-existing input[name='hashfile_id'][value='{hashfile_id}']"
     )
-    if radio.count() == 0:
+    if checkbox.count() == 0:
         pytest.skip("HASHVIEW_E2E_HASHFILE_ID not present in existing hashfiles list.")
-    radio.check(force=True)
+    # The input is display:none; the visible control is the row, whose onclick
+    # toggles it. Click the row rather than the input -- that is what a user does,
+    # and `check()` cannot click an element with no bounding box. This mattered
+    # only once the picker stopped pre-checking a row: a pre-checked row would
+    # turn a single click into a two-file combine, so the feature deliberately
+    # starts with nothing selected and the row must actually be clicked.
+    checkbox.locator("xpath=ancestor::tr[1]").click()
+    expect(checkbox).to_be_checked()
     page.locator("#hf_next").click()
 
     # Notifications step: leave all alert toggles off (= no notifications) and continue.

@@ -434,8 +434,8 @@ def _seed_task_with_chunk_statuses(statuses, email):
     (["Running", "Expired"], "Running"),
     (["Queued", "Expired"], "Queued"),
     # Terminal fallback: a status outside running/queued/expired/canceled/
-    # completed (e.g. 'Importing') with not-all-completed lands on the else.
-    (["Completed", "Importing"], "Queued"),
+    # completed (any unmodeled value) with not-all-completed lands on the else.
+    (["Completed", "Unknown"], "Queued"),
 ])
 def test_job_task_group_status_derivation(app, db_session, statuses, expected):
     g = _seed_task_with_chunk_statuses(statuses, email=f"{abs(hash(tuple(statuses)))}@e.com")

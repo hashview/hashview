@@ -645,6 +645,37 @@ def test_jobs_stop_running_job_cancels(app, client):
     assert JobTasks.query.filter_by(job_id=job.id).first().status == "Canceled"
 
 
+def test_jobs_stop_preserves_finished_tasks(app, client):
+    """Stopping a job cancels only tasks that still owe compute. A row that
+    already Completed or Expired keeps its status -- stopping the job must not
+    rewrite finished work into a cancellation. Only Running/Queued/Not Started
+    (JOBTASK_ACTIVE_STATUSES) flip to Canceled."""
+    user = _nonadmin()
+    job, task, running = _full_wizard_job(user, status="Running")
+    running.status = "Running"
+    completed = JobTasks(job_id=job.id, task_id=task.id, status="Completed")
+    expired = JobTasks(job_id=job.id, task_id=task.id, status="Expired")
+    queued = JobTasks(job_id=job.id, task_id=task.id, status="Queued")
+    not_started = JobTasks(job_id=job.id, task_id=task.id, status="Not Started")
+    db.session.add_all([completed, expired, queued, not_started])
+    db.session.commit()
+    ids = {"running": running.id, "completed": completed.id, "expired": expired.id,
+           "queued": queued.id, "not_started": not_started.id}
+    _login(client, user)
+
+    resp = client.post(f"/jobs/stop/{job.id}", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    db.session.expire_all()
+
+    assert Jobs.query.get(job.id).status == "Canceled"
+    # Terminal rows are left exactly as they were.
+    assert JobTasks.query.get(ids["completed"]).status == "Completed"
+    assert JobTasks.query.get(ids["expired"]).status == "Expired"
+    # Everything that still owed compute is canceled.
+    for key in ("running", "queued", "not_started"):
+        assert JobTasks.query.get(ids[key]).status == "Canceled", key
+
+
 def test_jobs_stop_not_running_flashes(app, client):
     user = _nonadmin()
     job, task, jt = _full_wizard_job(user, status="Incomplete")

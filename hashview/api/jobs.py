@@ -45,6 +45,7 @@ from hashview.utils.audit import log_event
 # hashview.api.routes.is_authorized -- keeps resolving exactly as before.
 from hashview.utils.clock import utcnow
 from hashview.utils.utils import (
+    JOBTASK_ACTIVE_STATUSES,
     MAX_TASKS_PER_GROUP,
     build_job_task_commands,
     close_ledger,
@@ -463,6 +464,11 @@ def v1_api_post_stop_job(job_id):
         # issued for an attack that has just been cancelled.
         close_ledger(job_id, 'job_stopped', cancel_rows=False)
         for job_task in JobTasks.query.filter_by(job_id=job_id).all():
+            # See jobs_stop: only cancel rows that still owe compute, so a task
+            # that already Completed or Expired keeps its status instead of being
+            # rewritten to Canceled when the job is stopped.
+            if job_task.status not in JOBTASK_ACTIVE_STATUSES:
+                continue
             job_task.status = 'Canceled'
             job_task.agent_id = None
             job_task.ended_at = utcnow()

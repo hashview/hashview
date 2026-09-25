@@ -1882,7 +1882,7 @@ components:
           description: The full hashcat command (built when the job is queued).
         status:
           type: string
-          enum: [Not Started, Queued, Running, Paused, Completed, Canceled, Expired, Importing]
+          enum: [Not Started, Queued, Running, Completed, Canceled, Expired]
         started_at:
           type: string
           nullable: true
@@ -2138,7 +2138,7 @@ components:
         job_task_id: {type: integer}
         task_status:
           type: string
-          enum: [Not Started, Queued, Running, Paused, Completed, Canceled, Expired, Importing]
+          enum: [Not Started, Queued, Running, Completed, Canceled, Expired]
 
     SearchRequest:
       type: object

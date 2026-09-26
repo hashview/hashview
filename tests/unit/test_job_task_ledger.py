@@ -288,3 +288,38 @@ def test_job_assignments_keeps_duplicate_dynamic_assignments_separate(app, db_se
     db.session.commit()
 
     assert len(job_assignments([job.id])[job.id]) == 2
+
+
+def test_job_assignments_surfaces_unqueued_rows_on_a_ledgered_job(app, db_session):
+    """A job can be MIXED: attacks already in the ledger from a prior queue, plus
+    a task assigned later while the job was not running -- a bare row with
+    ledger_id NULL whose late-assignment ledger append never persisted.
+
+    Regression: job_assignments assumed a job was either all-ledgered or all-raw
+    and `continue`-skipped every ledger-less row on a ledgered job. A just-
+    assigned task was then invisible -- no card on the tasks page, absent from the
+    attack count and the summary step -- even though its row was in the database.
+    Both the ledgered attack and the unqueued late assignment must show.
+    """
+    from hashview.utils.utils import job_assignments
+
+    job, task = _seed()
+    build_job_task_commands(job)                      # one ledgered attack
+    db.session.commit()
+    ledger_id = _ledgers(job)[0].id
+
+    # A late assignment on the now-ledgered job: a bare Not Started row, as
+    # jobs_assign_task leaves it when the job is not running.
+    late = JobTasks(job_id=job.id, task_id=task.id, status="Not Started")
+    db.session.add(late)
+    db.session.commit()
+
+    entries = job_assignments([job.id])[job.id]
+    assert len(entries) == 2, "the ledgered attack AND the unqueued late assignment"
+    ledgered = [e for e in entries if e["entry_id"] > 0]
+    unqueued = [e for e in entries if e["entry_id"] < 0]
+    assert [e["entry_id"] for e in ledgered] == [ledger_id]
+    assert len(unqueued) == 1
+    assert unqueued[0]["entry_id"] == -late.id
+    assert unqueued[0]["task_id"] == task.id
+    assert unqueued[0]["state"] == "Unqueued"

@@ -511,6 +511,24 @@ def create_app(testing=False, config_overrides=None):
         except Exception:  # pragma: no cover - pre-migration / no DB
             return {'notify_channels': defaults}
 
+    @app.before_request
+    def _cap_urlencoded_body():
+        """#314: Werkzeug 3.1.9 stopped applying MAX_FORM_MEMORY_SIZE to
+        ``application/x-www-form-urlencoded`` bodies -- it now only caps
+        multipart text parts, and expects urlencoded bodies to be bounded by a
+        limited stream instead. Every Hashview form without a file field posts
+        urlencoded, so restore the cap by lowering this request's
+        max_content_length (which limits the input stream, chunked bodies
+        included). Multipart uploads and JSON API bodies are left alone.
+        """
+        if request.mimetype != 'application/x-www-form-urlencoded':
+            return
+        cap = app.config.get('MAX_FORM_MEMORY_SIZE')
+        if cap is None:
+            return
+        current = request.max_content_length
+        request.max_content_length = cap if current is None else min(current, cap)
+
     @app.errorhandler(413)
     def _form_too_large(e):
         """#314: Werkzeug enforces MAX_FORM_MEMORY_SIZE (a byte cap on

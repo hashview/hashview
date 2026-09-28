@@ -23,6 +23,7 @@ import io
 import pytest
 from flask import Flask, request
 
+from hashview import create_app
 from hashview.form_limits import (
     FLASK_DEFAULT_FORM_MEMORY_SIZE,
     MIN_FORM_MEMORY_SIZE,
@@ -144,20 +145,38 @@ def test_file_upload_breaks_below_the_floor(cap, size):
     assert resp.status_code == 413
 
 
-def test_pasted_field_is_still_capped_at_the_floor():
+@pytest.mark.parametrize("content_type", [
+    "application/x-www-form-urlencoded",
+    "multipart/form-data",
+])
+def test_pasted_field_is_still_capped_at_the_floor(content_type):
     """Clamping up must not defeat the point of the setting: a pasted textarea
-    larger than the cap is still rejected."""
-    app = Flask(__name__)
-    app.config["MAX_FORM_MEMORY_SIZE"] = MIN_FORM_MEMORY_SIZE
+    larger than the cap is still rejected, whichever encoding the browser used.
 
-    @app.post("/paste")
+    Built on Hashview's own app rather than a bare Flask one: since Werkzeug
+    3.1.9 the urlencoded cap is Hashview's (see _cap_urlencoded_body in
+    hashview/__init__.py), not Werkzeug's.
+    """
+    app = create_app(testing=True, config_overrides={
+        "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+        "SECRET_KEY": "unit-test-secret",
+        "HASHVIEW_SKIP_SETUP": True,
+        "HASHVIEW_SKIP_GUI_SETUP": True,
+        "HASHVIEW_DISABLE_SCHEDULER": True,
+        "MAX_FORM_MEMORY_SIZE": MIN_FORM_MEMORY_SIZE,
+    })
+
+    @app.post("/_paste")
     def _paste():
         return {"len": len(request.form["hashes"])}
 
     client = app.test_client()
 
-    ok = client.post("/paste", data={"hashes": "A" * (MIN_FORM_MEMORY_SIZE - 100)})
+    ok = client.post("/_paste", data={"hashes": "A" * (MIN_FORM_MEMORY_SIZE - 100)},
+                     content_type=content_type)
     assert ok.status_code == 200
 
-    too_big = client.post("/paste", data={"hashes": "A" * (MIN_FORM_MEMORY_SIZE + 100)})
+    too_big = client.post("/_paste", data={"hashes": "A" * (MIN_FORM_MEMORY_SIZE + 100)},
+                          content_type=content_type,
+                          headers={"X-Requested-With": "fetch"})
     assert too_big.status_code == 413

@@ -175,6 +175,26 @@ def _cancel_job_active_tasks(job_id):
     finalize_job_if_complete(job_id, goal_met=True)
 
 
+def _agent_name_cookie():
+    """The agent's configured name, from its ``name`` cookie.
+
+    The agent sends cookies through requests, which does not quote values, so
+    an AGENT.NAME containing a space arrives as ``name=GPU Box 1``. Werkzeug
+    3.1.9 drops such a cookie outright rather than reading it, so fall back to
+    the raw header -- deployed agents keep sending this form regardless of what
+    a newer agent does. The other agent cookies (uuid, agent_version) are plain
+    tokens and parse either way.
+    """
+    name = request.cookies.get('name')
+    if name is not None:
+        return name
+    for pair in request.headers.get('Cookie', '').split(';'):
+        key, sep, value = pair.partition('=')
+        if sep and key.strip() == 'name':
+            return value.strip()
+    return None
+
+
 @api.route('/v1/agents/heartbeat', methods=['POST'])
 def v1_api_set_agent_heartbeat():
     # Get uuid
@@ -186,7 +206,7 @@ def v1_api_set_agent_heartbeat():
     agent = Agents.query.filter_by(uuid=uuid).first()
     if not agent:
         # no agent found, time to add it to our db
-        new_agent = Agents( name = request.cookies.get('name'),
+        new_agent = Agents( name = _agent_name_cookie(),
                         src_ip = request.remote_addr,
                         uuid = uuid,
                         status = 'Pending',

@@ -2697,9 +2697,18 @@ def job_assignments(job_ids):
     for row in (JobTasks.query
                 .filter(JobTasks.job_id.in_(job_ids))
                 .order_by(JobTasks.id.asc())):
-        if row.job_id in ledgered:
-            if row.ledger_id in by_ledger:
-                by_ledger[row.ledger_id][2].append(row.status)
+        # A row a ledger entry already represents contributes only its status to
+        # that entry. Everything else is a bare assignment grouped below: a job
+        # with no ledger at all, OR -- the case a job can be MIXED into -- a row
+        # on a ledgered job that no ledger entry covers. That happens when a task
+        # is assigned while the job is not running: the row is created with
+        # ledger_id NULL and its late-assignment ledger append is not persisted,
+        # so a job that still carries a prior run's ledger holds both ledgered
+        # attacks and this raw one. This used to `continue`, dropping the row --
+        # a just-assigned task then had no card on the tasks page and was absent
+        # from the attack count and the summary step, though its row was in the DB.
+        if row.job_id in ledgered and row.ledger_id in by_ledger:
+            by_ledger[row.ledger_id][2].append(row.status)
             continue
         rows_by_job.setdefault(row.job_id, []).append(row)
     for entry, ledger, statuses in by_ledger.values():
@@ -2707,10 +2716,14 @@ def job_assignments(job_ids):
             statuses, state=ledger.state, keyspace=ledger.keyspace,
             keyspace_pos=ledger.keyspace_pos)
     for job_id, rows in rows_by_job.items():
-        for position, (task_id, group) in enumerate(_group_assignments(rows)):
+        # An unqueued attack sorts after any already-ledgered ones on the same
+        # job, so a mixed job lists its queued attacks first and its not-yet-
+        # queued late assignments after them (base is 0 for an all-raw job).
+        base = len(out[job_id])
+        for offset, (task_id, group) in enumerate(_group_assignments(rows)):
             out[job_id].append({
                 'entry_id': -group[0].id, 'task_id': task_id,
-                'position': position, 'keyspace': None,
+                'position': base + offset, 'keyspace': None,
                 'state': 'Unqueued', 'chunkable': False,
                 'status': derive_attack_status([r.status for r in group]),
             })

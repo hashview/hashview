@@ -13,6 +13,7 @@ import io
 from configparser import ConfigParser
 
 import pytest
+from flask import request
 
 from hashview import create_app
 from hashview.form_limits import (
@@ -142,3 +143,40 @@ def test_real_app_still_accepts_a_file_upload_at_the_minimum_cap(tiny_limit_clie
         content_type="multipart/form-data",
     )
     assert resp.status_code != 413
+
+
+# ---------------------------------------------------------------------------
+# Werkzeug 3.1.9 stopped applying max_form_memory_size to urlencoded bodies,
+# so Hashview caps them itself via a per-request max_content_length.
+# ---------------------------------------------------------------------------
+def _add_probe_route(client):
+    """Register a route that echoes the request body length, so the cap is
+    exercised independently of any real view."""
+    @client.application.post("/_probe")
+    def _probe():
+        return {"len": len(request.get_data())}
+
+
+def test_chunked_urlencoded_body_without_content_length_is_capped(tiny_limit_client):
+    """A chunked body carries no Content-Length, so a check on the declared
+    length alone would miss it. The cap has to hold on the stream itself."""
+    body = f"email=someone%40example.com&password={_OVERSIZED_PASTE}".encode()
+    resp = tiny_limit_client.post(
+        "/login",
+        input_stream=io.BytesIO(body),
+        content_type="application/x-www-form-urlencoded",
+        headers={"X-Requested-With": "fetch"},
+        environ_overrides={"wsgi.input_terminated": True},
+    )
+    assert resp.status_code == 413
+
+
+def test_json_body_larger_than_the_form_cap_is_not_capped(tiny_limit_client):
+    """MAX_FORM_MEMORY_SIZE is a form-data cap. Agent/API JSON bodies must not
+    inherit it just because the urlencoded cap is now enforced as a stream
+    limit."""
+    _add_probe_route(tiny_limit_client)
+    payload = {"blob": _OVERSIZED_PASTE}
+    resp = tiny_limit_client.post("/_probe", json=payload)
+    assert resp.status_code == 200
+    assert resp.get_json()["len"] > MIN_FORM_MEMORY_SIZE

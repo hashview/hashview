@@ -196,6 +196,42 @@ def test_wordlists_add_writes_file_and_creates_row(
 
 
 @pytest.mark.security
+def test_wordlists_add_streams_body_without_get_data(
+    client, app, admin_user, tmp_path, monkeypatch
+):
+    """Regression (#561): the upload body must be STREAMED to disk, never buffered
+    with request.get_data() -- which allocated RAM equal to the whole upload and
+    got the worker OOM-killed on a multi-GB wordlist. Make get_data() raise; a
+    normal upload must still succeed via request.stream."""
+    import gzip
+
+    import flask
+
+    monkeypatch.setattr(app, "root_path", str(tmp_path))
+    os.makedirs(os.path.join(str(tmp_path), "control", "wordlists"), exist_ok=True)
+    os.makedirs(os.path.join(str(tmp_path), "control", "tmp"), exist_ok=True)
+
+    def _boom(self, *args, **kwargs):
+        raise AssertionError("handler must stream request.stream, not buffer get_data()")
+
+    monkeypatch.setattr(flask.Request, "get_data", _boom)
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.post(
+        "/v1/wordlists/add/streamed-wl",
+        data="alpha\nbeta\n",
+        content_type="text/plain",
+    )
+
+    body = _json_body(resp)
+    assert body["status"] == 200
+    row = Wordlists.query.filter_by(name="streamed-wl").first()
+    assert row is not None
+    with gzip.open(row.path, "rb") as fh:
+        assert fh.read() == b"alpha\nbeta\n"
+
+
+@pytest.mark.security
 def test_jobs_start_rejects_agent_cookie(client, authorized_agent):
     """POST /v1/jobs/start/<id> with an agent cookie redirects to not_authorized.
 

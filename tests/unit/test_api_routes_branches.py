@@ -996,6 +996,46 @@ def test_hashfile_upload_hash_only_valid_ntlm(
 
 
 @pytest.mark.security
+def test_hashfile_upload_streams_body_without_get_data(
+    client, app, admin_user, tmp_path, monkeypatch
+):
+    """Regression (#561): the hashfile body must be STREAMED to disk, never
+    buffered with request.get_data(as_text=True) -- which allocated RAM equal to
+    the whole upload (and decoded it) and OOM-killed the worker on a large NTDS
+    dump. Make get_data() raise; a normal upload must still succeed via
+    request.stream."""
+    import flask
+
+    _upload_dirs(app, tmp_path, monkeypatch)
+    cust = Customers(name="StreamCo")
+    _db.session.add(cust)
+    _db.session.commit()
+    existing = Hashes(
+        sub_ciphertext=get_md5_hash(NTLM_HASH),
+        ciphertext=NTLM_HASH,
+        hash_type=1000,
+        cracked=False,
+    )
+    _db.session.add(existing)
+    _db.session.commit()
+
+    def _boom(self, *args, **kwargs):
+        raise AssertionError("handler must stream request.stream, not buffer get_data()")
+
+    monkeypatch.setattr(flask.Request, "get_data", _boom)
+
+    client.set_cookie("uuid", admin_user.api_key, domain="localhost.test")
+    resp = client.post(
+        f"/v1/hashfiles/upload/{cust.id}/5/1000/streamed-hf",
+        data=NTLM_HASH + "\n",
+        content_type="text/plain",
+    )
+    body = _json(resp)
+    assert body["status"] == 200
+    assert body["msg"] == "Hashfile added"
+
+
+@pytest.mark.security
 def test_hashfile_upload_all_file_formats_validation_path(
     client, app, admin_user, tmp_path, monkeypatch
 ):

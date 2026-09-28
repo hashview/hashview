@@ -59,7 +59,7 @@
                         {% endif %}
                     </div>
                     <table class="tbl rj-tasks" style="margin-top:16px;">
-                        <thead><tr><th style="width:30px;"></th><th>Task</th><th class="center">Status</th><th>Agent</th><th>Keyspace</th><th class="center">Recovered</th><th class="center">Rate</th><th class="center">ETA</th>{% if settings and settings.max_runtime_tasks %}<th class="center" title="Time left before Settings &gt; max runtime cancels this attack">Auto-cancel</th>{% endif %}<th></th></tr></thead>
+                        <thead><tr><th style="width:30px;"></th><th>Task</th><th class="center">Status</th><th>Agent</th><th>Keyspace</th><th class="center">Recovered</th><th class="center">Rate</th><th class="center">Started At</th><th class="center">ETA</th>{% if settings and settings.max_runtime_tasks %}<th class="center" title="Time left before Settings &gt; max runtime cancels this attack">Auto-cancel</th>{% endif %}<th></th></tr></thead>
                         <tbody>
                             {% for g in d.groups %}
                                 {# Keyed on the ATTACK, not the task: two assignments of one dynamic-wordlist
@@ -97,6 +97,7 @@
                                     </td>
                                     <td class="center num">{% if job.hashfile_id %}<a class="rec-x-link" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="View hashfile analytics"><span style="color:{{ 'var(--primary)' if g.recovered else 'var(--text-mute)' }};">{{ g.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span></a>{% else %}<span style="color:{{ 'var(--primary)' if g.recovered else 'var(--text-mute)' }};">{{ g.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span>{% endif %}</td>
                                     <td class="center num" style="color:var(--text-dim);">{% if g.rate %}{{ g.rate }}{% else %}<span class="dash">—</span>{% endif %}</td>
+                                    <td class="center num" style="color:var(--text-dim);">{% if g.started_ago %}{{ g.started_ago }}{% else %}<span class="dash">—</span>{% endif %}</td>
                                     <td class="center num" style="color:{{ 'var(--amber)' if g.eta else 'var(--text-mute)' }};">{% if g.eta %}{{ g.eta }}{% else %}<span class="dash">—</span>{% endif %}</td>
                                     {% if settings and settings.max_runtime_tasks %}<td class="center num" style="color:{{ 'var(--red)' if g.cancel_in == '0s' else 'var(--text-dim)' }};">{% if g.cancel_in %}{{ g.cancel_in }}{% else %}<span class="dash">—</span>{% endif %}</td>{% endif %}
                                     <td class="center">{% if g.status == 'Running' %}<a class="icon-btn" href="{{ url_for('main.stop_task', job_id=job.id, task_id=g.task_id) }}" title="Stop task">{{ icon('stop', size=15) }}</a>{% endif %}</td>
@@ -117,6 +118,7 @@
                                         <td class="mono" style="color:var(--text-dim);">{{ ch.keyspace }}</td>
                                         <td class="center num">{% if ch.recovered is not none %}{% if job.hashfile_id %}<a class="rec-x-link" href="{{ url_for('analytics.get_analytics', customer_id=job.customer_id, hashfile_id=job.hashfile_id) }}" title="View hashfile analytics"><span style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span></a>{% else %}<span style="color:{{ 'var(--primary)' if ch.recovered else 'var(--text-mute)' }};">{{ ch.recovered|commafy }}</span><span style="color:var(--text-mute);">/{{ d.hashfile_total|commafy }}</span>{% endif %}{% else %}<span class="dash">—</span>{% endif %}</td>
                                         <td class="center num" style="color:var(--text-dim);">{% if ch.rate %}{{ ch.rate }}{% else %}<span class="dash">—</span>{% endif %}</td>
+                                        <td class="center num" style="color:var(--text-dim);">{% if ch.started_ago %}{{ ch.started_ago }}{% else %}<span class="dash">—</span>{% endif %}</td>
                                         <td class="center num" style="color:{{ 'var(--amber)' if ch.eta else 'var(--text-mute)' }};">{% if ch.eta %}{{ ch.eta }}{% else %}<span class="dash">—</span>{% endif %}</td>
                                         {% if settings and settings.max_runtime_tasks %}<td></td>{% endif %}
                                         <td></td>

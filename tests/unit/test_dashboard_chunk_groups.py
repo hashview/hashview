@@ -129,6 +129,68 @@ def test_job_task_groups_chunked_task(app, db_session):
 
 
 @pytest.mark.security
+def test_multichunk_task_blanks_eta_but_chunks_keep_theirs(app, db_session):
+    """A task split across more than one running chunk: the max of the chunks'
+    hashcat ETAs is not the task's time-left (it ignores keyspace not yet handed
+    out), so the parent ETA is blanked and each chunk keeps its own. A single
+    running chunk is unchanged -- test_job_task_groups_chunked_task pins that.
+
+    Also pins the new Started At column: the parent shows time since the EARLIEST
+    chunk start, each chunk shows time since its own.
+    """
+    from datetime import timedelta
+
+    user = Users(first_name="A", last_name="D", email_address="mc@e.com",
+                 password="x" * 60, admin=True)
+    db.session.add(user)
+    db.session.commit()
+    cust = Customers(name="C")
+    db.session.add(cust)
+    db.session.commit()
+    hf = Hashfiles(name="hf", customer_id=cust.id, owner_id=user.id)
+    db.session.add(hf)
+    db.session.commit()
+    job = Jobs(name="J", owner_id=user.id, customer_id=cust.id, hashfile_id=hf.id,
+               status="Running", priority=3, started_at=datetime(2020, 1, 1))
+    db.session.add(job)
+    db.session.commit()
+    task = Tasks(name="rockyou + best64", owner_id=user.id, hc_attackmode=0,
+                 wl_id=1, rule_id=1)
+    db.session.add(task)
+    db.session.commit()
+
+    a1 = Agents(name="rig-1", src_ip="1.1.1.1", uuid="mc-1", status="Working",
+                benchmark="100 GH/s",
+                hc_status=json.dumps({"Speed #": "100 GH/s", "Recovered": "0/9",
+                                      "Time_Estimated": "x (10 mins)"}))
+    a2 = Agents(name="rig-2", src_ip="1.1.1.2", uuid="mc-2", status="Working",
+                benchmark="50 GH/s",
+                hc_status=json.dumps({"Speed #": "50 GH/s", "Recovered": "0/9",
+                                      "Time_Estimated": "y (40 mins)"}))
+    db.session.add_all([a1, a2])
+    db.session.commit()
+
+    now = utcnow()
+    db.session.add_all([
+        JobTasks(job_id=job.id, task_id=task.id, status="Running", chunk_no=1,
+                 chunk_total=4, agent_id=a1.id,
+                 started_at=now - timedelta(hours=2, minutes=5)),
+        JobTasks(job_id=job.id, task_id=task.id, status="Running", chunk_no=2,
+                 chunk_total=4, agent_id=a2.id,
+                 started_at=now - timedelta(minutes=30)),
+    ])
+    db.session.commit()
+
+    g = {grp['task_id']: grp for grp in _build(job)['groups']}[task.id]
+    assert len(g['active_chunks']) == 2
+    assert g['eta'] == ''                                   # blanked: >1 running chunk
+    assert sorted(c['eta'] for c in g['active_chunks']) == ['10m', '40m']  # chunks keep theirs
+    # Parent counts from the earliest chunk start (~2h ago); each chunk its own.
+    assert g['started_ago'].startswith('2h') and g['started_ago'].endswith('ago')
+    assert all(c['started_ago'].endswith('ago') for c in g['active_chunks'])
+
+
+@pytest.mark.security
 def test_recovered_is_scoped_to_the_jobs_hashfile(app, db_session):
     # A task is reusable across jobs/hashfiles, so the parent 'recovered' must
     # count only cracks that live in THIS job's hashfile -- not every job that ran

@@ -4,6 +4,7 @@ Carved out of routes.py per issue #441; pure code motion.
 """
 import os
 import secrets
+import shutil
 
 from flask import (
     current_app,
@@ -44,6 +45,10 @@ from hashview.utils.utils import (
     send_generated_file,
     update_dynamic_wordlist,
 )
+
+# Body-upload streaming chunk size. Matches the 1 MiB the ingest helpers stream
+# at, so the whole upload path stays constant-memory (issue #561).
+_UPLOAD_CHUNK = 1024 * 1024
 
 
 # Provide wordlist info (really should be plural)
@@ -129,17 +134,8 @@ def v1_api_add_wordlist(wordlist_name):
     if not is_authorized(user=True, agent=False, request=request):
         return redirect("/v1/not_authorized")
 
-    # Read the body as BYTES (not as_text) so an uploaded gzip wordlist isn't
-    # corrupted by text decoding. The body may be plain text or a gzip file.
-    raw_content = request.get_data()
-    if not raw_content:
-        return jsonify({
-            'status': 400,
-            'type': 'Error',
-            'msg': 'Missing wordlist content in request body'
-        })
-
-    # Resolve user from api_key cookie
+    # Resolve the user BEFORE touching the body, so an unauthenticated request is
+    # refused without first streaming a multi-GB upload to disk.
     user_uuid = request.cookies.get('uuid')
     user = Users.query.filter_by(api_key=user_uuid).first()
     if not user:
@@ -149,12 +145,27 @@ def v1_api_add_wordlist(wordlist_name):
             'msg': 'User not found'
         })
 
-    # Write the raw body to a control/tmp temp, then ingest it into
-    # compressed-at-rest storage (handles plain text or gzip; validates gzip).
+    # Stream the request body straight to a control/tmp temp in fixed-size
+    # chunks, then ingest it into compressed-at-rest storage (handles plain text
+    # or gzip; validates gzip).
+    #
+    # This used to be request.get_data(), which allocated resident memory equal
+    # to the whole upload before a single byte hit disk -- so a multi-GB wordlist
+    # got the worker OOM-killed and the connection dropped with no row created
+    # (issue #561). Everything ingest_static_wordlist_file does downstream already
+    # streams in 1 MiB chunks, so copying the body in the same way makes the whole
+    # path constant-memory. The body is copied verbatim as BYTES (no text decode),
+    # so an uploaded gzip is not corrupted.
     tmp_path = os.path.abspath(os.path.join(current_app.root_path, 'control/tmp', secrets.token_hex(8)))
     try:
         with open(tmp_path, 'wb') as f:
-            f.write(raw_content)
+            shutil.copyfileobj(request.stream, f, _UPLOAD_CHUNK)
+        if os.path.getsize(tmp_path) == 0:
+            return jsonify({
+                'status': 400,
+                'type': 'Error',
+                'msg': 'Missing wordlist content in request body'
+            })
         wordlist_entry = ingest_static_wordlist_file(tmp_path, user.id, wordlist_name)
     except Exception:
         current_app.logger.exception('API /v1/wordlists: failed to process wordlist')

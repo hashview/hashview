@@ -4,8 +4,10 @@ Carved out of routes.py per issue #441; pure code motion.
 """
 import os
 import secrets
+import shutil
 
 from flask import (
+    after_this_request,
     current_app,
     jsonify,
     redirect,
@@ -52,6 +54,11 @@ from hashview.utils.utils import (
     validate_user_hash_hashfile,
 )
 
+# Body-upload streaming chunk size. import_hashfilehashes already streams the
+# file from disk, so streaming the body in at the same granularity keeps the
+# whole upload path constant-memory (issue #561).
+_UPLOAD_CHUNK = 1024 * 1024
+
 
 # Upload a large hashfile
 @api.route('/v1/hashfiles/upload/<int:customer_id>/<int:file_format>/<int:hash_type>/<hashfile_name>', methods=['POST'])
@@ -75,15 +82,6 @@ def v1_api_post_hashfile_upload(customer_id, file_format, hash_type, hashfile_na
     # 4 = user:hash
     # 5 = hash_only
 
-    # Expect raw plain‑text body (Content‑Type: text/plain)
-    raw_content = request.get_data(as_text=True)
-    if not raw_content:
-        return jsonify({
-            'status': 400,
-            'type': 'Error',
-            'msg': 'Missing hashfile content in request body'
-        })
-
     if file_format not in [0,1,2,3,4,5]:
         return jsonify({
             'status': 400,
@@ -105,17 +103,39 @@ def v1_api_post_hashfile_upload(customer_id, file_format, hash_type, hashfile_na
     random_name = secrets.token_hex(8) + '.txt'
     file_path = os.path.abspath(os.path.join(current_app.root_path, 'control/tmp/', random_name))
 
-    # Save the raw content to disk
+    # The get_data version never removed this temp file; clean it up on the way
+    # out, whichever branch returns.
+    @after_this_request
+    def _remove_tmp_hashfile(response):
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except OSError:
+            pass
+        return response
+
+    # Stream the body to disk in chunks rather than request.get_data(as_text=True),
+    # which buffered the whole upload in memory AND decoded it to a str -- the OOM
+    # that killed the worker on a large NTDS/hashfile (issue #561; the pain #101
+    # describes). Written verbatim as BYTES: the validators and import_hashfilehashes
+    # read it back with utf-8/surrogateescape, so arbitrary bytes round-trip instead
+    # of being lossily decoded up front.
     try:
-        with open(file_path, 'w') as f:
-            f.write(raw_content)
-        f.close()
+        with open(file_path, 'wb') as f:
+            shutil.copyfileobj(request.stream, f, _UPLOAD_CHUNK)
     except Exception:
         current_app.logger.exception('API: failed to write hashfile')
         return jsonify({
             'status': 500,
             'type': 'Error',
             'msg': 'Failed to write hashfile.'
+        })
+
+    if os.path.getsize(file_path) == 0:
+        return jsonify({
+            'status': 400,
+            'type': 'Error',
+            'msg': 'Missing hashfile content in request body'
         })
 
     # import contents from file

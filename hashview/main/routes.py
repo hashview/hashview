@@ -405,9 +405,30 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
                     'rate': bench or '—',
                     'recovered': rec_x,
                     'eta': _eta_text(time_estimated_list.get(c.agent_id, '')),
+                    # Relative time since THIS chunk started, computed here (not in
+                    # Jinja) so the subtraction stays a UTC-vs-UTC one -- a template
+                    # reading utcnow() would be local-vs-UTC once started_at is UTC.
+                    'started_ago': (_short_duration(
+                        (utcnow() - c.started_at).total_seconds()) + ' ago'
+                        if c.started_at else ''),
                 })
-            eta = (max((a['eta'] for a in active), key=_eta_seconds, default='')
-                   if active else '')
+            # The task ETA is only meaningful while a single chunk is in flight
+            # (then it IS that chunk's ETA). Once the task is split across several
+            # running chunks, the max of their hashcat ETAs is not the task's
+            # time-left -- it ignores the keyspace not yet handed out -- so blank
+            # it and let the per-chunk ETAs in the expander speak for themselves.
+            if len(active) >= 2:
+                eta = ''
+            else:
+                eta = (max((a['eta'] for a in active), key=_eta_seconds, default='')
+                       if active else '')
+
+            # Relative time since the task itself started == its earliest chunk
+            # start, the same "task start" the runtime-cap column measures from.
+            starts_all = [c.started_at for c in chunks if c.started_at is not None]
+            started_ago = (_short_duration(
+                (utcnow() - min(starts_all)).total_seconds()) + ' ago'
+                if starts_all else '')
 
             # Distinct agent(s) currently working this task (from its Running
             # chunks): a single name, or "Nx Agents" when chunked across several.
@@ -451,6 +472,7 @@ def _job_task_groups(running_jobs, job_tasks, tasks_by_id, agents_by_id,
                 'agent_display': agent_display,
                 'recovered': recovered_by_task.get(task_id, 0),
                 'rate': _fmt(rate_hps) if rate_hps else '',
+                'started_ago': started_ago,
                 'eta': eta,
                 'cancel_in': cancel_in,
                 'active_chunks': active,

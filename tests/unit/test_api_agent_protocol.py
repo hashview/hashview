@@ -126,6 +126,25 @@ def test_heartbeat_new_agent_is_registered_pending(app, client):
     assert agent is not None and agent.status == "Pending"
 
 
+def test_heartbeat_new_agent_name_with_spaces_is_registered(app):
+    # The agent passes cookies=dict to requests, which sends the configured
+    # AGENT.NAME unquoted ("name=GPU Box 1"). Werkzeug 3.1.9 drops such a
+    # cookie entirely, which left name NULL and 500'd the INSERT. The raw header
+    # is sent by hand, on a client without a cookie jar, because the jar would
+    # otherwise replace it (and quote the value).
+    db.session.add(Settings(max_runtime_tasks=0, max_runtime_jobs=0))
+    db.session.commit()
+    resp = app.test_client(use_cookies=False).post(
+        "/v1/agents/heartbeat",
+        json={"agent_status": "Idle", "hc_status": ""},
+        headers={"Cookie": f"uuid=spacey-uuid; name=GPU Box 1; "
+                           f"agent_version={hashview.__version__}"},
+    )
+    assert _body(resp)["msg"] == "Go Away"
+    agent = Agents.query.filter_by(uuid="spacey-uuid").first()
+    assert agent is not None and agent.name == "GPU Box 1"
+
+
 def test_heartbeat_idle_agent_gets_queued_task(app, client):
     db.session.add(Settings(max_runtime_tasks=0, max_runtime_jobs=0))
     db.session.commit()

@@ -2463,7 +2463,7 @@ def _ledger_keyspace(task, wl, wl2, rule):
     return None, 1, None
 
 
-def _sync_job_ledger(job, assignments):
+def _sync_job_ledger(job, assignments, chunking_enabled=True):
     """Rebuild a job's ledger rows from its assignments, in queue order.
 
     ``assignments`` is a list of (task_id, [rows]) in the order the operator
@@ -2496,8 +2496,18 @@ def _sync_job_ledger(job, assignments):
         if keyspace:
             # Ready to be split along a keyspace we know exactly.
             state = 'Ready'
-        elif chunkable and task is not None and task.hc_attackmode in MASK_MODES:
-            # Splittable in principle, but only once an agent measures it.
+        elif (chunking_enabled and chunkable and task is not None
+              and task.hc_attackmode in MASK_MODES):
+            # Splittable in principle, but only once an agent measures it -- and
+            # only worth measuring while chunking is ON. With chunking off a mask
+            # runs WHOLE like every other attack, so it must NOT be parked in
+            # 'Pending', which is the state the heartbeat measures-then-slices. A
+            # wordlist attack with chunking off is left 'Ready' with its cursor
+            # already at the end (so it is not mintable); a mask has no computable
+            # keyspace to park a cursor on, so 'Unmeasurable' is how it runs whole.
+            # Leaving it 'Pending' here is what split masks across agents even with
+            # chunking disabled -- 'chunkable' still reports True (it *can* be
+            # split, once measured), the setting just says not to.
             state = 'Pending'
         else:
             state = 'Unmeasurable'
@@ -3166,7 +3176,7 @@ def build_job_task_commands(job):
     for _task_id, group in produced:
         _set_job_task_command(job, group[0], {})
 
-    ledgers = _sync_job_ledger(job, produced)
+    ledgers = _sync_job_ledger(job, produced, chunking_enabled=chunking_on)
 
     # A mintable attack has issued nothing yet: its cursor starts at zero and the
     # single queued row above is a placeholder waiting for a slice.

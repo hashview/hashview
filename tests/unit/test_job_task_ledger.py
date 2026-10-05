@@ -36,7 +36,7 @@ from hashview.models import (
     Wordlists,
     db,
 )
-from hashview.utils.utils import build_job_task_commands
+from hashview.utils.utils import build_job_task_commands, ledger_is_mintable
 
 pytestmark = pytest.mark.security
 
@@ -161,6 +161,25 @@ def test_a_mask_task_has_no_keyspace_until_an_agent_measures_it(app, db_session)
     assert ledger.keyspace is None
     assert ledger.state == "Pending"
     assert ledger.chunkable is True, "it CAN be split, once measured"
+
+
+def test_a_mask_task_with_chunking_off_runs_whole_not_pending(app, db_session):
+    """Chunking off: a mask must NOT be parked in 'Pending'. 'Pending' is the
+    state the heartbeat measures-then-slices, so a Pending mask was split across
+    agents even with chunking disabled. With the toggle off it is 'Unmeasurable'
+    instead -- how every whole run is represented -- so it is never measured and
+    never mintable, while still reporting chunkable (it CAN be split; the setting
+    just says not to)."""
+    job, _ = _seed(attackmode=3, mask="?d?d?d?d?d", enabled_chunking=False)
+    build_job_task_commands(job)
+    db.session.commit()
+
+    ledger = _ledgers(job)[0]
+    assert ledger.state == "Unmeasurable"
+    assert ledger.keyspace is None
+    assert ledger.chunkable is True, "it CAN be split; chunking is just switched off"
+    assert len(_rows(ledger)) == 1, "one whole row, not sliced"
+    assert not ledger_is_mintable(ledger), "Unmeasurable is never minted"
 
 
 def test_a_dynamic_wordlist_attack_is_unmeasurable_and_runs_whole(app, db_session):

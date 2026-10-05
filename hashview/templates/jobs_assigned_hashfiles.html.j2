@@ -245,9 +245,9 @@
         {# Use existing #}
         <div id="pane-existing" style="display:{{ 'block' if default_tab == 'existing' else 'none' }};">
             <form action='' id='hf_form_existing' method='post' name='hf_form'>
+                <input type="hidden" name="hf_source" value="existing">
                 {% if hashfiles|length %}
-                {% set ns = namespace(has_match=false) %}
-                {% for hashfile in hashfiles %}{% if hashfile.id == job.hashfile_id %}{% set ns.has_match = true %}{% endif %}{% endfor %}
+                <span class="field-hint">Select two or more to combine them into a new hashfile.</span>
                 <table class="tbl">
                     <thead><tr>
                         <th style="width:40px;"></th><th>Hashfile</th><th>Type</th>
@@ -255,14 +255,16 @@
                     </tr></thead>
                     <tbody>
                         {% for hashfile in hashfiles %}
-                        {% set is_sel = (hashfile.id == job.hashfile_id) or (loop.first and not ns.has_match) %}
                         {% set info = hashfile_info.get(hashfile.id) if hashfile_info is defined else none %}
-                        <tr onclick="this.querySelector('input').checked=true; document.querySelectorAll('#hf_form_existing tbody tr').forEach(function(r){r.classList.remove('selected'); var b=r.querySelector('.sel-box'); if(b){b.classList.remove('on')}}); this.classList.add('selected'); this.querySelector('.sel-box').classList.add('on');" style="cursor:pointer;"{% if is_sel %} class="selected"{% endif %}>
+                        {# Nothing is pre-checked: with a toggle-per-row checkbox a pre-checked
+                           row would silently turn a single click into a two-file combine. The
+                           job's current hashfile is marked with a badge instead. #}
+                        <tr onclick="var inp = this.querySelector('input'); inp.checked = !inp.checked; var selbox = this.querySelector('.sel-box'); if(inp.checked){ this.classList.add('selected'); selbox.classList.add('on'); } else { this.classList.remove('selected'); selbox.classList.remove('on'); }" style="cursor:pointer;">
                             <td class="center">
-                                <span class="sel-box{% if is_sel %} on{% endif %}">{{ icon('check', size=12) }}</span>
-                                <input type="radio" name="hashfile_id" value="{{ hashfile.id }}" style="display:none;"{% if is_sel %} checked{% endif %}>
+                                <span class="sel-box">{{ icon('check', size=12) }}</span>
+                                <input type="checkbox" name="hashfile_id" value="{{ hashfile.id }}" style="display:none;">
                             </td>
-                            <td class="mono" style="font-weight:500; color:{{ 'var(--primary)' if is_sel else 'var(--text)' }};">{{ hashfile.name }}</td>
+                            <td class="mono" style="font-weight:500; color:var(--text);">{{ hashfile.name }}{% if hashfile.id == job.hashfile_id %} <span class="badge dim" style="padding:2px 8px; margin-left:6px;" title="Hashfile currently assigned to this job">current</span>{% endif %}</td>
                             <td>{% if info and (info.type or info.mode) %}<span class="badge cyan" style="padding:4px 10px;" title="hashcat mode {{ info.mode }}">{{ info.type if info.type else info.mode }}</span>{% else %}<span style="color:var(--text-mute);">—</span>{% endif %}</td>
                             <td class="center num">{{ "{:,}".format(info.total) if info else 0 }}</td>
                             <td class="center num">{% if info %}<span style="color:{{ 'var(--primary)' if info.cracked else 'var(--text-mute)' }};">{{ "{:,}".format(info.cracked) }}</span> <span style="color:var(--text-mute);">({{ info.pct_str }})</span>{% else %}—{% endif %}</td>

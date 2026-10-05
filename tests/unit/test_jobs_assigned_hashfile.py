@@ -8,6 +8,7 @@ pin ACTUAL behavior against the in-memory app; app source is never modified.
 """
 
 import os
+import re
 
 import pytest
 from sqlalchemy import event
@@ -423,3 +424,330 @@ def test_hashfile_picker_n_plus_one_fixed(app, client):
         f"Grouped query should select hashfile_id for result mapping. "
         f"Query: {agg_query}"
     )
+
+
+def test_combine_two_hashfiles_creates_combined_file(app, client):
+    """POST with two hashfile_id values creates a combined file, assigns it,
+    and redirects to /jobs/<id>/notifications."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+
+    # Create two source hashfiles with different hashes
+    hf1 = Hashfiles(name="source1", customer_id=cust.id, owner_id=admin.id)
+    hf2 = Hashfiles(name="source2", customer_id=cust.id, owner_id=admin.id)
+    db.session.add_all([hf1, hf2])
+    db.session.commit()
+
+    # Add hashes to both
+    h1 = Hashes(
+        sub_ciphertext="sub1",
+        ciphertext="hash1",
+        cracked=False,
+        hash_type=1000,
+    )
+    h2 = Hashes(
+        sub_ciphertext="sub2",
+        ciphertext="hash2",
+        cracked=False,
+        hash_type=1000,
+    )
+    db.session.add_all([h1, h2])
+    db.session.flush()
+    db.session.add(HashfileHashes(hash_id=h1.id, hashfile_id=hf1.id, username="user1"))
+    db.session.add(HashfileHashes(hash_id=h2.id, hashfile_id=hf2.id, username="user2"))
+    db.session.commit()
+
+    # Count existing hashfiles
+    existing_count = Hashfiles.query.count()
+
+    # POST with two hashfile_id values
+    resp = client.post(
+        f"/jobs/{job.id}/assigned_hashfile/",
+        data={"hashfile_id": [str(hf1.id), str(hf2.id)]},
+        follow_redirects=False,
+    )
+
+    # Should redirect
+    assert resp.status_code in (301, 302)
+    assert "/notifications" in resp.location
+
+    # Should have created a new hashfile
+    assert Hashfiles.query.count() == existing_count + 1
+
+    # Job should reference the new hashfile
+    job_after = Jobs.query.get(job.id)
+    assert job_after.hashfile_id is not None
+    assert job_after.hashfile_id != hf1.id
+    assert job_after.hashfile_id != hf2.id
+
+    # The combined file should have a name like combined-YYYYMMDD-HHMMSS
+    combined = Hashfiles.query.get(job_after.hashfile_id)
+    assert combined is not None
+    assert combined.name.startswith("combined-")
+    assert re.match(r"combined-\d{8}-\d{6}$", combined.name)
+
+    # The combined file should have exactly the union of source hashes
+    combined_hash_ids = {
+        r.hash_id
+        for r in HashfileHashes.query.filter_by(hashfile_id=combined.id).all()
+    }
+    assert combined_hash_ids == {h1.id, h2.id}
+
+
+def test_combine_one_hashfile_assigns_existing(app, client):
+    """POST with one hashfile_id assigns that exact id, creates no new
+    Hashfiles row, and redirects to /jobs/<id>/notifications."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+
+    hf = Hashfiles(name="single", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+
+    existing_count = Hashfiles.query.count()
+
+    resp = client.post(
+        f"/jobs/{job.id}/assigned_hashfile/",
+        data={"hashfile_id": str(hf.id)},
+        follow_redirects=False,
+    )
+
+    # Should redirect to notifications
+    assert resp.status_code in (301, 302)
+    assert "/notifications" in resp.location
+
+    # Should NOT create a new Hashfiles row
+    assert Hashfiles.query.count() == existing_count
+
+    # Job should reference the original file
+    job_after = Jobs.query.get(job.id)
+    assert job_after.hashfile_id == hf.id
+
+
+def test_combine_differing_hash_types_rejected(app, client):
+    """POST with two hashfiles of different hash types is rejected with no
+    new Hashfiles row."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+
+    # Create two source hashfiles with different hash types
+    hf1 = Hashfiles(name="source1", customer_id=cust.id, owner_id=admin.id)
+    hf2 = Hashfiles(name="source2", customer_id=cust.id, owner_id=admin.id)
+    db.session.add_all([hf1, hf2])
+    db.session.commit()
+
+    # Add hash type 1000 (NTLM) to hf1
+    h1 = Hashes(
+        sub_ciphertext="sub1",
+        ciphertext="hash1",
+        cracked=False,
+        hash_type=1000,
+    )
+    # Add hash type 100 (MD5) to hf2
+    h2 = Hashes(
+        sub_ciphertext="sub2",
+        ciphertext="hash2",
+        cracked=False,
+        hash_type=100,
+    )
+    db.session.add_all([h1, h2])
+    db.session.flush()
+    db.session.add(HashfileHashes(hash_id=h1.id, hashfile_id=hf1.id))
+    db.session.add(HashfileHashes(hash_id=h2.id, hashfile_id=hf2.id))
+    db.session.commit()
+
+    existing_count = Hashfiles.query.count()
+    original_job_hf = job.hashfile_id
+
+    resp = client.post(
+        f"/jobs/{job.id}/assigned_hashfile/",
+        data={"hashfile_id": [str(hf1.id), str(hf2.id)]},
+        follow_redirects=False,
+    )
+
+    # Should redirect BACK to the picker, not on to /notifications (the
+    # success path is also a 302, so the status code alone proves nothing).
+    assert resp.status_code in (301, 302)
+    assert f"/jobs/{job.id}/assigned_hashfile/" in resp.location
+    assert "/notifications" not in resp.location
+
+    # Should NOT create a new Hashfiles row
+    assert Hashfiles.query.count() == existing_count
+
+    # Job's hashfile should be unchanged
+    job_after = Jobs.query.get(job.id)
+    assert job_after.hashfile_id == original_job_hf
+
+
+def test_combine_other_customer_hashfile_rejected(app, client):
+    """POST with a hashfile belonging to another customer is rejected
+    (D3 customer-ownership check)."""
+    admin = make_admin()
+    login(client, admin)
+    cust1 = make_customer()
+    cust2 = make_customer()
+    job = _job(admin, cust1)
+
+    # Create a hashfile for a different customer
+    hf_other = Hashfiles(name="other_customer", customer_id=cust2.id, owner_id=admin.id)
+    db.session.add(hf_other)
+    db.session.commit()
+
+    existing_count = Hashfiles.query.count()
+    original_job_hf = job.hashfile_id
+
+    resp = client.post(
+        f"/jobs/{job.id}/assigned_hashfile/",
+        data={"hashfile_id": str(hf_other.id)},
+        follow_redirects=False,
+    )
+
+    # Should redirect BACK to the picker, not on to /notifications (the
+    # success path is also a 302, so the status code alone proves nothing).
+    assert resp.status_code in (301, 302)
+    assert f"/jobs/{job.id}/assigned_hashfile/" in resp.location
+    assert "/notifications" not in resp.location
+
+    # Should NOT create a new Hashfiles row
+    assert Hashfiles.query.count() == existing_count
+
+    # Job's hashfile should be unchanged
+    job_after = Jobs.query.get(job.id)
+    assert job_after.hashfile_id == original_job_hf
+
+
+def test_existing_form_with_no_selection_flashes_and_redirects(app, client):
+    """POST from existing form with no selection flashes error and redirects
+    back (D5 empty selection behavior)."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+
+    # POST with hf_source=existing (form marker) but no checkboxes selected
+    resp = client.post(
+        f"/jobs/{job.id}/assigned_hashfile/",
+        data={"hf_source": "existing"},
+        follow_redirects=False,
+    )
+
+    # Should redirect (302)
+    assert resp.status_code == 302
+
+    # Should redirect back to the assigned_hashfile page
+    assert f"/jobs/{job.id}/assigned_hashfile/" in resp.location
+
+    # Following the redirect should show the flash message
+    resp_redirect = client.get(resp.location)
+    assert b'Select at least one hashfile.' in resp_redirect.data
+
+    # Job's hashfile should be unchanged
+    job_after = Jobs.query.get(job.id)
+    assert job_after.hashfile_id is None
+
+
+def test_existing_form_with_invalid_hashfile_id_rejects(app, client):
+    """POST from existing form with empty string hashfile_id flashes error
+    and redirects (validates int parsing)."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+
+    # POST with hf_source=existing and empty string hashfile_id (invalid)
+    resp = client.post(
+        f"/jobs/{job.id}/assigned_hashfile/",
+        data={"hf_source": "existing", "hashfile_id": ""},
+        follow_redirects=False,
+    )
+
+    # Should redirect (302)
+    assert resp.status_code == 302
+
+    # Following the redirect should show the flash message
+    resp_redirect = client.get(resp.location)
+    assert b'Invalid hashfile selection.' in resp_redirect.data
+
+    # Job's hashfile should be unchanged
+    job_after = Jobs.query.get(job.id)
+    assert job_after.hashfile_id is None
+
+
+def test_assigned_hashfile_page_renders_checkboxes(app, client):
+    """GET /jobs/<id>/assigned_hashfile/ renders checkbox inputs (not
+    radio) for the hashfile picker."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+
+    # Create a hashfile so the table is rendered
+    hf = Hashfiles(name="test", customer_id=cust.id, owner_id=admin.id)
+    db.session.add(hf)
+    db.session.commit()
+
+    resp = client.get(f"/jobs/{job.id}/assigned_hashfile/")
+
+    assert resp.status_code == 200
+    body = resp.data
+
+    # Should have checkboxes
+    assert b'type="checkbox" name="hashfile_id"' in body
+
+    # Should NOT have radio buttons
+    assert b'type="radio" name="hashfile_id"' not in body
+
+    # Should have the form marker (hf_source) so the route can identify
+    # the existing form submission (D5 empty-selection path depends on this)
+    assert b'name="hf_source"' in body
+    assert b'value="existing"' in body
+
+
+HASHFILE_CHECKBOX_RE = re.compile(r'<input[^>]*name="hashfile_id"[^>]*>')
+
+
+def test_picker_renders_no_pre_checked_hashfile(app, client):
+    """With a toggle-per-row checkbox, a pre-checked row would turn a single
+    click on another file into a silent two-file combine (and, on the edit
+    path, combine the current file with the clicked one instead of switching
+    to it). Nothing may be checked on load; the job's current hashfile is
+    only marked with a non-interactive ``current`` badge."""
+    admin = make_admin()
+    login(client, admin)
+    cust = make_customer()
+    job = _job(admin, cust)
+
+    hfs = [Hashfiles(name=f"pick{i}", customer_id=cust.id, owner_id=admin.id)
+           for i in range(3)]
+    db.session.add_all(hfs)
+    db.session.commit()
+    # Edit path: the job already uses the middle file.
+    job.hashfile_id = hfs[1].id
+    db.session.commit()
+
+    resp = client.get(f"/jobs/{job.id}/assigned_hashfile/")
+    assert resp.status_code == 200
+    html = resp.data.decode()
+
+    inputs = HASHFILE_CHECKBOX_RE.findall(html)
+    assert len(inputs) == 3, inputs
+    assert all('type="checkbox"' in tag for tag in inputs), inputs
+    checked = [tag for tag in inputs if "checked" in tag]
+    assert checked == [], f"pre-checked hashfile inputs rendered: {checked}"
+
+    # No row starts out visually selected either, so the look matches the
+    # (empty) checkbox state.
+    assert 'class="sel-box on"' not in html
+    assert 'class="selected"' not in html
+
+    # The current hashfile is still identifiable, via a badge in its name cell.
+    assert html.count(">current</span>") == 1
+    assert re.search(r"pick1\s*<span class=\"badge dim\"[^>]*>current</span>", html)
+    assert not re.search(r"pick0\s*<span class=\"badge", html)
+    assert not re.search(r"pick2\s*<span class=\"badge", html)

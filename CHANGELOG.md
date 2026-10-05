@@ -12,6 +12,7 @@ Notable changes will be documented here
 - Card-style, drag-and-drop task queue when building a job
 - Live recovery feed on the dashboard showing freshly cracked hashes with relative timestamps (e.g. "3 minutes ago")
 - Scrollable, filterable "InstaCrack" panel showing which hashes are already recovered when a hashfile is added to a job
+- Select multiple existing hashfiles when building a job; they are combined into one new auto-named hashfile (#359)
 
 **Running-Jobs Dashboard**
 - An **Auto-cancel** column shows how long an attack has before `Settings.max_runtime_tasks` stops it, measured from the earliest chunk start so it agrees with the reaper that enforces the cap. It renders only when the cap is enabled; chunk rows leave it blank, since the cap applies to the attack rather than to one chunk

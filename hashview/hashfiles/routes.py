@@ -19,19 +19,11 @@ from hashview.models import (
 )
 from hashview.utils.audit import log_event
 from hashview.utils.clock import utcnow
+from hashview.utils.hashfile_export import HASHFILE_EXPORT_FORMATS, iter_hashfile_export
 from hashview.utils.utils import job_assignments, purge_orphaned_hashes, try_commit
 
 hashfiles = Blueprint('hashfiles', __name__)
 
-
-def _decode_hex(value):
-    """Plaintext/username are stored as plain text now; return as-is.
-    (Kept so the download formatters can keep calling it.)"""
-    return value or ''
-
-
-# Download/export formats offered by the hashfile download modal.
-HASHFILE_EXPORT_FORMATS = ('hashes', 'all', 'cracked', 'plains')
 
 @hashfiles.route("/hashfiles", methods=['GET', 'POST'])
 @login_required
@@ -255,21 +247,8 @@ def hashfiles_download(hashfile_id, fmt):
         abort(404)
     hashfile = Hashfiles.query.get_or_404(hashfile_id)
 
-    rows = db.session.query(Hashes).join(
-        HashfileHashes, Hashes.id == HashfileHashes.hash_id
-    ).filter(HashfileHashes.hashfile_id == hashfile_id).all()
-
-    lines = []
-    for h in rows:
-        cracked = bool(h.cracked)
-        if fmt == 'hashes':
-            lines.append(h.ciphertext)
-        elif fmt == 'all':
-            lines.append(h.ciphertext + ':' + _decode_hex(h.plaintext) if cracked else h.ciphertext)
-        elif fmt == 'cracked' and cracked:
-            lines.append(h.ciphertext + ':' + _decode_hex(h.plaintext))
-        elif fmt == 'plains' and cracked:
-            lines.append(_decode_hex(h.plaintext))
+    # Shared with the /v1 export route (#368) so UI and API output stay identical.
+    lines = list(iter_hashfile_export(hashfile_id, fmt))
 
     body = ('\n'.join(lines) + '\n') if lines else ''
     # UTF-8 (not latin-1): plaintext/usernames are stored as real Unicode, so

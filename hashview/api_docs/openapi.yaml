@@ -1445,6 +1445,55 @@ paths:
         '302':
           $ref: '#/components/responses/NotAuthorizedRedirect'
 
+  /v1/hashfiles/{hashfile_id}/export/{fmt}:
+    get:
+      tags: [Hashfiles]
+      summary: Export a hashfile in a web UI download format
+      description: >-
+        API equivalent of the web UI's hashfile Download modal, sharing its
+        formatting code so both produce identical output. `hashes` is every
+        ciphertext; `all` is every hash, with cracked ones as `hash:plain`;
+        `cracked` is only recovered hashes as `hash:plain`; `plains` is only
+        recovered plaintexts. Plaintexts that are not valid UTF-8 are emitted
+        as hashcat `$HEX[...]` markers, so `cracked` output can be used
+        directly as a hashcat potfile. User-only, since three of the four
+        formats carry recovered plaintexts.
+      operationId: exportHashfile
+      x-audience: user
+      security:
+        - userApiKey: []
+      parameters:
+        - name: hashfile_id
+          in: path
+          required: true
+          schema: {type: integer}
+        - name: fmt
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [hashes, all, cracked, plains]
+      responses:
+        '200':
+          description: >-
+            UTF-8 text, one line per hash and a trailing newline; empty when
+            the format selects no hashes (e.g. `cracked` on an uncracked file).
+          content:
+            text/plain:
+              schema: {type: string}
+              example: "31d6cfe0d16ae931b73c59d7e0c089c0:\n"
+        '404':
+          description: >-
+            Real HTTP 404 — unknown hashfile id ("Hashfile not found") or an
+            unrecognised `fmt`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example: {status: 404, type: Error, msg: Hashfile not found}
+        '302':
+          $ref: '#/components/responses/NotAuthorizedRedirect'
+
   /v1/hashfiles/hash_type/{hash_type}:
     get:
       tags: [Hashfiles]

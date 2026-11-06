@@ -205,6 +205,7 @@ api_key="key-prune"
 # Dummy source IP used across Agents() test fixtures (tests/unit/test_agents_*,
 # test_scheduler_*, test_stranded_jobtask_reclaim.py, etc.) -- not a real host.
 src_ip="1\.1\.1\.1"
+src_ip="1\.1\.1\.2"
 
 # Throwaway login password used by tests/unit/test_form_length_rejected_before_insert.py
 # and tests/unit/test_login_redirect.py -- the well-known xkcd example password,

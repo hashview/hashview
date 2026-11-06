@@ -190,3 +190,13 @@ image:\s*\S+@sha256:[0-9a-f]{64}
 # internal hostname.
 "link": "https://cwe.mitre.org/data/definitions/
 "more_info": "https://bandit.readthedocs.io/
+
+# --- rebase-carried false positives, unrelated to any branch's own changes ---
+# A rebase widens the scan range to every commit reachable from the new tip
+# but not yet on the target ref's old tip, which re-surfaces dummy test
+# fixtures already merged and reviewed on the dev branch.
+
+# Dummy source IPs used across Agents() test fixtures (tests/unit/test_agents_*,
+# test_dashboard_chunk_groups.py, test_agent_telemetry.py, etc.) -- not real hosts.
+src_ip="1\.1\.1\.1"
+src_ip="1\.1\.1\.2"

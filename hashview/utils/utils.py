@@ -35,6 +35,7 @@ from hashview.models import (
     Wordlists,
     db,
 )
+from hashview.utils.audit import log_event
 from hashview.utils.chunking import (
     DEFAULT_MAX_CHUNKS,
     MASK_MODES,
@@ -1732,6 +1733,172 @@ def missing_wordlist_ids(wordlists=None):
         wordlists = db.session.query(
             Wordlists.id, Wordlists.path, Wordlists.type).all()
     return {w.id for w in wordlists if wordlist_file_missing(w)}
+
+def catalog_task_references(rule_ids=None, wordlist_ids=None):
+    """(rule_id -> {task ids}, wordlist_id -> {task ids}) in at most two queries.
+
+    Which tasks reference a catalog row is what separates housekeeping from an
+    incident: an unreferenced stale row can simply be removed, while one behind a
+    queued job needs an operator to choose between restore and delete. wl_id_2
+    counts -- a combinator task's second wordlist is a real reference (see
+    build_hashcat_command), and forgetting it is exactly the bug the wordlist
+    delete guard had to be fixed for.
+
+    Single implementation for the scheduler's prune, the /v1 listings and the
+    UI, so none of them can disagree about what is safe to remove.
+    """
+    from sqlalchemy import or_
+
+    by_rule, by_wordlist = {}, {}
+    if rule_ids:
+        for task_id, rule_id in db.session.query(Tasks.id, Tasks.rule_id).filter(
+                Tasks.rule_id.in_(rule_ids)).all():
+            by_rule.setdefault(rule_id, set()).add(task_id)
+    if wordlist_ids:
+        for task_id, wl_id, wl_id_2 in db.session.query(
+                Tasks.id, Tasks.wl_id, Tasks.wl_id_2).filter(
+                    or_(Tasks.wl_id.in_(wordlist_ids),
+                        Tasks.wl_id_2.in_(wordlist_ids))).all():
+            for candidate in (wl_id, wl_id_2):
+                if candidate in wordlist_ids:
+                    by_wordlist.setdefault(candidate, set()).add(task_id)
+    return by_rule, by_wordlist
+
+def orphaned_rule_ids(rules=None, missing=None):
+    """Ids of Rules rows whose file is gone AND which no task references (#494).
+
+    The debris set: nothing can use these, nothing points at them, and the
+    scheduled sweep deletes them once the admins have been told. Computed, never
+    stored -- like `missing`, of which it is a strict subset.
+
+    Short-circuits on a healthy catalog so the listings, which call this on every
+    GET, pay nothing for the task scan when there is nothing to scan for. Pass
+    ``missing`` when the caller already computed it -- every listing does -- so
+    the stat-per-row pass runs once per request rather than twice.
+    """
+    if missing is None:
+        missing = missing_rule_ids(rules)
+    if not missing:
+        return set()
+    by_rule, _ = catalog_task_references(rule_ids=missing)
+    return {rule_id for rule_id in missing if not by_rule.get(rule_id)}
+
+def orphaned_wordlist_ids(wordlists=None, missing=None):
+    """Ids of Wordlists rows whose file is gone AND which no task references.
+
+    See orphaned_rule_ids, including the ``missing`` passthrough. Dynamic rows
+    can never appear here, because wordlist_file_missing never reports them
+    missing in the first place.
+    """
+    if missing is None:
+        missing = missing_wordlist_ids(wordlists)
+    if not missing:
+        return set()
+    _, by_wordlist = catalog_task_references(wordlist_ids=missing)
+    return {wl_id for wl_id in missing if not by_wordlist.get(wl_id)}
+
+def catalog_prune_armed():
+    """True when the scheduled sweep may delete orphaned catalog rows (#494).
+
+    No Settings row at all — a half-initialised install — reads as NOT armed:
+    the conservative direction for an irreversible action. The listings ask this
+    too, so the page never promises a removal that is switched off.
+    """
+    settings = Settings.current()
+    return bool(settings is not None and settings.catalog_prune_orphans)
+
+def prune_orphaned_catalog(kind):
+    """Remove stranded catalog entries of a given kind by manual request (#502).
+
+    ``kind`` is 'rules' or 'wordlists'; raises ValueError for anything else
+    (the route restricts it, but the helper is the security boundary).
+
+    Returns (removed_count, refusal_reason). ``refusal_reason`` is None on a
+    normal run (including a run that removed 0 rows); a short human-readable
+    string when the empty-control-directory rail refused.
+
+    The candidate set is ONLY orphaned_rule_ids() / orphaned_wordlist_ids()
+    -- rows whose file is gone AND which no task references. We deliberately do
+    NOT consult file_missing_notified or catalog_prune_armed(). The former latch
+    exists so a *scheduler* never destroys rows before a human sees an alert, and
+    the latter arms the *automatic* sweep. Gating the by-hand path on either
+    would leave operators who switched the sweep off with no cleanup path at all
+    (#502). The manual action is orthogonal to both.
+
+    The empty-control-directory rail (kept from the scheduler): if no rows of
+    this kind have a file that resolves on disk, while there is at least one
+    candidate, we remove nothing. This covers what the isdir circuit breaker
+    cannot see: a control directory that exists but is EMPTY (fresh named volume
+    on redeploy, bind-mount typo, restore that lost files). Dynamic wordlists do
+    NOT count as healthy (their file is never read, so its presence says nothing
+    about the mount) -- a healthy wordlist is static and resolves on disk.
+
+    For each row removed, deletes it and, only after one try_commit() for the
+    whole batch succeeds, logs an audit event (rule.pruned or wordlist.pruned)
+    carrying the path and a manual=1 marker. A failed commit rolls every
+    pending delete back, so no audit event is logged for it, and the reported
+    removed_count is 0 (not the number of rows queued) -- the caller sees a
+    refusal_reason instead of a false success and a false audit trail.
+    """
+    if kind not in ('rules', 'wordlists'):
+        raise ValueError(f"Invalid catalog kind: {kind!r}")
+
+    kind_label = 'rule' if kind == 'rules' else 'wordlist'
+
+    if kind == 'rules':
+        all_rows = Rules.query.all()
+        missing = missing_rule_ids(all_rows)
+        candidates_set = orphaned_rule_ids(all_rows, missing)
+        healthy_count = len(all_rows) - len(missing)
+    else:
+        all_rows = Wordlists.query.all()
+        missing = missing_wordlist_ids(all_rows)
+        candidates_set = orphaned_wordlist_ids(all_rows, missing)
+        static_rows = [w for w in all_rows if (w.type or '').lower() != 'dynamic']
+        # missing is built from missing_wordlist_ids(), which never reports a
+        # dynamic row as missing -- so every id in `missing` is already a
+        # static row's id, and the old inner `any(...)` filter was a no-op.
+        # Dynamic rows are simply absent from `missing` to begin with, so they
+        # are neither counted as healthy nor subtracted here.
+        healthy_count = len(static_rows) - len(missing)
+
+    rows = [r for r in all_rows if r.id in candidates_set]
+
+    if healthy_count == 0 and rows:
+        control_dir = kind  # 'rules' or 'wordlists' -- matches the control/ subdir name
+        page_name = 'Rules' if kind == 'rules' else 'Wordlists'
+        reason = (f"No {kind_label} file resolves on disk at all, so control/{control_dir} may be "
+                  f"unmounted or empty — nothing was removed. Check the volume and retry, or delete "
+                  f"entries individually from the {page_name} page.")
+        return (0, reason)
+
+    # Capture what each audit line needs before the row goes -- once deleted,
+    # this is the only record it ever existed -- but do NOT log yet. The
+    # commit hasn't happened; a rollback must leave no audit trail for a
+    # prune that never took place. (The scheduler's sweep in scheduler.py
+    # logs before deleting instead, because its bare commit() has no clean
+    # failure path to be wrong about; this manual path does, via try_commit,
+    # so it can afford to wait.)
+    pending_audit = []
+    for row in rows:
+        pending_audit.append((row.id, row.name, row.path))
+        db.session.delete(row)
+
+    if not try_commit(f'prune {kind}'):
+        # The commit failed, so every pending delete above was rolled back --
+        # nothing actually left the database. Report 0 removed and log
+        # nothing, with a message that names the commit failure specifically
+        # so an operator can tell this apart from the empty-control-directory
+        # refusal above from the flash alone.
+        return (0, f'Could not remove stranded {kind_label} entries — the database commit failed. '
+                    f'Nothing was removed; try again.')
+
+    for row_id, row_name, row_path in pending_audit:
+        event_name = f'{kind_label}.pruned'
+        log_event(event_name, target=f'{kind_label}:{row_id} {row_name!r}',
+                 detail=f'path={row_path} tasks=0 manual=1')
+
+    return (len(pending_audit), None)
 
 def remove_rule_file(stored_path):
     """Best-effort removal of a rule's file from ``control/rules``.

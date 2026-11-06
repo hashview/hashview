@@ -135,6 +135,13 @@ class Settings(db.Model):
     # the previously-hardcoded 1-hour cutoff.
     agent_timeout_minutes = db.Column(db.Integer, nullable=False, default=60)
     enabled_job_weights = db.Column(db.Boolean, nullable=False, default=False)
+    # Arms the CATALOG_HEALTH sweep's orphan prune (#494): a rule/wordlist row
+    # whose file is gone, that no task references, and that the admins were
+    # already told about in an earlier sweep, is deleted. Default ON -- such a
+    # row is unusable by construction (excluded from new tasks, undownloadable)
+    # -- but automatic row deletion has to be switchable off without rebuilding
+    # the image, which rules out config.conf.
+    catalog_prune_orphans = db.Column(db.Boolean, nullable=False, default=True)
     # Task chunking (Settings -> Jobs). When enabled, eligible tasks (everything
     # except those using a dynamic wordlist) are split into smaller per-agent
     # chunks sized from per-hashtype agent benchmarks. Default OFF so behaviour is

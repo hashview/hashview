@@ -42,6 +42,7 @@ from hashview.utils.utils import (
     get_linecount,
     is_gzip,
     missing_rule_ids,
+    orphaned_rule_ids,
     remove_rule_file,
     resolve_control_file,
     send_generated_file,
@@ -57,6 +58,7 @@ def v1_api_get_rules():
     rules = Rules.query.all()
     rows = alchemy_to_native(rules)
     missing_ids = missing_rule_ids(rules)
+    orphan_ids = orphaned_rule_ids(rules, missing=missing_ids)
     for row in rows:
         # Grafted AFTER serialization: AlchemyEncoder emits declared columns
         # only, and `missing` is computed, not stored (issue #383). Setting it
@@ -65,6 +67,11 @@ def v1_api_get_rules():
         # Always emitted, true or false, so a client can tell a healthy catalog
         # from a server that predates the flag (key absent).
         row['missing'] = row.get('id') in missing_ids
+        # A strict subset of `missing`: the file is gone AND no task references
+        # the row, which is what makes it safe to delete outright. This is the
+        # set the scheduled sweep prunes (#494), so a script that wants to clean
+        # up (or audit what is about to disappear) reads it from here.
+        row['orphaned'] = row.get('id') in orphan_ids
     return jsonify({'status': 200, 'rules': rows})
 
 

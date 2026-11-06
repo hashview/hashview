@@ -21,9 +21,11 @@ from hashview.utils.audit import log_event
 from hashview.utils.clock import utcnow
 from hashview.utils.utils import (
     apply_name_filter,
+    catalog_prune_armed,
     get_filehash,
     get_linecount,
     missing_rule_ids,
+    orphaned_rule_ids,
     remove_rule_file,
     resolve_control_file,
     rule_file_missing,
@@ -96,6 +98,11 @@ def rules_list():
     # this page; it is a handful of stats either way. rule_bytes stays scoped
     # to the rendered rows, since it is only read by their info modals.
     missing_rules = missing_rule_ids()
+    # The subset the scheduled sweep will delete on its own (#494), plus whether
+    # it is actually armed -- the page must not promise a removal that is
+    # switched off, and must not let a row vanish overnight unannounced.
+    orphan_rules = orphaned_rule_ids(missing=missing_rules)
+    prune_armed = catalog_prune_armed()
     rule_bytes = {}
     for r in rules:
         src_path = resolve_control_file(r.path, 'rules')
@@ -169,6 +176,7 @@ def rules_list():
                            pagination=pagination, sort_by=sort_by, sort_order=sort_order,
                            name_filter=name_filter,
                            missing_rule_ids=missing_rules, rule_bytes=rule_bytes,
+                           orphan_rule_ids=orphan_rules, prune_armed=prune_armed,
                            ruleRestoreForm=RuleRestoreForm(),
                            form_err=session.pop('rules_form_err', None))
 

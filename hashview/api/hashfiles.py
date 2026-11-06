@@ -1,4 +1,4 @@
-"""/v1 hashfile routes: upload, download uncracked, delete, and lookups by hash type.
+"""/v1 hashfile routes: upload, download uncracked, export, delete, and lookups by hash type.
 
 Carved out of routes.py per issue #441; pure code motion.
 """
@@ -43,6 +43,7 @@ from hashview.models import (
 )
 from hashview.utils.audit import log_event
 from hashview.utils.clock import to_utc_iso
+from hashview.utils.hashfile_export import HASHFILE_EXPORT_FORMATS, iter_hashfile_export
 from hashview.utils.utils import (
     import_hashfilehashes,
     send_generated_file,
@@ -253,6 +254,34 @@ def v1_api_get_hashfile(hashfile_id):
             file_object.write(result[0].ciphertext + '\n')
 
     return send_generated_file(tmp_dir, random_hex)
+
+
+# Export a hashfile in one of the web UI's download formats (#368)
+@api.route('/v1/hashfiles/<int:hashfile_id>/export/<fmt>', methods=['GET'])
+def v1_api_export_hashfile(hashfile_id, fmt):
+    # User-only: unlike the uncracked download above, these formats carry
+    # recovered plaintexts, which agents have no need for.
+    if not is_authorized(user=True, agent=False, request=request):
+        return redirect("/v1/not_authorized")
+
+    # Real HTTP 404s, not the house HTTP-200 error envelope: a client streaming
+    # this to disk would otherwise save the JSON error as the hashfile/potfile.
+    if fmt not in HASHFILE_EXPORT_FORMATS:
+        return jsonify(_error(
+            404, f"Unknown export format. Valid formats: {', '.join(HASHFILE_EXPORT_FORMATS)}"
+        )), 404
+    if Hashfiles.query.get(hashfile_id) is None:
+        return jsonify(_error(404, 'Hashfile not found')), 404
+
+    random_hex = secrets.token_hex(8)
+    tmp_dir = os.path.join(current_app.root_path, 'control/tmp')
+    file_path = os.path.join(tmp_dir, random_hex)
+    # Same bytes as the web download: UTF-8, one line per hash, trailing newline.
+    with open(file_path, 'w', encoding='utf-8', newline='') as file_object:
+        for line in iter_hashfile_export(hashfile_id, fmt):
+            file_object.write(line + '\n')
+
+    return send_generated_file(tmp_dir, random_hex, mimetype='text/plain; charset=utf-8')
 
 
 @api.route('/v1/hashfiles/<int:hashfile_id>', methods=['DELETE'])

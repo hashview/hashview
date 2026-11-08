@@ -23,6 +23,7 @@ from hashview.api._shared import (  # noqa: F401
     alchemy_to_native,
     api,
     is_authorized,
+    json_object_body,
     update_heartbeat,
     userAuthorized,
     versionCheck,
@@ -61,7 +62,7 @@ def v1_api_add_customer():
 
     # Expect JSON body (silent=True so an empty/invalid body returns None
     # instead of raising a 400 HTML page that callers can't parse as JSON)
-    customer_data = request.get_json(silent=True)
+    customer_data = json_object_body()
     if not customer_data:
         return jsonify({
             'status': 400,

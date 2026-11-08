@@ -129,6 +129,18 @@ def versionCheck(agent_version):
     else:
         return False
 
+def json_object_body():
+    """The request's JSON body if it is an object, else None.
+
+    ``request.get_json(silent=True)`` returns whatever valid JSON was sent, so a
+    top-level array, string or number reached handlers that then called
+    ``.get()`` on it or tested ``'key' in`` it, and raised -- an HTML 500 page
+    instead of the JSON envelope (#440). Every /v1 body is an object, so
+    anything else is treated exactly like a missing or unparseable body.
+    """
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else None
+
 def _error(status, msg):
     """The house {status, type, msg} envelope for a refusal.
 

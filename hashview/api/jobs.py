@@ -22,6 +22,7 @@ from hashview.api._shared import (  # noqa: F401
     alchemy_to_native,
     api,
     is_authorized,
+    json_object_body,
     update_heartbeat,
     userAuthorized,
     versionCheck,
@@ -333,7 +334,7 @@ def v1_api_post_add_job():
     
     # Expect JSON body. silent=True so an empty/invalid body returns None (-> the JSON
     # 400 below) instead of Flask's HTML 400 page, which JSON clients can't parse (#212).
-    job_data = request.get_json(silent=True)
+    job_data = json_object_body()
     if not job_data:
         return jsonify({
             'status': 400,

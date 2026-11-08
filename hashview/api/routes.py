@@ -17,6 +17,7 @@ from hashview.api._shared import (  # noqa: F401
     alchemy_to_native,
     api,
     is_authorized,
+    json_object_body,
     update_heartbeat,
     userAuthorized,
     versionCheck,
@@ -243,7 +244,7 @@ def v1_api_set_agent_heartbeat():
             # check if job_task
             # silent=True so an empty/invalid body returns None (-> JSON error) instead
             # of Flask's HTML 400 page, which the agent can't parse (#212).
-            agent_data = request.get_json(silent=True)
+            agent_data = json_object_body()
             if not agent_data:
                 return jsonify({
                     'status': 400,
@@ -619,7 +620,7 @@ def v1_api_post_agent_benchmark():
     update_heartbeat(request.cookies.get('uuid'))
     agent = Agents.query.filter_by(uuid=request.cookies.get('uuid')).first()
 
-    data = request.get_json(silent=True)
+    data = json_object_body()
     if not data or 'benchmark_results' not in data:
         return jsonify({
             'status': 400,
@@ -680,7 +681,7 @@ def v1_api_post_jobtask_keyspace():
     if agent is None:
         return jsonify({'status': 404, 'type': 'Error', 'msg': 'Agent not found'}), 404
 
-    data = request.get_json(silent=True)
+    data = json_object_body()
     if not data or 'ledger_id' not in data or 'keyspace' not in data:
         return jsonify({'status': 400, 'type': 'Error',
                         'msg': 'Missing ledger_id or keyspace in request body'})
@@ -849,7 +850,7 @@ def v1_api_post_jobtask_crackfile_upload(job_task_id):
     # save to file
     # silent=True so an empty/invalid body returns None (-> JSON error) instead of
     # Flask's HTML 400 page, which the agent can't parse (#212).
-    file_contents = request.get_json(silent=True)
+    file_contents = json_object_body()
     if not file_contents or 'file' not in file_contents:
         return jsonify({
             'status': 400,
@@ -972,7 +973,7 @@ def v1_api_set_queue_jobtask_status():
 
     # silent=True so an empty/invalid body returns None (-> JSON error) instead of
     # Flask's HTML 400 page, which the agent can't parse (#212).
-    status_json = request.get_json(silent=True)
+    status_json = json_object_body()
     if not status_json or 'job_task_id' not in status_json or 'task_status' not in status_json:
         return jsonify({
             'status': 400,
@@ -1033,7 +1034,7 @@ def v1_api_error():
         # narrow race where the agent row is removed between the auth check and
         # this lookup, so we never dereference None on agent.name.
         return redirect("/v1/not_authorized")
-    message_json = request.get_json(silent=True) or {}
+    message_json = json_object_body() or {}
 
     subject = 'Error on ' + str(agent.name)
     message_body = message_json.get('error')

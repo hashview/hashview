@@ -22,6 +22,7 @@ from hashview.api._shared import (  # noqa: F401
     alchemy_to_native,
     api,
     is_authorized,
+    json_object_body,
     update_heartbeat,
     userAuthorized,
     versionCheck,
@@ -83,7 +84,7 @@ def v1_api_add_task():
         })
 
     # Expect JSON body: {"name": ..., "wl_id": ..., "rule_id": <optional>}
-    task_data = request.get_json(silent=True)
+    task_data = json_object_body()
     if not task_data:
         return jsonify({
             'status': 400,

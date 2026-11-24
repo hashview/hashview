@@ -1,0 +1,62 @@
+# Hashview — Caddy TLS-terminating reverse proxy (alternative to nginx).
+#
+# Terminates HTTPS on the SAME public port Hashview used directly (8443) and
+# proxies to `hashview.py --no-ssl` on 127.0.0.1:5000. Keeping 8443 means agents,
+# browsers, SERVER_NAME=FQDN:8443, and the Entra/Azure SSO redirect need ZERO
+# change. See install/deploy/nginx-hashview.conf.example for the rationale.
+#
+# Install:
+#   copy to /etc/caddy/Caddyfile, edit the host + the two cert paths, then:
+#       caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy
+#
+# App side: set `behind_proxy = true` in hashview/config.conf and run the app
+# with `hashview.py --no-ssl`.
+#
+# NOTE ON CERT PERMISSIONS: Caddy runs as the `caddy` user and reads the cert/key
+# at that privilege (unlike nginx, whose master reads them as root). Grant the
+# `caddy` user read access to the key, or copy the cert pair to a caddy-readable
+# directory.
+
+{
+    # We terminate with our own cert; disable Caddy's automatic HTTPS/ACME, which
+    # cannot issue for an internal/self-signed host and would fail at boot.
+    auto_https off
+}
+
+# The port in the site address makes Caddy listen on 8443 and preserves
+# Host: FQDN:8443 upstream, so Flask's SERVER_NAME match keeps working.
+https://FQDN:8443 {
+    # EDIT: absolute paths to <hashview repo>/hashview/ssl/cert.pem and key.pem
+    # (reuses setup.py's self-signed cert). Swap in a CA-signed cert + key here
+    # with no other change.
+    tls /opt/hashview/hashview/ssl/cert.pem /opt/hashview/hashview/ssl/key.pem
+
+    reverse_proxy 127.0.0.1:5000 {
+        # Caddy sets X-Forwarded-For/Proto/Host by default and REPLACES any
+        # client-supplied X-Forwarded-* (it does not trust inbound values), so the
+        # app's ProxyFix x_for=1 is safe with no extra stripping. Host passes
+        # through upstream by default. Caddy does not set X-Forwarded-Port, so add
+        # it for the app's x_port=1.
+        header_up X-Forwarded-Port 8443
+
+        # Caddy streams request AND response bodies by default and imposes NO
+        # request-body size limit unless you add a `request_body { max_size ... }`
+        # block -- so do NOT add one (it would 413 multi-GB uploads). flush_interval
+        # -1 guarantees the response is fully streamed regardless of defaults.
+        flush_interval -1
+
+        # Long requests: keyspace measurement (minutes), big downloads, dynamic
+        # wordlist generation. These bound the gap between bytes, not the whole
+        # transfer, so large progressing transfers are never cut off.
+        transport http {
+            dial_timeout            60s
+            read_timeout            3600s
+            write_timeout           3600s
+            response_header_timeout 3600s
+        }
+    }
+
+    # HSTS: now the proxy's job. Only effective with a CA-signed cert (browsers
+    # ignore HSTS over an untrusted connection). Uncomment after installing one.
+    # header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+}

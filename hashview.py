@@ -234,6 +234,14 @@ def cli(args) -> int:
         parser = argparse.ArgumentParser()
         parser.add_argument("--debug",  action="store_true", help="increase output verbosity")
         parser.add_argument("--no-ssl", action="store_true", help="disable use of ssl")
+        # --host/--port override config.conf [SERVER] bind_host/bind_port for the
+        # --no-ssl (behind-a-proxy) run; default None so config stays the source
+        # of truth when the flags are absent. Ignored by the direct-TLS branch,
+        # which always binds the public 0.0.0.0:8443.
+        parser.add_argument("--host", default=None,
+                            help="bind address for --no-ssl (default: config bind_host, 127.0.0.1)")
+        parser.add_argument("--port", type=int, default=None,
+                            help="bind port for --no-ssl (default: config bind_port, 5000)")
         parsed_args = parser.parse_args(args)
 
         ensure_authlib()
@@ -264,7 +272,19 @@ def cli(args) -> int:
             werkzeug_logger.setLevel(logging.ERROR)
 
         if parsed_args.no_ssl:
-            app.run(debug=parsed_args.debug)
+            # Plain HTTP on loopback for a deployment that terminates TLS in a
+            # reverse proxy (nginx/Caddy; see install/deploy/). Bind host/port are
+            # explicit (CLI override, else config bind_host/bind_port) instead of
+            # Werkzeug's implicit 127.0.0.1:5000. threaded=True so requests are not
+            # re-serialised once the proxy has taken over connection concurrency;
+            # one process still means one scheduler, which is the invariant
+            # create_app() relies on.
+            app.run(
+                host=parsed_args.host or app.config['BIND_HOST'],
+                port=parsed_args.port or app.config['BIND_PORT'],
+                threaded=True,
+                debug=parsed_args.debug,
+            )
 
         else:
             # A context object rather than the (cert, key) tuple werkzeug
@@ -272,11 +292,14 @@ def cli(args) -> int:
             # TLS handshake runs inline on the accept thread with no deadline,
             # and a single client that connects without sending a ClientHello
             # stops the server accepting anything at all. See utils/tls.py.
+            # (The structural fix is to run --no-ssl behind a TLS-terminating
+            # proxy; the handshake deadline only bounds the stall.)
             app.run(
                 host='0.0.0.0',
                 port=8443,
                 ssl_context=server_ssl_context('./hashview/ssl/cert.pem',
                                                './hashview/ssl/key.pem'),
+                threaded=True,
                 debug=parsed_args.debug,
             )
 

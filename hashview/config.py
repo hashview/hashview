@@ -15,6 +15,24 @@ class Config:
     # Server Config
     SERVER_NAME = file_config['SERVER']['SERVER_NAME']
 
+    # Reverse-proxy deployment (see install/deploy/ and hashview/utils/tls.py).
+    # Read with the same defensive fallback idiom as MAX_FORM_MEMORY_SIZE below so
+    # an older config.conf that predates these keys never KeyErrors on upgrade;
+    # every default reproduces today's direct-TLS behaviour exactly.
+    #
+    # BEHIND_PROXY: set true ONLY when a TLS-terminating proxy (nginx/Caddy) sits
+    # in front and the app serves plain HTTP on loopback. create_app() then turns
+    # on ProxyFix -- trusting exactly ONE proxy hop's X-Forwarded-For/Proto/Host,
+    # which must never be trusted while the app is directly exposed (a client
+    # could spoof its source IP into the audit log) -- and marks session cookies
+    # Secure. Off by default.
+    BEHIND_PROXY = file_config['SERVER'].getboolean('behind_proxy', fallback=False)
+    # Address the app binds under --no-ssl (i.e. behind the proxy). Loopback by
+    # default so the plain-HTTP origin is never world-reachable, and explicit so
+    # the bind no longer depends on Werkzeug's implicit 127.0.0.1:5000 default.
+    BIND_HOST = file_config['SERVER'].get('bind_host', '127.0.0.1')
+    BIND_PORT = file_config['SERVER'].getint('bind_port', fallback=5000)
+
     # Byte cap on non-file form fields (e.g. the pasted-hashes textarea).
     # Read via the same .get(key, default) idiom as SECRET_KEY above (not the
     # bare indexing used for SERVER_NAME) so an older config.conf that predates

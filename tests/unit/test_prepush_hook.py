@@ -242,14 +242,14 @@ def test_merge_only_push_is_not_blocked_and_is_still_scanned(tmp_path):
     pushes routinely. The merge's content must also still be scanned.
     """
     upstream, clone = _build_repo(tmp_path)
-    # A side branch that is already on the remote, carrying a secret.
+    # A local-only side branch carrying a secret: merging it is the way a
+    # merge could smuggle content past the scan, so it must still be seen.
     _git(clone, "checkout", "-q", "-b", "side", "main")
     (clone / "leak.py").write_text(_assignment("AWS_KEY", FAKE_AWS_KEY))
     _git(clone, "add", "leak.py")
     _git(clone, "commit", "-q", "-m", "side work")
-    _git(clone, "push", "-q", "origin", "side")
 
-    # Locally merge it into main; only the merge commit is new to the remote.
+    # Locally merge it into main.
     _git(clone, "checkout", "-q", "main")
     _git(clone, "merge", "-q", "--no-ff", "side", "-m", "Merge side")
     sha = _git(clone, "rev-parse", "HEAD").strip()
@@ -261,6 +261,72 @@ def test_merge_only_push_is_not_blocked_and_is_still_scanned(tmp_path):
         "the fail-closed guard must not fire on a legitimate merge-only push"
     assert "AWS access key ID" in out, \
         "content brought in by a merge must still be scanned"
+
+
+def test_merging_already_published_work_does_not_rescan_it(tmp_path):
+    """Merging an integration branch into an existing feature branch must not
+    re-flag commits the destination remote already has.
+
+    The two-dot remote_sha..local_sha range includes every commit the merge
+    brought in, so merging the dev branch into a PR branch re-reported its
+    already-public placeholder URLs and test IPs and blocked the push. Only
+    work the destination remote lacks is new to this push.
+    """
+    upstream, clone = _build_repo(tmp_path)
+    # A feature branch forked from main and pushed.
+    _git(clone, "checkout", "-q", "-b", "feature", "main")
+    (clone / "helper.py").write_text("def add(a, b):\n    return a + b\n")
+    _git(clone, "add", "helper.py")
+    _git(clone, "commit", "-q", "-m", "add helper")
+    _git(clone, "push", "-q", "origin", "feature")
+    base = _git(clone, "rev-parse", "HEAD").strip()
+
+    # main moves on, publicly, with secret-shaped content of its own.
+    _git(clone, "checkout", "-q", "main")
+    (clone / "leak.py").write_text(_assignment("AWS_KEY", FAKE_AWS_KEY))
+    _git(clone, "add", "leak.py")
+    _git(clone, "commit", "-q", "-m", "published on main")
+    _git(clone, "push", "-q", "origin", "main")
+
+    # Bring main into the feature branch and add one genuinely new commit.
+    _git(clone, "checkout", "-q", "feature")
+    _git(clone, "merge", "-q", "--no-ff", "main", "-m", "Merge main")
+    (clone / "helper.py").write_text("def add(a, b):\n    return b + a\n")
+    _git(clone, "commit", "-q", "-am", "tweak helper")
+    sha = _git(clone, "rev-parse", "HEAD").strip()
+
+    out = _scan_output(_run_hook(clone, upstream, "refs/heads/feature", sha, base))
+
+    assert "AWS access key ID" not in out, \
+        "content already on the destination remote must not be re-flagged"
+    assert "sensitive-content scan clean" in out
+
+
+def test_merging_work_from_another_remote_is_still_scanned(tmp_path):
+    """Only the destination remote's refs are excluded. Work published to a
+    fork (or an internal remote) is still new to origin, so merging it into an
+    origin branch must be scanned."""
+    upstream, clone = _build_repo(tmp_path)
+    fork = tmp_path / "fork.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(fork)], check=True,
+                   env=_clean_env())
+    _git(clone, "remote", "add", "fork", str(fork))
+
+    _git(clone, "checkout", "-q", "-b", "side", "main")
+    (clone / "leak.py").write_text(_assignment("AWS_KEY", FAKE_AWS_KEY))
+    _git(clone, "add", "leak.py")
+    _git(clone, "commit", "-q", "-m", "fork-only work")
+    _git(clone, "push", "-q", "fork", "side")
+
+    _git(clone, "checkout", "-q", "main")
+    _git(clone, "merge", "-q", "--no-ff", "side", "-m", "Merge fork work")
+    sha = _git(clone, "rev-parse", "HEAD").strip()
+    base = _git(clone, "rev-parse", "origin/main").strip()
+
+    out = _scan_output(_run_hook(clone, upstream, "refs/heads/main", sha, base))
+
+    assert "AWS access key ID" in out, \
+        "work only on another remote is still new to the destination"
 
 
 def test_empty_commit_push_is_not_blocked(tmp_path):

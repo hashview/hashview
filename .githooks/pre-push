@@ -58,6 +58,11 @@ record() {
     fail=1
 }
 
+# git invokes the hook as `pre-push <remote-name> <remote-url>`. The name is a
+# URL when pushing to a URL directly; then --remotes= below matches no refs and
+# the existing-branch range simply stays the full two-dot range.
+push_remote="${1:-}"
+
 # Read refs being pushed from stdin: <local_ref> <local_sha> <remote_ref> <remote_sha>
 zero="0000000000000000000000000000000000000000"
 
@@ -75,7 +80,16 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         # New branch: scan everything reachable from local_sha not already on any remote.
         range_args=("$local_sha" --not --remotes)
     else
+        # Existing branch: what the branch gained, minus anything the
+        # destination remote already has. A plain remote_sha..local_sha range
+        # also holds every commit a merge brought in, so merging the dev branch
+        # into a PR branch re-scanned (and re-blocked on) already-public work.
+        # Only the destination's refs are excluded: work that exists only on a
+        # fork or internal remote is still new to this remote and is scanned.
         range_args=("${remote_sha}..${local_sha}")
+        if [ -n "$push_remote" ]; then
+            range_args+=(--not "--remotes=${push_remote}")
+        fi
     fi
 
     # List commits being pushed.

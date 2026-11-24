@@ -20,6 +20,7 @@ from hashview.api._shared import (  # noqa: F401
     alchemy_to_native,
     api,
     is_authorized,
+    json_object_body,
     update_heartbeat,
     userAuthorized,
     versionCheck,
@@ -53,7 +54,7 @@ def v1_api_search():
     
     # silent=True: an empty/invalid body returns None (-> JSON "Invalid Search")
     # rather than Flask's HTML 400 page (issue #213).
-    search_json = request.get_json(silent=True)
+    search_json = json_object_body()
     if not search_json:
         return jsonify({'status': 500, 'type': 'message', 'msg': 'Invalid Search'})
 

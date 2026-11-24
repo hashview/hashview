@@ -24,6 +24,7 @@ from hashview.api._shared import (  # noqa: F401
     alchemy_to_native,
     api,
     is_authorized,
+    json_object_body,
     update_heartbeat,
     userAuthorized,
     versionCheck,
@@ -103,7 +104,7 @@ def v1_api_add_task_group():
         })
 
     # Expect JSON body: {"name": ..., "tasks": [id, ...]}
-    group_data = request.get_json(silent=True)
+    group_data = json_object_body()
     if not group_data:
         return jsonify({
             'status': 400,
@@ -197,7 +198,7 @@ def v1_api_set_task_group_tasks(task_group_id):
             'msg': 'You do not have rights to modify this task group'
         })
 
-    body = request.get_json(silent=True)
+    body = json_object_body()
     if not body:
         return jsonify({
             'status': 400,

@@ -280,8 +280,10 @@ def cli(args) -> int:
             # one process still means one scheduler, which is the invariant
             # create_app() relies on.
             app.run(
-                host=parsed_args.host or app.config['BIND_HOST'],
-                port=parsed_args.port or app.config['BIND_PORT'],
+                # Compare to None, not truthiness: --port 0 (an OS-assigned
+                # port) is a real value, not "unset".
+                host=parsed_args.host if parsed_args.host is not None else app.config['BIND_HOST'],
+                port=parsed_args.port if parsed_args.port is not None else app.config['BIND_PORT'],
                 threaded=True,
                 debug=parsed_args.debug,
             )

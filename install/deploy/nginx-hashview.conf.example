@@ -69,8 +69,12 @@ server {
         proxy_set_header Connection "";
 
         # Preserve the client's Host so Flask's SERVER_NAME=FQDN:8443 still matches.
-        # (If clients may reach the server by IP, hardcode `proxy_set_header Host
-        #  FQDN:8443;` instead so the match is guaranteed.)
+        # (If clients may reach the server by IP, hardcode the name instead so the
+        #  match is guaranteed. Pin BOTH Host and X-Forwarded-Host -- the app's
+        #  ProxyFix x_host=1 replaces Host with X-Forwarded-Host, so pinning Host
+        #  alone still hands Flask the IP:
+        #      proxy_set_header Host             FQDN:8443;
+        #      proxy_set_header X-Forwarded-Host FQDN;          )
         proxy_set_header Host              $host;
 
         # Forwarded headers for the app's behind_proxy mode (ProxyFix). set_header

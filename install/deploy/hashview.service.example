@@ -32,7 +32,9 @@ Group=hashview
 WorkingDirectory=/opt/hashview
 ExecStart=/opt/hashview/venv/bin/python hashview.py --no-ssl
 
-Environment=PYTHONUNBUFFERED=1        # flush logs promptly to the journal
+# Flush logs promptly to the journal. (systemd has no trailing comments: a
+# `# ...` after a value is parsed as more assignments.)
+Environment=PYTHONUNBUFFERED=1
 
 Restart=on-failure
 RestartSec=5

@@ -1,0 +1,48 @@
+# Hashview app — optional systemd unit (there is no process supervision today).
+#
+# Runs the app in plain-HTTP mode on 127.0.0.1:5000 behind a TLS-terminating
+# reverse proxy (see nginx-hashview.conf.example / Caddyfile.example). The proxy
+# (nginx/caddy) has its own systemd unit shipped by its package; this is only for
+# the Hashview app itself.
+#
+# Install:
+#   copy to /etc/systemd/system/hashview.service, edit User/Group/paths, then:
+#       systemctl daemon-reload && systemctl enable --now hashview
+#
+# IMPORTANT — exactly ONE instance. create_app() starts the APScheduler
+# unconditionally, so a second app process means duplicate retention purges,
+# agent-health, and job-runtime sweeps racing on the same database. Do NOT turn
+# this into a multi-worker gunicorn unit without first isolating the scheduler to
+# a single worker. For higher throughput, waitress (single-process, multi-thread)
+# or gunicorn with --workers 1 are the correct next steps -- never more processes.
+
+[Unit]
+Description=Hashview web application (plain HTTP on 127.0.0.1:5000, behind a TLS proxy)
+After=network-online.target mysql.service
+Wants=network-online.target
+# Requires=mysql.service       # uncomment if MySQL is a local systemd service
+
+[Service]
+Type=simple
+User=hashview
+Group=hashview
+
+# WorkingDirectory MUST be the repo root: config.py reads 'hashview/config.conf'
+# via a CWD-relative path, and control/tmp etc. resolve from here.
+WorkingDirectory=/opt/hashview
+ExecStart=/opt/hashview/venv/bin/python hashview.py --no-ssl
+
+# Flush logs promptly to the journal. (systemd has no trailing comments: a
+# `# ...` after a value is parsed as more assignments.)
+Environment=PYTHONUNBUFFERED=1
+
+Restart=on-failure
+RestartSec=5
+
+# Modest hardening (optional). PrivateTmp is safe: streamed uploads land in
+# ./hashview/control/tmp (in-repo), not /tmp.
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

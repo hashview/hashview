@@ -64,7 +64,26 @@ Note: run `./setup.py` and `./hashview.py` with the virtual environment active (
 Navigate to your server, default port is 8443. https://IP:8443
 
 (note)
-Because hashview is installed with a self signed certificate, you will be prompted about it being invalid. You're welcome to use properly signed certs by replacing the files under `hashview/hashview/control/ssl/`
+Because hashview is installed with a self signed certificate, you will be prompted about it being invalid. You're welcome to use properly signed certs by replacing the files under `hashview/ssl/`.
+
+#### 5) Production deployment (recommended): terminate TLS in a reverse proxy
+The command above runs Hashview's built-in Werkzeug server, which terminates TLS
+inline on a single accept thread — so one stalled client can freeze every new
+connection (and starve agent heartbeats). For production, terminate TLS in a
+reverse proxy (**nginx** recommended, or Caddy) listening on 8443 and run the app
+as plain HTTP on localhost:
+
+1. In `hashview/config.conf` under `[SERVER]`, set `behind_proxy = true` (keep
+   `SERVER_NAME` on the public `FQDN:8443`), then run the app with
+   `./hashview.py --no-ssl` (it binds `127.0.0.1:5000`).
+2. Install a proxy from [`install/deploy/`](install/deploy/) — copy-paste nginx
+   and Caddy configs plus an optional `hashview.service` systemd unit — editing
+   the host and cert paths.
+
+The proxy stays on **8443** and reuses the same self-signed cert, so agents,
+browser URLs, and SSO need no change; HSTS is now the proxy's job, and you can
+swap in a CA-signed cert at the proxy to drop browser warnings. Open **8443** and
+keep **5000** closed at the firewall. See `install/deploy/README.md` for details.
 
 Once logged in, before you can start cracking hashes, you need to install a Hashview-Agent.
 

@@ -309,7 +309,7 @@ def create_app(testing=False, config_overrides=None):
     if app.config.get("BEHIND_PROXY"):
         from werkzeug.middleware.proxy_fix import ProxyFix
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
-        app.config.update(
+        proxy_defaults = dict(
             # https for any url_for(_external=...) built outside a request context
             # (e.g. a future scheduled-job notification); in-request generation is
             # already corrected by ProxyFix reading X-Forwarded-Proto.
@@ -320,6 +320,11 @@ def create_app(testing=False, config_overrides=None):
             # top-level GET navigations that must still carry the session cookie.
             SESSION_COOKIE_SAMESITE="Lax",
         )
+        # Defaults, not mandates: a key the caller pinned in config_overrides
+        # keeps its value. (setdefault would not work: Flask pre-populates
+        # these keys, so they are never absent.)
+        pinned = config_overrides or {}
+        app.config.update({k: v for k, v in proxy_defaults.items() if k not in pinned})
         # WTF_CSRF_SSL_STRICT is intentionally left unset: Hashview installs no
         # global CSRFProtect, and the per-FlaskForm CSRF path never reads it, so
         # making request.is_secure True activates no new check. x_host=1 above

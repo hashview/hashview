@@ -126,3 +126,19 @@ def test_proxy_guard_quiet_for_loopback_and_when_off():
     # Off: the default deployment is never blocked, whatever the run mode.
     assert check_proxy_deployment(False, no_ssl=False, host="0.0.0.0") is None
     assert check_proxy_deployment(None, no_ssl=True, host="0.0.0.0") is None
+
+
+def test_config_overrides_beat_proxy_defaults():
+    """behind_proxy supplies HTTPS-grade defaults, but an explicit
+    config_overrides value (a test, or a caller pinning a setting) wins."""
+    from hashview import create_app
+
+    overrides = dict(_BASE_OVERRIDES, BEHIND_PROXY=True, SESSION_COOKIE_SECURE=False,
+                     SESSION_COOKIE_SAMESITE="Strict")
+    app = create_app(testing=True, config_overrides=overrides)
+
+    assert app.config["SESSION_COOKIE_SECURE"] is False
+    assert app.config["SESSION_COOKIE_SAMESITE"] == "Strict"
+    # Keys the caller did not pin still get the proxy defaults.
+    assert app.config["REMEMBER_COOKIE_SECURE"] is True
+    assert app.config["PREFERRED_URL_SCHEME"] == "https"

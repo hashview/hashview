@@ -286,10 +286,10 @@ def cli(args) -> int:
             # Plain HTTP on loopback for a deployment that terminates TLS in a
             # reverse proxy (nginx/Caddy; see install/deploy/). Bind host/port are
             # explicit (CLI override, else config bind_host/bind_port) instead of
-            # Werkzeug's implicit 127.0.0.1:5000. threaded=True so requests are not
-            # re-serialised once the proxy has taken over connection concurrency;
-            # one process still means one scheduler, which is the invariant
-            # create_app() relies on.
+            # Werkzeug's implicit 127.0.0.1:5000. threaded=True is Flask's default
+            # already; it is spelled out so the single-process, multi-thread
+            # shape is visible (one process = one scheduler, which create_app()
+            # relies on).
             app.run(
                 host=bind_host,
                 port=bind_port,

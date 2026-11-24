@@ -8,7 +8,7 @@ import traceback
 from pathlib import Path
 
 from hashview import create_app
-from hashview.utils.tls import server_ssl_context
+from hashview.utils.tls import check_proxy_deployment, server_ssl_context
 
 
 def ensure_authlib():
@@ -249,6 +249,17 @@ def cli(args) -> int:
         ensure_flask_bcrypt()
 
         app = create_app()
+
+        # Resolve the --no-ssl bind before anything starts so the proxy guard
+        # sees the real address. Compare to None, not truthiness: --port 0
+        # (an OS-assigned port) and an explicit --host are real values.
+        bind_host = parsed_args.host if parsed_args.host is not None else app.config['BIND_HOST']
+        bind_port = parsed_args.port if parsed_args.port is not None else app.config['BIND_PORT']
+        proxy_warning = check_proxy_deployment(
+            app.config.get('BEHIND_PROXY'), parsed_args.no_ssl, bind_host)
+        if proxy_warning:
+            print(proxy_warning, file=sys.stderr)
+
         with app.app_context():
             from hashview.models import db
             from hashview.scheduler import register_default_jobs
@@ -280,10 +291,8 @@ def cli(args) -> int:
             # one process still means one scheduler, which is the invariant
             # create_app() relies on.
             app.run(
-                # Compare to None, not truthiness: --port 0 (an OS-assigned
-                # port) is a real value, not "unset".
-                host=parsed_args.host if parsed_args.host is not None else app.config['BIND_HOST'],
-                port=parsed_args.port if parsed_args.port is not None else app.config['BIND_PORT'],
+                host=bind_host,
+                port=bind_port,
                 threaded=True,
                 debug=parsed_args.debug,
             )

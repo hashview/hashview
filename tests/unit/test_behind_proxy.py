@@ -97,3 +97,32 @@ def test_without_behind_proxy_forwarded_headers_are_ignored():
 
     assert body["is_secure"] is False, "a directly-exposed app must not trust X-Forwarded-Proto"
     assert body["remote_addr"] == "127.0.0.1", "a directly-exposed app must not trust X-Forwarded-For"
+
+
+def test_proxy_guard_refuses_direct_tls():
+    """behind_proxy with the public direct-TLS server would trust spoofable
+    headers from every client, so the CLI must refuse to start."""
+    import pytest
+
+    from hashview.utils.tls import check_proxy_deployment
+
+    with pytest.raises(ValueError, match="requires --no-ssl"):
+        check_proxy_deployment(True, no_ssl=False, host="127.0.0.1")
+
+
+def test_proxy_guard_warns_on_non_loopback_bind():
+    from hashview.utils.tls import check_proxy_deployment
+
+    for host in ("0.0.0.0", "10.0.0.5", "::", "proxy-net.internal"):
+        warning = check_proxy_deployment(True, no_ssl=True, host=host)
+        assert warning and host in warning, host
+
+
+def test_proxy_guard_quiet_for_loopback_and_when_off():
+    from hashview.utils.tls import check_proxy_deployment
+
+    for host in ("127.0.0.1", "127.0.0.2", "::1", "localhost"):
+        assert check_proxy_deployment(True, no_ssl=True, host=host) is None, host
+    # Off: the default deployment is never blocked, whatever the run mode.
+    assert check_proxy_deployment(False, no_ssl=False, host="0.0.0.0") is None
+    assert check_proxy_deployment(None, no_ssl=True, host="0.0.0.0") is None

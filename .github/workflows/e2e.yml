@@ -13,7 +13,9 @@ permissions:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    # Not ubuntu-latest: it now resolves to 26.04, which Playwright cannot install
+    # chromium on. Move this back once Playwright supports the new image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0

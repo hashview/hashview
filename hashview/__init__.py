@@ -298,6 +298,38 @@ def create_app(testing=False, config_overrides=None):
     if config_overrides:
         app.config.update(config_overrides)
 
+    # Behind a TLS-terminating reverse proxy (nginx/Caddy; see install/deploy/):
+    # the app serves plain HTTP on loopback and the proxy owns TLS, so trust the
+    # proxy's forwarded headers and present HTTPS-grade cookies/URLs. Gated on the
+    # opt-in config flag because trusting X-Forwarded-* while the app is directly
+    # exposed would let any client spoof its source IP into the audit log, lie
+    # about the scheme, or poison the host. x_for/x_proto/x_host/x_port=1 trusts
+    # exactly ONE hop -- bump the counts if you chain proxies. The import is local
+    # so the default (direct-TLS) path never loads ProxyFix.
+    if app.config.get("BEHIND_PROXY"):
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+        proxy_defaults = dict(
+            # https for any url_for(_external=...) built outside a request context
+            # (e.g. a future scheduled-job notification); in-request generation is
+            # already corrected by ProxyFix reading X-Forwarded-Proto.
+            PREFERRED_URL_SCHEME="https",
+            SESSION_COOKIE_SECURE=True,
+            REMEMBER_COOKIE_SECURE=True,
+            # Lax (NOT Strict): the Entra SSO return and emailed deep-links are
+            # top-level GET navigations that must still carry the session cookie.
+            SESSION_COOKIE_SAMESITE="Lax",
+        )
+        # Defaults, not mandates: a key the caller pinned in config_overrides
+        # keeps its value. (setdefault would not work: Flask pre-populates
+        # these keys, so they are never absent.)
+        pinned = config_overrides or {}
+        app.config.update({k: v for k, v in proxy_defaults.items() if k not in pinned})
+        # WTF_CSRF_SSL_STRICT is intentionally left unset: Hashview installs no
+        # global CSRFProtect, and the per-FlaskForm CSRF path never reads it, so
+        # making request.is_secure True activates no new check. x_host=1 above
+        # would keep strict mode passing if a global CSRFProtect is ever added.
+
     from hashview.models import db
     db.init_app(app)
 

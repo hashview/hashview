@@ -27,6 +27,7 @@ Hashview (nginx, caddy) and let it serve plain HTTP on localhost. This makes the
 built-in server survivable for the deployments that do not.
 """
 
+import ipaddress
 import socket
 import ssl
 
@@ -90,3 +91,38 @@ def server_ssl_context(certfile, keyfile, handshake_timeout=None):
     context.handshake_timeout = handshake_timeout or DEFAULT_HANDSHAKE_TIMEOUT
     context.load_cert_chain(certfile, keyfile)
     return context
+
+
+def check_proxy_deployment(behind_proxy, no_ssl, host):
+    """Reject run modes that make behind_proxy's header trust unsafe.
+
+    behind_proxy turns on ProxyFix, which believes X-Forwarded-For/Proto/Host.
+    That is only safe when the sole peer is the local reverse proxy. Running
+    direct TLS on 0.0.0.0:8443 with it on lets any client write its own source
+    IP into the audit log, so that combination is refused outright. A
+    non-loopback --no-ssl bind is legitimate for a proxy on another host, so
+    it only earns a warning.
+
+    Returns a warning string, or None. Raises ValueError for a refused mode.
+    """
+    if not behind_proxy:
+        return None
+    if not no_ssl:
+        raise ValueError(
+            'behind_proxy = true requires --no-ssl: the direct-TLS server is '
+            'publicly reachable, so trusting X-Forwarded-* would let any '
+            'client spoof its source IP. Run with --no-ssl behind the proxy, '
+            'or set behind_proxy = false.'
+        )
+    if host == 'localhost':
+        return None
+    try:
+        if ipaddress.ip_address(host).is_loopback:
+            return None
+    except ValueError:
+        pass
+    return (
+        f'WARNING: behind_proxy is on but the app binds {host}, not loopback. '
+        'Any client that can reach this port directly can spoof '
+        'X-Forwarded-For. Firewall it so only the proxy can connect.'
+    )

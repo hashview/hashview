@@ -18,6 +18,21 @@ SECRET_KEY = change-me-to-a-random-string
 # `docker compose build` to take effect.
 # MAX_FORM_MEMORY_SIZE = 500000
 
+# --- Reverse-proxy deployment (recommended for production) ---------------------
+# Set behind_proxy = true when a TLS-terminating reverse proxy (nginx/Caddy)
+# sits in front and Hashview serves plain HTTP on localhost (run it with
+# --no-ssl). The app then trusts exactly ONE proxy hop's X-Forwarded-For/Proto/
+# Host (so the audit log records the real client IP and cookies/URLs are HTTPS)
+# and marks session cookies Secure. See install/deploy/ for nginx/Caddy configs.
+# Keep SERVER_NAME above on the PUBLIC host:port the proxy listens on (e.g.
+# FQDN:8443). Leave false for the default direct-TLS :8443 deployment. Unset =
+# false, so this changes nothing until you opt in.
+# behind_proxy = false
+# Address the app binds when run with --no-ssl. Keep bind_host on loopback so the
+# plain-HTTP origin is never world-reachable; point your proxy's upstream here.
+# bind_host = 127.0.0.1
+# bind_port = 5000
+
 [database]
 host = localhost
 username = username

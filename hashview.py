@@ -8,7 +8,7 @@ import traceback
 from pathlib import Path
 
 from hashview import create_app
-from hashview.utils.tls import server_ssl_context
+from hashview.utils.tls import check_proxy_deployment, server_ssl_context
 
 
 def ensure_authlib():
@@ -234,6 +234,14 @@ def cli(args) -> int:
         parser = argparse.ArgumentParser()
         parser.add_argument("--debug",  action="store_true", help="increase output verbosity")
         parser.add_argument("--no-ssl", action="store_true", help="disable use of ssl")
+        # --host/--port override config.conf [SERVER] bind_host/bind_port for the
+        # --no-ssl (behind-a-proxy) run; default None so config stays the source
+        # of truth when the flags are absent. Ignored by the direct-TLS branch,
+        # which always binds the public 0.0.0.0:8443.
+        parser.add_argument("--host", default=None,
+                            help="bind address for --no-ssl (default: config bind_host, 127.0.0.1)")
+        parser.add_argument("--port", type=int, default=None,
+                            help="bind port for --no-ssl (default: config bind_port, 5000)")
         parsed_args = parser.parse_args(args)
 
         ensure_authlib()
@@ -241,6 +249,17 @@ def cli(args) -> int:
         ensure_flask_bcrypt()
 
         app = create_app()
+
+        # Resolve the --no-ssl bind before anything starts so the proxy guard
+        # sees the real address. Compare to None, not truthiness: --port 0
+        # (an OS-assigned port) and an explicit --host are real values.
+        bind_host = parsed_args.host if parsed_args.host is not None else app.config['BIND_HOST']
+        bind_port = parsed_args.port if parsed_args.port is not None else app.config['BIND_PORT']
+        proxy_warning = check_proxy_deployment(
+            app.config.get('BEHIND_PROXY'), parsed_args.no_ssl, bind_host)
+        if proxy_warning:
+            print(proxy_warning, file=sys.stderr)
+
         with app.app_context():
             from hashview.models import db
             from hashview.scheduler import register_default_jobs
@@ -264,7 +283,19 @@ def cli(args) -> int:
             werkzeug_logger.setLevel(logging.ERROR)
 
         if parsed_args.no_ssl:
-            app.run(debug=parsed_args.debug)
+            # Plain HTTP on loopback for a deployment that terminates TLS in a
+            # reverse proxy (nginx/Caddy; see install/deploy/). Bind host/port are
+            # explicit (CLI override, else config bind_host/bind_port) instead of
+            # Werkzeug's implicit 127.0.0.1:5000. threaded=True is Flask's default
+            # already; it is spelled out so the single-process, multi-thread
+            # shape is visible (one process = one scheduler, which create_app()
+            # relies on).
+            app.run(
+                host=bind_host,
+                port=bind_port,
+                threaded=True,
+                debug=parsed_args.debug,
+            )
 
         else:
             # A context object rather than the (cert, key) tuple werkzeug
@@ -272,11 +303,14 @@ def cli(args) -> int:
             # TLS handshake runs inline on the accept thread with no deadline,
             # and a single client that connects without sending a ClientHello
             # stops the server accepting anything at all. See utils/tls.py.
+            # (The structural fix is to run --no-ssl behind a TLS-terminating
+            # proxy; the handshake deadline only bounds the stall.)
             app.run(
                 host='0.0.0.0',
                 port=8443,
                 ssl_context=server_ssl_context('./hashview/ssl/cert.pem',
                                                './hashview/ssl/key.pem'),
+                threaded=True,
                 debug=parsed_args.debug,
             )
 

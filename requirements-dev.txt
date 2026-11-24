@@ -2,7 +2,7 @@ pytest==9.0.3
 pytest-cov==7.1.0
 pytest-playwright==0.7.2
 pytest-base-url==2.1.0
-playwright==1.58.0
+playwright==1.64.1
 ruff==0.9.7
 bandit[toml]==1.9.4
 pip-audit==2.10.0
